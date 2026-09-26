@@ -1,0 +1,557 @@
+name: Fixed Model Factory Dispatcher
+
+on:
+  schedule:
+    # Watchdog only. Roster-mode workflow_dispatch runs maintain the real
+    # five-minute chain without relying on GitHub's throttled cron delivery.
+    - cron: '7 * * * *'
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: Dispatch strategy when no explicit worker is supplied
+        required: true
+        default: smoke
+        type: choice
+        options:
+          - smoke
+          - roster
+      worker:
+        description: Optional active external Factory; blank runs the strategy smoke set
+        required: false
+        type: string
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/fixed-model-factory-dispatch.yml'
+      - '.github/workflows/free-model-factory-entry.yml'
+      - '.github/workflows/free-model-factory-run.yml'
+      - '.github/scripts/factory-work-controller.py'
+      - '.github/scripts/stale_pr_decay.py'
+      - '.github/scripts/factory-review-controller.py'
+      - '.github/scripts/factory_work_policy.py'
+      - '.github/scripts/factory_review_policy.py'
+      - '.github/scripts/factory_migration_lane.py'
+      - '.github/scripts/factory-gh-rest-shim.sh'
+      - '.github/scripts/free-model-factory-worker.sh'
+      - '.github/scripts/free-model-factory-worker-primitives.sh'
+      - '.github/scripts/factory_provider_candidates.py'
+      - '.github/scripts/factory_candidate_health.py'
+      - '.github/scripts/kilo-auto-factory-run.sh'
+      - '.github/free-model-factories.tsv'
+
+permissions:
+  contents: read
+  actions: write
+  issues: write
+  pull-requests: write
+
+concurrency:
+  group: fixed-model-factory-dispatch
+  # Every roster run creates its successor, so pending watchdog, recovery, and
+  # chain ticks must coalesce into one next run instead of multiplying chains.
+  queue: single
+  cancel-in-progress: false
+
+jobs:
+  dispatch:
+    runs-on: ubuntu-latest
+    permissions:
+      actions: write
+      checks: read
+      contents: write
+      issues: write
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: main
+
+      - name: Ensure GitHub CLI supports JSON PR checks
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          if gh pr checks --help 2>&1 | grep -q -- '--json'; then
+            gh --version
+            exit 0
+          fi
+
+          version='2.97.0'
+          archive="gh_${version}_linux_amd64.tar.gz"
+          destination="$RUNNER_TEMP/$archive"
+          curl -fsSL "https://github.com/cli/cli/releases/download/v${version}/${archive}" -o "$destination"
+          printf '%s  %s\n' 'a2c9b8497e1f85b1ad0dfcb78b5a622e098801b8e461e459e88e1ee12f018112' "$destination" \
+            | sha256sum --check --strict
+          tar -xzf "$destination" -C "$RUNNER_TEMP"
+          gh_dir="$RUNNER_TEMP/gh_${version}_linux_amd64/bin"
+          "$gh_dir/gh" pr checks --help | grep -q -- '--json'
+          echo "$gh_dir" >> "$GITHUB_PATH"
+
+      - name: Install REST-backed factory GitHub reads
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          real_gh="$(command -v gh)"
+          shim_dir="$RUNNER_TEMP/factory-gh-rest"
+          mkdir -p "$shim_dir"
+          cp .github/scripts/factory-gh-rest-shim.sh "$shim_dir/gh"
+          chmod +x "$shim_dir/gh"
+          echo "FACTORY_REAL_GH=$real_gh" >> "$GITHUB_ENV"
+          echo "$shim_dir" >> "$GITHUB_PATH"
+
+      - name: Reconcile serialized migration finalization lane
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -Eeuo pipefail
+          python3 .github/scripts/factory_migration_lane.py reconcile
+
+      - name: Check main health (block merges onto red main)
+        id: main_health
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -Eeuo pipefail
+          sha="$(git rev-parse origin/main)"
+          runs_file="$RUNNER_TEMP/main-ci-workflow-runs.json"
+          if ! gh api --paginate --slurp \
+            "repos/${GITHUB_REPOSITORY}/actions/workflows/ci.yml/runs?head_sha=${sha}&event=push&per_page=100" \
+            > "$runs_file"; then
+            echo "GitHub API unavailable proving product CI health at ${sha}; failing closed" >&2
+            echo "main_red=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          if ! health="$(python3 .github/scripts/factory_main_health.py --sha "$sha" < "$runs_file")"; then
+            echo "GitHub returned invalid product CI health data at ${sha}; failing closed" >&2
+            echo "main_red=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          total="$(jq -r '.total' <<< "$health")"
+          failing="$(jq -r '.failing' <<< "$health")"
+          echo "Main health API result: sha=${sha} total_count=${total} failing=${failing}"
+          if [[ "${total:-0}" != "0" && "${failing:-0}" != "0" ]]; then
+            echo "Main $sha has $failing failed product CI run(s) out of $total - drain will pause merges"
+            echo "failing=$failing" >> "$GITHUB_OUTPUT"
+            echo "main_red=true" >> "$GITHUB_OUTPUT"
+            # Ensure main-breakage P0 exists (best-effort, deduplicated by main-health-gate)
+            names="$(jq -r '.failing_names' <<< "$health")"
+            open_issue="$(gh issue list --state open --limit 100 --label "main-breakage" --json number --jq '.[0].number // empty' 2>/dev/null || true)"
+            if [[ -z "$open_issue" ]]; then
+              gh api "repos/${GITHUB_REPOSITORY}/labels/main-breakage" >/dev/null 2>&1 || gh api --method POST "repos/${GITHUB_REPOSITORY}/labels" -f name="main-breakage" -f color="B60205" -f description="Main is red - factory blocked until base is green" >/dev/null 2>&1 || true
+              echo "No open main-breakage; main-health-gate will open one shortly (fallback create)"
+              gh issue create --title "Main is red at ${sha:0:12} - factory blocked" --body "Main ${sha} has ${failing} failing check(s): ${names}. Dispatcher detected red main. Fix main CI before factory merges." --label "user-reported" --label "bug" --label "priority:P0" --label "factory" --label "factory:unowned" --label "ralph-status:pending" --label "main-breakage" >/dev/null 2>&1 || true
+            fi
+          else
+            echo "Main $sha is green (total=$total failing=$failing)"
+            echo "main_red=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Reconcile unowned factory CI PRs
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -Eeuo pipefail
+          python3 .github/scripts/factory-review-controller.py reconcile-ci
+
+      - name: Drain exact-head ready factory PRs
+        if: steps.main_health.outputs.main_red != 'true'
+        continue-on-error: true
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -Eeuo pipefail
+          review_controller='.github/scripts/factory-review-controller.py'
+
+          ready_file="$RUNNER_TEMP/factory-ready-prs.tsv"
+          if ! gh pr list --repo "$GITHUB_REPOSITORY" --state open --limit 100 \
+            --label 'factory:ready' \
+            --json number,headRefOid \
+            --jq '.[] | [.number, .headRefOid] | @tsv' \
+            > "$ready_file"; then
+            echo 'Unable to enumerate factory:ready PRs; merge drain will retry on the next dispatcher tick' >&2
+            exit 1
+          fi
+          mapfile -t ready_prs < "$ready_file"
+
+          if (( ${#ready_prs[@]} == 0 )); then
+            echo 'No factory:ready PRs to drain'
+            exit 0
+          fi
+
+          for candidate in "${ready_prs[@]}"; do
+            IFS=$'\t' read -r pr head <<< "$candidate"
+            [[ -n "$pr" && -n "$head" ]] || continue
+
+            if ! authorization="$(python3 "$review_controller" authorized --pr "$pr")"; then
+              echo "Unable to verify semantic authorization for PR #${pr}; leaving it open" >&2
+              continue
+            fi
+            authorized="$(jq -r '.authorized // false' <<< "$authorization")"
+            authorized_head="$(jq -r '.head // empty' <<< "$authorization")"
+            if [[ "$authorized" != 'true' || "$authorized_head" != "$head" ]]; then
+              echo "PR #${pr} lacks semantic authorization for ready head ${head}; leaving it open"
+              continue
+            fi
+
+            if ! gate="$(python3 "$review_controller" gates --pr "$pr" --expected-head "$head")"; then
+              echo "Unable to evaluate mechanical gates for PR #${pr}; leaving it open" >&2
+              continue
+            fi
+            gate_decision="$(jq -r '.decision // "retry"' <<< "$gate")"
+            gate_reason="$(jq -r '.reason // "mechanical gate result unavailable"' <<< "$gate")"
+            case "$gate_decision" in
+              pass) ;;
+              retry)
+                echo "PR #${pr} mechanical gates are retry-later: ${gate_reason}"
+                continue
+                ;;
+              deny)
+                echo "PR #${pr} mechanical gates deny merge: ${gate_reason}"
+                python3 "$review_controller" demote-ready --pr "$pr" || echo "Unable to demote ready PR #${pr}; retrying next tick" >&2
+                continue
+                ;;
+              *)
+                echo "PR #${pr} returned an unknown mechanical gate decision; leaving it open" >&2
+                continue
+                ;;
+            esac
+
+            echo "Merging semantically authorized ready PR #${pr} at ${head}"
+            if gh pr merge "$pr" --repo "$GITHUB_REPOSITORY" \
+              --merge --match-head-commit "$head"; then
+              echo "Merged ready PR #${pr}"
+              continue
+            fi
+
+            state="$(gh pr view "$pr" --repo "$GITHUB_REPOSITORY" --json state --jq .state 2>/dev/null || true)"
+            if [[ "$state" == "MERGED" ]]; then
+              echo "PR #${pr} was merged concurrently"
+            else
+              echo "Unable to merge ready PR #${pr}; it will be retried on the next dispatcher tick" >&2
+            fi
+          done
+
+      - name: Trigger merge drain on dispatcher cadence
+        continue-on-error: true
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -Eeuo pipefail
+          # The drain's own cron timer is chronically starved by GitHub's
+          # scheduler, so every healthy dispatcher tick drags it along.
+          gh workflow run factory-ready-merge-drain.yml \
+            --repo "$GITHUB_REPOSITORY" --ref main
+
+      - name: Expire stale factory PR attempts
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -Eeuo pipefail
+          python3 .github/scripts/factory-work-controller.py stale
+
+      - name: Resolve and dispatch fixed workers
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EVENT_NAME: ${{ github.event_name }}
+          DEPLOY_SHA: ${{ github.sha }}
+          DISPATCH_WORKER: ${{ inputs.worker }}
+          DISPATCH_MODE: ${{ inputs.mode }}
+        run: |
+          set -Eeuo pipefail
+          manifest='.github/free-model-factories.tsv'
+          controller='.github/scripts/factory-work-controller.py'
+          owner_pattern='^factory:(local|([1-9]|[1-3][0-9]|[4-7][0-9]))$'
+
+          heartbeat_worker_for_run() {
+            local run_id="$1"
+            gh api --paginate "repos/${GITHUB_REPOSITORY}/issues/1093/comments?per_page=100" \
+              | jq -rs --arg run "$run_id" '
+                  [
+                    .[][]?
+                    | select(.body | test("(?m)^Run: " + $run + "$"))
+                    | .body
+                    | capture("Worker: opencode-free-model-factory-(?<worker>[0-9]+)").worker
+                  ]
+                  | last // empty
+                '
+          }
+
+          release_cancelled_worker_leases() {
+            local worker="$1"
+            local owner="factory:${worker}"
+            local number current_labels other_owner latest_labels target_labels
+
+            [[ "$worker" =~ ^[0-9]+$ ]] && (( worker >= 6 && worker <= 71 )) || {
+              echo "Refusing lease recovery for unknown historical fixed-model worker ${worker}" >&2
+              return 1
+            }
+
+            while IFS= read -r number; do
+              [[ -n "$number" ]] || continue
+              current_labels="$(gh api "repos/${GITHUB_REPOSITORY}/issues/${number}" --jq '[.labels[].name]')"
+              jq -e --arg owner "$owner" 'index($owner) != null' >/dev/null <<< "$current_labels" || continue
+              other_owner="$(jq -r --arg owner "$owner" --arg pattern "$owner_pattern" \
+                '[.[] | select(test($pattern) and . != $owner)] | first // empty' <<< "$current_labels")"
+              if [[ -n "$other_owner" ]]; then
+                echo "Skipping #${number}; another worker already owns it via ${other_owner}"
+                continue
+              fi
+
+              latest_labels="$(gh api "repos/${GITHUB_REPOSITORY}/issues/${number}" --jq '[.labels[].name]')"
+              jq -e --arg owner "$owner" 'index($owner) != null' >/dev/null <<< "$latest_labels" || {
+                echo "Skipping #${number}; ${owner} is no longer current"
+                continue
+              }
+              other_owner="$(jq -r --arg owner "$owner" --arg pattern "$owner_pattern" \
+                '[.[] | select(test($pattern) and . != $owner)] | first // empty' <<< "$latest_labels")"
+              if [[ -n "$other_owner" ]]; then
+                echo "Skipping #${number}; takeover observed via ${other_owner}"
+                continue
+              fi
+
+              target_labels="$(jq -c --arg owner "$owner" '
+                map(if . == $owner then "factory:unowned" else . end) | unique
+              ' <<< "$latest_labels")"
+              echo "Releasing cancelled Factory ${worker} lease on #${number}"
+              gh api --method PUT \
+                "repos/${GITHUB_REPOSITORY}/issues/${number}/labels" \
+                --input - <<< "{\"labels\":${target_labels}}" >/dev/null
+            done < <(
+              gh api --paginate \
+                "repos/${GITHUB_REPOSITORY}/issues?state=open&labels=factory%3A${worker}&per_page=100" \
+                --jq '.[].number'
+            )
+          }
+
+          dispatch_assigned_worker() {
+            local worker="$1"
+            local assignment kind attempt=1
+
+            if ! assignment="$(python3 "$controller" assign --worker "$worker")"; then
+              echo "Factory ${worker}: controller assignment failed" >&2
+              return 1
+            fi
+            kind="$(jq -r '.kind // empty' <<< "$assignment" 2>/dev/null || true)"
+            case "$kind" in
+              none)
+                echo "Factory ${worker}: no executable control-plane assignment"
+                return 0
+                ;;
+              issue|pr) ;;
+              *)
+                echo "Factory ${worker}: unusable controller response: ${assignment:-<empty>}" >&2
+                python3 "$controller" release --worker "$worker" || true
+                return 1
+                ;;
+            esac
+
+            echo "Factory ${worker} assignment: ${assignment}"
+            while (( attempt <= 3 )); do
+              echo "Starting Factory ${worker} (dispatch attempt ${attempt}/3)"
+              if gh workflow run free-model-factory-entry.yml --ref main -f worker="$worker"; then
+                return 0
+              fi
+              if (( attempt < 3 )); then
+                sleep $((attempt * 3))
+              fi
+              attempt=$((attempt + 1))
+            done
+
+            echo "Unable to dispatch Factory ${worker}; releasing its assignment and continuing the batch" >&2
+            python3 "$controller" release --worker "$worker" || true
+            return 1
+          }
+
+          if [[ "$EVENT_NAME" == push ]]; then
+            echo "Fixed-model automation changed at ${DEPLOY_SHA}; canceling older entry runs"
+            stale_runs="$({
+              for status in queued in_progress; do
+                gh run list --workflow free-model-factory-entry.yml --status "$status" --limit 100 \
+                  --json databaseId,headSha \
+                  | jq -r --arg sha "$DEPLOY_SHA" '.[] | select(.headSha != $sha) | .databaseId'
+              done
+            } | sort -u)"
+
+            while IFS= read -r run_id; do
+              [[ -n "$run_id" ]] || continue
+              worker="$(heartbeat_worker_for_run "$run_id")"
+              echo "Canceling stale fixed-model entry run ${run_id}${worker:+ for Factory ${worker}}"
+              cancel_succeeded=false
+              status_from_cancel=false
+              run_status=""
+              conclusion=""
+              # GitHub can briefly report a queued run after the run completes
+              # between stale-run listing and the cancellation request.
+              for _ in {1..15}; do
+                cancel_output=""
+                if cancel_output="$(gh run cancel "$run_id" 2>&1)"; then
+                  cancel_succeeded=true
+                  break
+                fi
+                if grep -qi "workflow run that is completed" <<< "$cancel_output"; then
+                  echo "Stale fixed-model entry run ${run_id} completed before cancellation"
+                  cancel_succeeded=true
+                  status_from_cancel=true
+                  run_status=completed
+                  conclusion=cancelled
+                  break
+                fi
+                current_status="$(gh run view "$run_id" --json status --jq '.status')"
+                if [[ "$current_status" == completed ]]; then
+                  cancel_succeeded=true
+                  break
+                fi
+                [[ "$current_status" == queued || "$current_status" == in_progress ]] || {
+                  echo "Unable to cancel stale fixed-model entry run ${run_id}; status=${current_status}" >&2
+                  exit 1
+                }
+                sleep 2
+              done
+              [[ "$cancel_succeeded" == true ]] || {
+                echo "Unable to cancel stale fixed-model entry run ${run_id}; status=${current_status:-unknown}" >&2
+                exit 1
+              }
+
+              # If cancellation itself reported the run as completed, the
+              # status endpoint is known to be stale and must not overwrite it.
+              if [[ "$status_from_cancel" != true ]]; then
+                # Bounded wait: 30s per run, not 180s. A hung run must not hold
+                # the dispatch concurrency group and starve the next cron tick;
+                # controller reconciliation recovers any lease it abandons.
+                for _ in {1..15}; do
+                  read -r run_status conclusion < <(
+                    gh run view "$run_id" --json status,conclusion \
+                      --jq '[.status, (.conclusion // "")] | @tsv'
+                  )
+                  [[ "$run_status" == completed ]] && break
+                  sleep 2
+                done
+              fi
+              [[ "$run_status" == completed ]] || {
+                echo "Stale fixed-model entry run ${run_id} did not reach a terminal state within 30s; leaving it to reconciliation" >&2
+                continue
+              }
+              if [[ "$conclusion" != cancelled ]]; then
+                echo "Run ${run_id} completed as ${conclusion:-unknown}; normal worker handoff remains authoritative"
+                continue
+              fi
+              if [[ -z "$worker" ]]; then
+                echo "Cancelled run ${run_id} had no fixed-model heartbeat; controller reconciliation will recover any abandoned lease"
+                continue
+              fi
+              release_cancelled_worker_leases "$worker"
+            done <<< "$stale_runs"
+          fi
+
+          if [[ "$EVENT_NAME" == workflow_dispatch && -n "${DISPATCH_WORKER:-}" ]]; then
+            awk -F '\t' -v worker="$DISPATCH_WORKER" '$1 == worker {found=1} END {exit !found}' "$manifest"
+            workers="$(jq -nc --arg worker "$DISPATCH_WORKER" '[$worker]')"
+          elif [[ "$EVENT_NAME" == schedule || ( "$EVENT_NAME" == workflow_dispatch && "$DISPATCH_MODE" == roster ) ]]; then
+            # Scheduled delivery is roughly hourly regardless of the requested
+            # cron cadence. Offer a source-diverse batch and let centralized
+            # assignment lease only work that has real capacity. Cap defaults
+            # to the multi-provider free-entry budget (12) so nvidia-front
+            # roster order cannot starve opencode/openrouter/kilo for an hour.
+            max_per_tick="${MAX_WORKERS_PER_TICK:-12}"
+            [[ "$max_per_tick" =~ ^[1-9][0-9]*$ ]] || {
+              echo "MAX_WORKERS_PER_TICK must be a positive integer" >&2
+              exit 1
+            }
+            roster="$(awk -F '\t' '
+              $0 !~ /^#/ && NF >= 4 {print $1}
+            ' "$manifest")"
+            total="$(wc -l <<<"$roster")"
+            (( total > 0 )) || {
+              echo "Factory manifest contains no scheduled workers" >&2
+              exit 1
+            }
+            offer_count="$max_per_tick"
+            (( offer_count <= total )) || offer_count="$total"
+            offset="$(( ((GITHUB_RUN_NUMBER - 1) * offer_count) % total ))"
+            # Seed one worker per source (rotated), then fill from the rotating
+            # roster so every tick can prove nvidia/opencode/openrouter/kilo.
+            source_seed="$(awk -F '\t' -v tick="$GITHUB_RUN_NUMBER" '
+              $0 !~ /^#/ && NF >= 3 {
+                source=$2
+                workers[source]=workers[source] " " $1
+                if (!(source in seen_source)) {
+                  seen_source[source]=1
+                  sources[++source_count]=source
+                }
+                counts[source]++
+              }
+              END {
+                for (i = 1; i <= source_count; i++) {
+                  source=sources[i]
+                  n=split(substr(workers[source], 2), ids, " ")
+                  pick=ids[((tick - 1) % n) + 1]
+                  print pick
+                }
+              }
+            ' "$manifest")"
+            fill="$(printf '%s\n%s\n' "$roster" "$roster" \
+              | tail -n +"$((offset + 1))" | head -n "$total")"
+            workers="$(printf '%s\n%s\n' "$source_seed" "$fill" \
+              | awk 'NF && !seen[$0]++ {print}' \
+              | head -n "$offer_count" \
+              | jq -Rsc 'split("\n") | map(select(length > 0))')"
+            echo "Scheduled batch: offering $(jq -r 'length' <<<"$workers") workers (cap ${max_per_tick}, offset ${offset}/${total}, source-diverse seed)"
+          else
+            # A control-plane change should smoke one current lane per provider.
+            # Resolve these from the manifest so retired workers cannot remain
+            # embedded in dispatcher behavior.
+            workers="$(awk -F '\t' '
+              $0 !~ /^#/ && NF >= 3 && !seen[$2]++ {print $1}
+            ' "$manifest" | jq -Rsc 'split("\n") | map(select(length > 0))')"
+          fi
+
+          [[ "$workers" != '[]' ]] || { echo 'Dispatcher resolved no workers' >&2; exit 1; }
+
+          echo 'Reconciling abandoned factory leases before assignment'
+          python3 "$controller" reconcile
+
+          capacity="$(python3 "$controller" capacity)"
+          echo "OmniRoute free-entry capacity: ${capacity}"
+          remaining="$(jq -r '.remaining // empty' <<< "$capacity")"
+          [[ "$remaining" =~ ^[0-9]+$ ]] || {
+            echo "OmniRoute free-entry capacity snapshot is unusable; refusing dispatch" >&2
+            exit 1
+          }
+          workers="$(jq -c --argjson n "$remaining" '.[0:$n]' <<< "$workers")"
+
+          if [[ "$workers" == '[]' ]]; then
+            echo 'OmniRoute free-entry cap is exhausted; not starting additional Entry sessions'
+            exit 0
+          fi
+
+          echo "Dispatching workers through centralized assignment: $workers"
+          dispatch_failures=0
+          while IFS= read -r worker; do
+            dispatch_assigned_worker "$worker" || dispatch_failures=$((dispatch_failures + 1))
+          done < <(jq -r '.[]' <<< "$workers")
+
+          if (( dispatch_failures > 0 )); then
+            echo "${dispatch_failures} worker dispatch(es) failed after retries; later workers were still attempted" >&2
+            exit 1
+          fi
+
+      - name: Self-perpetuate roster cadence
+        if: always() && (github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && inputs.mode == 'roster'))
+        continue-on-error: true
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -Eeuo pipefail
+          # GitHub throttles scheduled delivery to roughly hourly. Roster-mode
+          # dispatch is not subject to that throttle, so chain the next tick.
+          # The hourly cron and recovery workflow restart a broken chain.
+          sleep 240
+          gh workflow run fixed-model-factory-dispatch.yml \
+            --repo "$GITHUB_REPOSITORY" --ref main -f mode=roster

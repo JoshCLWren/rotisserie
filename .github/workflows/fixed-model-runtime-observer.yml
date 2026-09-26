@@ -1,0 +1,108 @@
+name: Fixed Model Runtime Observer
+
+on:
+  pull_request:
+    paths:
+      - .github/scripts/classify-fixed-model-run.py
+      - .github/workflows/fixed-model-runtime-observer.yml
+  workflow_run:
+    workflows:
+      - Fixed Model Factory Entry
+    types:
+      - completed
+
+permissions:
+  contents: read
+  actions: read
+  issues: write
+
+jobs:
+  classifier-tests:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: Test fixed-model runtime classifier
+        run: python .github/scripts/classify-fixed-model-run.py --self-test
+
+  publish-runtime-outcome:
+    if: >-
+      github.event_name == 'workflow_run' &&
+      github.event.workflow_run.head_repository.full_name == github.repository
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ github.token }}
+      RUN_ID: ${{ github.event.workflow_run.id }}
+      RUN_URL: ${{ github.event.workflow_run.html_url }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: main
+
+      - name: Read fixed-model job log
+        id: runtime
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          jobs="$(gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${RUN_ID}/jobs?per_page=100")"
+          job_id="$(jq -r '[.jobs[] | select(.name == "run / factory") | .id][0] // empty' <<< "$jobs")"
+          if [[ -z "$job_id" ]]; then
+            echo 'No fixed-model execution job exists for this run; nothing lane-specific can be published.'
+            echo 'publish=false' >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          gh run view "$RUN_ID" --repo "$GITHUB_REPOSITORY" --log > "$RUNNER_TEMP/fixed-model.log"
+          python .github/scripts/classify-fixed-model-run.py \
+            --log "$RUNNER_TEMP/fixed-model.log" > "$RUNNER_TEMP/runtime-outcome.json"
+          worker="$(jq -r '.worker // empty' "$RUNNER_TEMP/runtime-outcome.json")"
+          if [[ -z "$worker" ]]; then
+            echo 'The fixed-model job did not reach lane resolution; no durable worker marker can be identified.'
+            echo 'publish=false' >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          echo "worker=$worker" >> "$GITHUB_OUTPUT"
+          echo 'publish=true' >> "$GITHUB_OUTPUT"
+          cat "$RUNNER_TEMP/runtime-outcome.json"
+
+      - name: Update durable attempt-outcome marker
+        if: steps.runtime.outputs.publish == 'true'
+        shell: bash
+        env:
+          WORKER: ${{ steps.runtime.outputs.worker }}
+        run: |
+          set -Eeuo pipefail
+          data="$RUNNER_TEMP/runtime-outcome.json"
+          # Attempt evidence has its own durable record. Runner liveness updates use
+          # factory-heartbeat:v1 and must never overwrite this classified result.
+          marker="<!-- factory-attempt-outcome:v1 worker=opencode-free-model-factory-${WORKER} -->"
+          model="$(jq -r .model "$data")"
+          source="$(jq -r .source "$data")"
+          minute="$(jq -r .minute "$data")"
+          outcome="$(jq -r .outcome "$data")"
+          outcome_class="$(jq -r .outcome_class "$data")"
+          detail="$(jq -r .detail "$data")"
+          proven="$(jq -r 'if .exact_model_proven then "yes" else "no" end' "$data")"
+          persisted="$(jq -r 'if .persisted_work then "yes" else "no" end' "$data")"
+          selected_kind="$(jq -r '.selected_kind // ""' "$data")"
+          selected_number="$(jq -r '.selected_number // ""' "$data")"
+          selected='none'
+          if [[ -n "$selected_kind" && -n "$selected_number" ]]; then
+            selected="${selected_kind} #${selected_number}"
+          fi
+          now="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          body="$(printf '%s\nWorker: opencode-free-model-factory-%s\nModel: %s\nSource: %s\nSlot: :%02d hourly\nOutcome: %s\nAttempt outcome: %s\nExact OpenCode model proven: %s\nSelected: %s\nPersisted useful work: %s\nDetail: %s\nUpdated: %s\nRun: %s' \
+            "$marker" "$WORKER" "$model" "$source" "$minute" "$outcome" "$outcome_class" "$proven" "$selected" "$persisted" "$detail" "$now" "$RUN_URL")"
+          comment_id="$(gh api --paginate "repos/${GITHUB_REPOSITORY}/issues/1093/comments?per_page=100" \
+            | jq -r --arg marker "$marker" '[.[] | select(.body | contains($marker)) | .id] | last // empty')"
+          existing_run=''
+          if [[ -n "$comment_id" ]]; then
+            existing_run="$(gh api "repos/${GITHUB_REPOSITORY}/issues/comments/${comment_id}" --jq '.body' \
+              | sed -n 's/^Run: //p' | tail -1)"
+          fi
+          if [[ "$existing_run" =~ ^[0-9]+$ ]] && (( existing_run > RUN_ID )); then
+            echo "Newer attempt evidence from run ${existing_run} already exists; preserving it"
+          elif [[ -n "$comment_id" ]]; then
+            gh api --method PATCH "repos/${GITHUB_REPOSITORY}/issues/comments/${comment_id}" -f body="$body" >/dev/null
+          else
+            gh api --method POST "repos/${GITHUB_REPOSITORY}/issues/1093/comments" -f body="$body" >/dev/null
+          fi

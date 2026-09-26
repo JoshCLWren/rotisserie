@@ -1,0 +1,67 @@
+name: Fixed Model Factory Dispatcher Recovery
+
+on:
+  schedule:
+    - cron: '*/15 * * * *'
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/fixed-model-factory-dispatch-recovery.yml'
+
+permissions:
+  actions: write
+  issues: read
+  contents: read
+
+concurrency:
+  group: fixed-model-factory-dispatch-recovery
+  cancel-in-progress: true
+
+jobs:
+  recover:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - name: Recover stale fixed-model dispatcher
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -Eeuo pipefail
+
+          now_epoch="$(date -u +%s)"
+          newest_epoch=0
+          newest_timestamp=''
+
+          while IFS= read -r timestamp; do
+            [[ -n "$timestamp" ]] || continue
+            epoch="$(date -u -d "$timestamp" +%s 2>/dev/null || echo 0)"
+            if (( epoch > newest_epoch )); then
+              newest_epoch="$epoch"
+              newest_timestamp="$timestamp"
+            fi
+          done < <(
+            gh api --paginate \
+              "repos/${GITHUB_REPOSITORY}/issues/1093/comments?per_page=100" \
+              --jq '.[] | select(.body | contains("<!-- factory-heartbeat:v1 worker=opencode-free-model-factory-")) | .body' \
+              | sed -n 's/^Updated: //p'
+          )
+
+          if (( newest_epoch == 0 )); then
+            echo 'No fixed-model heartbeat timestamp found; forcing dispatcher recovery.'
+          else
+            age_seconds=$((now_epoch - newest_epoch))
+            echo "Newest fixed-model heartbeat: ${newest_timestamp} (${age_seconds}s old)"
+            if (( age_seconds < 1200 )); then
+              echo 'Factory heartbeat is fresh; no recovery needed.'
+              exit 0
+            fi
+          fi
+
+          echo 'Fixed-model heartbeats are stale; dispatching recovery run.'
+          gh workflow run fixed-model-factory-dispatch.yml \
+            --repo "$GITHUB_REPOSITORY" \
+            --ref main \
+            -f mode=roster
+          echo 'Recovery dispatcher requested.'

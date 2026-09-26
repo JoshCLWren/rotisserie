@@ -1,0 +1,51 @@
+{
+  "source": "recorded-opencode-cli",
+  "providers": {
+    "opencode": [
+      {"id": "big-pickle", "cost": {"input": 0, "output": 0}},
+      {"id": "space-bunny-free", "cost": {"input": 0, "output": 0}},
+      {"id": "mimo-v2.6-flash-free", "cost": {"input": 0, "output": 0}},
+      {"id": "nemotron-3-ultra-free", "cost": {"input": 0, "output": 0}},
+      {"id": "nemotron-3.5-lightning-free", "cost": {"input": 0, "output": 0}},
+      {"id": "muse-spark-1.2-contributor-free", "cost": {"input": 0, "output": 0}},
+      {"id": "muse-spark-1.3-contributor-free", "cost": {"input": 0, "output": 0}},
+      {"id": "ling-3.0-flash-fin-free", "cost": {"input": 0, "output": 0}},
+      {"id": "deepseek-v4-flash", "cost": {"input": 1.2, "output": 1.2}}
+    ],
+    "nvidia": [
+      {"id": "stepfun-ai/step-3.7-flash"},
+      {"id": "nvidia/nemotron-3-ultra-550b-a55b"},
+      {"id": "poolside/laguna-xs-2.1"},
+      {"id": "minimaxai/minimax-m3"},
+      {"id": "nvidia/nemotron-3-super-120b-a12b"},
+      {"id": "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning"},
+      {"id": "nvidia/llama-3.3-nemotron-super-49b-v1.5"},
+      {"id": "nvidia/nemotron-3-nano-30b-a3b"},
+      {"id": "openai/gpt-oss-20b"},
+      {"id": "google/gemma-4-31b-it"}
+    ],
+    "openrouter": [
+      {"id": "cohere/north-mini-code:free"},
+      {"id": "google/gemma-4-31b-it:free"},
+      {"id": "google/gemma-4-26b-a4b-it:free"},
+      {"id": "nvidia/nemotron-3-super-120b-a12b:free"},
+      {"id": "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free"},
+      {"id": "nvidia/nemotron-3.5-lightning:free"},
+      {"id": "minimax/minimax-m2.7:free"},
+      {"id": "minimax/minimax-m3:free"},
+      {"id": "poolside/laguna-s-2.1:free"},
+      {"id": "poolside/laguna-xs-2.1:free"},
+      {"id": "openrouter/free"},
+      {"id": "inclusionai/ling-3.0-flash-fin:free"},
+      {"id": "nex-agi/nex-n2.5-pro:free"},
+      {"id": "nex-agi/nex-n2.5-mini:free"},
+      {"id": "inclusionai/ling-3.0-flash-vl:free"},
+      {"id": "nvidia/nemotron-3-ultra-550b-a55b:free"},
+      {"id": "thinkingmachines/inkling:free"},
+      {"id": "thinkingmachines/inkling-small:free"},
+      {"id": "dots-studio/dots-3-note-preview:free"},
+      {"id": "stealth/union-alpha"},
+      {"id": "qwen/qwen3.8-27b:free"}
+    ]
+  }
+}

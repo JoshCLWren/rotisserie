@@ -1,0 +1,178 @@
+name: Factory Issue PR State Reconciler
+
+on:
+  pull_request_target:
+    types: [opened, reopened, closed]
+  workflow_dispatch:
+  schedule:
+    # PR events cannot repair issues whose last canonical PR was closed before
+    # this reconciler existed. Periodically recompute every open factory issue
+    # so stale ready/review/building labels cannot permanently block intake.
+    - cron: '*/15 * * * *'
+
+permissions:
+  contents: read
+  issues: write
+  pull-requests: read
+
+# Issue state is shared by every PR linked to that issue. Serialize all
+# reconciliations so duplicate PR events cannot race label replacement.
+concurrency:
+  group: factory-issue-pr-state-reconciler
+  cancel-in-progress: false
+
+jobs:
+  reconcile:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - name: Checkout trusted reconciliation implementation
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+          persist-credentials: false
+
+      - name: Reconcile linked issue from trusted canonical PR history
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EVENT_NAME: ${{ github.event_name }}
+          EVENT_PR_NUMBER: ${{ github.event.pull_request.number || '' }}
+          EVENT_HEAD_REF: ${{ github.event.pull_request.head.ref || '' }}
+          EVENT_HEAD_REPO: ${{ github.event.pull_request.head.repo.full_name || '' }}
+        run: |
+          set -Eeuo pipefail
+
+          issue_from_head() {
+            sed -nE 's#^factory/[0-9]+-([0-9]+)-.*$#\1#p' <<< "$1"
+          }
+
+          trusted_factory_pr() {
+            local pr="$1" expected_issue="$2" pr_json head_ref head_repo comments
+            pr_json="$(gh api "repos/${GITHUB_REPOSITORY}/pulls/${pr}")" || return 1
+            head_ref="$(jq -r '.head.ref // ""' <<< "$pr_json")"
+            head_repo="$(jq -r '.head.repo.full_name // ""' <<< "$pr_json")"
+
+            # Branch shape alone is never authority. Factory persistence happens
+            # in this repository and must have a trusted durable provenance marker.
+            [[ "$head_repo" == "$GITHUB_REPOSITORY" ]] || return 1
+            [[ "$(issue_from_head "$head_ref")" == "$expected_issue" ]] || return 1
+
+            comments="$(mktemp)"
+            gh api --paginate --slurp \
+              "repos/${GITHUB_REPOSITORY}/issues/${pr}/comments?per_page=100" >"$comments" || return 1
+
+            python3 - "$head_ref" "$pr" "$expected_issue" "$comments" <<'PY'
+          import importlib.util
+          import json
+          import sys
+          from pathlib import Path
+
+          head_ref, pr_number, expected_issue, comments_path = sys.argv[1:]
+          path = Path('.github/scripts/factory-revocation-fence.py')
+          spec = importlib.util.spec_from_file_location('factory_revocation_fence', path)
+          if spec is None or spec.loader is None:
+              raise SystemExit(1)
+          fence = importlib.util.module_from_spec(spec)
+          sys.modules[spec.name] = fence
+          spec.loader.exec_module(fence)
+
+          branch = fence.BRANCH_RE.match(head_ref)
+          if branch is None or branch.group('issue') != expected_issue:
+              raise SystemExit(1)
+
+          comments = json.loads(Path(comments_path).read_text(encoding='utf-8'))
+          for comment in fence.flatten_comments(comments):
+              if not fence.comment_is_trusted(comment):
+                  continue
+              for marker in fence.PROVENANCE_RE.finditer(str(comment.get('body') or '')):
+                  if (
+                      marker.group('pr') == pr_number
+                      and marker.group('issue') == expected_issue
+                      and marker.group('worker') == branch.group('worker')
+                  ):
+                      # The marker itself is the durable identity established by
+                      # the same trusted parser used by the revocation fence.
+                      # Later repair commits may advance the PR head, so issue
+                      # completion follows this persisted PR/issue/producer tuple.
+                      raise SystemExit(0)
+          raise SystemExit(1)
+          PY
+          }
+
+          replace_issue_state() {
+            local issue="$1" stage="$2" labels target
+            labels="$(gh api "repos/${GITHUB_REPOSITORY}/issues/${issue}/labels?per_page=100" --jq '[.[].name]')"
+            target="$(jq -c --arg stage "$stage" '
+              map(select((test("^factory:(?:unowned|local|[1-9]|[1-3][0-9]|[4-7][0-9])$")|not)
+                         and (test("^factory:(?:building|review|changes-requested|ci|ready|blocked)$")|not)
+                         and . != "factory"))
+              + ["factory", "factory:unowned"]
+              + (if $stage == "claimable" then [] else [$stage] end)
+              | unique' <<< "$labels")"
+            gh api --method PUT "repos/${GITHUB_REPOSITORY}/issues/${issue}/labels" \
+              --input - <<< "{\"labels\":${target}}" >/dev/null
+            echo "Issue #${issue} -> factory:unowned${stage:+ + ${stage}}"
+          }
+
+          reconcile_issue() {
+            local issue="$1" pulls records stage
+            pulls="$(gh api --paginate --slurp \
+              "repos/${GITHUB_REPOSITORY}/pulls?state=all&per_page=100")"
+            records='[]'
+
+            while IFS=$'\t' read -r pr head_ref state merged_at; do
+              [[ -n "$pr" ]] || continue
+              [[ "$(issue_from_head "$head_ref")" == "$issue" ]] || continue
+              if trusted_factory_pr "$pr" "$issue"; then
+                merged=false
+                [[ -n "$merged_at" && "$merged_at" != 'null' ]] && merged=true
+                records="$(jq -c \
+                  --arg state "$state" \
+                  --argjson merged "$merged" \
+                  '. + [{trusted:true,state:$state,merged:$merged}]' <<< "$records")"
+              fi
+            done < <(jq -r '.[][] | [.number, .head.ref, .state, .merged_at] | @tsv' <<< "$pulls")
+
+            # No trusted canonical PR history means this workflow has no authority
+            # over the issue. In particular, a forged fork factory/* PR cannot
+            # create a label mutation merely by naming an issue in its branch.
+            [[ "$(jq 'length' <<< "$records")" != '0' ]] || return 0
+
+            stage="$(python3 .github/scripts/factory_issue_pr_state_policy.py \
+              --records-json "$records")"
+            replace_issue_state "$issue" "$stage"
+          }
+
+          if [[ "$EVENT_NAME" == 'pull_request_target' ]]; then
+            issue="$(issue_from_head "$EVENT_HEAD_REF")"
+            [[ -n "$issue" ]] || exit 0
+
+            # Fail closed before issue mutation. A fork or a canonical-looking PR
+            # without durable trusted factory provenance has no issue-write
+            # authority. Allow the producer a short handoff window because PR
+            # creation and provenance persistence are separate API calls.
+            [[ "$EVENT_HEAD_REPO" == "$GITHUB_REPOSITORY" ]] || exit 0
+            trusted=false
+            for attempt in {1..12}; do
+              if trusted_factory_pr "$EVENT_PR_NUMBER" "$issue"; then
+                trusted=true
+                break
+              fi
+              (( attempt < 12 )) && sleep 5
+            done
+            [[ "$trusted" == true ]] || exit 0
+
+            reconcile_issue "$issue"
+            exit 0
+          fi
+
+          # Blank reconciliation is also issue-centric and uses the exact same
+          # trusted-history calculation. Restrict the sweep to existing factory
+          # issues so unrelated issues are never introduced by branch-shaped data.
+          while IFS= read -r issue; do
+            [[ -n "$issue" ]] || continue
+            state="$(gh issue view "$issue" --repo "$GITHUB_REPOSITORY" --json state --jq .state 2>/dev/null || true)"
+            [[ "$state" == 'OPEN' ]] || continue
+            reconcile_issue "$issue"
+          done < <(gh issue list --repo "$GITHUB_REPOSITORY" --state open --label factory \
+            --limit 1000 --json number --jq '.[].number')

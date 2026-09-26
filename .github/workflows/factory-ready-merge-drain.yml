@@ -1,0 +1,311 @@
+name: Factory Ready Merge Drain
+
+on:
+  schedule:
+    # Best-effort redundancy only: the dispatcher triggers this workflow on
+    # its own (healthier) cadence, so this timer is a fallback, not the
+    # primary driver.
+    - cron: '2-57/15 * * * *'
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/factory-ready-merge-drain.yml'
+      - '.github/scripts/factory-review-controller.py'
+      - '.github/scripts/factory_review_policy.py'
+      - '.github/scripts/factory_post_merge_closure.py'
+      - '.github/scripts/factory_migration_lane.py'
+
+permissions:
+  actions: write
+  contents: write
+  issues: write
+  pull-requests: write
+  checks: read
+
+concurrency:
+  group: factory-ready-merge-drain
+  cancel-in-progress: false
+
+jobs:
+  merge-ready:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: main
+
+      - name: Ensure GitHub CLI supports JSON PR checks
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          if gh pr checks --help 2>&1 | grep -q -- '--json'; then
+            gh --version
+            exit 0
+          fi
+
+          version='2.97.0'
+          archive="gh_${version}_linux_amd64.tar.gz"
+          destination="$RUNNER_TEMP/$archive"
+          curl -fsSL "https://github.com/cli/cli/releases/download/v${version}/${archive}" -o "$destination"
+          printf '%s  %s\n' 'a2c9b8497e1f85b1ad0dfcb78b5a622e098801b8e461e459e88e1ee12f018112' "$destination" \
+            | sha256sum --check --strict
+          tar -xzf "$destination" -C "$RUNNER_TEMP"
+          gh_dir="$RUNNER_TEMP/gh_${version}_linux_amd64/bin"
+          "$gh_dir/gh" pr checks --help | grep -q -- '--json'
+          echo "$gh_dir" >> "$GITHUB_PATH"
+
+      - name: Self-test post-merge closure logic
+        shell: bash
+        run: |
+          python3 .github/scripts/factory_post_merge_closure.py --self-test
+
+      - name: Reconcile serialized migration finalization lane
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -Eeuo pipefail
+          python3 .github/scripts/factory_migration_lane.py reconcile
+
+      - name: Recover held or missing workflow runs on factory PR heads
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.PR_REBASE_TOKEN || github.token }}
+          FALLBACK_GH_TOKEN: ${{ github.token }}
+        run: |
+          set -Eeuo pipefail
+
+          echo 'Recovering action_required workflow runs on current factory PR heads'
+          mapfile -t open_heads < <(
+            gh api --paginate "repos/${GITHUB_REPOSITORY}/pulls?state=open&per_page=100" \
+              --jq '.[] | select(.labels | map(.name) | contains(["factory:ready"]) or contains(["factory:ci"])) | [.head.sha, .number, .head.ref] | @tsv' \
+              || gh pr list --repo "$GITHUB_REPOSITORY" --state open --limit 500 \
+                --json number,headRefName,headRefOid,labels \
+                --jq '.[] | select(.labels | map(.name) | contains(["factory:ready"]) or contains(["factory:ci"])) | [.headRefOid, .number, .headRefName] | @tsv'
+          )
+          (( ${#open_heads[@]} > 0 )) || exit 0
+
+          declare -A recovery_attempted=()
+
+          workflow_file_for_name() {
+            case "$1" in
+              CI) echo 'ci.yml' ;;
+              'Fixed Model PR Repair Guard') echo 'fixed-model-pr-repair-guard.yml' ;;
+              *) return 1 ;;
+            esac
+          }
+
+          dispatch_recovery() {
+            local pr="$1" branch="$2" workflow_name="$3" workflow_file key
+            local primary_error fallback_error
+            workflow_file="$(workflow_file_for_name "$workflow_name")" || return 0
+            key="${pr}:${workflow_file}"
+            [[ -z "${recovery_attempted[$key]:-}" ]] || return 0
+            recovery_attempted[$key]=true
+            if primary_error="$(gh workflow run "$workflow_file" --ref "$branch" 2>&1)"; then
+              echo "Dispatched ${workflow_name} recovery for PR #${pr} on ${branch}"
+              return 0
+            fi
+            if fallback_error="$(GH_TOKEN="$FALLBACK_GH_TOKEN" gh workflow run \
+              "$workflow_file" --ref "$branch" 2>&1)"; then
+              echo "Dispatched ${workflow_name} recovery for PR #${pr} on ${branch} with fallback token"
+              return 0
+            fi
+            primary_error="${primary_error//$'\n'/ }"
+            fallback_error="${fallback_error//$'\n'/ }"
+            echo "Dispatch errors for PR #${pr}: primary=${primary_error:-unknown}; fallback=${fallback_error:-unknown}" >&2
+            return 1
+          }
+
+          approve_run() {
+            local run_id="$1"
+            local primary_error fallback_error
+            if primary_error="$(gh api -X POST \
+              "repos/${GITHUB_REPOSITORY}/actions/runs/${run_id}/approve" 2>&1 >/dev/null)"; then
+              return 0
+            fi
+            if fallback_error="$(GH_TOKEN="$FALLBACK_GH_TOKEN" gh api -X POST \
+              "repos/${GITHUB_REPOSITORY}/actions/runs/${run_id}/approve" 2>&1 >/dev/null)"; then
+              return 0
+            fi
+            primary_error="${primary_error//$'\n'/ }"
+            fallback_error="${fallback_error//$'\n'/ }"
+            echo "Approval errors: primary=${primary_error:-unknown}; fallback=${fallback_error:-unknown}" >&2
+            return 1
+          }
+
+          held_runs_file="$RUNNER_TEMP/action-required-runs.json"
+          if ! gh api --paginate --slurp \
+            "repos/${GITHUB_REPOSITORY}/actions/runs?status=action_required&per_page=100" \
+            > "$held_runs_file"; then
+            echo 'Unable to enumerate action_required workflow runs; continuing with missing-check recovery' >&2
+            printf '[]\n' > "$held_runs_file"
+          fi
+
+          while IFS=$'\t' read -r run_id head_sha name; do
+            [[ -n "$run_id" && -n "$head_sha" ]] || continue
+            for entry in "${open_heads[@]}"; do
+              IFS=$'\t' read -r open_head open_pr open_branch <<< "$entry"
+              if [[ "$head_sha" == "$open_head" ]]; then
+                if approve_run "$run_id"; then
+                  echo "Approved held ${name} run ${run_id} on PR #${open_pr} head ${head_sha:0:12}"
+                  workflow_file="$(workflow_file_for_name "$name" || true)"
+                  [[ -z "$workflow_file" ]] || recovery_attempted["${open_pr}:${workflow_file}"]=true
+                else
+                  echo "Unable to approve run ${run_id} on PR #${open_pr}; dispatching exact-branch recovery" >&2
+                  dispatch_recovery "$open_pr" "$open_branch" "$name" || true
+                fi
+                break
+              fi
+            done
+          done < <(
+            jq -r '.[]?.workflow_runs[]? | [.id, .head_sha, .name] | @tsv' "$held_runs_file"
+          )
+
+          for entry in "${open_heads[@]}"; do
+            IFS=$'\t' read -r open_head open_pr open_branch <<< "$entry"
+            ci_count="$(gh api \
+              "repos/${GITHUB_REPOSITORY}/actions/workflows/ci.yml/runs?head_sha=${open_head}&per_page=1" \
+              --jq '.total_count' 2>/dev/null || echo 0)"
+            guard_count="$(gh api \
+              "repos/${GITHUB_REPOSITORY}/actions/workflows/fixed-model-pr-repair-guard.yml/runs?head_sha=${open_head}&per_page=1" \
+              --jq '.total_count' 2>/dev/null || echo 0)"
+            if [[ "${ci_count:-0}" == "0" ]]; then
+              echo "PR #${open_pr} has no CI run at head ${open_head:0:12}; dispatching recovery"
+              dispatch_recovery "$open_pr" "$open_branch" 'CI' || true
+            fi
+            if [[ "${guard_count:-0}" == "0" ]]; then
+              echo "PR #${open_pr} has no repair-guard run at head ${open_head:0:12}; dispatching recovery"
+              dispatch_recovery "$open_pr" "$open_branch" 'Fixed Model PR Repair Guard' || true
+            fi
+          done
+
+      - name: Check main health before merging
+        id: main_health
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -Eeuo pipefail
+          sha="$(git rev-parse HEAD 2>/dev/null || git rev-parse origin/main)"
+          runs_file="$RUNNER_TEMP/main-ci-workflow-runs.json"
+          if ! gh api --paginate --slurp \
+            "repos/${GITHUB_REPOSITORY}/actions/workflows/ci.yml/runs?head_sha=${sha}&event=push&per_page=100" \
+            > "$runs_file"; then
+            echo "GitHub API unavailable proving product CI health at ${sha}; blocking factory merges" >&2
+            echo "main_red=true" >> "$GITHUB_OUTPUT"
+            echo "failing=UNAVAILABLE" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          if ! health="$(python3 .github/scripts/factory_main_health.py --sha "$sha" < "$runs_file")"; then
+            echo "GitHub returned invalid product CI health data at ${sha}; blocking factory merges" >&2
+            echo "main_red=true" >> "$GITHUB_OUTPUT"
+            echo "failing=UNAVAILABLE" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          total="$(jq -r '.total' <<< "$health")"
+          failing="$(jq -r '.failing' <<< "$health")"
+          echo "Main health API result: sha=${sha} total_count=${total} failing=${failing}"
+          if [[ "${total:-0}" != "0" && "${failing:-0}" != "0" ]]; then
+            echo "Main $sha has failed product CI ($failing/$total failing) - blocking factory merges" >&2
+            echo "main_red=true" >> "$GITHUB_OUTPUT"
+            echo "failing=$failing" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          echo "Main $sha is green (total=$total failing=$failing)"
+          echo "main_red=false" >> "$GITHUB_OUTPUT"
+
+      - name: Drain exact-head ready factory PRs
+        if: steps.main_health.outputs.main_red != 'true'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -Eeuo pipefail
+          review_controller='.github/scripts/factory-review-controller.py'
+          closure_script='.github/scripts/factory_post_merge_closure.py'
+
+          complete_post_merge_closure() {
+            local pr="$1"
+            python3 "$closure_script" --pr "$pr" || {
+              echo "Post-merge closure for PR #${pr} failed; the stranded-closure sweep will retry" >&2
+              return 1
+            }
+          }
+
+          echo 'Sweeping recently merged factory PRs for stranded issue closures'
+          python3 "$closure_script" --sweep || {
+            echo 'Stranded-closure sweep failed; retrying on the next drain' >&2
+          }
+
+          mapfile -t ready_prs < <(
+            gh api --paginate "repos/${GITHUB_REPOSITORY}/pulls?state=open&per_page=100" \
+              --jq '.[] | select(.labels | map(.name) | contains(["factory:ready"])) | [.number, .head.sha] | @tsv' 2>/dev/null \
+              || gh pr list --repo "$GITHUB_REPOSITORY" --state open --limit 500 \
+                --label 'factory:ready' \
+                --json number,headRefOid \
+                --jq '.[] | [.number, .headRefOid] | @tsv'
+          )
+
+          if (( ${#ready_prs[@]} == 0 )); then
+            echo 'No factory:ready PRs to drain'
+            exit 0
+          fi
+
+          for candidate in "${ready_prs[@]}"; do
+            IFS=$'\t' read -r pr expected_head <<< "$candidate"
+            [[ -n "$pr" && -n "$expected_head" ]] || continue
+
+            authorization="$(python3 "$review_controller" authorized --pr "$pr")" || {
+              echo "Unable to verify semantic authorization for PR #${pr}; leaving it open" >&2
+              continue
+            }
+            [[ "$(jq -r '.authorized // false' <<< "$authorization")" == 'true' ]] || {
+              echo "PR #${pr} lacks semantic authorization; leaving it open"
+              continue
+            }
+            [[ "$(jq -r '.head // empty' <<< "$authorization")" == "$expected_head" ]] || {
+              echo "PR #${pr} authorization is stale; leaving it open"
+              continue
+            }
+
+            gate="$(python3 "$review_controller" gates --pr "$pr" --expected-head "$expected_head")" || {
+              echo "Unable to evaluate mechanical gates for PR #${pr}; leaving it open" >&2
+              continue
+            }
+            gate_decision="$(jq -r '.decision // "retry"' <<< "$gate")"
+            gate_reason="$(jq -r '.reason // "mechanical gate result unavailable"' <<< "$gate")"
+            case "$gate_decision" in
+              pass) ;;
+              retry)
+                echo "PR #${pr} mechanical gates are retry-later: ${gate_reason}"
+                continue
+                ;;
+              deny)
+                echo "PR #${pr} mechanical gates deny merge: ${gate_reason}"
+                python3 "$review_controller" demote-ready --pr "$pr" || echo "Unable to demote ready PR #${pr}; retrying next tick" >&2
+                continue
+                ;;
+              *)
+                echo "PR #${pr} returned an unknown mechanical gate decision; leaving it open" >&2
+                continue
+                ;;
+            esac
+
+            echo "Merging semantically authorized ready PR #${pr} at ${expected_head}"
+            if gh pr merge "$pr" --repo "$GITHUB_REPOSITORY" \
+              --merge --match-head-commit "$expected_head"; then
+              echo "Merged ready PR #${pr}"
+              complete_post_merge_closure "$pr" || true
+              continue
+            fi
+
+            state="$(gh pr view "$pr" --repo "$GITHUB_REPOSITORY" --json state --jq .state 2>/dev/null || true)"
+            if [[ "$state" == "MERGED" ]]; then
+              echo "PR #${pr} was merged by another actor; completing any interrupted post-merge closure"
+              complete_post_merge_closure "$pr" || true
+              continue
+            fi
+            echo "Unable to merge ready PR #${pr}; it will retry on the next drain" >&2
+          done

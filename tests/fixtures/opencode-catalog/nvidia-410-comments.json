@@ -1,0 +1,14 @@
+[
+  {
+    "body": "<!-- factory-model-retired-410:v1 -->\nSource: nvidia\nModel: stepfun-ai/step-3.7-flash\nReason: provider returned HTTP 410 Gone\nUpdated: 2026-09-02T03:01:40Z"
+  },
+  {
+    "body": "<!-- factory-model-retired-410:v1 -->\nSource: nvidia\nModel: nvidia/nemotron-3-nano-30b-a3b\nReason: provider returned HTTP 410 Gone\nUpdated: 2026-09-02T03:10:37Z"
+  },
+  {
+    "body": "<!-- factory-model-retired-410:v1 -->\nSource: nvidia\nModel: nvidia/llama-3.3-nemotron-super-49b-v1.5\nReason: provider returned HTTP 410 Gone\nUpdated: 2026-09-02T05:10:51Z"
+  },
+  {
+    "body": "<!-- factory-model-retired-410:v1 -->\nSource: nvidia\nModel: minimaxai/minimax-m3\nReason: provider returned HTTP 410 Gone\nUpdated: 2026-09-09T09:59:11Z"
+  }
+]

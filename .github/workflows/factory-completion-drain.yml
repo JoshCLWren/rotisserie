@@ -1,0 +1,103 @@
+name: Factory Completion Drain
+
+on:
+  # Recalculate immediately whenever either the dispatcher or an individual
+  # worker finishes. Worker completion is a capacity-change event: a lease may
+  # have been released and the queue may have changed, so reallocate on demand.
+  workflow_run:
+    workflows: ["Fixed Model Factory Dispatcher", "Fixed Model Factory Entry"]
+    types: [completed]
+  # Recovery heartbeat only. Normal allocation should be driven by state-change
+  # events above rather than by this clock.
+  schedule:
+    - cron: '*/5 * * * *'
+  workflow_dispatch:
+
+permissions:
+  actions: write
+  contents: read
+  issues: write
+  pull-requests: write
+  checks: read
+
+# This workflow directly claims factory work through the completion controller.
+# Serialize it with every other assignment writer so two controllers cannot
+# observe the same worker idle and lease unrelated targets to it concurrently.
+concurrency:
+  group: fixed-model-factory-dispatch
+  cancel-in-progress: false
+
+jobs:
+  drain:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: main
+
+      - name: Allocate completion capacity from current demand
+        id: batch
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -Eeuo pipefail
+          result="$(python3 .github/scripts/factory_full_completion_controller.py)"
+          echo "$result" | jq .
+          workers="$(jq -c '[.assignments[].worker]' <<< "$result")"
+          echo "workers=$workers" >> "$GITHUB_OUTPUT"
+          echo "completion_demand=$(jq -r '.completion_demand' <<< "$result")" >> "$GITHUB_OUTPUT"
+          echo "production_demand=$(jq -r '.production_demand' <<< "$result")" >> "$GITHUB_OUTPUT"
+          echo "completion_target=$(jq -r '.completion_target' <<< "$result")" >> "$GITHUB_OUTPUT"
+          echo "assigned=$(jq -r '.assignments | length' <<< "$result")" >> "$GITHUB_OUTPUT"
+
+      - name: Dispatch assigned completion workers
+        if: steps.batch.outputs.workers != '[]'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          WORKERS: ${{ steps.batch.outputs.workers }}
+        run: |
+          set -Eeuo pipefail
+          controller='.github/scripts/factory-work-controller.py'
+          dispatch_failures=0
+
+          dispatch_worker() {
+            local worker="$1"
+            local attempt=1
+            while (( attempt <= 3 )); do
+              echo "Starting completion Factory ${worker} (dispatch attempt ${attempt}/3)"
+              if gh workflow run free-model-factory-entry.yml \
+                --repo "$GITHUB_REPOSITORY" --ref main -f worker="$worker"; then
+                return 0
+              fi
+              if (( attempt < 3 )); then
+                sleep $((attempt * 3))
+              fi
+              attempt=$((attempt + 1))
+            done
+
+            echo "Unable to dispatch completion Factory ${worker}; releasing its lease" >&2
+            python3 "$controller" release --worker "$worker" || true
+            return 1
+          }
+
+          while IFS= read -r worker; do
+            [[ -n "$worker" ]] || continue
+            dispatch_worker "$worker" || dispatch_failures=$((dispatch_failures + 1))
+          done < <(jq -r '.[]' <<< "$WORKERS")
+
+          if (( dispatch_failures > 0 )); then
+            echo "${dispatch_failures} completion worker dispatch(es) failed; remaining capacity will be recalculated on the next event" >&2
+            exit 1
+          fi
+
+      - name: Report demand-driven allocation
+        shell: bash
+        env:
+          COMPLETION: ${{ steps.batch.outputs.completion_demand }}
+          PRODUCTION: ${{ steps.batch.outputs.production_demand }}
+          TARGET: ${{ steps.batch.outputs.completion_target }}
+          ASSIGNED: ${{ steps.batch.outputs.assigned }}
+        run: |
+          echo "Demand completion=${COMPLETION:-0} production=${PRODUCTION:-0}; target=${TARGET:-0}; dispatched=${ASSIGNED:-0}"

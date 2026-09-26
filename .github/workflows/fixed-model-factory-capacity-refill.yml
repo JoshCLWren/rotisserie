@@ -1,0 +1,198 @@
+name: Fixed Model Factory Capacity Refill
+
+on:
+  workflow_run:
+    workflows: ['Fixed Model Factory Entry']
+    types: [completed]
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/fixed-model-factory-capacity-refill.yml'
+      - '.github/scripts/factory_migration_lane.py'
+
+permissions:
+  actions: write
+  contents: read
+  issues: write
+  pull-requests: write
+
+# Capacity refill directly calls the canonical assignment controller. Keep it
+# in the same serialization domain as the dispatcher and completion drain so a
+# worker cannot be leased by two writers from the same stale idle snapshot.
+concurrency:
+  group: fixed-model-factory-dispatch
+  cancel-in-progress: false
+
+jobs:
+  refill:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout trusted main
+        uses: actions/checkout@v7
+        with:
+          ref: main
+
+      - name: Install REST-backed factory GitHub reads
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          real_gh="$(command -v gh)"
+          shim_dir="$RUNNER_TEMP/factory-gh-rest"
+          mkdir -p "$shim_dir"
+          cp .github/scripts/factory-gh-rest-shim.sh "$shim_dir/gh"
+          chmod +x "$shim_dir/gh"
+          echo "FACTORY_REAL_GH=$real_gh" >> "$GITHUB_ENV"
+          echo "$shim_dir" >> "$GITHUB_PATH"
+
+      - name: Reconcile serialized migration finalization lane
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -Eeuo pipefail
+          python3 .github/scripts/factory_migration_lane.py reconcile
+
+      - name: Refill work-conserving factory capacity
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EVENT_NAME: ${{ github.event_name }}
+          COMPLETED_RUN_ID: ${{ github.event.workflow_run.id }}
+        run: |
+          set -Eeuo pipefail
+          manifest='.github/free-model-factories.tsv'
+          controller='.github/scripts/factory-work-controller.py'
+          stale_run_seconds=7200
+
+          # A GitHub Actions run can occasionally remain visible as queued long
+          # after cancellation reports it terminal. Such a ghost must not keep
+          # every fixed-model lease fail-closed forever.
+          now_epoch="$(date -u +%s)"
+          for status in queued in_progress; do
+            while IFS=$'\t' read -r run_id created_at started_at; do
+              [[ "$run_id" =~ ^[0-9]+$ ]] || continue
+              timestamp="${started_at:-$created_at}"
+              created_epoch="$(date -u -d "$timestamp" +%s 2>/dev/null || echo 0)"
+              (( created_epoch > 0 )) || continue
+              age_seconds=$((now_epoch - created_epoch))
+              (( age_seconds >= stale_run_seconds )) || continue
+              echo "Force-canceling stale fixed-model entry run ${run_id} (${age_seconds}s old, status=${status})"
+              gh api --method POST \
+                "repos/${GITHUB_REPOSITORY}/actions/runs/${run_id}/force-cancel" \
+                >/dev/null 2>&1 || true
+            done < <(
+              gh api --paginate \
+                "repos/${GITHUB_REPOSITORY}/actions/workflows/free-model-factory-entry.yml/runs?status=${status}&per_page=100" \
+                --jq '.workflow_runs[] | [.id, .created_at, (.run_started_at // "")] | @tsv'
+            )
+          done
+
+          workers='[]'
+          if [[ "$EVENT_NAME" == workflow_run ]]; then
+            [[ "$COMPLETED_RUN_ID" =~ ^[0-9]+$ ]] || {
+              echo 'Completed fixed-model run id is unavailable; refusing speculative refill'
+              exit 0
+            }
+            attempt_body="$(
+              gh api --paginate \
+                "repos/${GITHUB_REPOSITORY}/issues/1093/comments?per_page=100" \
+                | jq -rs --arg run "$COMPLETED_RUN_ID" '
+                    [
+                      .[][]?
+                      | select(.body | contains("<!-- factory-attempt-outcome:v1 worker=opencode-free-model-factory-"))
+                      | select(.body | test("(?m)^Run: " + $run + "$"))
+                      | .body
+                    ]
+                    | last // empty
+                  '
+            )"
+            if [[ -z "$attempt_body" ]]; then
+              echo "Run ${COMPLETED_RUN_ID} has no durable attempt outcome; refusing speculative refill"
+              exit 0
+            fi
+            attempt_outcome="$(sed -n 's/^Attempt outcome: //p' <<< "$attempt_body" | tail -1)"
+            worker="$(sed -n 's/^Worker: opencode-free-model-factory-//p' <<< "$attempt_body" | tail -1)"
+            case "$attempt_outcome" in
+              success|no_work|work_failure)
+                echo "Run ${COMPLETED_RUN_ID} ended as ${attempt_outcome}; Factory ${worker} capacity remains healthy"
+                ;;
+              *)
+                echo "Run ${COMPLETED_RUN_ID} ended as ${attempt_outcome:-unknown}; capacity is not proven healthy for immediate reuse"
+                exit 0
+                ;;
+            esac
+            awk -F '\t' -v worker="$worker" '$1 == worker {found=1} END {exit !found}' "$manifest" || {
+              echo "Durable outcome named unknown worker ${worker}; refusing refill" >&2
+              exit 1
+            }
+            workers="$(jq -nc --arg worker "$worker" '[$worker]')"
+            echo "Requesting Factory ${worker}'s next assignment immediately"
+          else
+            # Bootstrap is intentionally broad. GitHub has repeatedly dropped
+            # the dispatcher's five-minute cron ticks, so a control-plane deploy
+            # seeds every configured slot once. Controller ownership makes this
+            # safe: busy workers return `none`, while idle workers consume the
+            # current executable backlog.
+            workers="$(awk -F '\t' '$0 !~ /^#/ && NF >= 5 && $5 == "dispatcher" {print $1}' "$manifest" \
+              | jq -Rsc 'split("\n") | map(select(length > 0))')"
+            echo "Bootstrapping all configured fixed-model slots: ${workers}"
+          fi
+
+          # Give force-cancel a brief chance to update GitHub's active-run view,
+          # then let the canonical controller reconcile any provably stale lease.
+          sleep 2
+          python3 "$controller" reconcile || true
+
+          capacity="$(python3 "$controller" capacity)"
+          echo "OmniRoute free-entry capacity: ${capacity}"
+          remaining="$(jq -r '.remaining // empty' <<< "$capacity")"
+          [[ "$remaining" =~ ^[0-9]+$ ]] || {
+            echo "OmniRoute free-entry capacity snapshot is unusable; refusing refill" >&2
+            exit 1
+          }
+          workers="$(jq -c --argjson n "$remaining" '.[0:$n]' <<< "$workers")"
+          if [[ "$workers" == '[]' ]]; then
+            echo 'OmniRoute free-entry cap is exhausted; not starting additional Entry sessions'
+            exit 0
+          fi
+
+          failures=0
+          while IFS= read -r worker; do
+            [[ -n "$worker" ]] || continue
+            if ! assignment="$(python3 "$controller" assign --worker "$worker")"; then
+              echo "Factory ${worker}: controller assignment failed" >&2
+              failures=$((failures + 1))
+              continue
+            fi
+            kind="$(jq -r '.kind // empty' <<< "$assignment" 2>/dev/null || true)"
+            case "$kind" in
+              none)
+                echo "Factory ${worker}: no executable control-plane assignment"
+                continue
+                ;;
+              issue|pr)
+                echo "Factory ${worker} assignment: ${assignment}"
+                ;;
+              *)
+                echo "Factory ${worker}: unusable controller response: ${assignment:-<empty>}" >&2
+                python3 "$controller" release --worker "$worker" || true
+                failures=$((failures + 1))
+                continue
+                ;;
+            esac
+
+            if gh workflow run free-model-factory-entry.yml --ref main -f worker="$worker"; then
+              echo "Started Factory ${worker} replacement capacity"
+            else
+              echo "Unable to start Factory ${worker}; releasing its assignment" >&2
+              python3 "$controller" release --worker "$worker" || true
+              failures=$((failures + 1))
+            fi
+          done < <(jq -r '.[]' <<< "$workers")
+
+          if (( failures > 0 )); then
+            echo "${failures} capacity refill dispatch(es) failed; all other slots were still attempted" >&2
+            exit 1
+          fi

@@ -1,0 +1,325 @@
+name: Factory Model Discovery
+
+# Sync `.github/free-model-factories.tsv` with OpenCode CLI catalogs both
+# ways: retire dead/410 pins AND add unused free OpenCode models (cost==0,
+# not paid Zen). Surplus big-pickle slots convert first. Unused
+# big-pickle is never grown as a first pin. This is not
+# OmniRoute routing. NVIDIA catalog presence is `opencode models nvidia`,
+# never integrate.api.nvidia.com alone. NVIDIA catalog adds are out of
+# scope. A #1093 410 marker with Source: nvidia is the durable "turned
+# off" signal; discovery consumes it and drops matching pins. Models in
+# retired_models / that 410 lock are never silently re-pinned.
+# Catalog fetch wraps scripts/opencode-model-catalog.sh when present.
+
+on:
+  schedule:
+    # Offset from the five-minute factory dispatcher grid.
+    - cron: '17 */6 * * *'
+  workflow_dispatch:
+    inputs:
+      apply:
+        description: Open or update a PR that retires dead pins and adds unused free OpenCode models to the TSV
+        required: false
+        type: boolean
+        default: true
+      add_unused_free:
+        description: Pin unused free OpenCode models onto the TSV (default on for schedule and dispatch)
+        required: false
+        type: boolean
+        default: true
+      catalog_fixture:
+        description: Optional recorded catalog JSON path when the CLI is unavailable
+        required: false
+        type: string
+        default: ''
+
+permissions:
+  contents: write
+  pull-requests: write
+  issues: write
+
+concurrency:
+  group: factory-model-discovery
+  cancel-in-progress: false
+
+env:
+  OPENCODE_VERSION: '1.18.32'
+  OPENCODE_LINUX_X64_SHA256: '3046e0404fdc60fb80307e7a47824ba07477364178a4d09baa8548496dd6d43b'
+  PYTHONPATH: .github/scripts
+
+jobs:
+  discover:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout main
+        uses: actions/checkout@v7
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - name: Install pinned OpenCode release
+        if: ${{ github.event_name != 'workflow_dispatch' || inputs.catalog_fixture == '' }}
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          archive="$RUNNER_TEMP/opencode-linux-x64.tar.gz"
+          bin_dir="$RUNNER_TEMP/opencode-bin"
+          curl -fsSL \
+            "https://github.com/anomalyco/opencode/releases/download/v${OPENCODE_VERSION}/opencode-linux-x64.tar.gz" \
+            -o "$archive"
+          printf '%s  %s\n' "$OPENCODE_LINUX_X64_SHA256" "$archive" | sha256sum --check -
+          mkdir -p "$bin_dir"
+          tar -xzf "$archive" -C "$bin_dir"
+          test -x "$bin_dir/opencode"
+          echo "$bin_dir" >> "$GITHUB_PATH"
+          "$bin_dir/opencode" --version
+
+      - name: Configure OpenCode provider auth
+        if: ${{ github.event_name != 'workflow_dispatch' || inputs.catalog_fixture == '' }}
+        shell: bash
+        env:
+          OPENCODE_ZEN_API_KEY: ${{ secrets.OPENCODE_ZEN_API_KEY }}
+          NVIDIA_API_KEY: ${{ secrets.NVIDIA_API_KEY }}
+          OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+        run: |
+          set -Eeuo pipefail
+          mkdir -p "$HOME/.config/opencode"
+          if [[ -n "${OPENCODE_ZEN_API_KEY:-}" ]]; then
+            export OPENCODE_API_KEY="$OPENCODE_ZEN_API_KEY"
+            echo "OPENCODE_API_KEY=$OPENCODE_API_KEY" >> "$GITHUB_ENV"
+          fi
+          jq -n \
+            --arg zen "${OPENCODE_ZEN_API_KEY:-}" \
+            --arg nvidia "${NVIDIA_API_KEY:-}" \
+            --arg openrouter "${OPENROUTER_API_KEY:-}" \
+            '{
+              provider: (
+                {}
+                + (if $zen != "" then {opencode: {options: {apiKey: $zen}}} else {} end)
+                + (if $nvidia != "" then {nvidia: {options: {apiKey: $nvidia}}} else {} end)
+                + (if $openrouter != "" then {openrouter: {options: {apiKey: $openrouter}}} else {} end)
+              )
+            }' > "$HOME/.config/opencode/opencode.json"
+          chmod 600 "$HOME/.config/opencode/opencode.json"
+
+      - name: Fetch NVIDIA 410 retirement markers
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -Eeuo pipefail
+          mkdir -p "$RUNNER_TEMP/factory-model-discovery"
+          comments="$RUNNER_TEMP/factory-model-discovery/issue-1093-comments.json"
+          if ! gh api --paginate \
+            "repos/${GITHUB_REPOSITORY}/issues/1093/comments?per_page=100" \
+            > "$comments"; then
+            echo '::error::Could not read #1093 factory-model-retired-410:v1 markers'
+            exit 1
+          fi
+
+      - name: Discover catalogs and plan retirements
+        id: plan
+        shell: bash
+        env:
+          OPENCODE_ZEN_API_KEY: ${{ secrets.OPENCODE_ZEN_API_KEY }}
+          NVIDIA_API_KEY: ${{ secrets.NVIDIA_API_KEY }}
+          OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+          CATALOG_FIXTURE: ${{ inputs.catalog_fixture }}
+          ADD_UNUSED_FREE: ${{ github.event_name == 'workflow_dispatch' && inputs.add_unused_free == false && 'false' || 'true' }}
+        run: |
+          set -Eeuo pipefail
+          mkdir -p "$RUNNER_TEMP/factory-model-discovery"
+          report="$RUNNER_TEMP/factory-model-discovery/report.json"
+          comments="$RUNNER_TEMP/factory-model-discovery/issue-1093-comments.json"
+          args=(
+            python3 .github/scripts/factory_model_retirement.py plan
+            --report "$report"
+            --github-output "$GITHUB_OUTPUT"
+            --retirement-comments "$comments"
+          )
+          if [[ "${ADD_UNUSED_FREE:-true}" == "false" ]]; then
+            args+=(--no-add-unused-free)
+          fi
+          if [[ -n "${CATALOG_FIXTURE:-}" ]]; then
+            args+=(--catalog-json "$CATALOG_FIXTURE")
+          else
+            args+=(--require-cli)
+          fi
+          "${args[@]}"
+          python3 - "$report" <<'PY'
+          import json
+          import sys
+          report = json.loads(open(sys.argv[1], encoding="utf-8").read())
+          print(
+              f"retirements={len(report['retirements'])} "
+              f"additions={len(report.get('additions') or [])} "
+              f"unused_free={len(report['unused_free'])}"
+          )
+          for item in report["retirements"]:
+              print(f"RETIRE worker={item['worker']} {item['source']} {item['model']} ({item['reason']})")
+          for item in report.get("additions") or []:
+              print(
+                  f"ADD_{item['action'].upper()} worker={item['worker']} "
+                  f"{item['source']} {item['model']} ({item['reason']})"
+              )
+          for item in report["unused_free"]:
+              print(f"UNUSED_FREE {item['model']} ({item['reason']})")
+          PY
+
+      - name: Upload discovery report
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: factory-model-discovery-report
+          path: ${{ runner.temp }}/factory-model-discovery/report.json
+          if-no-files-found: warn
+
+      - name: Fail closed when dispatch asked not to apply
+        if: ${{ (steps.plan.outputs.retire == 'true' || steps.plan.outputs.add == 'true') && (github.event_name == 'workflow_dispatch' && inputs.apply == false) }}
+        run: |
+          echo '::error::Factory TSV is out of sync with OpenCode catalogs. Re-run with apply=true or run factory_model_retirement.py apply locally.'
+          exit 1
+
+      - name: Open or update roster sync PR
+        if: ${{ (steps.plan.outputs.retire == 'true' || (steps.plan.outputs.add == 'true' && (github.event_name != 'workflow_dispatch' || inputs.add_unused_free != false))) && (github.event_name != 'workflow_dispatch' || inputs.apply != false) }}
+        env:
+          GH_TOKEN: ${{ secrets.PR_REBASE_TOKEN || github.token }}
+          PR_REBASE_TOKEN: ${{ secrets.PR_REBASE_TOKEN }}
+          OPENCODE_ZEN_API_KEY: ${{ secrets.OPENCODE_ZEN_API_KEY }}
+          NVIDIA_API_KEY: ${{ secrets.NVIDIA_API_KEY }}
+          OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+          CATALOG_FIXTURE: ${{ inputs.catalog_fixture }}
+          ADD_UNUSED_FREE: ${{ github.event_name == 'workflow_dispatch' && inputs.add_unused_free == false && 'false' || 'true' }}
+        run: |
+          set -Eeuo pipefail
+          git config user.name 'factory-model-discovery[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          branch='factory/model-retirement'
+          git checkout -B "$branch"
+          report="$RUNNER_TEMP/factory-model-discovery/report.json"
+          comments="$RUNNER_TEMP/factory-model-discovery/issue-1093-comments.json"
+          args=(
+            python3 .github/scripts/factory_model_retirement.py apply
+            --report "$report"
+            --retirement-comments "$comments"
+          )
+          if [[ "${ADD_UNUSED_FREE:-true}" == "false" ]]; then
+            args+=(--no-add-unused-free)
+          fi
+          if [[ -n "${CATALOG_FIXTURE:-}" ]]; then
+            args+=(--catalog-json "$CATALOG_FIXTURE")
+          else
+            args+=(--require-cli)
+          fi
+          "${args[@]}"
+          python3 .github/scripts/validate-free-model-factories.py
+          git add \
+            .github/free-model-factories.tsv \
+            .github/factory-expected-workers.json
+          if git diff --cached --quiet; then
+            echo 'Apply produced no roster diff'
+            exit 0
+          fi
+          git commit -m "Sync factory TSV with OpenCode catalogs (retire dead pins, add unused free)"
+          if [[ -n "${PR_REBASE_TOKEN:-}" ]]; then
+            git remote set-url origin "https://x-access-token:${PR_REBASE_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
+          fi
+          git push -u origin "$branch"
+          body="$(python3 - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+          report = json.loads(Path(os.environ["RUNNER_TEMP"], "factory-model-discovery", "report.json").read_text(encoding="utf-8"))
+          lines = [
+              "## Factory TSV catalog sync",
+              "",
+              "This PR updates `.github/free-model-factories.tsv` (and the generated",
+              "`.github/factory-expected-workers.json` lock) so the fixed-model roster",
+              "matches live OpenCode CLI catalogs both ways:",
+              "",
+              "- **Retire** pins that disappeared from `opencode models <provider>` or that",
+              "  have a sticky #1093 `factory-model-retired-410:v1` NVIDIA marker.",
+              "- **Add** unused free OpenCode models (`cost==0` or free-roster name) that",
+              "  were missing from the TSV. Surplus `big-pickle` duplicate slots convert",
+              "  first so unique free models do not grow the roster without bound.",
+              "  Unused `big-pickle` is never grown as a first pin.",
+              "",
+              "Paid Zen is never added. Models in `retired_models` or the 410 lock are",
+              "never silently re-pinned. NVIDIA catalog adds are out of scope.",
+              "",
+              "### Retired pins",
+              "",
+              "| Worker | Source | Model | Reason |",
+              "| --- | --- | --- | --- |",
+          ]
+          retirements = report.get("retirements") or []
+          if retirements:
+              for item in retirements:
+                  lines.append(
+                      f"| {item['worker']} | `{item['source']}` | `{item['model']}` | {item['reason']} |"
+                  )
+          else:
+              lines.append("| — | — | — | no catalog-absent or 410 pins |")
+          additions = report.get("additions") or []
+          lines.extend(
+              [
+                  "",
+                  "### Added to the TSV",
+                  "",
+                  "| Worker | Action | Model | Previous pin | Reason |",
+                  "| --- | --- | --- | --- | --- |",
+              ]
+          )
+          if additions:
+              for item in additions:
+                  previous = item.get("previous_model") or "—"
+                  lines.append(
+                      f"| {item['worker']} | `{item['action']}` | `{item['model']}` | `{previous}` | {item['reason']} |"
+                  )
+          else:
+              lines.append("| — | — | — | — | no unused free OpenCode models to pin |")
+          locked = report.get("locked_unused") or []
+          if locked:
+              lines.extend(["", "### Unused free skipped (retired_models / 410 lock)", ""])
+              for model in locked:
+                  lines.append(f"- `{model}` (not re-pinned without clearing the lock)")
+          unused = report.get("unused_free") or []
+          added_models = {item["model"] for item in additions}
+          leftover = [
+              item for item in unused
+              if item["model"] not in added_models and item["model"] not in set(locked)
+          ]
+          if leftover:
+              lines.extend(["", "### Unused free still not on the TSV", ""])
+              for item in leftover:
+                  lines.append(f"- `{item['model']}` ({item['reason']})")
+          lines.extend(
+              [
+                  "",
+                  "### Operator flow",
+                  "",
+                  "1. Dispatch **Factory Model Discovery** (or wait for the six-hour schedule).",
+                  "2. When unused free OpenCode models appear in `opencode models opencode`,",
+                  "   or dead/410 pins disappear, this bot PR updates the TSV and lock.",
+                  "3. Future unused free ride the same add path — no Harvy hand-edit of the TSV.",
+                  "4. Merge after `validate-free-model-factories.py` and CI are green.",
+                  "",
+                  "Closes nothing automatically. NVIDIA catalog presence is `opencode models nvidia`,",
+                  "never integrate.api.nvidia.com. Sticky #1093 `factory-model-retired-410:v1`",
+                  "comments with `Source: nvidia` retire matching bare model ids.",
+              ]
+          )
+          print("\n".join(lines))
+          PY
+          )"
+          existing="$(gh pr list --head "$branch" --base main --json number --jq '.[0].number // empty')"
+          title="Sync factory TSV with OpenCode CLI catalogs"
+          if [[ -n "$existing" ]]; then
+            gh pr edit "$existing" --title "$title" --body "$body"
+          else
+            gh pr create --base main --head "$branch" \
+              --title "$title" \
+              --body "$body" \
+              --label factory --label infrastructure
+          fi

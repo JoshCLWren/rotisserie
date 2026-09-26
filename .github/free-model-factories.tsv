@@ -1,0 +1,30 @@
+# worker	source	model	minute	scheduler	display_name
+# control-plane probe: completion funnel telemetry v1
+11	nvidia	poolside/laguna-xs-2.1	15	dispatcher	Laguna XS 2.1
+20	nvidia	openai/gpt-oss-20b	45	dispatcher	GPT OSS 20B
+21	nvidia	google/gemma-4-31b-it	50	dispatcher	Gemma 4 31B
+29	openrouter-free	qwen/qwen3.8-27b:free	0	dispatcher	OpenRouter Qwen3.8 27B Free
+41	opencode-free	mimo-v2.6-flash-free	15	dispatcher	OpenCode MiMo V2.6 Flash Free
+42	opencode-free	nemotron-3-ultra-free	20	dispatcher	OpenCode Nemotron 3 Ultra Free
+45	opencode-free	nemotron-3.5-lightning-free	35	dispatcher	OpenCode Nemotron 3.5 Lightning Free
+46	kilo-auto	kilo-auto/free	40	dispatcher	Kilo Auto Free · Forge
+47	opencode-free	muse-spark-1.2-contributor-free	45	dispatcher	OpenCode Muse Spark 1.2 Contributor Free
+48	opencode-free	big-pickle	50	dispatcher	OpenCode Big Pickle
+49	opencode-free	space-bunny-free	55	dispatcher	OpenCode Space Bunny Free
+51	openrouter-free	nvidia/nemotron-3-ultra-550b-a55b:free	5	dispatcher	OpenRouter Nemotron 3 Ultra Free
+52	openrouter-free	thinkingmachines/inkling:free	10	dispatcher	OpenRouter Inkling Free
+53	openrouter-free	thinkingmachines/inkling-small:free	15	dispatcher	OpenRouter Inkling Small Free
+54	z-ai	glm-4.5-flash	20	dispatcher	Z.AI GLM 4.5 Flash
+55	ollama-cloud	nemotron-3-nano:30b	25	dispatcher	Ollama Cloud Nemotron 3 Nano 30B
+56	openrouter-free	dots-studio/dots-3-note-preview:free	30	dispatcher	OpenRouter Dots 3 Note Preview Free
+58	opencode-free	muse-spark-1.3-contributor-free	40	dispatcher	OpenCode Muse Spark 1.3 Contributor Free
+59	opencode-free	ling-3.0-flash-fin-free	45	dispatcher	OpenCode Ling 3.0 Flash Fin Free
+60	openrouter-free	cohere/north-mini-code:free	5	dispatcher	OpenRouter Cohere North Mini Code Free
+61	openrouter-free	google/gemma-4-31b-it:free	55	dispatcher	OpenRouter Gemma 4 31B Free
+62	openrouter-free	google/gemma-4-26b-a4b-it:free	0	dispatcher	OpenRouter Gemma 4 26B Free
+63	openrouter-free	nvidia/nemotron-3-super-120b-a12b:free	10	dispatcher	OpenRouter Nemotron 3 Super Free
+64	openrouter-free	nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free	10	dispatcher	OpenRouter Nemotron 3 Omni Free
+65	openrouter-free	nvidia/nemotron-3.5-lightning:free	25	dispatcher	OpenRouter Nemotron 3.5 Lightning Free
+68	openrouter-free	poolside/laguna-s-2.1:free	30	dispatcher	OpenRouter Laguna S 2.1 Free
+69	openrouter-free	poolside/laguna-xs-2.1:free	35	dispatcher	OpenRouter Laguna XS 2.1 Free
+71	openrouter-free	inclusionai/ling-3.0-flash-fin:free	30	dispatcher	OpenRouter Ling 3.0 Flash Free

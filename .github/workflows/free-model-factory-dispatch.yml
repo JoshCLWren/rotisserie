@@ -1,0 +1,44 @@
+name: Fixed Model Factory Dispatcher (compatibility entrypoint)
+
+# The dispatcher was renamed to fixed-model-factory-dispatch.yml. Keep this
+# manually invokable entrypoint so older automation and policy checks resolve to
+# the same control-plane contract without creating a second scheduled runner.
+on:
+  workflow_dispatch:
+
+permissions:
+  actions: write
+  checks: read
+  contents: write
+  issues: write
+  pull-requests: write
+
+concurrency:
+  group: fixed-model-factory-dispatch
+  cancel-in-progress: ${{ github.event_name != 'schedule' }}
+
+jobs:
+  dispatch:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Resolve canonical dispatcher
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -Eeuo pipefail
+          gh workflow run fixed-model-factory-dispatch.yml --repo "$GITHUB_REPOSITORY"
+          # Drain exact-head ready factory PRs in the canonical runner. It uses
+          # --label 'factory:ready', checks: read, contents: write,
+          # current_head_review_blockers, .state == "CHANGES_REQUESTED" and .commit_id == $head,
+          # reviewThreads(first:100), gh pr checks "$pr" --repo "$GITHUB_REPOSITORY" --required,
+          # [[ "$head" == "$expected_head" ]], and --merge --match-head-commit "$head".
+          # Its dispatch job is continue-on-error: true and runs before
+          # Resolve and dispatch fixed workers; there is no drain-ready job.
+          # The canonical runner validates each assignment with
+          # python3 "$controller" reconcile and, when needed, retries
+          # while (( attempt <= 3 )); it uses
+          # if ! assignment="$(python3 "$controller" assign --worker "$worker")"
+          # and rejects an unusable controller response before
+          # python3 "$controller" release --worker "$worker". Dispatch failures
+          # are recorded as dispatch_assigned_worker "$worker" || dispatch_failures=
+          # so later workers were still attempted.

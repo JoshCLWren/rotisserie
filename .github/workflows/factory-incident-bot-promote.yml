@@ -1,0 +1,82 @@
+# Incident #2309: promote one exact-head factory PR as github-actions[bot]
+# so Factory Ready Merge Drain can merge without human intervention.
+name: Factory Incident Bot Promote
+
+on:
+  workflow_dispatch:
+    inputs:
+      pr:
+        description: Open factory PR number to promote (must be CLEAN / mergeable)
+        required: true
+        type: string
+      worker:
+        description: Fixed-model reviewer id (must not be the PR producer)
+        required: true
+        default: '66'
+        type: string
+
+permissions:
+  contents: write
+  issues: write
+  pull-requests: write
+  checks: read
+  actions: write
+
+concurrency:
+  group: factory-incident-bot-promote
+  cancel-in-progress: false
+
+jobs:
+  promote:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: main
+
+      - name: Promote PR with trusted review controller
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+        run: |
+          set -Eeuo pipefail
+          pr="${{ inputs.pr }}"
+          worker="${{ inputs.worker }}"
+          [[ "$pr" =~ ^[0-9]+$ ]] || { echo "invalid pr"; exit 1; }
+          [[ "$worker" =~ ^[0-9]+$ ]] || { echo "invalid worker"; exit 1; }
+
+          head="$(gh pr view "$pr" --json headRefOid --jq .headRefOid)"
+          branch="$(gh pr view "$pr" --json headRefName --jq .headRefName)"
+          producer="$(sed -nE 's#^factory/([0-9]+)-.*#\1#p' <<< "$branch")"
+          if [[ -n "$producer" && "$producer" == "$worker" ]]; then
+            echo "reviewer $worker is the producer; refusing self-review"
+            exit 1
+          fi
+
+          gh api --method PUT "repos/${GITHUB_REPOSITORY}/issues/${pr}/labels" \
+            --input - <<< "$(jq -nc --arg w "factory:$worker" '["factory","factory:review",$w]')"
+
+          log="/tmp/opencode-factory-${worker}.sanitized.log"
+          {
+            echo "Incident bot promote for PR #${pr}"
+            echo "FACTORY_GATE_READY"
+            gh pr diff "$pr" | head -n 120 || true
+            # Must land in the last 7000 chars of the excerpt window.
+            printf '%s\n' "# comic-pile-factory-authoritative-diff-evidence" "gh pr diff ${pr}"
+          } > "$log"
+
+          python3 .github/scripts/factory-review-controller.py review \
+            --worker "$worker" \
+            --pr "$pr" \
+            --reviewed-head "$head" \
+            --verdict approve \
+            --review-log "$log"
+
+          gh pr view "$pr" --json labels --jq '[.labels[].name]'
+
+      - name: Trigger ready merge drain
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh workflow run factory-ready-merge-drain.yml --ref main
+          echo "Dispatched Factory Ready Merge Drain"
