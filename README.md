@@ -64,13 +64,15 @@ The intended result is a system that can:
 
 | Path | Purpose |
 |---|---|
-| `prototype/` | First generic dependency and eligibility policy slice |
+| `src/rotisserie/` | Standalone typed Python package boundary |
+| `prototype/` | First generic dependency and eligibility policy slice; moves into the package in Phase 2 |
 | `tests/` | Rotisserie repository-safety guards |
 | `reference/legacy-factory/` | Archived migration evidence, code, tests, prompts, and disabled workflows |
 | `.github/workflows/ci.yml` | The only active Action; read-only Rotisserie CI |
 
 See [MIGRATION.md](MIGRATION.md) for exact snapshot provenance and known source
-test drift.
+test drift. [MIGRATION_INVENTORY.md](MIGRATION_INVENTORY.md) accounts for the
+intended treatment of every archived artifact.
 
 ## Safety boundary
 
@@ -85,13 +87,19 @@ Rotisserie-specific.
 
 ## Development
 
-The extraction is intentionally preserving source layout while package and CLI
-boundaries are designed. With Python 3.14, `pytest`, and Node.js installed:
+Rotisserie supports Python 3.12 through 3.14. Install
+[uv](https://docs.astral.sh/uv/), then create the locked development
+environment and run the same verification used by CI:
 
 ```bash
-# Generic policy and active-Action safety
-python -m pytest -q prototype tests
+uv sync --locked
+./scripts/verify
 ```
+
+Build the source and wheel distributions with `uv build`. The package is still
+pre-release and does not yet expose the prototype as a supported public API.
+Version history and release-note conventions live in
+[CHANGELOG.md](CHANGELOG.md).
 
 ## Roadmap
 

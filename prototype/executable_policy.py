@@ -1,4 +1,5 @@
 """Pure executable-work eligibility domain (no GitHub/network side effects)."""
+
 from __future__ import annotations
 
 from prototype.dependency_policy import (

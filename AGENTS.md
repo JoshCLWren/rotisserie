@@ -89,15 +89,15 @@ When editing:
 
 ## Tests
 
-Run the checks proportionate to the files changed. At minimum:
+Run the checks proportionate to the files changed. The canonical local check is:
 
 ```bash
-python -m pytest -q prototype tests
+uv sync --locked
+./scripts/verify
 ```
 
-As the standalone package and its tooling land, use the canonical commands
-defined by `pyproject.toml` and CI instead of copying this transitional command
-list into new scripts.
+Focused tests may be run with `uv run pytest <paths>`, but the canonical check
+must pass before a change is considered complete.
 
 For every change:
 

@@ -1,4 +1,5 @@
 """Pure dependency-reference and executable-work eligibility domain."""
+
 from __future__ import annotations
 
 import re

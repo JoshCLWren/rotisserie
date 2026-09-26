@@ -1,0 +1,66 @@
+[build-system]
+requires = ["hatchling>=1.27"]
+build-backend = "hatchling.build"
+
+[project]
+name = "rotisserie"
+version = "0.1.0.dev0"
+description = "Portable graph engineering for coordinating AI and human workers"
+readme = "README.md"
+requires-python = ">=3.12"
+license = "Apache-2.0"
+authors = [{ name = "Josh C. L. Wren" }]
+keywords = ["automation", "coordination", "graph", "workflow"]
+classifiers = [
+  "Development Status :: 2 - Pre-Alpha",
+  "Intended Audience :: Developers",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.12",
+  "Programming Language :: Python :: 3.13",
+  "Programming Language :: Python :: 3.14",
+  "Typing :: Typed",
+]
+
+[project.urls]
+Homepage = "https://github.com/JoshCLWren/rotisserie"
+Issues = "https://github.com/JoshCLWren/rotisserie/issues"
+Changelog = "https://github.com/JoshCLWren/rotisserie/blob/main/CHANGELOG.md"
+
+[dependency-groups]
+dev = [
+  "build>=1.3,<2",
+  "mypy>=1.18,<2",
+  "pytest>=8.4,<10",
+  "ruff>=0.13,<1",
+]
+
+[tool.hatch.build.targets.sdist]
+include = [
+  "/src",
+  "/CHANGELOG.md",
+  "/LICENSE",
+  "/README.md",
+]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/rotisserie"]
+
+[tool.pytest.ini_options]
+addopts = "-ra"
+testpaths = ["prototype", "tests"]
+
+[tool.ruff]
+target-version = "py312"
+line-length = 100
+extend-exclude = ["reference/legacy-factory"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP"]
+
+[tool.mypy]
+python_version = "3.12"
+strict = true
+explicit_package_bases = true
+mypy_path = "src"
+files = ["src/rotisserie", "prototype", "tests"]
+exclude = ["^reference/legacy-factory/"]

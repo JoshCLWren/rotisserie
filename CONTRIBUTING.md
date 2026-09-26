@@ -22,12 +22,16 @@ Security vulnerabilities do not belong in public issues. Follow
 
 ## Development setup
 
-The standalone package and CLI have not landed yet. The current baseline needs
-Python 3.14 with `pytest` and a recent Node.js release.
+Install Python 3.12 through 3.14 and
+[uv](https://docs.astral.sh/uv/). From a clean clone:
 
 ```bash
-python -m pytest -q prototype tests
+uv sync --locked
+./scripts/verify
 ```
+
+The verification command checks formatting, lint, strict typechecking, and the
+test suite. Use `uv build` to verify package distributions.
 
 ## Making a change
 
@@ -42,6 +46,7 @@ python -m pytest -q prototype tests
 - Do not activate anything in `reference/legacy-factory/`.
 - Run `tests/test_rotisserie_actions.py` after changing `.github/`.
 - Run `git diff --check` before committing.
+- Add user-visible changes under `Unreleased` in [CHANGELOG.md](CHANGELOG.md).
 
 Archived code is evidence, not a naming template. New public APIs should use
 Rotisserie domain language rather than legacy labels, markers, or a specific

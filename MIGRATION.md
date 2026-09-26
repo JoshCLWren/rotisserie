@@ -19,6 +19,10 @@
 - Autonomous Factory policy and execution/acceptance protocols
 - The existing generic dependency/executable-policy extraction reference
 
+Every archived path is assigned a future treatment by the checked inventory in
+[`MIGRATION_INVENTORY.md`](MIGRATION_INVENTORY.md). Classification does not
+move, activate, or make an archived artifact public.
+
 ## GitHub Actions safety boundary
 
 Imported workflows are preserved under
@@ -62,3 +66,10 @@ byte-for-byte copy phase.
 The final audit found 144 byte-identical source paths, plus the preserved
 model-recommendation symlink. Every ComicPile tracked path containing
 `factory` or `ralph` is present in this repository.
+
+## Standalone foundation
+
+Rotisserie now has an independently buildable `src/rotisserie` package with
+Apache-2.0 package metadata, Python 3.12–3.14 support, a locked development
+environment, and one canonical `./scripts/verify` command. The prototype stays
+outside the public package until the Phase 2 domain contract replaces it.

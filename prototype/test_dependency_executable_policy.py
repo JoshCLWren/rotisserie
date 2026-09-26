@@ -8,6 +8,7 @@ Acceptance criteria covered:
 - casual-reference non-blocking
 - no legacy product-specific exclusions or leaks
 """
+
 from prototype.dependency_policy import (
     MANUAL_ONLY_MARKER,
     dependency_declarations,
@@ -98,6 +99,7 @@ class TestNoHostLeakage:
     def test_no_hardcoded_issue_numbers_in_domain(self) -> None:
         # The domain modules should not contain specific issue IDs.
         import inspect
+
         import prototype.dependency_policy as dp
         import prototype.executable_policy as ep
 
@@ -108,6 +110,7 @@ class TestNoHostLeakage:
 
     def test_no_product_labels(self) -> None:
         import inspect
+
         import prototype.dependency_policy as dp
 
         source = inspect.getsource(dp)

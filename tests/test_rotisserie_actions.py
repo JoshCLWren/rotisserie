@@ -2,7 +2,6 @@
 
 from pathlib import Path
 
-
 WORKFLOWS = Path(".github/workflows")
 ALLOWED_WORKFLOWS = {"ci.yml"}
 FORBIDDEN_TEXT = (
