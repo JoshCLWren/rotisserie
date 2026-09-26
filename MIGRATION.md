@@ -87,3 +87,14 @@ The prototype dependency scanner remains migration evidence: a compatibility
 test proves that its accepted output maps into explicit graph edges. Parsing
 host text, labels, payloads, and branch names is intentionally not part of the
 domain API.
+
+## Deterministic coordination policy
+
+Pure policy under `src/rotisserie/domain/policy.py` now selects and ranks fresh
+implementation work, suppresses duplicate changes, decides lease acquisition
+and release at explicit clock boundaries, enforces producer/reviewer identity,
+and evaluates readiness only from checks and reviews attached to the current
+revision. Configurable WIP, reserved review capacity, and completion-backlog
+pressure replace the archived Factory environment constants. GitHub labels,
+provider routes, payload parsing, and mutations remain adapter concerns for
+later phases.
