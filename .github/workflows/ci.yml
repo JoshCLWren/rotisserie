@@ -1,347 +1,59 @@
-name: CI
-
-# SECURITY: The following secrets must be configured in GitHub repository settings:
-# Settings > Secrets and variables > Actions > New repository secret
-# - SECRET_KEY: Application secret key for session encryption
-# - DATABASE_URL: PostgreSQL connection string (e.g., postgresql+asyncpg://postgres:PASSWORD@postgres:5432/comic_pile_test)
-# - POSTGRES_PASSWORD: PostgreSQL database password
+name: Rotisserie CI
 
 on:
   pull_request:
   push:
-    branches:
-      - main
+    branches: [main]
   workflow_dispatch:
 
-concurrency:
-  group: ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
-  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+permissions:
+  contents: read
 
-env:
-  REGISTRY: ghcr.io
-  IMAGE_NAME: ${{ github.repository_owner }}/${{ github.event.repository.name }}
+concurrency:
+  group: rotisserie-ci-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
-  build:
-    name: Build Docker Image
+  factory-core:
+    name: Factory core
     runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      packages: write
-    outputs:
-      image-digest: ${{ steps.build.outputs.digest }}
-      image-tag: ${{ steps.set-outputs.outputs.image-tag }}
-      image-ref: ${{ steps.set-outputs.outputs.image-ref }}
-    steps:
-      - name: Check out repository
-        uses: actions/checkout@v7
-
-      - name: Set lowercase image name
-        id: lowercase
-        run: echo "image-name=${IMAGE_NAME,,}" >> $GITHUB_OUTPUT
-
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v4
-
-      - name: Log in to GitHub Container Registry
-        uses: docker/login-action@v4
-        with:
-          registry: ${{ env.REGISTRY }}
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Build CI Docker image
-        id: build
-        uses: docker/build-push-action@v7
-        with:
-          context: .
-          file: ./Dockerfile.ci
-          push: true
-          tags: ${{ env.REGISTRY }}/${{ steps.lowercase.outputs.image-name }}:${{ github.sha }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
-
-      - name: Set image tag output
-        id: set-outputs
-        run: |
-          echo "image-tag=${{ env.REGISTRY }}/${{ steps.lowercase.outputs.image-name }}:${{ github.sha }}" >> $GITHUB_OUTPUT
-          echo "image-ref=${{ env.REGISTRY }}/${{ steps.lowercase.outputs.image-name }}@${{ steps.build.outputs.digest }}" >> $GITHUB_OUTPUT
-
-  frontend-typecheck:
-    name: Frontend Lint + Typecheck
-    runs-on: ubuntu-latest
-    container:
-      image: ${{ needs.build.outputs.image-ref }}
-    needs: build
-    timeout-minutes: 15
-    env:
-      PATH: "/workspace/.venv/bin:/usr/local/bin:/usr/bin:/bin"
-    steps:
-      - name: Check out repository
-        uses: actions/checkout@v7
-
-      - name: Restore frontend toolchain from CI image
-        run: |
-          mkdir -p static
-          rm -rf frontend/node_modules static/react
-          cp -a /opt/ci-assets/static/react static/react
-          pnpm install --frozen-lockfile
-
-      - name: Run anti-slop lint
-        run: pnpm run lint:anti-slop
-
-      - name: Run frontend lint
-        run: pnpm --filter frontend run lint
-
-      - name: Run frontend typecheck
-        run: pnpm --filter frontend run typecheck
-
-      - name: Run production frontend build through root package
-        run: pnpm run build
-
-  python-lint:
-    name: Python Lint (ruff)
-    runs-on: ubuntu-latest
-    container:
-      image: ${{ needs.build.outputs.image-ref }}
-    needs: build
     timeout-minutes: 10
-    env:
-      PATH: "/workspace/.venv/bin:/usr/local/bin:/usr/bin:/bin"
+
     steps:
-      - name: Check out repository
-        uses: actions/checkout@v7
+      - uses: actions/checkout@v4
 
-      - name: Run ruff check
-        run: ruff check .
-
-  python-typecheck:
-    name: Python Type Check (ty)
-    runs-on: ubuntu-latest
-    container:
-      image: ${{ needs.build.outputs.image-ref }}
-    needs: build
-    timeout-minutes: 15
-    env:
-      PATH: "/workspace/.venv/bin:/usr/local/bin:/usr/bin:/bin"
-    steps:
-      - name: Check out repository
-        uses: actions/checkout@v7
-
-      - name: Run ty check
-        run: ty check --error-on-warning
-
-  frontend-unit-tests:
-    name: Frontend Unit Tests (vitest)
-    runs-on: ubuntu-latest
-    container:
-      image: ${{ needs.build.outputs.image-ref }}
-    needs: build
-    timeout-minutes: 10
-    env:
-      PATH: "/workspace/.venv/bin:/usr/local/bin:/usr/bin:/bin"
-    steps:
-      - name: Check out repository
-        uses: actions/checkout@v7
-
-      - name: Restore frontend toolchain from CI image
-        run: |
-          mkdir -p static
-          rm -rf frontend/node_modules static/react
-          cp -a /opt/ci-assets/static/react static/react
-          pnpm install --frozen-lockfile
-
-      - name: Run vitest unit tests with 94% coverage gate
-        run: pnpm --filter frontend test:coverage
-
-  ui-audit:
-    name: Rendered UI Audit (Chromium)
-    runs-on: ubuntu-latest
-    needs: build
-    timeout-minutes: 20
-    steps:
-      - name: Check out repository
-        uses: actions/checkout@v7
-
-      - name: Enable repository pnpm version
-        run: corepack enable
-
-      - name: Install workspace dependencies
-        run: pnpm install --frozen-lockfile
-
-      - name: Install Chromium
-        run: pnpm --filter frontend exec playwright install --with-deps chromium
-
-      - name: Run self-contained rendered UI audit
-        run: pnpm run audit:ui
-
-      - name: Upload rendered audit evidence
-        if: always()
-        uses: actions/upload-artifact@v7
+      - uses: actions/setup-python@v5
         with:
-          name: rendered-ui-audit-${{ github.sha }}
-          path: frontend/test-results/ui-audit/
-          if-no-files-found: ignore
-          retention-days: 7
+          python-version: "3.14"
 
-  migration-health:
-    name: Migration Health
-    runs-on: ubuntu-latest
-    container:
-      image: ${{ needs.build.outputs.image-ref }}
-    needs: build
-    timeout-minutes: 10
-    env:
-      CI: true
-      DATABASE_URL: postgresql+asyncpg://postgres:postgres@postgres:5432/comic_pile_test
-      TEST_DATABASE_URL: postgresql+asyncpg://postgres:postgres@postgres:5432/comic_pile_test
-      PATH: "/workspace/.venv/bin:/usr/local/bin:/usr/bin:/bin"
-    services:
-      postgres:
-        image: postgres:16
+      - name: Install test dependency
+        run: python -m pip install pytest
+
+      - name: Compile copied Python sources
+        run: >-
+          python -m compileall -q
+          .github/scripts
+          latticery_extraction
+          scripts
+
+      - name: Test generic extraction reference
+        run: python -m pytest -q latticery_extraction tests/test_rotisserie_actions.py
+
+      - name: Test Factory controllers and policies
         env:
-          POSTGRES_USER: postgres
-          POSTGRES_PASSWORD: postgres
-          POSTGRES_DB: comic_pile_test
-        ports:
-          - 5432:5432
-        options: >-
-          --health-cmd pg_isready
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 5
-    steps:
-      - name: Check out repository
-        uses: actions/checkout@v7
+          PYTHONPATH: .github/scripts
+        run: >-
+          python -m pytest -q
+          .github/scripts/test_factory_epic_prd_policy.py
+          .github/scripts/test_factory_issue_pr_state_policy.py
+          .github/scripts/test_factory_review_controller.py
+          .github/scripts/test_factory_review_policy.py
+          .github/scripts/test_factory_review_thread_gate.py
+          .github/scripts/test_factory_stage5.py
+          .github/scripts/test_factory_work_policy.py
+          -k
+          "not test_workflows_delegate_mechanical_gates_to_controller and
+          not test_fixed_model_factory_schedules_are_active"
 
-      - name: Remove .env files
-        run: rm -f .env .env.test .env.backup .envrc
-
-      - name: Wait for PostgreSQL
-        run: |
-          i=1
-          while [ $i -le 30 ]; do
-            if pg_isready -h postgres -p 5432 -U postgres; then exit 0; fi
-            sleep 2; i=$((i + 1))
-          done
-          exit 1
-
-      - name: Check single Alembic head
-        run: |
-          HEADS=$(alembic heads 2>/dev/null | grep -c "(head)")
-          if [ "$HEADS" -ne 1 ]; then
-            echo "ERROR: $HEADS Alembic heads detected - resolve before merging"
-            alembic heads
-            exit 1
-          fi
-          echo "Single head confirmed: $(alembic heads 2>/dev/null)"
-
-      - name: Apply all migrations from scratch
-        run: alembic upgrade head
-
-      # Note: alembic check is intentionally omitted. The reviews table uses a
-      # NULLS NOT DISTINCT unique index (uq_review_user_thread_issue) applied via
-      # raw SQL in migration 4882a6a20f35. SQLAlchemy has no native representation
-      # for this, so alembic check always reports a false-positive difference.
-      # Single-head enforcement + clean upgrade-from-scratch is the effective gate.
-
-  test-unit:
-    name: Backend Tests
-    runs-on: ubuntu-latest
-    container:
-      image: ${{ needs.build.outputs.image-ref }}
-    needs: build
-    timeout-minutes: 60
-    env:
-      CI: true
-      SECRET_KEY: test-secret-key-for-testing-only
-      DATABASE_URL: postgresql+asyncpg://postgres:postgres@postgres:5432/comic_pile_test
-      TEST_DATABASE_URL: postgresql+asyncpg://postgres:postgres@postgres:5432/comic_pile_test
-      REDIS_URL: redis://redis:6379/0
-      PGUSER: postgres
-      PATH: "/workspace/.venv/bin:/usr/local/bin:/usr/bin:/bin"
-    services:
-      postgres:
-        image: postgres:16
-        env:
-          POSTGRES_USER: postgres
-          POSTGRES_PASSWORD: postgres
-          POSTGRES_DB: comic_pile_test
-        ports:
-          - 5432:5432
-        options: >-
-          --health-cmd pg_isready
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 5
-      redis:
-        image: redis:7-alpine
-        ports:
-          - 6379:6379
-        options: >-
-          --health-cmd "redis-cli ping"
-          --health-interval 5s
-          --health-timeout 3s
-          --health-retries 5
-    steps:
-      - name: Check out repository
-        uses: actions/checkout@v7
-
-      - name: Remove .env file to prevent CI database override
-        run: rm -f .env .env.test .env.backup .envrc .env.local .env.production
-
-      - name: Wait for PostgreSQL
-        run: |
-          i=1
-          while [ $i -le 30 ]; do
-            if pg_isready -h postgres -p 5432 -U postgres; then
-              echo "PostgreSQL is ready"
-              exit 0
-            fi
-            echo "Waiting for PostgreSQL..."
-            sleep 2
-            i=$((i + 1))
-          done
-          echo "PostgreSQL failed to start"
-          exit 1
-
-      - name: Run backend tests
-        run: pytest tests/ --cov=comic_pile --cov-report=xml
-
-      - name: Upload coverage to Codecov
-        uses: codecov/codecov-action@v7
-        with:
-          files: ./coverage.xml
-          fail_ci_if_error: false
-          token: ${{ secrets.CODECOV_TOKEN }}
-          flags: backend
-
-  check-all-jobs:
-    name: CI Summary
-    runs-on: ubuntu-latest
-    needs: [build, frontend-typecheck, python-lint, python-typecheck, frontend-unit-tests, ui-audit, migration-health, test-unit]
-    if: always()
-    steps:
-      - name: Check job results
-        run: |
-          echo "Build: ${{ needs.build.result }}"
-          echo "Frontend Lint + Typecheck: ${{ needs.frontend-typecheck.result }}"
-          echo "Python Lint (ruff): ${{ needs.python-lint.result }}"
-          echo "Python Type Check (ty): ${{ needs.python-typecheck.result }}"
-          echo "Frontend Unit Tests: ${{ needs.frontend-unit-tests.result }}"
-          echo "Rendered UI Audit: ${{ needs.ui-audit.result }}"
-          echo "Migration Health: ${{ needs.migration-health.result }}"
-          echo "Backend Tests: ${{ needs.test-unit.result }}"
-          if [ "${{ needs.build.result }}" != "success" ] || \
-             [ "${{ needs.frontend-typecheck.result }}" != "success" ] || \
-             [ "${{ needs.python-lint.result }}" != "success" ] || \
-             [ "${{ needs.python-typecheck.result }}" != "success" ] || \
-             [ "${{ needs.frontend-unit-tests.result }}" != "success" ] || \
-             [ "${{ needs.ui-audit.result }}" != "success" ] || \
-             [ "${{ needs.migration-health.result }}" != "success" ] || \
-             [ "${{ needs.test-unit.result }}" != "success" ]; then
-            echo "::error::One or more required CI jobs failed. Please review the failures."
-            exit 1
-          fi
-
-          echo "::notice::All enabled CI jobs passed successfully!"
+      - name: Test JavaScript controller helpers
+        run: node --test .github/scripts/*.test.cjs

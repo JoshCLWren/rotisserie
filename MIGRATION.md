@@ -19,6 +19,23 @@
 - Autonomous Factory policy and execution/acceptance protocols
 - The existing generic dependency/executable-policy extraction reference
 
+## GitHub Actions safety boundary
+
+ComicPile's imported workflows are preserved under
+`reference/comic-pile-workflows/`, which GitHub does not execute. They remain
+available as migration evidence but cannot dispatch workers, merge pull
+requests, create issues, publish status pages, or consume ComicPile-oriented
+secrets from this repository.
+
+The only active workflow is `.github/workflows/ci.yml`. It is Rotisserie-only,
+has read-only repository permissions, and runs local compilation plus copied
+policy/controller tests. It has no schedule and performs no issue, pull-request,
+deployment, Pages, database, or external-repository mutations.
+
+`tests/test_rotisserie_actions.py` enforces this boundary. The two imported
+controller assertions that require ComicPile's scheduled workflows to remain
+active are intentionally excluded from Rotisserie CI.
+
 ComicPile files were not removed or modified. Runtime names, repository names,
 labels, and paths have intentionally not been generalized yet; preserving the
 working implementation and tests is the baseline for later extraction work.
