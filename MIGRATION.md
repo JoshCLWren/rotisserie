@@ -117,3 +117,18 @@ retry marker is persisted only after the returned state matches the request.
 Dry-run mode records a credential-free plan and performs no credential lookup,
 inspection, or write. No workflow or autonomous runtime is activated by this
 adapter extraction.
+
+## Application orchestration
+
+Provider-neutral services under `src/rotisserie/application` now compose graph
+policy with a versioned snapshot/effect protocol. Selection and refill remain
+deterministic decisions, while claim, release, dispatch, review transition,
+completion, and expired-lease recovery use compare-and-swap commands at every
+mutation boundary. Change commands carry an exact revision, and stable
+content-derived operation keys let adapters suppress duplicate effects after a
+crash between the effect and its acknowledgement.
+
+Operation results have a versioned serializable shape and stable failure
+categories. The legacy workflow syntax, provider health heuristics, label
+vocabulary, and GitHub CLI behavior remain host-specific migration evidence;
+none is imported into the application layer or activated as a workflow.
