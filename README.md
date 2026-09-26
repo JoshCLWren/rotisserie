@@ -11,9 +11,12 @@ Rotisserie builds on operating experience with parallel implementation,
 independent review, repair, CI, merge readiness, model fallback, and
 interrupted-work recovery. Its job is to make those mechanics portable.
 
-> **Current state: extraction baseline, not yet ready to install.** The complete
-> legacy implementation is archived as migration evidence. Its operational
-> workflows are disabled while the generic core and adapters are built.
+> **Current state: core extraction through the worker runtime is complete.**
+> Rotisserie now has a standalone package, generic graph and coordination
+> policy, secure GitHub adapter, application orchestration, and provider-neutral
+> worker contracts. The next phase is the operator CLI, configuration,
+> persistence, and observability surface. Autonomous execution remains
+> intentionally disabled until guarded self-dogfood.
 
 ## What “graph engineering” means
 
@@ -106,18 +109,19 @@ Version history and release-note conventions live in
 
 ## Roadmap
 
-The [open issues](https://github.com/JoshCLWren/rotisserie/issues) are the
-canonical, dependency-ordered extraction plan. The major phases are:
+The [roadmap issue](https://github.com/JoshCLWren/rotisserie/issues/1) is the
+canonical dependency-ordered plan. Current progress:
 
-1. establish an independent package, test, license, and terminology baseline;
-2. extract the generic work graph and pure coordination policy;
-3. put GitHub projection and mutation behind a secure adapter;
-4. extract dispatch, completion, recovery, and capacity orchestration;
-5. define provider-neutral worker and evidence contracts;
-6. build an operator CLI, configuration model, and observability surface;
-7. safely dogfood Rotisserie on its own repository;
-8. integrate a real external repository through the public boundary;
-9. harden and publish the first supported open-source release.
+- [x] establish the standalone project foundation and license;
+- [x] define the generic work graph domain model;
+- [x] extract deterministic scheduling and coordination policy;
+- [x] implement the secure GitHub graph adapter;
+- [x] extract dispatch, completion, recovery, and capacity orchestration;
+- [x] define provider-neutral worker, evidence, and executor contracts;
+- [ ] build the operator CLI, configuration model, persistence, and observability surface;
+- [ ] safely dogfood Rotisserie on its own repository;
+- [ ] integrate ComicPile as the first external adopter through the public boundary;
+- [ ] harden and publish the first supported open-source release.
 
 No adopter needs to replace working automation before the new boundary is
 proven.
