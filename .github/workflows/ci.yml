@@ -14,8 +14,8 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  factory-core:
-    name: Factory core
+  rotisserie-core:
+    name: Rotisserie core
     runs-on: ubuntu-latest
     timeout-minutes: 10
 
@@ -29,31 +29,8 @@ jobs:
       - name: Install test dependency
         run: python -m pip install pytest
 
-      - name: Compile copied Python sources
-        run: >-
-          python -m compileall -q
-          .github/scripts
-          latticery_extraction
-          scripts
+      - name: Compile Python sources
+        run: python -m compileall -q prototype tests
 
-      - name: Test generic extraction reference
-        run: python -m pytest -q latticery_extraction tests/test_rotisserie_actions.py
-
-      - name: Test Factory controllers and policies
-        env:
-          PYTHONPATH: .github/scripts
-        run: >-
-          python -m pytest -q
-          .github/scripts/test_factory_epic_prd_policy.py
-          .github/scripts/test_factory_issue_pr_state_policy.py
-          .github/scripts/test_factory_review_controller.py
-          .github/scripts/test_factory_review_policy.py
-          .github/scripts/test_factory_review_thread_gate.py
-          .github/scripts/test_factory_stage5.py
-          .github/scripts/test_factory_work_policy.py
-          -k
-          "not test_workflows_delegate_mechanical_gates_to_controller and
-          not test_fixed_model_factory_schedules_are_active"
-
-      - name: Test JavaScript controller helpers
-        run: node --test .github/scripts/*.test.cjs
+      - name: Test Rotisserie
+        run: python -m pytest -q prototype tests

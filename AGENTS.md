@@ -5,30 +5,25 @@ Instructions for AI agents working in Rotisserie.
 ## Mission
 
 Build Rotisserie into a portable graph-engineering platform for coordinating
-AI and human workers over issue and change graphs. Preserve the proven
-ComicPile Factory behavior while separating generic domain policy from hosting,
-repository, provider, and product-specific details.
+AI and human workers over issue and change graphs. Turn operating lessons into
+generic domain policy separated from hosting, repository, provider, and
+product-specific details.
 
 ## Current phase
 
-This repository is a copy-first extraction baseline. Much of the copied code
-still contains ComicPile names, paths, labels, issue markers, and operational
-assumptions. Treat that code as evidence to classify and migrate—not as the
-final public API.
-
-The working ComicPile Factory remains independent and operational. Rotisserie
-must not modify, delete, dispatch, or cut over ComicPile unless an issue and a
-direct user instruction explicitly authorize that integration step.
+This repository is an early extraction baseline. Historical implementation is
+quarantined under `reference/legacy-factory/`. Treat it as evidence to classify
+and migrate, never as Rotisserie product code or a public API.
 
 ## Non-negotiable safety rules
 
-- Do not use the ComicPile Factory, Rotisserie, or any autonomous worker to
-  implement Rotisserie issues unless the user explicitly requests it.
-- Do not enable copied workflows from `reference/comic-pile-workflows/`.
+- Do not use Rotisserie or any autonomous worker to implement Rotisserie issues
+  unless the user explicitly requests it.
+- Do not enable workflows from `reference/legacy-factory/`.
 - `.github/workflows/ci.yml` is the only active workflow until an approved
   activation issue changes the safety boundary.
-- Active workflows must not reference ComicPile, use schedules, or receive
-  write permissions during the extraction phases. Keep
+- Active workflows must not use schedules or receive write permissions during
+  the extraction phases. Keep
   `tests/test_rotisserie_actions.py` green.
 - Never place credentials in prompts, source, tests, logs, fixtures, comments,
   artifacts, or durable worker state.
@@ -36,7 +31,7 @@ direct user instruction explicitly authorize that integration step.
   and fail closed when identity or credentials are missing.
 - Never push directly to another repository, close another repository's issue,
   or alter external Actions as an incidental part of Rotisserie work.
-- Preserve `reference/comic-pile-workflows/` as migration evidence until an
+- Preserve `reference/legacy-factory/` as migration evidence until an
   issue explicitly replaces or removes each reference artifact.
 
 ## Architecture boundaries
@@ -86,8 +81,8 @@ When editing:
 - Keep policy functions pure wherever possible; inject clocks and effects.
 - Use `pathlib`, precise type annotations, and explicit result types.
 - Do not add compatibility aliases without a concrete current consumer.
-- Do not preserve ComicPile vocabulary in a generic API merely because the
-  copied implementation uses it.
+- Do not preserve legacy vocabulary in a generic API merely because the
+  archived implementation uses it.
 - Do not weaken or delete a regression test unless the issue explicitly
   changes the invariant it proves. Add the replacement assertion first.
 - Keep source-reference behavior traceable in commit messages or documentation.
@@ -97,17 +92,7 @@ When editing:
 Run the checks proportionate to the files changed. At minimum:
 
 ```bash
-python -m pytest -q latticery_extraction tests/test_rotisserie_actions.py
-PYTHONPATH=.github/scripts python -m pytest -q \
-  .github/scripts/test_factory_epic_prd_policy.py \
-  .github/scripts/test_factory_issue_pr_state_policy.py \
-  .github/scripts/test_factory_review_controller.py \
-  .github/scripts/test_factory_review_policy.py \
-  .github/scripts/test_factory_review_thread_gate.py \
-  .github/scripts/test_factory_stage5.py \
-  .github/scripts/test_factory_work_policy.py \
-  -k 'not test_workflows_delegate_mechanical_gates_to_controller and not test_fixed_model_factory_schedules_are_active'
-node --test .github/scripts/*.test.cjs
+python -m pytest -q prototype tests
 ```
 
 As the standalone package and its tooling land, use the canonical commands
@@ -126,11 +111,11 @@ For every change:
 
 - Issues are the canonical roadmap and must state dependencies explicitly.
 - One issue should deliver one coherent architectural capability.
-- Do not create duplicate phase issues or mirror them into ComicPile/Latticery.
+- Do not create duplicate or externally mirrored phase issues.
 - PRs should name the issue they satisfy and describe preserved invariants.
 - Closing keywords are appropriate only when the entire issue contract is met.
-- Do not activate autonomous execution merely because an issue label resembles
-  a copied ComicPile Factory label.
+- Do not activate autonomous execution merely because an issue carries a
+  legacy-looking automation label.
 
 ## Definition of done
 

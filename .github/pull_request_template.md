@@ -12,7 +12,7 @@ Describe the capability delivered and the architectural layer changed.
 - [ ] Repository and credential authority remains explicitly bounded.
 - [ ] Exact-revision evidence cannot authorize a changed head.
 - [ ] Dry-run paths perform no remote mutation.
-- [ ] No copied ComicPile workflow was activated.
+- [ ] No archived legacy workflow was activated.
 
 Remove invariant items that truly do not apply and explain why.
 

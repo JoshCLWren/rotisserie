@@ -21,8 +21,8 @@
 
 ## GitHub Actions safety boundary
 
-ComicPile's imported workflows are preserved under
-`reference/comic-pile-workflows/`, which GitHub does not execute. They remain
+Imported workflows are preserved under
+`reference/legacy-factory/.github/workflows/`, which GitHub does not execute. They remain
 available as migration evidence but cannot dispatch workers, merge pull
 requests, create issues, publish status pages, or consume ComicPile-oriented
 secrets from this repository.
@@ -32,9 +32,8 @@ has read-only repository permissions, and runs local compilation plus copied
 policy/controller tests. It has no schedule and performs no issue, pull-request,
 deployment, Pages, database, or external-repository mutations.
 
-`tests/test_rotisserie_actions.py` enforces this boundary. The two imported
-controller assertions that require ComicPile's scheduled workflows to remain
-active are intentionally excluded from Rotisserie CI.
+`tests/test_rotisserie_actions.py` enforces this boundary. Archived source tests
+are retained for behavioral archaeology but are not Rotisserie CI.
 
 ComicPile files were not removed or modified. Runtime names, repository names,
 labels, and paths have intentionally not been generalized yet; preserving the

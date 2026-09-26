@@ -7,15 +7,13 @@ workers across a software backlog. It treats issues, dependencies, pull
 requests, reviews, checks, leases, and human decisions as one live work graph—
 then moves the right worker to the right node without losing safety or context.
 
-The project is being extracted from the ComicPile Factory, a production system
-that has already coordinated parallel implementation, independent review,
-repair, CI, merge readiness, model fallback, and interrupted-work recovery.
-Rotisserie's job is to turn those proven mechanics into a portable platform.
+Rotisserie builds on operating experience with parallel implementation,
+independent review, repair, CI, merge readiness, model fallback, and
+interrupted-work recovery. Its job is to make those mechanics portable.
 
 > **Current state: extraction baseline, not yet ready to install.** The complete
-> Factory snapshot is here, but much of it still speaks ComicPile's vocabulary.
-> Its operational workflows are deliberately disabled while the generic core
-> and repository adapter are separated.
+> legacy implementation is archived as migration evidence. Its operational
+> workflows are disabled while the generic core and adapters are built.
 
 ## What “graph engineering” means
 
@@ -66,13 +64,9 @@ The intended result is a system that can:
 
 | Path | Purpose |
 |---|---|
-| `.github/scripts/` | Copied controllers, policies, worker helpers, and tests |
-| `latticery_extraction/` | First generic dependency and eligibility policy slice |
-| `scripts/` | Copied local worker and model-routing utilities |
-| `tests/` | Factory regression tests plus Rotisserie safety guards |
-| `docs/` | Source policy, execution protocol, and prompt documentation |
-| `prompts/`, `.agents/`, `.opencode/` | Worker and reviewer instructions |
-| `reference/comic-pile-workflows/` | Preserved, non-executable source workflows |
+| `prototype/` | First generic dependency and eligibility policy slice |
+| `tests/` | Rotisserie repository-safety guards |
+| `reference/legacy-factory/` | Archived migration evidence, code, tests, prompts, and disabled workflows |
 | `.github/workflows/ci.yml` | The only active Action; read-only Rotisserie CI |
 
 See [MIGRATION.md](MIGRATION.md) for exact snapshot provenance and known source
@@ -81,10 +75,9 @@ test drift.
 ## Safety boundary
 
 Rotisserie does **not** currently dispatch agents, mutate issues, merge pull
-requests, deploy software, or operate ComicPile. The imported ComicPile Actions
-live outside `.github/workflows/` and therefore cannot execute. A regression
-test enforces that the sole active workflow is read-only, unscheduled, and free
-of ComicPile coupling.
+requests, or deploy software. Imported operational Actions live outside
+`.github/workflows/` and therefore cannot execute. A regression test enforces
+that the sole active workflow is read-only and unscheduled.
 
 The operational runtime will only be enabled after repository identity,
 permissions, credentials, dry-run behavior, and end-to-end mutation tests are
@@ -97,25 +90,8 @@ boundaries are designed. With Python 3.14, `pytest`, and Node.js installed:
 
 ```bash
 # Generic policy and active-Action safety
-python -m pytest -q latticery_extraction tests/test_rotisserie_actions.py
-
-# Copied controller and policy regression suite
-PYTHONPATH=.github/scripts python -m pytest -q \
-  .github/scripts/test_factory_epic_prd_policy.py \
-  .github/scripts/test_factory_issue_pr_state_policy.py \
-  .github/scripts/test_factory_review_controller.py \
-  .github/scripts/test_factory_review_policy.py \
-  .github/scripts/test_factory_review_thread_gate.py \
-  .github/scripts/test_factory_stage5.py \
-  .github/scripts/test_factory_work_policy.py \
-  -k 'not test_workflows_delegate_mechanical_gates_to_controller and not test_fixed_model_factory_schedules_are_active'
-
-# JavaScript controller helpers
-node --test .github/scripts/*.test.cjs
+python -m pytest -q prototype tests
 ```
-
-The two deselected assertions require ComicPile's scheduled workflows to be
-active, which is intentionally false in Rotisserie.
 
 ## Roadmap
 
@@ -129,11 +105,11 @@ canonical, dependency-ordered extraction plan. The major phases are:
 5. define provider-neutral worker and evidence contracts;
 6. build an operator CLI, configuration model, and observability surface;
 7. safely dogfood Rotisserie on its own repository;
-8. integrate ComicPile as the first external adopter;
+8. integrate a real external repository through the public boundary;
 9. harden and publish the first supported open-source release.
 
-No phase requires deleting the working Factory from ComicPile before the new
-boundary is proven.
+No adopter needs to replace working automation before the new boundary is
+proven.
 
 ## Contributing
 

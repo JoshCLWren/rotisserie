@@ -26,23 +26,8 @@ The standalone package and CLI have not landed yet. The current baseline needs
 Python 3.14 with `pytest` and a recent Node.js release.
 
 ```bash
-python -m pytest -q latticery_extraction tests/test_rotisserie_actions.py
-
-PYTHONPATH=.github/scripts python -m pytest -q \
-  .github/scripts/test_factory_epic_prd_policy.py \
-  .github/scripts/test_factory_issue_pr_state_policy.py \
-  .github/scripts/test_factory_review_controller.py \
-  .github/scripts/test_factory_review_policy.py \
-  .github/scripts/test_factory_review_thread_gate.py \
-  .github/scripts/test_factory_stage5.py \
-  .github/scripts/test_factory_work_policy.py \
-  -k 'not test_workflows_delegate_mechanical_gates_to_controller and not test_fixed_model_factory_schedules_are_active'
-
-node --test .github/scripts/*.test.cjs
+python -m pytest -q prototype tests
 ```
-
-The two deselected source tests require ComicPile's autonomous workflows to be
-active. Rotisserie intentionally keeps those workflows disabled.
 
 ## Making a change
 
@@ -54,13 +39,13 @@ active. Rotisserie intentionally keeps those workflows disabled.
 - Preserve exact-revision, lease, independent-review, and dry-run invariants.
 - Never introduce credentials, real user data, private prompts, or live tokens
   into source or fixtures.
-- Do not activate anything in `reference/comic-pile-workflows/`.
+- Do not activate anything in `reference/legacy-factory/`.
 - Run `tests/test_rotisserie_actions.py` after changing `.github/`.
 - Run `git diff --check` before committing.
 
-Copied code is evidence, not a naming template. New public APIs should use
-Rotisserie domain language rather than `ComicPile`, `factory:<number>`,
-`ralph-*`, or a specific model vendor.
+Archived code is evidence, not a naming template. New public APIs should use
+Rotisserie domain language rather than legacy labels, markers, or a specific
+model vendor.
 
 ## Pull requests
 

@@ -20,13 +20,13 @@ FORBIDDEN_TEXT = (
 
 
 def test_only_rotisserie_ci_is_active() -> None:
-    """Keep imported ComicPile automation outside the executable directory."""
+    """Keep imported legacy automation outside the executable directory."""
     active = {path.name for path in WORKFLOWS.iterdir() if path.is_file()}
     assert active == ALLOWED_WORKFLOWS
 
 
 def test_active_actions_are_read_only_and_rotisserie_specific() -> None:
-    """Reject schedules, write permissions, and ComicPile coupling."""
+    """Reject schedules, write permissions, and legacy repository coupling."""
     for path in WORKFLOWS.iterdir():
         if not path.is_file():
             continue

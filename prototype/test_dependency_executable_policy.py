@@ -6,16 +6,16 @@ Acceptance criteria covered:
 - all-resolved eligibility
 - unresolved blocking
 - casual-reference non-blocking
-- no ComicPile-specific exclusions/leaks
+- no legacy product-specific exclusions or leaks
 """
-from latticery_extraction.dependency_policy import (
+from prototype.dependency_policy import (
     MANUAL_ONLY_MARKER,
     dependency_declarations,
     has_unresolved_dependencies,
     is_explicit_dependency_reference,
     parse_dependency_numbers,
 )
-from latticery_extraction.executable_policy import eligibility_reason, is_executable
+from prototype.executable_policy import eligibility_reason, is_executable
 
 
 class TestExplicitDependencies:
@@ -93,22 +93,22 @@ class TestManualOnly:
 
 
 class TestNoHostLeakage:
-    """Ensure no ComicPile-specific exclusions or numbers leak."""
+    """Ensure no legacy product-specific exclusions or numbers leak."""
 
     def test_no_hardcoded_issue_numbers_in_domain(self) -> None:
         # The domain modules should not contain specific issue IDs.
         import inspect
-        import latticery_extraction.dependency_policy as dp
-        import latticery_extraction.executable_policy as ep
+        import prototype.dependency_policy as dp
+        import prototype.executable_policy as ep
 
         source = inspect.getsource(dp) + inspect.getsource(ep)
-        # The known excluded issues from ComicPile factory policy are 679, 1093, 1109.
+        # Historical source policy excluded these product issue numbers.
         for bad in (679, 1093, 1109):
             assert str(bad) not in source, f"host-specific issue number {bad} leaked into domain"
 
-    def test_no_comic_pile_labels(self) -> None:
+    def test_no_product_labels(self) -> None:
         import inspect
-        import latticery_extraction.dependency_policy as dp
+        import prototype.dependency_policy as dp
 
         source = inspect.getsource(dp)
         assert "factory:unowned" not in source
