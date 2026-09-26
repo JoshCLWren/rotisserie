@@ -72,4 +72,18 @@ model-recommendation symlink. Every ComicPile tracked path containing
 Rotisserie now has an independently buildable `src/rotisserie` package with
 Apache-2.0 package metadata, Python 3.12–3.14 support, a locked development
 environment, and one canonical `./scripts/verify` command. The prototype stays
-outside the public package until the Phase 2 domain contract replaces it.
+outside the public package as traceable migration evidence.
+
+## Generic graph domain
+
+The first extraction slice now lives under `src/rotisserie/domain`. It defines
+repository-scoped identities and immutable work, change, revision, worker,
+lease, check, review, evidence, capacity, and human-boundary values. Validated
+snapshots preserve explicit dependency and implementation relationships,
+reject cycles and dangling references, serialize through a versioned durable
+shape, and scope readiness evidence to an exact revision.
+
+The prototype dependency scanner remains migration evidence: a compatibility
+test proves that its accepted output maps into explicit graph edges. Parsing
+host text, labels, payloads, and branch names is intentionally not part of the
+domain API.

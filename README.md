@@ -64,8 +64,8 @@ The intended result is a system that can:
 
 | Path | Purpose |
 |---|---|
-| `src/rotisserie/` | Standalone typed Python package boundary |
-| `prototype/` | First generic dependency and eligibility policy slice; moves into the package in Phase 2 |
+| `src/rotisserie/` | Standalone typed package and pure graph domain |
+| `prototype/` | Dependency and eligibility migration evidence with domain compatibility tests |
 | `tests/` | Rotisserie repository-safety guards |
 | `reference/legacy-factory/` | Archived migration evidence, code, tests, prompts, and disabled workflows |
 | `.github/workflows/ci.yml` | The only active Action; read-only Rotisserie CI |

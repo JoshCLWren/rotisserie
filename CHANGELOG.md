@@ -14,6 +14,8 @@ such change must be called out here and in its release notes.
 - Standalone Python package, locked development environment, and canonical
   verification commands.
 - Explicit migration inventory for every archived source artifact.
+- Provider-neutral graph identities, entities, relationships, validation, and
+  versioned snapshot serialization under the pure domain boundary.
 
 ## Release notes
 
@@ -23,4 +25,3 @@ link to the matching changelog entry, state supported Python versions, and
 identify any migration or compatibility action an adopter must take.
 
 [Unreleased]: https://github.com/JoshCLWren/rotisserie/compare/v0.1.0...HEAD
-

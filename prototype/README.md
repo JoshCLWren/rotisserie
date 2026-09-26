@@ -7,6 +7,7 @@ This directory contains the first framework-free Rotisserie policy slice:
 - deterministic executable-work eligibility;
 - focused behavioral tests.
 
-It is a prototype, not the final package layout or public API. Phase 1 moves
-accepted behavior into `src/rotisserie` after the project tooling and module
-boundaries are established.
+It is migration evidence, not the final package layout or public API. The
+accepted behavior now has a compatibility test that projects parsed references
+into explicit `rotisserie.domain` graph edges. Host text parsing remains outside
+the pure graph model and will move behind an adapter boundary in a later phase.
