@@ -132,3 +132,21 @@ Operation results have a versioned serializable shape and stable failure
 categories. The legacy workflow syntax, provider health heuristics, label
 vocabulary, and GitHub CLI behavior remain host-specific migration evidence;
 none is imported into the application layer or activated as a workflow.
+
+## Worker runtime contracts
+
+Provider-neutral contracts under `src/rotisserie/application/runtime.py` now
+bind each assignment to one work target, worker, authority manifest, expiry,
+and (for change work) exact revision. Trusted objectives and authority are
+rendered separately from untrusted repository content. Attempt identities,
+heartbeats, progress, terminal outcomes, revision evidence, and versioned
+secret-free resume packets give AI executors and human bridges the same durable
+handoff boundary.
+
+The bounded runtime rejects expired authority, cross-repository results,
+replayed state from another assignment, credential-like durable data, and
+malformed executor output. It deterministically falls back only for unavailable
+or rate-limited executors; no-diff, failure, timeout, and cancellation remain
+terminal outcomes. Provider selection, credentials, subprocesses, prompts,
+GitHub workflow syntax, and remote mutation remain adapter or product policy,
+and no worker execution has been activated.

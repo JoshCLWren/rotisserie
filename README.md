@@ -66,6 +66,7 @@ The intended result is a system that can:
 |---|---|
 | `src/rotisserie/domain/` | Provider-neutral graph values and pure coordination policy |
 | `src/rotisserie/application/` | Versioned, idempotent coordination use cases over effect protocols |
+| `src/rotisserie/application/runtime.py` | Bounded worker, attempt, evidence, recovery, and executor contracts |
 | `src/rotisserie/adapters/github/` | Repository-scoped GitHub projection and bounded mutation contracts |
 | `prototype/` | Dependency and eligibility migration evidence with domain compatibility tests |
 | `tests/` | Rotisserie repository-safety guards |

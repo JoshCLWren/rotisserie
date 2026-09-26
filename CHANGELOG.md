@@ -16,6 +16,9 @@ such change must be called out here and in its release notes.
 - Explicit migration inventory for every archived source artifact.
 - Provider-neutral graph identities, entities, relationships, validation, and
   versioned snapshot serialization under the pure domain boundary.
+- Bounded provider-neutral worker assignments, authority manifests, attempt
+  events, exact-revision evidence, secret-free resume packets, and deterministic
+  executor fallback contracts.
 
 ## Release notes
 
