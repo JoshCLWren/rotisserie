@@ -1,0 +1,53 @@
+name: Bug report
+description: Report reproducible incorrect behavior in Rotisserie
+title: "[Bug]: "
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thank you for helping improve Rotisserie. Do not report vulnerabilities here; use the private process in SECURITY.md.
+  - type: checkboxes
+    attributes:
+      label: Safety check
+      options:
+        - label: This report contains no credentials, private data, or undisclosed security vulnerability.
+          required: true
+        - label: I searched open and closed issues for a duplicate.
+          required: true
+  - type: input
+    attributes:
+      label: Version or commit
+      description: Release, tag, or full commit SHA where you observed the problem.
+    validations:
+      required: true
+  - type: textarea
+    attributes:
+      label: What happened?
+      description: Describe the observed behavior and its impact.
+    validations:
+      required: true
+  - type: textarea
+    attributes:
+      label: Minimal reproduction
+      description: Include the smallest safe fixture, configuration, or command sequence that reproduces it.
+    validations:
+      required: true
+  - type: textarea
+    attributes:
+      label: Expected behavior
+    validations:
+      required: true
+  - type: textarea
+    attributes:
+      label: Environment and evidence
+      description: OS, Python/Node versions, adapter/runtime, logs, and checks. Redact secrets.
+  - type: dropdown
+    attributes:
+      label: Mutation impact
+      options:
+        - No remote mutation
+        - Mutation was confined to the configured repository
+        - Unexpected or cross-repository mutation may have occurred
+    validations:
+      required: true

@@ -1,0 +1,47 @@
+name: Feature proposal
+description: Propose a new capability or architectural change
+title: "[Proposal]: "
+labels: [enhancement]
+body:
+  - type: checkboxes
+    attributes:
+      label: Before proposing
+      options:
+        - label: I searched the roadmap and existing issues for this capability.
+          required: true
+        - label: I identified the phase prerequisites this proposal depends on.
+          required: true
+  - type: textarea
+    attributes:
+      label: Problem
+      description: What user or operator problem should Rotisserie solve?
+    validations:
+      required: true
+  - type: textarea
+    attributes:
+      label: Proposed capability
+      description: Describe the behavior and its domain/application/adapter boundary, not only an implementation.
+    validations:
+      required: true
+  - type: textarea
+    attributes:
+      label: Graph model
+      description: Which nodes, edges, evidence, leases, gates, or transitions are involved?
+    validations:
+      required: true
+  - type: textarea
+    attributes:
+      label: Safety and authority
+      description: Identify credentials, mutations, untrusted inputs, human gates, and fail-closed behavior.
+    validations:
+      required: true
+  - type: textarea
+    attributes:
+      label: Acceptance evidence
+      description: What deterministic tests or observable outcomes would prove this complete?
+    validations:
+      required: true
+  - type: textarea
+    attributes:
+      label: Dependencies and alternatives
+      description: Link prerequisite issues and explain simpler alternatives considered.
