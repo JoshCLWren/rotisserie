@@ -1,0 +1,53 @@
+{
+  "repository": {"host": "github.com", "owner": "acme", "name": "oven"},
+  "issues": [
+    {
+      "number": 10,
+      "title": "Foundation",
+      "body": "A casual mention of #99 is not a dependency.",
+      "state": "CLOSED",
+      "state_reason": "COMPLETED",
+      "labels": [{"name": "roadmap"}],
+      "comments": [{"id": 1, "body": "done"}],
+      "dependencies": []
+    },
+    {
+      "number": 20,
+      "title": "Build feature",
+      "body": "Depends on #10",
+      "state": "OPEN",
+      "priority": 7,
+      "labels": [{"name": "ready"}],
+      "comments": [{"id": 2, "body": "<!-- rotisserie:attempt:abc -->"}],
+      "dependencies": [{"number": 10}]
+    },
+    {
+      "number": 30,
+      "title": "Declined idea",
+      "body": "",
+      "state": "CLOSED",
+      "state_reason": "NOT_PLANNED",
+      "dependencies": []
+    }
+  ],
+  "pull_requests": [
+    {
+      "number": 51,
+      "issue_number": 20,
+      "state": "OPEN",
+      "merged": false,
+      "author_login": "Builder",
+      "head_sha": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "base_repository": {"host": "github.com", "owner": "acme", "name": "oven"},
+      "head_repository": {"host": "github.com", "owner": "contributor", "name": "oven"},
+      "checks": [
+        {"name": "test", "status": "COMPLETED", "conclusion": "SUCCESS", "head_sha": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"},
+        {"name": "old-test", "status": "COMPLETED", "conclusion": "FAILURE", "head_sha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "required": false}
+      ],
+      "reviews": [
+        {"id": "R1", "author_login": "Reviewer", "state": "APPROVED", "commit_id": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"},
+        {"id": "R0", "author_login": "OldReviewer", "state": "CHANGES_REQUESTED", "commit_id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "required": false}
+      ]
+    }
+  ]
+}

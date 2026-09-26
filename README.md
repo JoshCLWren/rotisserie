@@ -64,7 +64,8 @@ The intended result is a system that can:
 
 | Path | Purpose |
 |---|---|
-| `src/rotisserie/` | Standalone typed package and pure graph domain |
+| `src/rotisserie/domain/` | Provider-neutral graph values and pure coordination policy |
+| `src/rotisserie/adapters/github/` | Repository-scoped GitHub projection and bounded mutation contracts |
 | `prototype/` | Dependency and eligibility migration evidence with domain compatibility tests |
 | `tests/` | Rotisserie repository-safety guards |
 | `reference/legacy-factory/` | Archived migration evidence, code, tests, prompts, and disabled workflows |

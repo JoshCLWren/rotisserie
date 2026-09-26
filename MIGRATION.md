@@ -98,3 +98,22 @@ revision. Configurable WIP, reserved review capacity, and completion-backlog
 pressure replace the archived Factory environment constants. GitHub labels,
 provider routes, payload parsing, and mutations remain adapter concerns for
 later phases.
+
+## Secure GitHub graph adapter
+
+The first external adapter now lives under `src/rotisserie/adapters/github`.
+Its read side validates a caller-selected repository before translating issue,
+dependency, pull request, revision, check, and review fixtures into domain
+identities. Pull requests may originate from forks, but their base repository
+and linked work must remain inside the configured graph. Evidence from an old
+commit remains attached to that revision and cannot satisfy current-head
+policy.
+
+The write side exposes typed credential and transport protocols rather than
+shelling out to `gh`. Every mutation is bound to one repository installation
+and an allowlisted issue or change. Change mutations require an exact head;
+labels and state are reconciled as one complete operation; and a content-derived
+retry marker is persisted only after the returned state matches the request.
+Dry-run mode records a credential-free plan and performs no credential lookup,
+inspection, or write. No workflow or autonomous runtime is activated by this
+adapter extraction.
