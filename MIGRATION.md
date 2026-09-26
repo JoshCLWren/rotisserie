@@ -6,8 +6,8 @@
 - Source commit: `2dc9b675e1a828b526f074c5f5c151293dedcdee`
 - Destination repository: `JoshCLWren/rotisserie`
 - Migration mode: byte-for-byte copy with source-relative paths preserved;
-  destination-owned `README.md`, `.gitignore`, and this record are the only
-  authored files in this phase
+  destination-owned project and community-health files are authored separately
+  from the source snapshot
 
 ## Included in this phase
 
