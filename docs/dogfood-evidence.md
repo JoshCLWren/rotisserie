@@ -37,7 +37,12 @@ repository kill-switch variable was then set to `true`. This pull request is
 the sole allowlisted canary: issue #9, branch `rotisserie/canary-9`, base
 `main`, and a same-repository head.
 
-Before a successful merge, the canary will record a stale-head refusal and a
-cancelled run. A successful run still requires required CI and an independent
-approval attached to the exact final head. The merge workflow will then
-re-read that head and submit it through GitHub's expected-head guard.
+The activation commit passed Rotisserie CI in run `36322863043`. Canary run
+`36322913885` supplied a valid but deliberately wrong expected SHA and failed
+before mutation. Run `36322935904` used the then-current canary SHA and was
+cancelled; it completed with the `cancelled` conclusion and performed no
+merge. These runs exercise stale-revision refusal and operator cancellation.
+
+A successful run still requires required CI and an independent approval
+attached to the exact final head. The merge workflow will then re-read that
+head and submit it through GitHub's expected-head guard.
