@@ -191,8 +191,10 @@ operation record.
 The maintainer approved a manual, write-capable merge canary on 2026-09-27 and
 amended issue #9 to use guarded autonomous merging rather than a human merge
 gate. The canary is restricted to issue #9 and branch
-`rotisserie/canary-9`, requires independent exact-head approval and required
-CI, rejects forks, and revalidates the head before an expected-SHA merge. A
-repository variable is the kill switch. Server-side branch protection requires
-the Python 3.12, 3.13, and 3.14 CI contexts plus one approving review. No worker
+`rotisserie/canary-9`, requires independent exact-head semantic review evidence
+and required CI, rejects forks, and revalidates the head before an expected-SHA
+merge. Producer/reviewer separation uses durable Rotisserie worker identities,
+matching ComicPile's single-account Factory contract; formal GitHub approval is
+not required. A repository variable is the kill switch. Server-side branch
+protection requires the Python 3.12, 3.13, and 3.14 CI contexts. No worker
 execution or schedule has been activated; lifecycle evidence is still pending.

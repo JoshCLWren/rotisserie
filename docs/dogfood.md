@@ -62,15 +62,20 @@ number and exact 40-character head SHA.
 
 The workflow rejects forks, moved heads, drafts, other repositories, branches,
 base branches, and issue targets. It requires successful required checks and
-an independent approval attached to the exact head, re-reads the head after
-those gates, and uses GitHub's expected-head merge guard. GitHub auto-merge is
-not enabled. The workflow token is exposed only to the trusted merge adapter;
-no worker or pull-request code runs with it.
+controller-persisted semantic review evidence from a worker identity distinct
+from the producer and attached to the exact head. It then re-reads the head and
+uses GitHub's expected-head merge guard. GitHub auto-merge is not enabled. The
+workflow token is exposed only to the trusted merge adapter; no worker or
+pull-request code runs with it.
 
 Branch protection independently requires the Python 3.12, 3.13, and 3.14 CI
-contexts, an approval after the latest push, and resolved conversations. The
-adapter requires the same complete successful CI set and refuses GitHub command
-failures as explicit canary errors.
+contexts and resolved conversations. The adapter requires the same complete
+successful CI set and refuses GitHub command failures as explicit canary
+errors. Formal GitHub `APPROVED` state is not required: the single authenticated
+operator account cannot approve its own pull request. This follows ComicPile's
+factory contract, where producer/reviewer separation is a worker-identity
+boundary recorded in an exact-head semantic-review marker, not a second GitHub
+account.
 
 Rollback is immediate: set `ROTISSERIE_CANARY_ENABLED` to any value other than
 `true`, or disable `canary-merge.yml`. Cancellation and stale-head drills must

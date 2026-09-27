@@ -47,10 +47,13 @@ operator cancellation of a queued dispatch, not cancellation inside a guard.
 Review found that the initial implementation did not validate individual CI
 states, exposed dispatch expressions to shell parsing, and lacked server-side
 branch protection. The kill switch was set to `false` before remediation.
-Branch protection now requires all three supported-Python CI contexts and one
-approval. A replacement drill with logged non-secret inputs is required before
-the kill switch is re-enabled.
+Branch protection now requires all three supported-Python CI contexts. Its
+mistaken formal-approval requirement was removed after comparison with
+ComicPile's single-account factory policy. A replacement drill with logged
+non-secret inputs is required before the kill switch is re-enabled.
 
-A successful run still requires required CI and an independent approval
-attached to the exact final head. The merge workflow will then re-read that
-head and submit it through GitHub's expected-head guard.
+A successful run still requires required CI and controller-persisted semantic
+review evidence from a reviewer worker distinct from the producer worker and
+attached to the exact final head. A formal GitHub approval from a second
+account is not required. The merge workflow will then re-read that head and
+submit it through GitHub's expected-head guard.

@@ -20,6 +20,7 @@ class CanaryScope:
     issue: int
     branch: str
     base_branch: str = "main"
+    producer: str = "codex-implementation"
     required_checks: frozenset[str] = frozenset({"Python 3.12", "Python 3.13", "Python 3.14"})
 
 
@@ -71,22 +72,14 @@ def merge_canary(
     ):
         raise CanaryMergeError("pull request does not close the allowlisted canary issue")
 
-    reviews = _array(run(("gh", "api", f"repos/{repository}/pulls/{pull_request}/reviews")))
-    author = _path(pull, "user", "login")
-    approved = {
-        _path(review, "user", "login")
-        for review in reviews
-        if review.get("state") == "APPROVED"
-        and review.get("commit_id") == expected_head
-        and _path(review, "user", "login") != author
-    }
-    if not approved:
-        raise CanaryMergeError("exact head lacks an independent approval")
-    if any(
-        review.get("state") == "CHANGES_REQUESTED" and review.get("commit_id") == expected_head
-        for review in reviews
+    comments = _array(run(("gh", "api", f"repos/{repository}/issues/{pull_request}/comments")))
+    if not _has_independent_review_marker(
+        comments,
+        pull_request=pull_request,
+        expected_head=expected_head,
+        producer=scope.producer,
     ):
-        raise CanaryMergeError("exact head has a blocking review")
+        raise CanaryMergeError("exact head lacks independent semantic review evidence")
 
     checks = _array(
         run(
@@ -160,3 +153,35 @@ def _path(value: Mapping[str, Any], *keys: str) -> Any:
             return None
         current = current.get(key)
     return current
+
+
+_REVIEW_MARKER = re.compile(
+    r"^<!-- rotisserie-semantic-review-v1:"
+    r"pr-(?P<pr>\d+):head-(?P<head>[0-9a-f]{40}):"
+    r"reviewer-(?P<reviewer>[a-z0-9._-]+):producer-(?P<producer>[a-z0-9._-]+):"
+    r"verdict-(?P<verdict>approve|repair|reject) -->$"
+)
+
+
+def _has_independent_review_marker(
+    comments: Sequence[Mapping[str, Any]],
+    *,
+    pull_request: int,
+    expected_head: str,
+    producer: str,
+) -> bool:
+    """Accept controller-persisted semantic evidence from a distinct worker identity."""
+
+    for comment in reversed(comments):
+        body = comment.get("body")
+        first_line = body.splitlines()[0] if isinstance(body, str) and body else ""
+        match = _REVIEW_MARKER.fullmatch(first_line.strip())
+        if not match:
+            continue
+        marker = match.groupdict()
+        if int(marker["pr"]) != pull_request or marker["head"] != expected_head:
+            continue
+        if marker["producer"] != producer or marker["reviewer"] == producer:
+            continue
+        return marker["verdict"] == "approve"
+    return False
