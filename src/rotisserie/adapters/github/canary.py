@@ -20,6 +20,8 @@ class CanaryScope:
     issue: int
     branch: str
     base_branch: str = "main"
+    required_checks: frozenset[str] = frozenset({"Python 3.12", "Python 3.13", "Python 3.14"})
+    producer: str = "codex-implementation"
 
 
 CommandRunner = Callable[[Sequence[str]], str]
@@ -70,17 +72,25 @@ def merge_canary(
     ):
         raise CanaryMergeError("pull request does not close the allowlisted canary issue")
 
+    comments = _pages(
+        run(
+            (
+                "gh",
+                "api",
+                "--paginate",
+                "--slurp",
+                f"repos/{repository}/issues/{pull_request}/comments",
+            )
+        )
+    )
+    if not _has_independent_review_marker(
+        comments,
+        pull_request=pull_request,
+        expected_head=expected_head,
+        producer=scope.producer,
+    ):
+        raise CanaryMergeError("exact head lacks independent semantic review evidence")
     reviews = _array(run(("gh", "api", f"repos/{repository}/pulls/{pull_request}/reviews")))
-    author = _path(pull, "user", "login")
-    approved = {
-        _path(review, "user", "login")
-        for review in reviews
-        if review.get("state") == "APPROVED"
-        and review.get("commit_id") == expected_head
-        and _path(review, "user", "login") != author
-    }
-    if not approved:
-        raise CanaryMergeError("exact head lacks an independent approval")
     if any(
         review.get("state") == "CHANGES_REQUESTED" and review.get("commit_id") == expected_head
         for review in reviews
@@ -102,8 +112,11 @@ def merge_canary(
             )
         )
     )
-    if not checks:
-        raise CanaryMergeError("exact head has no required CI checks")
+    states = {str(check.get("name")): check.get("state") for check in checks}
+    if set(states) != scope.required_checks:
+        raise CanaryMergeError("exact head lacks the complete required CI set")
+    if any(state != "SUCCESS" for state in states.values()):
+        raise CanaryMergeError("exact head has unsuccessful required CI")
 
     refreshed = _object(run(("gh", "api", f"repos/{repository}/pulls/{pull_request}")))
     if _path(refreshed, "head", "sha") != expected_head:
@@ -128,7 +141,10 @@ def merge_canary(
 def subprocess_runner(command: Sequence[str]) -> str:
     """Run a fixed-argument GitHub CLI command without shell interpolation."""
 
-    result = subprocess.run(command, check=True, capture_output=True, text=True)
+    try:
+        result = subprocess.run(command, check=True, capture_output=True, text=True)
+    except subprocess.CalledProcessError as exc:
+        raise CanaryMergeError("GitHub evidence command failed closed") from exc
     return result.stdout
 
 
@@ -146,6 +162,16 @@ def _array(raw: str) -> list[Mapping[str, Any]]:
     return value
 
 
+def _pages(raw: str) -> list[Mapping[str, Any]]:
+    value = json.loads(raw)
+    if not isinstance(value, list) or not all(isinstance(page, list) for page in value):
+        raise CanaryMergeError("GitHub returned malformed paginated data")
+    flattened = [item for page in value for item in page]
+    if not all(isinstance(item, dict) for item in flattened):
+        raise CanaryMergeError("GitHub returned malformed paginated data")
+    return flattened
+
+
 def _path(value: Mapping[str, Any], *keys: str) -> Any:
     current: Any = value
     for key in keys:
@@ -153,3 +179,37 @@ def _path(value: Mapping[str, Any], *keys: str) -> Any:
             return None
         current = current.get(key)
     return current
+
+
+_REVIEW_MARKER = re.compile(
+    r"^<!-- rotisserie-semantic-review-v1:"
+    r"pr-(?P<pr>\d+):head-(?P<head>[0-9a-f]{40}):"
+    r"reviewer-(?P<reviewer>[a-z0-9._-]+):producer-(?P<producer>[a-z0-9._-]+):"
+    r"verdict-(?P<verdict>approve|repair|reject) -->$"
+)
+
+
+def _has_independent_review_marker(
+    comments: Sequence[Mapping[str, Any]],
+    *,
+    pull_request: int,
+    expected_head: str,
+    producer: str,
+) -> bool:
+    """Accept controller-persisted semantic evidence from a distinct worker identity."""
+
+    for comment in reversed(comments):
+        if comment.get("author_association") not in {"OWNER", "MEMBER", "COLLABORATOR"}:
+            continue
+        body = comment.get("body")
+        first_line = body.splitlines()[0] if isinstance(body, str) and body else ""
+        match = _REVIEW_MARKER.fullmatch(first_line.strip())
+        if not match:
+            continue
+        marker = match.groupdict()
+        if int(marker["pr"]) != pull_request or marker["head"] != expected_head:
+            continue
+        if marker["producer"] != producer or marker["reviewer"] == producer:
+            continue
+        return marker["verdict"] == "approve"
+    return False

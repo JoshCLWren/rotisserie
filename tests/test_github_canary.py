@@ -3,26 +3,55 @@
 from __future__ import annotations
 
 import json
+import subprocess
 from collections.abc import Sequence
 from dataclasses import dataclass, field
 
 import pytest
 
-from rotisserie.adapters.github.canary import CanaryMergeError, CanaryScope, merge_canary
+from rotisserie.adapters.github.canary import (
+    CanaryMergeError,
+    CanaryScope,
+    merge_canary,
+    subprocess_runner,
+)
 
 REPOSITORY = "JoshCLWren/rotisserie"
 HEAD = "a" * 40
 SCOPE = CanaryScope(REPOSITORY, 9, "rotisserie/canary-9")
 
 
-def pull(*, head: str = HEAD, fork: bool = False) -> str:
+def marker(
+    *,
+    head: str = HEAD,
+    reviewer: str = "opencode-review",
+    producer: str = SCOPE.producer,
+    verdict: str = "approve",
+) -> str:
+    return (
+        "<!-- rotisserie-semantic-review-v1:"
+        f"pr-12:head-{head}:reviewer-{reviewer}:producer-{producer}:"
+        f"verdict-{verdict} -->"
+    )
+
+
+def pull(
+    *,
+    head: str = HEAD,
+    fork: bool = False,
+    state: str = "open",
+    draft: bool = False,
+    body: str = "Closes #9",
+    base: str = "main",
+    base_repository: str = REPOSITORY,
+) -> str:
     return json.dumps(
         {
-            "state": "open",
-            "draft": False,
-            "body": "Closes #9",
+            "state": state,
+            "draft": draft,
+            "body": body,
             "user": {"login": "producer"},
-            "base": {"ref": "main", "repo": {"full_name": REPOSITORY}},
+            "base": {"ref": base, "repo": {"full_name": base_repository}},
             "head": {
                 "ref": SCOPE.branch,
                 "sha": head,
@@ -35,9 +64,17 @@ def pull(*, head: str = HEAD, fork: bool = False) -> str:
 @dataclass
 class Runner:
     pulls: list[str] = field(default_factory=lambda: [pull(), pull()])
-    reviews: str = field(
+    comments: str = field(
+        default_factory=lambda: json.dumps([[{"body": marker(), "author_association": "OWNER"}]])
+    )
+    reviews: str = "[]"
+    checks: str = field(
         default_factory=lambda: json.dumps(
-            [{"state": "APPROVED", "commit_id": HEAD, "user": {"login": "reviewer"}}]
+            [
+                {"name": "Python 3.12", "state": "SUCCESS"},
+                {"name": "Python 3.13", "state": "SUCCESS"},
+                {"name": "Python 3.14", "state": "SUCCESS"},
+            ]
         )
     )
     commands: list[tuple[str, ...]] = field(default_factory=list)
@@ -45,12 +82,14 @@ class Runner:
     def __call__(self, command: Sequence[str]) -> str:
         value = tuple(command)
         self.commands.append(value)
+        if value[:2] == ("gh", "api") and value[-1].endswith("/comments"):
+            return self.comments
         if value[:2] == ("gh", "api") and value[-1].endswith("/reviews"):
             return self.reviews
         if value[:2] == ("gh", "api"):
             return self.pulls.pop(0)
         if value[:3] == ("gh", "pr", "checks"):
-            return json.dumps([{"name": "Rotisserie CI", "state": "SUCCESS"}])
+            return self.checks
         return ""
 
 
@@ -111,12 +150,86 @@ def test_canary_rejects_forks_and_moved_heads_before_merge() -> None:
     assert not any(command[:3] == ("gh", "pr", "merge") for command in moved.commands)
 
 
-def test_canary_requires_independent_exact_head_approval() -> None:
-    runner = Runner(
-        reviews=json.dumps(
-            [{"state": "APPROVED", "commit_id": HEAD, "user": {"login": "producer"}}]
-        )
-    )
-    with pytest.raises(CanaryMergeError, match="independent approval"):
+@pytest.mark.parametrize(
+    "review_marker",
+    [
+        marker(head="b" * 40),
+        marker(reviewer=SCOPE.producer),
+        marker(producer="other-producer"),
+        marker(verdict="repair"),
+        marker(verdict="reject"),
+        "ordinary review prose is not controller evidence",
+    ],
+)
+def test_canary_requires_independent_exact_head_semantic_evidence(
+    review_marker: str,
+) -> None:
+    runner = Runner(comments=json.dumps([[{"body": review_marker, "author_association": "OWNER"}]]))
+    with pytest.raises(CanaryMergeError, match="semantic review evidence"):
         execute(runner)
     assert not any(command[:3] == ("gh", "pr", "merge") for command in runner.commands)
+
+
+@pytest.mark.parametrize("state", ["PENDING", "FAILURE", "ERROR", "CANCELLED", "SKIPPED"])
+def test_canary_rejects_every_unsuccessful_required_check(state: str) -> None:
+    checks = [
+        {"name": version, "state": state if version == "Python 3.13" else "SUCCESS"}
+        for version in ("Python 3.12", "Python 3.13", "Python 3.14")
+    ]
+    runner = Runner(checks=json.dumps(checks))
+    with pytest.raises(CanaryMergeError, match="unsuccessful required CI"):
+        execute(runner)
+    assert not any(command[:3] == ("gh", "pr", "merge") for command in runner.commands)
+
+
+def test_canary_rejects_missing_or_unexpected_required_checks() -> None:
+    runner = Runner(checks=json.dumps([{"name": "Python 3.12", "state": "SUCCESS"}]))
+    with pytest.raises(CanaryMergeError, match="complete required CI set"):
+        execute(runner)
+
+
+@pytest.mark.parametrize(
+    "candidate",
+    [
+        pull(state="closed"),
+        pull(draft=True),
+        pull(base="release"),
+        pull(base_repository="other/repository"),
+    ],
+)
+def test_canary_rejects_wrong_pull_request_identity(candidate: str) -> None:
+    with pytest.raises(CanaryMergeError, match="outside the canary scope"):
+        execute(Runner(pulls=[candidate]))
+
+
+def test_canary_rejects_non_closing_body() -> None:
+    with pytest.raises(CanaryMergeError, match="does not close"):
+        execute(Runner(pulls=[pull(body="Related to #9")]))
+
+
+def test_canary_rejects_untrusted_marker_author_and_blocking_review() -> None:
+    untrusted = Runner(comments=json.dumps([[{"body": marker(), "author_association": "NONE"}]]))
+    with pytest.raises(CanaryMergeError, match="semantic review evidence"):
+        execute(untrusted)
+
+    reviews = json.dumps(
+        [
+            {
+                "state": "CHANGES_REQUESTED",
+                "commit_id": HEAD,
+                "user": {"login": "reviewer"},
+            }
+        ]
+    )
+    with pytest.raises(CanaryMergeError, match="blocking review"):
+        execute(Runner(reviews=reviews))
+
+
+def test_subprocess_failures_become_clean_canary_refusals(monkeypatch: pytest.MonkeyPatch) -> None:
+    def fail(*args: object, **kwargs: object) -> subprocess.CompletedProcess[str]:
+        del args, kwargs
+        raise subprocess.CalledProcessError(1, ["gh"])
+
+    monkeypatch.setattr(subprocess, "run", fail)
+    with pytest.raises(CanaryMergeError, match="failed closed"):
+        subprocess_runner(("gh", "pr", "checks"))

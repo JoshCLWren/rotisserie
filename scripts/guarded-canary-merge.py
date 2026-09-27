@@ -15,6 +15,11 @@ def main() -> None:
     parser.add_argument("--expected-head", required=True)
     arguments = parser.parse_args()
     repository = os.environ.get("GITHUB_REPOSITORY", "")
+    print(
+        "canary dispatch: "
+        f"repository={repository} pull_request={arguments.pull_request} "
+        f"expected_head={arguments.expected_head}"
+    )
     merge_canary(
         scope=CanaryScope(
             repository="JoshCLWren/rotisserie",

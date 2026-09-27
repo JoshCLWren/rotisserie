@@ -20,11 +20,13 @@ and migrate, never as Rotisserie product code or a public API.
 - Do not use Rotisserie or any autonomous worker to implement Rotisserie issues
   unless the user explicitly requests it.
 - Do not enable workflows from `reference/legacy-factory/`.
-- `.github/workflows/ci.yml` is the only active workflow until an approved
-  activation issue changes the safety boundary.
-- Active workflows must not use schedules or receive write permissions during
-  the extraction phases. Keep
-  `tests/test_rotisserie_actions.py` green.
+- `.github/workflows/ci.yml` and the manually dispatched, issue-9-only
+  `.github/workflows/canary-merge.yml` are the only active workflows. Any
+  further activation requires an approved issue that changes the boundary.
+- Active workflows must not use schedules. Only the approved canary may receive
+  its tested `contents: write` and `pull-requests: write` scopes; all other
+  active workflows remain read-only. Keep `tests/test_rotisserie_actions.py`
+  green.
 - Never place credentials in prompts, source, tests, logs, fixtures, comments,
   artifacts, or durable worker state.
 - Repository mutations must be allowlisted, scoped to the configured target,
