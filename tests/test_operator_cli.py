@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+import io
 import json
 import shutil
+import sys
 from pathlib import Path
 
 from rotisserie.cli import EXIT_INVALID, EXIT_OK, main
@@ -275,3 +277,39 @@ def test_dogfood_rejects_mutation_options_before_dry_run(capsys: object, tmp_pat
     )
     assert code == EXIT_INVALID
     assert "only valid for dry-run" in str(output["error"])
+
+
+def test_dogfood_accepts_streamed_payload(
+    capsys: object, monkeypatch: object, tmp_path: Path
+) -> None:
+    config = local_example(tmp_path)
+    config.write_text(
+        config.read_text(encoding="utf-8")
+        .replace('host = "example.test"', 'host = "github.com"')
+        .replace('owner = "rotisserie"', 'owner = "acme"')
+        .replace('name = "demo"', 'name = "oven"'),
+        encoding="utf-8",
+    )
+    payload = GITHUB_FIXTURE.read_bytes()
+
+    class Stream:
+        buffer = io.BytesIO(payload)
+
+    monkeypatch.setattr(sys, "stdin", Stream())  # type: ignore[attr-defined]
+    code, output = invoke(
+        capsys,
+        config,
+        "dogfood",
+        "--stage",
+        "read-only",
+        "--payload",
+        "-",
+        "--at",
+        "10",
+    )
+
+    assert code == EXIT_OK
+    evidence = output["evidence"]
+    assert isinstance(evidence, dict)
+    assert evidence["payload_sha256"]
+    assert evidence["remote_mutation"] is False

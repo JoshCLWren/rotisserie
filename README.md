@@ -132,7 +132,9 @@ also explicitly set `local.mutations_enabled = true`. See
 contract, exit codes, recovery, and redacted diagnostics.
 
 The [dogfood guide](docs/dogfood.md) describes the first three non-activating
-stages of guarded self-dogfood. It does not authorize a canary or install an
+stages of guarded self-dogfood, and the
+[pre-activation evidence](docs/dogfood-evidence.md) records their first run.
+This does not authorize a canary or install an
 active workflow.
 
 ## Roadmap

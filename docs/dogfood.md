@@ -11,6 +11,15 @@ Rotisserie. Rotisserie validates the configured repository against the payload,
 projects the graph, makes deterministic scheduling decisions, and records the
 payload SHA-256 in its local operation journal.
 
+Acquisition must classify which host records are work nodes and provide only
+explicit dependency edges. Tracking issues, discussions, and casual issue
+mentions must not be inferred as executable work or dependencies.
+
+Pass `--payload -` to read a payload from standard input. This lets a reviewed
+read-only acquisition command stream host data into the projector without
+retaining the raw response on disk. The digest in the operation record remains
+the durable provenance link.
+
 ## Stages
 
 Run each stage with a configuration whose repository and allowlist match the
@@ -22,6 +31,9 @@ uv run rotisserie --config dogfood.toml dogfood \
 
 uv run rotisserie --config dogfood.toml dogfood \
   --stage read-only --payload live-graph.json --at 0
+
+acquire-live-graph-read-only | uv run rotisserie --config dogfood.toml dogfood \
+  --stage read-only --payload - --at 0
 
 uv run rotisserie --config dogfood.toml dogfood \
   --stage dry-run --payload live-graph.json --at 0 \

@@ -102,7 +102,11 @@ def parser() -> argparse.ArgumentParser:
         "dogfood", help="produce non-activating GitHub projection and dry-run evidence"
     )
     dogfood.add_argument("--stage", choices=("fixture", "read-only", "dry-run"), required=True)
-    dogfood.add_argument("--payload", type=Path, required=True)
+    dogfood.add_argument(
+        "--payload",
+        required=True,
+        help="GitHub projection payload path, or - to read it from standard input",
+    )
     dogfood.add_argument("--at", type=int, required=True)
     dogfood.add_argument("--max-active", type=int, default=1)
     dogfood.add_argument("--target", help="exact dry-run target as issue:NUMBER or change:NUMBER")
@@ -271,7 +275,11 @@ def _dogfood(
     """Project externally acquired data and optionally build a credential-free plan."""
 
     try:
-        raw_bytes = arguments.payload.resolve().read_bytes()
+        raw_bytes = (
+            sys.stdin.buffer.read()
+            if arguments.payload == "-"
+            else Path(arguments.payload).resolve().read_bytes()
+        )
         raw = json.loads(raw_bytes)
     except (OSError, json.JSONDecodeError) as exc:
         raise ConfigurationError(f"cannot read dogfood payload: {exc}") from exc

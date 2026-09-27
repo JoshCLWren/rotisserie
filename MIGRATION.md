@@ -182,3 +182,9 @@ This is preparation for issue #9, not activation. The command cannot apply a
 remote mutation, dispatch a worker, approve activation, or create a workflow.
 The canary, lifecycle, and recovery-drill stages still require explicit
 maintainer approval after the recorded dry-run evidence is reviewed.
+
+Fixture, live read-only, and real-issue dry-run evidence has now been reviewed
+and recorded in [`docs/dogfood-evidence.md`](docs/dogfood-evidence.md). Live
+payloads can stream over standard input, leaving only a digest and structured
+operation record. The write-capable canary remains unimplemented and inactive
+pending explicit maintainer approval.

@@ -11,6 +11,8 @@ such change must be called out here and in its release notes.
 
 ### Added
 
+- Guarded dogfood payload streaming over standard input, allowing live
+  read-only projection without retaining raw GitHub responses.
 - Non-activating self-dogfood commands for fixture projection, read-only
   decisions, credential-free GitHub mutation plans, and durable evidence.
 - Standalone Python package, locked development environment, and canonical
