@@ -57,3 +57,9 @@ review evidence from a reviewer worker distinct from the producer worker and
 attached to the exact final head. A formal GitHub approval from a second
 account is not required. The merge workflow will then re-read that head and
 submit it through GitHub's expected-head guard.
+
+PR #12 merged the reviewed safety corrections as a bootstrap update without
+closing issue #9. That separation was necessary because the workflow on
+`main` could not use corrected code that existed only inside the pull request
+it was being asked to merge. The next pull request is the actual end-to-end
+canary for the corrected workflow and retains the issue-closing reference.
