@@ -150,3 +150,20 @@ or rate-limited executors; no-diff, failure, timeout, and cancellation remain
 terminal outcomes. Provider selection, credentials, subprocesses, prompts,
 GitHub workflow syntax, and remote mutation remain adapter or product policy,
 and no worker execution has been activated.
+
+## Local operator surface
+
+The `rotisserie` entrypoint now exposes inspect, plan, claim, run, review,
+complete, recover, and doctor commands over a repository-scoped local adapter.
+Schema-versioned TOML configuration requires an explicit repository allowlist;
+all mutating commands emit and persist a dry-run plan unless both `--apply` and
+the local mutation config gate are present. The adapter atomically persists
+graph state and idempotency keys without network or credential access.
+
+Append-only structured operation records carry correlation IDs and drive local
+metrics. Diagnostic bundles recursively redact credential-shaped fields and
+values. A checked-in fixture and operator guide exercise the full local
+simulation from a clean clone. The CLI does not execute workers or expose the
+GitHub mutation adapter, and no workflow, schedule, daemon, provider, or remote
+mutation has been activated. Archived status dashboards remain visibility
+evidence rather than a public Rotisserie API.

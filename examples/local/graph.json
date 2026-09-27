@@ -1,0 +1,22 @@
+{
+  "schema_version": 1,
+  "works": [
+    {"id": {"repository": {"host": "example.test", "owner": "rotisserie", "name": "demo"}, "key": "1"}, "title": "Implement local demo", "state": "open", "priority": 2},
+    {"id": {"repository": {"host": "example.test", "owner": "rotisserie", "name": "demo"}, "key": "2"}, "title": "Complete reviewed demo", "state": "open", "priority": 1}
+  ],
+  "changes": [
+    {"id": {"repository": {"host": "example.test", "owner": "rotisserie", "name": "demo"}, "key": "20"}, "work": {"repository": {"host": "example.test", "owner": "rotisserie", "name": "demo"}, "key": "2"}, "head": {"repository": {"host": "example.test", "owner": "rotisserie", "name": "demo"}, "value": "demo-head"}, "producer": {"namespace": "human", "value": "producer"}}
+  ],
+  "revisions": [{"id": {"repository": {"host": "example.test", "owner": "rotisserie", "name": "demo"}, "value": "demo-head"}}],
+  "workers": [
+    {"id": {"namespace": "human", "value": "producer"}, "human": true},
+    {"id": {"namespace": "human", "value": "reviewer"}, "human": true}
+  ],
+  "leases": [],
+  "checks": [{"revision": {"repository": {"host": "example.test", "owner": "rotisserie", "name": "demo"}, "value": "demo-head"}, "name": "tests", "status": "passed", "required": true}],
+  "reviews": [{"id": "demo-review", "revision": {"repository": {"host": "example.test", "owner": "rotisserie", "name": "demo"}, "value": "demo-head"}, "reviewer": {"namespace": "human", "value": "reviewer"}, "decision": "approved", "required": true}],
+  "evidence": [],
+  "capacities": [],
+  "boundaries": [],
+  "dependencies": []
+}

@@ -19,6 +19,12 @@ such change must be called out here and in its release notes.
 - Bounded provider-neutral worker assignments, authority manifests, attempt
   events, exact-revision evidence, secret-free resume packets, and deterministic
   executor fallback contracts.
+- Versioned, repository-allowlisted local operator configuration and a
+  credential-free fixture simulation adapter with atomic durable state.
+- JSON CLI commands for graph inspection, planning, claim, bounded run, review,
+  completion, recovery, and diagnostics; mutations are dry-run by default.
+- Schema-versioned structured operation records, correlation IDs, derived
+  metrics, and recursively redacted diagnostic bundles.
 
 ## Release notes
 

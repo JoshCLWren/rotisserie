@@ -11,11 +11,11 @@ Rotisserie builds on operating experience with parallel implementation,
 independent review, repair, CI, merge readiness, model fallback, and
 interrupted-work recovery. Its job is to make those mechanics portable.
 
-> **Current state: core extraction through the worker runtime is complete.**
+> **Current state: core extraction through the local operator surface is complete.**
 > Rotisserie now has a standalone package, generic graph and coordination
 > policy, secure GitHub adapter, application orchestration, and provider-neutral
-> worker contracts. The next phase is the operator CLI, configuration,
-> persistence, and observability surface. Autonomous execution remains
+> worker contracts, plus a local CLI with durable state and diagnostics. The
+> next phase is guarded self-dogfood on Rotisserie. Autonomous execution remains
 > intentionally disabled until guarded self-dogfood.
 
 ## What “graph engineering” means
@@ -71,6 +71,8 @@ The intended result is a system that can:
 | `src/rotisserie/application/` | Versioned, idempotent coordination use cases over effect protocols |
 | `src/rotisserie/application/runtime.py` | Bounded worker, attempt, evidence, recovery, and executor contracts |
 | `src/rotisserie/adapters/github/` | Repository-scoped GitHub projection and bounded mutation contracts |
+| `src/rotisserie/operator/` | Versioned local configuration, durable simulation state, records, metrics, and diagnostics |
+| `src/rotisserie/cli.py` | One-operation CLI with dry-run mutation plans and stable JSON output |
 | `prototype/` | Dependency and eligibility migration evidence with domain compatibility tests |
 | `tests/` | Rotisserie repository-safety guards |
 | `reference/legacy-factory/` | Archived migration evidence, code, tests, prompts, and disabled workflows |
@@ -107,6 +109,27 @@ pre-release and does not yet expose the prototype as a supported public API.
 Version history and release-note conventions live in
 [CHANGELOG.md](CHANGELOG.md).
 
+### Local operator quickstart
+
+The checked-in example is credential-free and cannot reach a hosting provider.
+Use a temporary copy so the durable simulation state does not modify the
+checkout:
+
+```bash
+demo_dir="$(mktemp -d)"
+cp -R examples/local/. "$demo_dir/"
+uv run rotisserie --config "$demo_dir/config.toml" inspect
+uv run rotisserie --config "$demo_dir/config.toml" plan --at 10 --max-active 2
+uv run rotisserie --config "$demo_dir/config.toml" \
+  claim 1 human:producer --lease-id demo-lease --at 10 --expires-at 20
+```
+
+The final command only records and prints a dry-run plan. Add `--apply` to an
+individual mutating command to change local simulation state; the config must
+also explicitly set `local.mutations_enabled = true`. See
+[the operator guide](docs/operator.md) for the full simulated lifecycle, JSON
+contract, exit codes, recovery, and redacted diagnostics.
+
 ## Roadmap
 
 The [roadmap issue](https://github.com/JoshCLWren/rotisserie/issues/1) is the
@@ -118,7 +141,7 @@ canonical dependency-ordered plan. Current progress:
 - [x] implement the secure GitHub graph adapter;
 - [x] extract dispatch, completion, recovery, and capacity orchestration;
 - [x] define provider-neutral worker, evidence, and executor contracts;
-- [ ] build the operator CLI, configuration model, persistence, and observability surface;
+- [x] build the operator CLI, configuration model, persistence, and observability surface;
 - [ ] safely dogfood Rotisserie on its own repository;
 - [ ] integrate ComicPile as the first external adopter through the public boundary;
 - [ ] harden and publish the first supported open-source release.

@@ -1,0 +1,16 @@
+schema_version = 1
+
+[repository]
+host = "example.test"
+owner = "rotisserie"
+name = "demo"
+
+[repositories]
+allow = [
+  { host = "example.test", owner = "rotisserie", name = "demo" },
+]
+
+[local]
+snapshot = "graph.json"
+state_directory = ".rotisserie-state"
+mutations_enabled = true
