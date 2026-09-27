@@ -51,18 +51,23 @@ these commands. Dry-run mode constructs the normal GitHub mutation adapter with
 credential and transport access forbidden, making accidental inspection or
 write attempts fail immediately.
 
-## Activation boundary
+## Guarded merge canary
 
-Do not interpret successful dry-run evidence as canary approval. Issue #9
-requires explicit maintainer approval before any write-capable workflow or
-remote execution is added. Until then:
+The maintainer approved the write-capable canary on 2026-09-27. The active
+`canary-merge.yml` workflow is manual-only and can merge only a same-repository
+pull request from `rotisserie/canary-9` into `main` that closes issue #9. Set
+the repository variable `ROTISSERIE_CANARY_ENABLED` to `true` to enable the
+kill switch, then dispatch the workflow from `main` with the pull-request
+number and exact 40-character head SHA.
 
-- `.github/workflows/ci.yml` remains the only active workflow;
-- no schedule or write permission is allowed;
-- no worker receives credentials or mutation authority;
-- canary, implementation/review/completion, cancellation, and stale-head
-  recovery drills remain inactive.
+The workflow rejects forks, moved heads, drafts, other repositories, branches,
+base branches, and issue targets. It requires successful required checks and
+an independent approval attached to the exact head, re-reads the head after
+those gates, and uses GitHub's expected-head merge guard. GitHub auto-merge is
+not enabled. The workflow token is exposed only to the trusted merge adapter;
+no worker or pull-request code runs with it.
 
-Before requesting activation, compare fixture and live decisions, review the
-recorded plans and payload digests, and retain the evidence needed to explain
-every difference.
+Rollback is immediate: set `ROTISSERIE_CANARY_ENABLED` to any value other than
+`true`, or disable `canary-merge.yml`. Cancellation and stale-head drills must
+be recorded before issue #9 is complete. Schedules remain prohibited until a
+separate approval.

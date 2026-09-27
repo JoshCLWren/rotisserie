@@ -1,0 +1,46 @@
+name: Guarded canary merge
+
+on:
+  workflow_dispatch:
+    inputs:
+      pull_request:
+        description: Pull request for issue 9 from rotisserie/canary-9
+        required: true
+        type: number
+      expected_head:
+        description: Exact 40-character pull request head SHA
+        required: true
+        type: string
+
+permissions:
+  contents: write
+  pull-requests: write
+
+concurrency:
+  group: rotisserie-canary-merge
+  cancel-in-progress: false
+
+jobs:
+  merge:
+    if: github.repository == 'JoshCLWren/rotisserie' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      GH_TOKEN: ${{ github.token }}
+      PYTHONPATH: src
+      ROTISSERIE_CANARY_ENABLED: ${{ vars.ROTISSERIE_CANARY_ENABLED }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: main
+          persist-credentials: false
+
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.14"
+
+      - name: Revalidate exact-head gates and merge
+        run: >-
+          python scripts/guarded-canary-merge.py
+          --pull-request '${{ inputs.pull_request }}'
+          --expected-head '${{ inputs.expected_head }}'

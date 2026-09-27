@@ -168,7 +168,7 @@ GitHub mutation adapter, and no workflow, schedule, daemon, provider, or remote
 mutation has been activated. Archived status dashboards remain visibility
 evidence rather than a public Rotisserie API.
 
-## Guarded self-dogfood preparation
+## Guarded self-dogfood
 
 The operator now composes externally acquired GitHub fixture data with the
 repository-scoped projector and deterministic scheduling policy. Its `dogfood`
@@ -178,13 +178,19 @@ bounded GitHub adapter with credential and transport access replaced by
 fail-fast sentinels, so producing evidence cannot inspect a token or contact
 GitHub.
 
-This is preparation for issue #9, not activation. The command cannot apply a
-remote mutation, dispatch a worker, approve activation, or create a workflow.
-The canary, lifecycle, and recovery-drill stages still require explicit
-maintainer approval after the recorded dry-run evidence is reviewed.
+The command itself remains non-activating: it cannot apply a remote mutation,
+dispatch a worker, approve activation, or create a workflow. Its recorded
+evidence was reviewed before the separate canary activation described below.
 
 Fixture, live read-only, and real-issue dry-run evidence has now been reviewed
 and recorded in [`docs/dogfood-evidence.md`](docs/dogfood-evidence.md). Live
 payloads can stream over standard input, leaving only a digest and structured
-operation record. The write-capable canary remains unimplemented and inactive
-pending explicit maintainer approval.
+operation record.
+
+The maintainer approved a manual, write-capable merge canary on 2026-09-27 and
+amended issue #9 to use guarded autonomous merging rather than a human merge
+gate. The canary is restricted to issue #9 and branch
+`rotisserie/canary-9`, requires independent exact-head approval and required
+CI, rejects forks, and revalidates the head before an expected-SHA merge. A
+repository variable is the kill switch. No worker execution or schedule has
+been activated; lifecycle and recovery evidence is still pending.

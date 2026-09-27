@@ -23,5 +23,8 @@ Every command reported `remote_mutation: false` and
 and the complete proposed label set `rotisserie:canary`. No workflow, token,
 branch, pull request, or remote repository state was changed.
 
-This evidence does not authorize the canary stage. A maintainer must explicitly
-approve activation before a write-capable workflow or remote executor is added.
+The maintainer explicitly approved the write-capable canary on 2026-09-27 and
+clarified that completion should use the Factory model: guarded autonomous
+merge after independent review and exact-head CI evidence, not a human merge
+gate. Issue #9 was amended accordingly. This approval does not authorize a
+schedule, a forked-PR credential path, or mutation outside the canary scope.
