@@ -49,8 +49,7 @@ states, exposed dispatch expressions to shell parsing, and lacked server-side
 branch protection. The kill switch was set to `false` before remediation.
 Branch protection now requires all three supported-Python CI contexts. Its
 mistaken formal-approval requirement was removed after comparison with
-ComicPile's single-account factory policy. A replacement drill with logged
-non-secret inputs is required before the kill switch is re-enabled.
+ComicPile's single-account factory policy.
 
 A successful run still requires required CI and controller-persisted semantic
 review evidence from a reviewer worker distinct from the producer worker and
@@ -63,3 +62,10 @@ closing issue #9. That separation was necessary because the workflow on
 `main` could not use corrected code that existed only inside the pull request
 it was being asked to merge. The next pull request is the actual end-to-end
 canary for the corrected workflow and retains the issue-closing reference.
+
+The corrected workflow then ran against PR #13. Run `36335942769` logged its
+non-secret inputs, received a deliberately different revision SHA, and refused
+before mutation. Run `36335969629` received the current PR revision, rechecked
+the trusted review record and all required CI, and merged PR #13 successfully
+with GitHub's expected-commit guard. The repository variable was returned to
+`false` immediately afterward. No schedule or GitHub auto-merge was enabled.
