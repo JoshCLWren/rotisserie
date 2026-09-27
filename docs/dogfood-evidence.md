@@ -28,3 +28,16 @@ clarified that completion should use the Factory model: guarded autonomous
 merge after independent review and exact-head CI evidence, not a human merge
 gate. Issue #9 was amended accordingly. This approval does not authorize a
 schedule, a forked-PR credential path, or mutation outside the canary scope.
+
+## 2026-09-27 canary activation
+
+Commit `dd972b49210e41137cb0c97441f8f14eb9b5df9d` activated the manually
+dispatched merge workflow after the canonical local verification passed. The
+repository kill-switch variable was then set to `true`. This pull request is
+the sole allowlisted canary: issue #9, branch `rotisserie/canary-9`, base
+`main`, and a same-repository head.
+
+Before a successful merge, the canary will record a stale-head refusal and a
+cancelled run. A successful run still requires required CI and an independent
+approval attached to the exact final head. The merge workflow will then
+re-read that head and submit it through GitHub's expected-head guard.
