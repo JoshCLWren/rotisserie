@@ -20,8 +20,8 @@ class CanaryScope:
     issue: int
     branch: str
     base_branch: str = "main"
-    producer: str = "codex-implementation"
     required_checks: frozenset[str] = frozenset({"Python 3.12", "Python 3.13", "Python 3.14"})
+    producer: str = "codex-implementation"
 
 
 CommandRunner = Callable[[Sequence[str]], str]
@@ -72,7 +72,17 @@ def merge_canary(
     ):
         raise CanaryMergeError("pull request does not close the allowlisted canary issue")
 
-    comments = _array(run(("gh", "api", f"repos/{repository}/issues/{pull_request}/comments")))
+    comments = _pages(
+        run(
+            (
+                "gh",
+                "api",
+                "--paginate",
+                "--slurp",
+                f"repos/{repository}/issues/{pull_request}/comments",
+            )
+        )
+    )
     if not _has_independent_review_marker(
         comments,
         pull_request=pull_request,
@@ -80,6 +90,12 @@ def merge_canary(
         producer=scope.producer,
     ):
         raise CanaryMergeError("exact head lacks independent semantic review evidence")
+    reviews = _array(run(("gh", "api", f"repos/{repository}/pulls/{pull_request}/reviews")))
+    if any(
+        review.get("state") == "CHANGES_REQUESTED" and review.get("commit_id") == expected_head
+        for review in reviews
+    ):
+        raise CanaryMergeError("exact head has a blocking review")
 
     checks = _array(
         run(
@@ -146,6 +162,16 @@ def _array(raw: str) -> list[Mapping[str, Any]]:
     return value
 
 
+def _pages(raw: str) -> list[Mapping[str, Any]]:
+    value = json.loads(raw)
+    if not isinstance(value, list) or not all(isinstance(page, list) for page in value):
+        raise CanaryMergeError("GitHub returned malformed paginated data")
+    flattened = [item for page in value for item in page]
+    if not all(isinstance(item, dict) for item in flattened):
+        raise CanaryMergeError("GitHub returned malformed paginated data")
+    return flattened
+
+
 def _path(value: Mapping[str, Any], *keys: str) -> Any:
     current: Any = value
     for key in keys:
@@ -173,6 +199,8 @@ def _has_independent_review_marker(
     """Accept controller-persisted semantic evidence from a distinct worker identity."""
 
     for comment in reversed(comments):
+        if comment.get("author_association") not in {"OWNER", "MEMBER", "COLLABORATOR"}:
+            continue
         body = comment.get("body")
         first_line = body.splitlines()[0] if isinstance(body, str) and body else ""
         match = _REVIEW_MARKER.fullmatch(first_line.strip())

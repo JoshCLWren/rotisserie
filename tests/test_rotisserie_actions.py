@@ -3,6 +3,8 @@
 import re
 from pathlib import Path
 
+from rotisserie.adapters.github.canary import CanaryScope
+
 WORKFLOWS = Path(".github/workflows")
 ALLOWED_WORKFLOWS = {"ci.yml", "canary-merge.yml"}
 FORBIDDEN_TEXT: tuple[str, ...] = (
@@ -49,6 +51,7 @@ def test_canary_workflow_is_manual_narrow_and_kill_switched() -> None:
     assert "contents: write" in source
     assert "pull-requests: write" in source
     assert "issues: write" not in source
+    assert source.count("permissions:") == 1
     permissions = re.search(r"(?m)^permissions:\n((?:  [^\n]+\n)+)", source)
     assert permissions is not None
     assert {line.strip() for line in permissions.group(1).splitlines()} == {
@@ -61,3 +64,11 @@ def test_canary_workflow_is_manual_narrow_and_kill_switched() -> None:
     assert '"$CANARY_EXPECTED_HEAD"' in run
     assert source.count("GH_TOKEN:") == 1
     assert re.search(r"(?m)^        env:\n(?:          [^\n]+\n)*          GH_TOKEN:", source)
+
+
+def test_canary_required_checks_match_ci_matrix() -> None:
+    workflow = (WORKFLOWS / "ci.yml").read_text(encoding="utf-8")
+    versions = set(re.findall(r'"(3\.\d+)"', workflow))
+    assert CanaryScope("repository", 9, "branch").required_checks == {
+        f"Python {version}" for version in versions
+    }
