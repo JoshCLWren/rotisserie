@@ -11,12 +11,13 @@ Rotisserie builds on operating experience with parallel implementation,
 independent review, repair, CI, merge readiness, model fallback, and
 interrupted-work recovery. Its job is to make those mechanics portable.
 
-> **Current state: core extraction through the local operator surface is complete.**
+> **Current state: guarded self-dogfood preparation is in progress.**
 > Rotisserie now has a standalone package, generic graph and coordination
 > policy, secure GitHub adapter, application orchestration, and provider-neutral
 > worker contracts, plus a local CLI with durable state and diagnostics. The
-> next phase is guarded self-dogfood on Rotisserie. Autonomous execution remains
-> intentionally disabled until guarded self-dogfood.
+> operator can produce fixture, read-only projection, and credential-free
+> mutation-plan evidence. Autonomous execution and remote mutation remain
+> intentionally disabled pending maintainer review of that evidence.
 
 ## What “graph engineering” means
 
@@ -129,6 +130,10 @@ individual mutating command to change local simulation state; the config must
 also explicitly set `local.mutations_enabled = true`. See
 [the operator guide](docs/operator.md) for the full simulated lifecycle, JSON
 contract, exit codes, recovery, and redacted diagnostics.
+
+The [dogfood guide](docs/dogfood.md) describes the first three non-activating
+stages of guarded self-dogfood. It does not authorize a canary or install an
+active workflow.
 
 ## Roadmap
 

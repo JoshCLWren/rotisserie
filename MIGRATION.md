@@ -167,3 +167,18 @@ simulation from a clean clone. The CLI does not execute workers or expose the
 GitHub mutation adapter, and no workflow, schedule, daemon, provider, or remote
 mutation has been activated. Archived status dashboards remain visibility
 evidence rather than a public Rotisserie API.
+
+## Guarded self-dogfood preparation
+
+The operator now composes externally acquired GitHub fixture data with the
+repository-scoped projector and deterministic scheduling policy. Its `dogfood`
+command records fixture, read-only, and dry-run stages as append-only evidence,
+including a digest of the exact source payload. Dry-run mutation plans use the
+bounded GitHub adapter with credential and transport access replaced by
+fail-fast sentinels, so producing evidence cannot inspect a token or contact
+GitHub.
+
+This is preparation for issue #9, not activation. The command cannot apply a
+remote mutation, dispatch a worker, approve activation, or create a workflow.
+The canary, lifecycle, and recovery-drill stages still require explicit
+maintainer approval after the recorded dry-run evidence is reviewed.

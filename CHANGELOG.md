@@ -11,6 +11,8 @@ such change must be called out here and in its release notes.
 
 ### Added
 
+- Non-activating self-dogfood commands for fixture projection, read-only
+  decisions, credential-free GitHub mutation plans, and durable evidence.
 - Standalone Python package, locked development environment, and canonical
   verification commands.
 - Explicit migration inventory for every archived source artifact.

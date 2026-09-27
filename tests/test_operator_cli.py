@@ -8,6 +8,7 @@ from rotisserie.cli import EXIT_INVALID, EXIT_OK, main
 from rotisserie.operator import OperationJournal, load_config, redact
 
 EXAMPLE = Path(__file__).parents[1] / "examples" / "local"
+GITHUB_FIXTURE = Path(__file__).parent / "fixtures" / "github" / "graph.json"
 
 
 def local_example(tmp_path: Path, *, mutations: bool = True) -> Path:
@@ -177,3 +178,100 @@ def test_configuration_rejects_repository_outside_allowlist(capsys: object, tmp_
     code, output = invoke(capsys, config, "inspect")
     assert code == EXIT_INVALID
     assert "not in repositories.allow" in str(output["error"])
+
+
+def test_dogfood_projection_and_plan_are_non_activating_and_durable(
+    capsys: object, tmp_path: Path
+) -> None:
+    config = local_example(tmp_path)
+    config.write_text(
+        config.read_text(encoding="utf-8")
+        .replace('host = "example.test"', 'host = "github.com"')
+        .replace('owner = "rotisserie"', 'owner = "acme"')
+        .replace('name = "demo"', 'name = "oven"'),
+        encoding="utf-8",
+    )
+    payload = tmp_path / "github.json"
+    shutil.copy(GITHUB_FIXTURE, payload)
+
+    code, projected = invoke(
+        capsys,
+        config,
+        "dogfood",
+        "--stage",
+        "fixture",
+        "--payload",
+        str(payload),
+        "--at",
+        "10",
+    )
+    assert code == EXIT_OK
+    evidence = projected["evidence"]
+    assert isinstance(evidence, dict)
+    assert evidence["stage"] == "fixture"
+    assert evidence["remote_mutation"] is False
+    assert evidence["activation_approved"] is False
+    assert evidence["graph"] == {
+        "schema_version": 1,
+        "works": 3,
+        "changes": 1,
+        "leases": 0,
+        "checks": 2,
+        "reviews": 2,
+    }
+
+    code, planned = invoke(
+        capsys,
+        config,
+        "dogfood",
+        "--stage",
+        "dry-run",
+        "--payload",
+        str(payload),
+        "--at",
+        "10",
+        "--target",
+        "issue:20",
+        "--label",
+        "rotisserie:canary",
+    )
+    assert code == EXIT_OK
+    dry_run = planned["evidence"]
+    assert isinstance(dry_run, dict)
+    plans = dry_run["mutation_plans"]
+    assert isinstance(plans, list)
+    assert plans[0]["repository"] == "acme/oven"
+    assert plans[0]["number"] == 20
+    assert plans[0]["labels"] == ["rotisserie:canary"]
+    assert not (tmp_path / "state" / "graph-state.json").exists()
+    records = OperationJournal(tmp_path / "state").records()
+    assert [record["command"] for record in records] == [
+        "dogfood:fixture",
+        "dogfood:dry-run",
+    ]
+
+
+def test_dogfood_rejects_mutation_options_before_dry_run(capsys: object, tmp_path: Path) -> None:
+    config = local_example(tmp_path)
+    config.write_text(
+        config.read_text(encoding="utf-8")
+        .replace('host = "example.test"', 'host = "github.com"')
+        .replace('owner = "rotisserie"', 'owner = "acme"')
+        .replace('name = "demo"', 'name = "oven"'),
+        encoding="utf-8",
+    )
+    code, output = invoke(
+        capsys,
+        config,
+        "dogfood",
+        "--stage",
+        "read-only",
+        "--payload",
+        str(GITHUB_FIXTURE),
+        "--at",
+        "10",
+        "--target",
+        "issue:20",
+    )
+    assert code == EXIT_INVALID
+    assert "only valid for dry-run" in str(output["error"])

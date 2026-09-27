@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import sys
 import time
@@ -11,9 +12,23 @@ from collections.abc import Sequence
 from pathlib import Path
 from typing import Any
 
-from rotisserie.application import CoordinationService, OperationStatus
+from rotisserie.adapters.github import (
+    GitHubMutationAdapter,
+    GitHubProjector,
+    InMemoryMarkerStore,
+    MutationPlan,
+    MutationScope,
+    MutationTarget,
+)
+from rotisserie.application import (
+    CoordinationService,
+    EffectCommand,
+    GraphView,
+    OperationStatus,
+)
 from rotisserie.domain import (
     ChangeId,
+    GraphSnapshot,
     Lease,
     LeaseId,
     RevisionId,
@@ -82,6 +97,18 @@ def parser() -> argparse.ArgumentParser:
 
     doctor = subcommands.add_parser("doctor", help="validate config, state, and diagnostics")
     doctor.add_argument("--bundle", action="store_true")
+
+    dogfood = subcommands.add_parser(
+        "dogfood", help="produce non-activating GitHub projection and dry-run evidence"
+    )
+    dogfood.add_argument("--stage", choices=("fixture", "read-only", "dry-run"), required=True)
+    dogfood.add_argument("--payload", type=Path, required=True)
+    dogfood.add_argument("--at", type=int, required=True)
+    dogfood.add_argument("--max-active", type=int, default=1)
+    dogfood.add_argument("--target", help="exact dry-run target as issue:NUMBER or change:NUMBER")
+    dogfood.add_argument("--label", action="append", default=[])
+    dogfood.add_argument("--state", choices=("open", "closed"), default="open")
+    dogfood.add_argument("--expected-head")
     return value
 
 
@@ -90,10 +117,14 @@ def main(argv: Sequence[str] | None = None) -> int:
     correlation_id = arguments.correlation_id or str(uuid.uuid4())
     try:
         config = load_config(arguments.config.resolve())
-        port = LocalCoordinationPort(config.snapshot, config.state_directory, config.repository)
-        port.initialize()
         journal = OperationJournal(config.state_directory)
-        output, status = _execute(arguments, config, port, journal, correlation_id)
+        if arguments.command == "dogfood":
+            output = _dogfood(arguments, config, journal, correlation_id)
+            status = EXIT_OK
+        else:
+            port = LocalCoordinationPort(config.snapshot, config.state_directory, config.repository)
+            port.initialize()
+            output, status = _execute(arguments, config, port, journal, correlation_id)
     except (ConfigurationError, LocalStateError, ValueError, OSError) as exc:
         _write(
             {
@@ -162,7 +193,6 @@ def _execute(
             )
             extra["diagnostic_bundle"] = str(path)
         return _envelope(correlation_id, command, "ok", **extra), EXIT_OK
-
     assert command in MUTATING
     plan = _mutation_plan(arguments, config, port, correlation_id)
     if not arguments.apply:
@@ -230,6 +260,120 @@ def _execute(
         result=result.to_dict(),
         record=record,
     ), exit_code
+
+
+def _dogfood(
+    arguments: argparse.Namespace,
+    config: OperatorConfig,
+    journal: OperationJournal,
+    correlation_id: str,
+) -> dict[str, Any]:
+    """Project externally acquired data and optionally build a credential-free plan."""
+
+    try:
+        raw_bytes = arguments.payload.resolve().read_bytes()
+        raw = json.loads(raw_bytes)
+    except (OSError, json.JSONDecodeError) as exc:
+        raise ConfigurationError(f"cannot read dogfood payload: {exc}") from exc
+    if not isinstance(raw, dict):
+        raise ConfigurationError("dogfood payload root must be an object")
+    snapshot = GitHubProjector(config.repository).project(raw)
+    selected = CoordinationService(_ReadOnlyPort(snapshot)).select(
+        at=arguments.at,
+        completion_backlog=0,
+        policy=SchedulingPolicy(arguments.max_active),
+    )
+    evidence: dict[str, Any] = {
+        "schema_version": 1,
+        "stage": arguments.stage,
+        "repository": _repository_key(config),
+        "payload_sha256": hashlib.sha256(raw_bytes).hexdigest(),
+        "graph": _graph_summary(snapshot.to_dict()),
+        "selected": [item.key for item in selected],
+        "remote_mutation": False,
+        "activation_approved": False,
+    }
+    if arguments.stage == "dry-run":
+        if not arguments.target:
+            raise ConfigurationError("dry-run dogfood requires --target")
+        target, number = _dogfood_target(arguments.target)
+        if target is MutationTarget.CHANGE and not arguments.expected_head:
+            raise ConfigurationError("change dry-run requires --expected-head")
+        scope = MutationScope(
+            config.repository,
+            installation_id=0,
+            issues=frozenset({number}) if target is MutationTarget.ISSUE else frozenset(),
+            changes=frozenset({number}) if target is MutationTarget.CHANGE else frozenset(),
+        )
+        adapter = GitHubMutationAdapter(
+            scope,
+            _ForbiddenCredentials(),
+            _ForbiddenTransport(),
+            InMemoryMarkerStore(),
+            dry_run=True,
+        )
+        adapter.execute(
+            MutationPlan(
+                config.repository,
+                target,
+                number,
+                frozenset(arguments.label),
+                arguments.state,
+                arguments.expected_head,
+            )
+        )
+        evidence["mutation_plans"] = list(adapter.public_plan_records())
+    elif arguments.target or arguments.label or arguments.expected_head:
+        raise ConfigurationError("mutation plan options are only valid for dry-run dogfood")
+
+    record = journal.append(
+        correlation_id=correlation_id,
+        command=f"dogfood:{arguments.stage}",
+        dry_run=True,
+        result=evidence,
+        timestamp=int(time.time()),
+    )
+    return _envelope(correlation_id, "dogfood", "ok", evidence=evidence, record=record)
+
+
+class _ReadOnlyPort:
+    def __init__(self, snapshot: GraphSnapshot) -> None:
+        self._snapshot = snapshot
+
+    def read(self) -> GraphView:
+        return GraphView(self._snapshot, "dogfood-read-only")
+
+    def apply(self, command: EffectCommand) -> None:
+        del command
+        raise AssertionError("dogfood projection must not apply coordination effects")
+
+
+class _ForbiddenCredentials:
+    def token_for(self, repository: Any, installation_id: int) -> Any:
+        del repository, installation_id
+        raise AssertionError("dry-run dogfood must not request credentials")
+
+
+class _ForbiddenTransport:
+    def inspect(self, *args: Any) -> Any:
+        del args
+        raise AssertionError("dry-run dogfood must not inspect remote state")
+
+    def reconcile(self, *args: Any) -> Any:
+        del args
+        raise AssertionError("dry-run dogfood must not mutate remote state")
+
+
+def _dogfood_target(value: str) -> tuple[MutationTarget, int]:
+    kind, separator, raw_number = value.partition(":")
+    try:
+        target = MutationTarget(kind)
+        number = int(raw_number)
+    except (ValueError, TypeError) as exc:
+        raise ConfigurationError("target must be issue:NUMBER or change:NUMBER") from exc
+    if not separator or number <= 0:
+        raise ConfigurationError("target must be issue:NUMBER or change:NUMBER")
+    return target, number
 
 
 def _mutation_plan(
