@@ -38,10 +38,18 @@ the sole allowlisted canary: issue #9, branch `rotisserie/canary-9`, base
 `main`, and a same-repository head.
 
 The activation commit passed Rotisserie CI in run `36322863043`. Canary run
-`36322913885` supplied a valid but deliberately wrong expected SHA and failed
-before mutation. Run `36322935904` used the then-current canary SHA and was
-cancelled; it completed with the `cancelled` conclusion and performed no
-merge. These runs exercise stale-revision refusal and operator cancellation.
+`36322913885` failed the compound pull-request identity/exact-head guard before
+mutation. Its dispatch inputs were not recorded by the initial workflow, so it
+does not independently prove which identity field differed. Run `36322935904`
+was cancelled while queued and performed no steps or mutation; it proves
+operator cancellation of a queued dispatch, not cancellation inside a guard.
+
+Review found that the initial implementation did not validate individual CI
+states, exposed dispatch expressions to shell parsing, and lacked server-side
+branch protection. The kill switch was set to `false` before remediation.
+Branch protection now requires all three supported-Python CI contexts and one
+approval. A replacement drill with logged non-secret inputs is required before
+the kill switch is re-enabled.
 
 A successful run still requires required CI and an independent approval
 attached to the exact final head. The merge workflow will then re-read that

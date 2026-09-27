@@ -67,6 +67,11 @@ those gates, and uses GitHub's expected-head merge guard. GitHub auto-merge is
 not enabled. The workflow token is exposed only to the trusted merge adapter;
 no worker or pull-request code runs with it.
 
+Branch protection independently requires the Python 3.12, 3.13, and 3.14 CI
+contexts, an approval after the latest push, and resolved conversations. The
+adapter requires the same complete successful CI set and refuses GitHub command
+failures as explicit canary errors.
+
 Rollback is immediate: set `ROTISSERIE_CANARY_ENABLED` to any value other than
 `true`, or disable `canary-merge.yml`. Cancellation and stale-head drills must
 be recorded before issue #9 is complete. Schedules remain prohibited until a

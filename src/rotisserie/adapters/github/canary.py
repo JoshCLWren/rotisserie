@@ -20,6 +20,7 @@ class CanaryScope:
     issue: int
     branch: str
     base_branch: str = "main"
+    required_checks: frozenset[str] = frozenset({"Python 3.12", "Python 3.13", "Python 3.14"})
 
 
 CommandRunner = Callable[[Sequence[str]], str]
@@ -102,8 +103,11 @@ def merge_canary(
             )
         )
     )
-    if not checks:
-        raise CanaryMergeError("exact head has no required CI checks")
+    states = {str(check.get("name")): check.get("state") for check in checks}
+    if set(states) != scope.required_checks:
+        raise CanaryMergeError("exact head lacks the complete required CI set")
+    if any(state != "SUCCESS" for state in states.values()):
+        raise CanaryMergeError("exact head has unsuccessful required CI")
 
     refreshed = _object(run(("gh", "api", f"repos/{repository}/pulls/{pull_request}")))
     if _path(refreshed, "head", "sha") != expected_head:
@@ -128,7 +132,10 @@ def merge_canary(
 def subprocess_runner(command: Sequence[str]) -> str:
     """Run a fixed-argument GitHub CLI command without shell interpolation."""
 
-    result = subprocess.run(command, check=True, capture_output=True, text=True)
+    try:
+        result = subprocess.run(command, check=True, capture_output=True, text=True)
+    except subprocess.CalledProcessError as exc:
+        raise CanaryMergeError("GitHub evidence command failed closed") from exc
     return result.stdout
 
 

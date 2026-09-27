@@ -31,10 +31,11 @@ available as migration evidence but cannot dispatch workers, merge pull
 requests, create issues, publish status pages, or consume ComicPile-oriented
 secrets from this repository.
 
-The only active workflow is `.github/workflows/ci.yml`. It is Rotisserie-only,
-has read-only repository permissions, and runs local compilation plus copied
-policy/controller tests. It has no schedule and performs no issue, pull-request,
-deployment, Pages, database, or external-repository mutations.
+The active workflows are the read-only `.github/workflows/ci.yml` and the
+manually dispatched, issue-9-only `.github/workflows/canary-merge.yml`. Neither
+has a schedule. The canary alone has the tested `contents: write` and
+`pull-requests: write` scopes; it cannot mutate an external repository or run
+pull-request code with its token.
 
 `tests/test_rotisserie_actions.py` enforces this boundary. Archived source tests
 are retained for behavioral archaeology but are not Rotisserie CI.
@@ -192,5 +193,6 @@ amended issue #9 to use guarded autonomous merging rather than a human merge
 gate. The canary is restricted to issue #9 and branch
 `rotisserie/canary-9`, requires independent exact-head approval and required
 CI, rejects forks, and revalidates the head before an expected-SHA merge. A
-repository variable is the kill switch. No worker execution or schedule has
-been activated; lifecycle and recovery evidence is still pending.
+repository variable is the kill switch. Server-side branch protection requires
+the Python 3.12, 3.13, and 3.14 CI contexts plus one approving review. No worker
+execution or schedule has been activated; lifecycle evidence is still pending.

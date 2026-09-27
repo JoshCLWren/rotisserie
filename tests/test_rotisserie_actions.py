@@ -1,5 +1,6 @@
 """Safety boundary for GitHub Actions enabled in Rotisserie."""
 
+import re
 from pathlib import Path
 
 WORKFLOWS = Path(".github/workflows")
@@ -32,7 +33,7 @@ def test_active_actions_have_no_schedule_or_legacy_repository_coupling() -> None
         source = path.read_text(encoding="utf-8").lower()
         forbidden_text = FORBIDDEN_TEXT
         if path.name == "canary-merge.yml":
-            forbidden_text = tuple(item for item in FORBIDDEN_TEXT if not item.endswith("write"))
+            forbidden_text = tuple(item for item in FORBIDDEN_TEXT if not item.endswith(": write"))
         for forbidden in forbidden_text:
             assert forbidden not in source, f"{path} contains forbidden text: {forbidden}"
 
@@ -48,3 +49,15 @@ def test_canary_workflow_is_manual_narrow_and_kill_switched() -> None:
     assert "contents: write" in source
     assert "pull-requests: write" in source
     assert "issues: write" not in source
+    permissions = re.search(r"(?m)^permissions:\n((?:  [^\n]+\n)+)", source)
+    assert permissions is not None
+    assert {line.strip() for line in permissions.group(1).splitlines()} == {
+        "contents: write",
+        "pull-requests: write",
+    }
+    run = source.split("run: >-", 1)[1]
+    assert "${{ inputs." not in run
+    assert '"$CANARY_PULL_REQUEST"' in run
+    assert '"$CANARY_EXPECTED_HEAD"' in run
+    assert source.count("GH_TOKEN:") == 1
+    assert re.search(r"(?m)^        env:\n(?:          [^\n]+\n)*          GH_TOKEN:", source)

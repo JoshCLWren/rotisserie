@@ -26,7 +26,6 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     env:
-      GH_TOKEN: ${{ github.token }}
       PYTHONPATH: src
       ROTISSERIE_CANARY_ENABLED: ${{ vars.ROTISSERIE_CANARY_ENABLED }}
     steps:
@@ -40,7 +39,11 @@ jobs:
           python-version: "3.14"
 
       - name: Revalidate exact-head gates and merge
+        env:
+          CANARY_PULL_REQUEST: ${{ inputs.pull_request }}
+          CANARY_EXPECTED_HEAD: ${{ inputs.expected_head }}
+          GH_TOKEN: ${{ github.token }}
         run: >-
           python scripts/guarded-canary-merge.py
-          --pull-request '${{ inputs.pull_request }}'
-          --expected-head '${{ inputs.expected_head }}'
+          --pull-request "$CANARY_PULL_REQUEST"
+          --expected-head "$CANARY_EXPECTED_HEAD"
