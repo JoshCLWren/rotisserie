@@ -163,6 +163,11 @@ the decision or performs a remote mutation; ComicPile must map the bounded lane,
 reported stage, and action onto its own independently scoped switch and reject
 the result if the host-side stage changed after evaluation.
 
+For CLI-only adopters, an authorized `adopt` result includes that same
+schema-version-1 command as `evidence.transition`. Held decisions emit a null
+transition. This lets an adopter apply the exact public compare-and-swap contract
+without importing Rotisserie internals or reconstructing an operation key.
+
 An adopter that imports the public package can pass an authorized decision to
 `prepare_adoption_transition`. The returned schema-version-1 command binds the
 lane and stage change to the exact adopter-owned control revision, and includes

@@ -34,6 +34,7 @@ from rotisserie.application import (
     ShadowReport,
     adoption_decision,
     compare_decisions,
+    prepare_adoption_transition,
     project_decisions,
 )
 from rotisserie.domain import (
@@ -592,6 +593,14 @@ def _adopt(
         "evidence_sha256": [hashlib.sha256(raw).hexdigest() for raw in evidence_bytes],
         "control_revision": arguments.control_revision,
         "decision": decision.to_dict(),
+        "transition": (
+            prepare_adoption_transition(
+                decision,
+                control_revision=arguments.control_revision,
+            ).to_dict()
+            if decision.authorized
+            else None
+        ),
         "remote_mutation": False,
     }
     record = journal.append(

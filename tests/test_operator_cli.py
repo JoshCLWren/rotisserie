@@ -612,6 +612,18 @@ def test_adopt_cli_authorizes_bounded_canary_without_remote_mutation(
         "lane": {"name": "issue-intake", "subjects": ["label:ready"]},
         "reasons": [],
     }
+    transition = evidence["transition"]
+    assert isinstance(transition, dict)
+    assert transition == {
+        "schema_version": 1,
+        "operation_key": transition["operation_key"],
+        "control_revision": "controls-1",
+        "action": "enter_canary",
+        "lane": {"name": "issue-intake", "subjects": ["label:ready"]},
+        "expected_stage": "legacy",
+        "target_stage": "canary",
+    }
+    assert str(transition["operation_key"]).startswith("adoption-transition:")
     assert len(evidence["report_sha256"]) == 2
     assert len(evidence["evidence_sha256"]) == 1
     assert evidence["control_revision"] == "controls-1"
@@ -637,6 +649,7 @@ def test_adopt_cli_holds_without_approval_and_allows_evidence_free_rollback(
     )
     assert code == EXIT_REJECTED
     assert held["status"] == "held"
+    assert held["evidence"]["transition"] is None  # type: ignore[index]
 
     code, rollback = invoke(
         capsys,
@@ -654,3 +667,4 @@ def test_adopt_cli_holds_without_approval_and_allows_evidence_free_rollback(
     )
     assert code == EXIT_OK
     assert rollback["evidence"]["decision"]["action"] == "rollback"  # type: ignore[index]
+    assert rollback["evidence"]["transition"]["target_stage"] == "legacy"  # type: ignore[index]
