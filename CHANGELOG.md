@@ -11,6 +11,8 @@ such change must be called out here and in its release notes.
 
 ### Added
 
+- Fail-closed external-adopter cutover and rollback decisions with bounded
+  lanes, complete shadow-evidence checks, and explicit operator approval.
 - Versioned external-adopter decision snapshots and deterministic shadow
   reports across eligibility, ranking, ownership, review, completion, and
   recovery, with exact-graph-revision enforcement.

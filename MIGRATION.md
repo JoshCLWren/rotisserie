@@ -216,3 +216,10 @@ prompts, workflows, credentials, and rollback controls remain adopter policy or
 adapter concerns. This slice performs no cross-repository read or mutation and
 does not activate a workflow. The boundary inventory and staged integration
 rules live in [`docs/adopter-integration.md`](docs/adopter-integration.md).
+
+A pure application cutover policy now requires complete, distinct parity runs,
+a tested rollback path, explicit operator approval, and a bounded adopter lane.
+It holds closed on incomplete or divergent evidence, requires an observed
+canary before expansion, and gives rollback requests precedence. The policy
+returns a versioned decision only; adopter adapters still own enforcement and
+no external mutation or workflow has been activated.

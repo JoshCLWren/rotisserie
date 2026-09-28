@@ -43,7 +43,8 @@ missing observations and every outcome, reason, and rank mismatch in stable
 dimension/subject order. A report with `matches: true` contains no divergence.
 Comparison fails closed unless both inputs name the same graph revision. That
 revision is retained in the report so results cannot be mistaken for evidence
-about a different host snapshot.
+about a different host snapshot. Reports also retain their observed decision
+dimensions so later cutover policy can reject incomplete parity evidence.
 
 An adopter can compare two normalized snapshot files through the stable CLI:
 
@@ -64,3 +65,18 @@ ComicPile translation, report storage, credential scope, and later canary
 controls belong to the adopter integration. Mutation remains prohibited until
 shadow reports explain all divergence, rollback is tested, and an operator
 explicitly approves a bounded lane.
+
+## Staged cutover policy
+
+`rotisserie.application.adoption_decision` is the provider-neutral cutover
+boundary. An adopter supplies distinct matching shadow reports, a non-empty
+lane scope, evidence that rollback was tested, and explicit operator approval.
+The policy holds closed if evidence is insufficient, replayed, incomplete, or
+divergent. Expansion additionally requires an observed canary. The required
+number of matching runs is configurable rather than hidden in adopter code.
+
+The rollback switch takes precedence over missing or failed parity evidence so
+an adapter can always leave a canary or expanded lane. The returned decision is
+schema-versioned and machine-readable, but it performs no mutation. ComicPile
+continues to own the physical switch, credential scope, live evidence
+acquisition, and enforcement of the returned lane at its mutation boundary.

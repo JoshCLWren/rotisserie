@@ -42,6 +42,14 @@ def test_matching_snapshots_have_a_versioned_machine_readable_report() -> None:
         "baseline": {"source": "legacy", "revision": "snapshot-a"},
         "candidate": {"source": "rotisserie", "revision": "snapshot-a"},
         "compared": 6,
+        "dimensions": [
+            "completion",
+            "eligibility",
+            "ownership",
+            "ranking",
+            "recovery",
+            "review",
+        ],
         "matches": True,
         "divergences": [],
     }

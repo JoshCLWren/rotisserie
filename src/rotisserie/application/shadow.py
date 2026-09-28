@@ -157,6 +157,7 @@ class ShadowReport:
     candidate_source: str
     candidate_revision: str
     compared: int
+    dimensions: tuple[DecisionDimension, ...]
     divergences: tuple[DecisionDivergence, ...]
 
     @property
@@ -175,6 +176,7 @@ class ShadowReport:
                 "revision": self.candidate_revision,
             },
             "compared": self.compared,
+            "dimensions": list(self.dimensions),
             "matches": self.matches,
             "divergences": [item.to_dict() for item in self.divergences],
         }
@@ -240,5 +242,6 @@ def compare_decisions(baseline: DecisionSnapshot, candidate: DecisionSnapshot) -
         candidate.source,
         candidate.revision,
         len(keys),
+        tuple(sorted({dimension for dimension, _subject in keys})),
         tuple(divergences),
     )

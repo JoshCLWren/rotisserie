@@ -1,5 +1,12 @@
 """Application use cases coordinating domain policy and effect ports."""
 
+from rotisserie.application.adoption import (
+    AdoptionAction,
+    AdoptionDecision,
+    AdoptionLane,
+    AdoptionPolicy,
+    adoption_decision,
+)
 from rotisserie.application.coordination import (
     CoordinationPort,
     CoordinationService,
@@ -43,6 +50,11 @@ from rotisserie.application.shadow import (
 )
 
 __all__ = [
+    "AdoptionAction",
+    "AdoptionDecision",
+    "AdoptionLane",
+    "AdoptionPolicy",
+    "adoption_decision",
     "CoordinationService",
     "CoordinationPort",
     "EffectCommand",
