@@ -7,8 +7,9 @@ from enum import StrEnum
 
 from rotisserie.domain import Change, GraphSnapshot, Review, ReviewDecision, WorkerId
 from rotisserie.domain.policy import (
+    SchedulingPolicy,
+    apply_intake_pressure,
     implementation_decision,
-    ranked_implementation_work,
     readiness_decision,
     reviewer_is_independent,
 )
@@ -161,16 +162,37 @@ class DecisionSnapshot:
 
 
 def project_decisions(
-    snapshot: GraphSnapshot, *, source: str, revision: str, at: int
+    snapshot: GraphSnapshot,
+    *,
+    source: str,
+    revision: str,
+    at: int,
+    completion_backlog: int = 0,
+    backlog_limit: int | None = None,
 ) -> DecisionSnapshot:
     """Project portable policy outcomes for one exact adopter graph revision."""
 
     observations: list[DecisionObservation] = []
-    ranked = ranked_implementation_work(snapshot, at=at)
+    work_decisions = tuple(
+        implementation_decision(snapshot, work.id, at=at) for work in snapshot.works
+    )
+    if backlog_limit is not None:
+        work_decisions = apply_intake_pressure(
+            work_decisions,
+            completion_backlog=completion_backlog,
+            policy=SchedulingPolicy(wip_limit=0, backlog_limit=backlog_limit),
+        )
+    decisions = {item.work: item for item in work_decisions}
+    ranked = tuple(
+        sorted(
+            (work for work in snapshot.works if decisions[work.id].eligible),
+            key=lambda item: (-item.priority, item.id),
+        )
+    )
     ranks = {item.id: rank for rank, item in enumerate(ranked)}
     for work in sorted(snapshot.works, key=lambda item: item.id):
         subject = f"work:{work.id.key}"
-        eligibility = implementation_decision(snapshot, work.id, at=at)
+        eligibility = decisions[work.id]
         observations.append(
             DecisionObservation(
                 DecisionDimension.ELIGIBILITY,

@@ -172,3 +172,24 @@ must still match before changing only the named lane to `target_stage`. A hold
 decision cannot produce a transition. The command contains no credential or
 host mutation mechanism; those remain in the adopter's independently scoped
 adapter.
+
+## First live parity observation
+
+ComicPile's read-only adopter capture was exercised on 2026-09-28 against fetched
+upstream commit `cbea5e1ee3bff4cd76f4a7dc64d48f796b80e5f4`. The captured host view
+contained 44 work nodes, three linked changes, 26 exact-head checks, one semantic
+review, and no active leases. Its source digest was
+`d1bf88323897d965f005a7acd56e5bbea2257136fc213ada7cd09900c37a75e5`.
+
+The atomic `shadow-project` run supplied ComicPile's observed completion backlog of
+eight and configured limit of eight as explicit projection inputs. It compared 94
+observations across all six required dimensions with zero divergences. The normalized
+baseline digest was
+`808f039d78cd863fecbbf2f41ba9595b58cfefb2e05d559fb0d9679bde7103bf`; the
+graph snapshot digest was
+`4c21c44b4c17bdbf9d41780f1058070129084520c4f0c9f5295edb21b440b3e4`.
+No host payload, credential, or mutation plan is retained here.
+
+This is one observation, not cutover authorization. A distinct matching run, bounded
+lane definition, adopter-owned rollback drill, and explicit transition approval remain
+required before a canary may be entered.

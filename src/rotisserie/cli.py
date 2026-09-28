@@ -137,6 +137,8 @@ def parser() -> argparse.ArgumentParser:
     decide.add_argument("--snapshot", required=True, help="graph snapshot path, or - for stdin")
     decide.add_argument("--revision", required=True, help="opaque adopter snapshot revision")
     decide.add_argument("--at", type=int, required=True)
+    decide.add_argument("--completion-backlog", type=int, default=0)
+    decide.add_argument("--backlog-limit", type=int)
     shadow.add_argument(
         "--candidate", required=True, help="candidate decision snapshot path, or - for stdin"
     )
@@ -155,6 +157,8 @@ def parser() -> argparse.ArgumentParser:
         "--revision", required=True, help="opaque adopter snapshot revision"
     )
     shadow_project.add_argument("--at", type=int, required=True)
+    shadow_project.add_argument("--completion-backlog", type=int, default=0)
+    shadow_project.add_argument("--backlog-limit", type=int)
 
     adopt = subcommands.add_parser(
         "adopt", help="evaluate a non-mutating adopter cutover or rollback decision"
@@ -463,7 +467,12 @@ def _decide(
     snapshot = GraphSnapshot.from_dict(_json_object(snapshot_bytes, "graph snapshot"))
     _validate_snapshot_repository(snapshot, config)
     decisions = project_decisions(
-        snapshot, source="rotisserie", revision=arguments.revision, at=arguments.at
+        snapshot,
+        source="rotisserie",
+        revision=arguments.revision,
+        at=arguments.at,
+        completion_backlog=arguments.completion_backlog,
+        backlog_limit=arguments.backlog_limit,
     )
     evidence = {
         "schema_version": 1,
@@ -499,7 +508,12 @@ def _shadow_project(
     snapshot = GraphSnapshot.from_dict(_json_object(snapshot_bytes, "graph snapshot"))
     _validate_snapshot_repository(snapshot, config)
     candidate = project_decisions(
-        snapshot, source="rotisserie", revision=arguments.revision, at=arguments.at
+        snapshot,
+        source="rotisserie",
+        revision=arguments.revision,
+        at=arguments.at,
+        completion_backlog=arguments.completion_backlog,
+        backlog_limit=arguments.backlog_limit,
     )
     report = compare_decisions(baseline, candidate)
     evidence = {
