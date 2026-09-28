@@ -11,6 +11,9 @@ such change must be called out here and in its release notes.
 
 ### Added
 
+- Versioned, idempotent adopter transition commands that bind an authorized
+  decision to an exact control revision, bounded lane, and compare-and-swap
+  stage change without carrying credentials or host mutation behavior.
 - Versioned adopter rollback-drill and canary-observation evidence bound to an
   exact lane, stage transition, and adopter-owned control revision.
 - Atomic, read-only `shadow-project` CLI projection and comparison with exact

@@ -8,7 +8,9 @@ from rotisserie.application.adoption import (
     AdoptionLane,
     AdoptionPolicy,
     AdoptionStage,
+    AdoptionTransition,
     adoption_decision,
+    prepare_adoption_transition,
 )
 from rotisserie.application.coordination import (
     CoordinationPort,
@@ -61,7 +63,9 @@ __all__ = [
     "AdoptionLane",
     "AdoptionPolicy",
     "AdoptionStage",
+    "AdoptionTransition",
     "adoption_decision",
+    "prepare_adoption_transition",
     "CoordinationService",
     "CoordinationPort",
     "EffectCommand",

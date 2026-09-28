@@ -251,3 +251,9 @@ observation evidence instead of trusting command-line booleans. Evidence is
 bound to the exact bounded lane, stage transition, and adopter-owned control
 revision; evidence from another lane or revision fails closed. The adopter
 still owns producing that evidence and enforcing any authorized transition.
+
+Authorized decisions can now be converted into a versioned, idempotent
+transition command bound to the exact adopter control revision, lane, expected
+stage, and target stage. This makes the adopter's required compare-and-swap
+boundary explicit without giving Rotisserie a credential or host mutation
+mechanism.

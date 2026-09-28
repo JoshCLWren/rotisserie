@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass
 from enum import StrEnum
+from hashlib import sha256
 
 from rotisserie.application.shadow import DecisionDimension, ShadowReport
 
@@ -165,6 +167,133 @@ class AdoptionDecision:
             "lane": {"name": self.lane.name, "subjects": list(self.lane.subjects)},
             "reasons": list(self.reasons),
         }
+
+
+@dataclass(frozen=True)
+class AdoptionTransition:
+    """Exact compare-and-swap command for an adopter-owned control plane."""
+
+    operation_key: str
+    control_revision: str
+    action: AdoptionAction
+    lane: AdoptionLane
+    expected_stage: AdoptionStage
+    target_stage: AdoptionStage
+
+    def __post_init__(self) -> None:
+        if not self.operation_key or self.operation_key != self.operation_key.strip():
+            raise ValueError("adoption transition operation key must be non-empty and trimmed")
+        if not self.control_revision or self.control_revision != self.control_revision.strip():
+            raise ValueError("adoption transition control revision must be non-empty and trimmed")
+        if self.action is AdoptionAction.HOLD:
+            raise ValueError("a hold decision cannot become an adoption transition")
+        expected_target = {
+            AdoptionAction.ENTER_CANARY: (AdoptionStage.LEGACY, AdoptionStage.CANARY),
+            AdoptionAction.EXPAND: (AdoptionStage.CANARY, AdoptionStage.EXPANDED),
+            AdoptionAction.ROLLBACK: (None, AdoptionStage.LEGACY),
+        }[self.action]
+        if self.target_stage is not expected_target[1] or (
+            expected_target[0] is not None and self.expected_stage is not expected_target[0]
+        ):
+            raise ValueError("adoption transition stages do not match its action")
+        if self.action is AdoptionAction.ROLLBACK and self.expected_stage is AdoptionStage.LEGACY:
+            raise ValueError("rollback transition must start from an active adopter stage")
+        expected_key = _adoption_transition_key(
+            self.control_revision,
+            self.action,
+            self.lane,
+            self.expected_stage,
+            self.target_stage,
+        )
+        if self.operation_key != expected_key:
+            raise ValueError("adoption transition operation key does not match its content")
+
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "schema_version": 1,
+            "operation_key": self.operation_key,
+            "control_revision": self.control_revision,
+            "action": self.action,
+            "lane": self.lane.to_dict(),
+            "expected_stage": self.expected_stage,
+            "target_stage": self.target_stage,
+        }
+
+    @classmethod
+    def from_dict(cls, data: dict[str, object]) -> AdoptionTransition:
+        if data.get("schema_version") != 1:
+            raise ValueError("unsupported adoption transition schema version")
+        operation_key = data.get("operation_key")
+        control_revision = data.get("control_revision")
+        action = data.get("action")
+        lane = data.get("lane")
+        expected_stage = data.get("expected_stage")
+        target_stage = data.get("target_stage")
+        if not (
+            isinstance(operation_key, str)
+            and isinstance(control_revision, str)
+            and isinstance(action, str)
+            and isinstance(lane, dict)
+            and isinstance(expected_stage, str)
+            and isinstance(target_stage, str)
+        ):
+            raise ValueError("invalid adoption transition")
+        try:
+            return cls(
+                operation_key,
+                control_revision,
+                AdoptionAction(action),
+                AdoptionLane.from_dict(lane),
+                AdoptionStage(expected_stage),
+                AdoptionStage(target_stage),
+            )
+        except ValueError as error:
+            raise ValueError(f"invalid adoption transition: {error}") from error
+
+
+def _adoption_transition_key(
+    control_revision: str,
+    action: AdoptionAction,
+    lane: AdoptionLane,
+    expected_stage: AdoptionStage,
+    target_stage: AdoptionStage,
+) -> str:
+    payload = {
+        "schema_version": 1,
+        "control_revision": control_revision,
+        "action": action,
+        "lane": lane.to_dict(),
+        "expected_stage": expected_stage,
+        "target_stage": target_stage,
+    }
+    encoded = json.dumps(payload, sort_keys=True, separators=(",", ":")).encode()
+    return f"adoption-transition:{sha256(encoded).hexdigest()}"
+
+
+def prepare_adoption_transition(
+    decision: AdoptionDecision, *, control_revision: str
+) -> AdoptionTransition:
+    """Bind an authorized decision to one idempotent host-control mutation."""
+
+    if not decision.authorized:
+        raise ValueError("a hold decision cannot become an adoption transition")
+    if not control_revision or control_revision != control_revision.strip():
+        raise ValueError("adoption control revision must be non-empty and trimmed")
+    operation_key = _adoption_transition_key(
+        control_revision,
+        decision.action,
+        decision.lane,
+        decision.from_stage,
+        decision.to_stage,
+    )
+    return AdoptionTransition(
+        operation_key,
+        control_revision,
+        decision.action,
+        decision.lane,
+        decision.from_stage,
+        decision.to_stage,
+    )
 
 
 def adoption_decision(

@@ -162,3 +162,13 @@ Redundant or out-of-order transitions hold closed. The command never enforces
 the decision or performs a remote mutation; ComicPile must map the bounded lane,
 reported stage, and action onto its own independently scoped switch and reject
 the result if the host-side stage changed after evaluation.
+
+An adopter that imports the public package can pass an authorized decision to
+`prepare_adoption_transition`. The returned schema-version-1 command binds the
+lane and stage change to the exact adopter-owned control revision, and includes
+a deterministic operation key for retry suppression. The adopter adapter must
+apply it as a compare-and-swap: both `control_revision` and `expected_stage`
+must still match before changing only the named lane to `target_stage`. A hold
+decision cannot produce a transition. The command contains no credential or
+host mutation mechanism; those remain in the adopter's independently scoped
+adapter.

@@ -9,12 +9,14 @@ from rotisserie.application import (
     AdoptionLane,
     AdoptionPolicy,
     AdoptionStage,
+    AdoptionTransition,
     DecisionDimension,
     DecisionObservation,
     DecisionSnapshot,
     ShadowReport,
     adoption_decision,
     compare_decisions,
+    prepare_adoption_transition,
 )
 
 LANE = AdoptionLane("issue-intake", ("label:ready",))
@@ -229,3 +231,60 @@ def test_evidence_is_versioned_and_bound_to_lane_stage_and_control_revision() ->
             AdoptionStage.LEGACY,
             AdoptionStage.LEGACY,
         )
+
+
+def test_authorized_decision_becomes_stable_exact_control_transition() -> None:
+    decision = adoption_decision(
+        (matching_report(),),
+        LANE,
+        (evidence(AdoptionEvidenceKind.ROLLBACK_DRILL),),
+        policy=AdoptionPolicy(),
+        control_revision=CONTROL_REVISION,
+        current_stage=AdoptionStage.LEGACY,
+        operator_approved=True,
+    )
+
+    first = prepare_adoption_transition(decision, control_revision=CONTROL_REVISION)
+    second = prepare_adoption_transition(decision, control_revision=CONTROL_REVISION)
+
+    assert first == second
+    assert first.operation_key.startswith("adoption-transition:")
+    assert first.to_dict() == {
+        "schema_version": 1,
+        "operation_key": first.operation_key,
+        "control_revision": CONTROL_REVISION,
+        "action": "enter_canary",
+        "lane": {"name": "issue-intake", "subjects": ["label:ready"]},
+        "expected_stage": "legacy",
+        "target_stage": "canary",
+    }
+    assert AdoptionTransition.from_dict(first.to_dict()) == first
+    tampered = first.to_dict()
+    tampered["operation_key"] = "adoption-transition:wrong"
+    with pytest.raises(ValueError, match="does not match its content"):
+        AdoptionTransition.from_dict(tampered)
+
+
+def test_transition_contract_rejects_hold_and_impossible_stage_changes() -> None:
+    hold = adoption_decision(
+        (),
+        LANE,
+        (),
+        policy=AdoptionPolicy(),
+        control_revision=CONTROL_REVISION,
+        current_stage=AdoptionStage.LEGACY,
+        operator_approved=False,
+    )
+    with pytest.raises(ValueError, match="hold decision"):
+        prepare_adoption_transition(hold, control_revision=CONTROL_REVISION)
+    with pytest.raises(ValueError, match="stages do not match"):
+        AdoptionTransition(
+            "operation-1",
+            CONTROL_REVISION,
+            AdoptionAction.EXPAND,
+            LANE,
+            AdoptionStage.LEGACY,
+            AdoptionStage.EXPANDED,
+        )
+    with pytest.raises(ValueError, match="schema version"):
+        AdoptionTransition.from_dict({"schema_version": 2})
