@@ -257,3 +257,10 @@ transition command bound to the exact adopter control revision, lane, expected
 stage, and target stage. This makes the adopter's required compare-and-swap
 boundary explicit without giving Rotisserie a credential or host mutation
 mechanism.
+
+ComicPile now has a merged adopter translator and a read-only live acquisition path.
+The first live observation at ComicPile commit `cbea5e1ee` compared 94 decisions across
+all six dimensions with zero divergence. Completion backlog and its configured limit
+are explicit projection inputs, preserving backpressure as portable policy. This single
+run does not authorize cutover; another distinct parity run and adopter-owned canary
+and rollback evidence are still required.

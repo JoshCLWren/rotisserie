@@ -137,6 +137,38 @@ def test_graph_projection_emits_all_portable_decision_dimensions() -> None:
     ]
 
 
+def test_projection_applies_explicit_backpressure() -> None:
+    repository = RepositoryId("example.test", "acme", "project")
+    work = WorkId(repository, "1")
+    snapshot = GraphSnapshot(works=(Work(work, "Wait", priority=4),))
+
+    projected = project_decisions(
+        snapshot,
+        source="rotisserie",
+        revision="host-8",
+        at=10,
+        completion_backlog=8,
+        backlog_limit=8,
+    )
+
+    assert [item.to_dict() for item in projected.observations] == [
+        {
+            "dimension": "eligibility",
+            "subject": "work:1",
+            "outcome": "blocked",
+            "reasons": ["backpressure"],
+            "rank": None,
+        },
+        {
+            "dimension": "ownership",
+            "subject": "work:1",
+            "outcome": "unowned",
+            "reasons": [],
+            "rank": None,
+        },
+    ]
+
+
 def test_every_difference_is_explained_in_stable_order() -> None:
     baseline = DecisionSnapshot(
         "legacy",
