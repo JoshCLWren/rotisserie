@@ -197,4 +197,19 @@ merge. Producer/reviewer separation uses durable Rotisserie worker identities,
 matching ComicPile's single-account Factory contract; formal GitHub approval is
 not required. A repository variable is the kill switch. Server-side branch
 protection requires the Python 3.12, 3.13, and 3.14 CI contexts. No worker
-execution or schedule has been activated; lifecycle evidence is still pending.
+execution or schedule has been activated. The canary lifecycle and recovery
+evidence is recorded in [`docs/dogfood-evidence.md`](docs/dogfood-evidence.md).
+
+## External adopter shadowing
+
+The first ComicPile integration slice defines a versioned, provider-neutral
+decision-shadow contract under `src/rotisserie/application`. Legacy and
+Rotisserie decisions can be normalized across eligibility, ranking, ownership,
+review, completion, and recovery, then compared in a deterministic
+machine-readable report that explains missing records and every value mismatch.
+
+ComicPile label vocabulary, retry rules, worker numbering, provider routes,
+prompts, workflows, credentials, and rollback controls remain adopter policy or
+adapter concerns. This slice performs no cross-repository read or mutation and
+does not activate a workflow. The boundary inventory and staged integration
+rules live in [`docs/adopter-integration.md`](docs/adopter-integration.md).

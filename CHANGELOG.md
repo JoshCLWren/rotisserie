@@ -11,6 +11,9 @@ such change must be called out here and in its release notes.
 
 ### Added
 
+- Versioned external-adopter decision snapshots and deterministic shadow
+  reports across eligibility, ranking, ownership, review, completion, and
+  recovery, with exact-graph-revision enforcement.
 - Guarded dogfood payload streaming over standard input, allowing live
   read-only projection without retaining raw GitHub responses.
 - Non-activating self-dogfood commands for fixture projection, read-only

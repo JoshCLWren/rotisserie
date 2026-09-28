@@ -32,6 +32,15 @@ from rotisserie.application.runtime import (
     RuntimeResult,
     WorkerRuntime,
 )
+from rotisserie.application.shadow import (
+    DecisionDimension,
+    DecisionDivergence,
+    DecisionObservation,
+    DecisionSnapshot,
+    DivergenceKind,
+    ShadowReport,
+    compare_decisions,
+)
 
 __all__ = [
     "CoordinationService",
@@ -62,4 +71,11 @@ __all__ = [
     "RuntimeEvidence",
     "RuntimeResult",
     "WorkerRuntime",
+    "DecisionDimension",
+    "DecisionDivergence",
+    "DecisionObservation",
+    "DecisionSnapshot",
+    "DivergenceKind",
+    "ShadowReport",
+    "compare_decisions",
 ]
