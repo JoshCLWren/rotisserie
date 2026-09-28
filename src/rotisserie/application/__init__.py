@@ -1,5 +1,17 @@
 """Application use cases coordinating domain policy and effect ports."""
 
+from rotisserie.application.adoption import (
+    AdoptionAction,
+    AdoptionDecision,
+    AdoptionEvidence,
+    AdoptionEvidenceKind,
+    AdoptionLane,
+    AdoptionPolicy,
+    AdoptionStage,
+    AdoptionTransition,
+    adoption_decision,
+    prepare_adoption_transition,
+)
 from rotisserie.application.coordination import (
     CoordinationPort,
     CoordinationService,
@@ -32,8 +44,28 @@ from rotisserie.application.runtime import (
     RuntimeResult,
     WorkerRuntime,
 )
+from rotisserie.application.shadow import (
+    DecisionDimension,
+    DecisionDivergence,
+    DecisionObservation,
+    DecisionSnapshot,
+    DivergenceKind,
+    ShadowReport,
+    compare_decisions,
+    project_decisions,
+)
 
 __all__ = [
+    "AdoptionAction",
+    "AdoptionDecision",
+    "AdoptionEvidence",
+    "AdoptionEvidenceKind",
+    "AdoptionLane",
+    "AdoptionPolicy",
+    "AdoptionStage",
+    "AdoptionTransition",
+    "adoption_decision",
+    "prepare_adoption_transition",
     "CoordinationService",
     "CoordinationPort",
     "EffectCommand",
@@ -62,4 +94,12 @@ __all__ = [
     "RuntimeEvidence",
     "RuntimeResult",
     "WorkerRuntime",
+    "DecisionDimension",
+    "DecisionDivergence",
+    "DecisionObservation",
+    "DecisionSnapshot",
+    "DivergenceKind",
+    "ShadowReport",
+    "compare_decisions",
+    "project_decisions",
 ]

@@ -11,6 +11,29 @@ such change must be called out here and in its release notes.
 
 ### Added
 
+- Versioned, idempotent adopter transition commands that bind an authorized
+  decision to an exact control revision, bounded lane, and compare-and-swap
+  stage change without carrying credentials or host mutation behavior.
+- Versioned adopter rollback-drill and canary-observation evidence bound to an
+  exact lane, stage transition, and adopter-owned control revision.
+- Atomic, read-only `shadow-project` CLI projection and comparison with exact
+  baseline and graph digests, repository scoping, and no intermediate
+  Rotisserie decision file.
+- Schema-version-2 adoption decisions with explicit current and next stages,
+  fail-closed transition ordering, and unconditional active-lane rollback to
+  the legacy stage.
+- Read-only `decide` CLI projection from versioned graph snapshots into all six
+  adopter-shadow dimensions, with explicit empty-dimension coverage, input
+  digests, repository scoping, and no mutable graph-state initialization.
+- Non-mutating `adopt` CLI decisions over validated shadow reports, including
+  bounded lanes, explicit approval gates, and unconditional rollback requests.
+- Fail-closed external-adopter cutover and rollback decisions with bounded
+  lanes, complete shadow-evidence checks, and explicit operator approval.
+- Versioned external-adopter decision snapshots and deterministic shadow
+  reports across eligibility, ranking, ownership, review, completion, and
+  recovery, with exact-graph-revision enforcement.
+- Read-only `shadow` CLI comparison with input digests, durable reports, and a
+  distinct exit status for explained adopter divergence.
 - Guarded dogfood payload streaming over standard input, allowing live
   read-only projection without retaining raw GitHub responses.
 - Non-activating self-dogfood commands for fixture projection, read-only

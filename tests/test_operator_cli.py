@@ -6,7 +6,7 @@ import shutil
 import sys
 from pathlib import Path
 
-from rotisserie.cli import EXIT_INVALID, EXIT_OK, main
+from rotisserie.cli import EXIT_INVALID, EXIT_OK, EXIT_REJECTED, main
 from rotisserie.operator import OperationJournal, load_config, redact
 
 EXAMPLE = Path(__file__).parents[1] / "examples" / "local"
@@ -66,6 +66,37 @@ def test_clean_clone_fixture_can_inspect_and_plan(capsys: object, tmp_path: Path
     assert code == EXIT_OK
     assert output["selected"] == ["1"]
     assert output["ready_changes"] == ["20"]
+
+
+def test_decide_cli_projects_snapshot_without_initializing_graph_state(
+    capsys: object, tmp_path: Path
+) -> None:
+    config = local_example(tmp_path)
+
+    code, output = invoke(
+        capsys,
+        config,
+        "decide",
+        "--snapshot",
+        str(tmp_path / "graph.json"),
+        "--revision",
+        "comic-pile-snapshot-1",
+        "--at",
+        "10",
+    )
+
+    assert code == EXIT_OK
+    decisions = output["evidence"]["decisions"]  # type: ignore[index]
+    assert decisions["source"] == "rotisserie"
+    assert decisions["revision"] == "comic-pile-snapshot-1"
+    assert {item["dimension"] for item in decisions["observations"]} == {
+        "eligibility",
+        "ownership",
+        "ranking",
+        "review",
+        "completion",
+    }
+    assert not (tmp_path / "state" / "graph-state.json").exists()
 
 
 def test_mutations_are_dry_run_by_default_and_apply_requires_config(
@@ -313,3 +344,313 @@ def test_dogfood_accepts_streamed_payload(
     assert isinstance(evidence, dict)
     assert evidence["payload_sha256"]
     assert evidence["remote_mutation"] is False
+
+
+def test_shadow_cli_reports_and_persists_adopter_divergence(capsys: object, tmp_path: Path) -> None:
+    config = local_example(tmp_path)
+    baseline = tmp_path / "legacy.json"
+    candidate = tmp_path / "rotisserie.json"
+    common = {
+        "schema_version": 1,
+        "revision": "comic-pile-snapshot-1",
+        "observations": [
+            {
+                "dimension": "eligibility",
+                "subject": "issue:10",
+                "outcome": "eligible",
+                "reasons": [],
+                "rank": None,
+            }
+        ],
+    }
+    baseline.write_text(json.dumps({**common, "source": "comic-pile-factory"}))
+    candidate.write_text(
+        json.dumps(
+            {
+                **common,
+                "source": "rotisserie",
+                "observations": [
+                    {
+                        **common["observations"][0],  # type: ignore[index]
+                        "outcome": "blocked",
+                        "reasons": ["dependency"],
+                    }
+                ],
+            }
+        )
+    )
+
+    code, output = invoke(
+        capsys,
+        config,
+        "shadow",
+        "--baseline",
+        str(baseline),
+        "--candidate",
+        str(candidate),
+    )
+
+    assert code == EXIT_REJECTED
+    assert output["status"] == "diverged"
+    evidence = output["evidence"]
+    assert isinstance(evidence, dict)
+    report = evidence["report"]
+    assert isinstance(report, dict)
+    assert report["matches"] is False
+    assert [item["kind"] for item in report["divergences"]] == ["outcome", "reasons"]
+    assert evidence["remote_mutation"] is False
+    assert not (tmp_path / "state" / "graph-state.json").exists()
+    assert OperationJournal(tmp_path / "state").records()[0]["command"] == "shadow"
+
+
+def test_shadow_cli_accepts_one_stream_and_rejects_revision_mismatch(
+    capsys: object, monkeypatch: object, tmp_path: Path
+) -> None:
+    config = local_example(tmp_path)
+    candidate = tmp_path / "candidate.json"
+    candidate.write_text(
+        json.dumps(
+            {
+                "schema_version": 1,
+                "source": "rotisserie",
+                "revision": "new",
+                "observations": [],
+            }
+        )
+    )
+
+    class Stream:
+        buffer = io.BytesIO(
+            json.dumps(
+                {
+                    "schema_version": 1,
+                    "source": "comic-pile-factory",
+                    "revision": "old",
+                    "observations": [],
+                }
+            ).encode()
+        )
+
+    monkeypatch.setattr(sys, "stdin", Stream())  # type: ignore[attr-defined]
+    code, output = invoke(
+        capsys,
+        config,
+        "shadow",
+        "--baseline",
+        "-",
+        "--candidate",
+        str(candidate),
+    )
+
+    assert code == EXIT_INVALID
+    assert "same graph revision" in str(output["error"])
+
+
+def test_shadow_project_cli_atomically_projects_and_compares_adopter_input(
+    capsys: object, tmp_path: Path
+) -> None:
+    config = local_example(tmp_path)
+    revision = "comic-pile-snapshot-1"
+    code, projected = invoke(
+        capsys,
+        config,
+        "decide",
+        "--snapshot",
+        str(tmp_path / "graph.json"),
+        "--revision",
+        revision,
+        "--at",
+        "10",
+    )
+    assert code == EXIT_OK
+    baseline_data = projected["evidence"]["decisions"]  # type: ignore[index]
+    assert isinstance(baseline_data, dict)
+    baseline_data["source"] = "comic-pile-factory"
+    baseline = tmp_path / "legacy.json"
+    baseline.write_text(json.dumps(baseline_data), encoding="utf-8")
+
+    code, output = invoke(
+        capsys,
+        config,
+        "shadow-project",
+        "--baseline",
+        str(baseline),
+        "--snapshot",
+        str(tmp_path / "graph.json"),
+        "--revision",
+        revision,
+        "--at",
+        "10",
+    )
+
+    assert code == EXIT_OK
+    assert output["status"] == "match"
+    evidence = output["evidence"]
+    assert isinstance(evidence, dict)
+    assert evidence["baseline_sha256"]
+    assert evidence["snapshot_sha256"]
+    assert evidence["remote_mutation"] is False
+    candidate = evidence["candidate"]
+    report = evidence["report"]
+    assert isinstance(candidate, dict)
+    assert isinstance(report, dict)
+    assert candidate["source"] == "rotisserie"
+    assert report["matches"] is True
+    assert not (tmp_path / "state" / "graph-state.json").exists()
+    assert OperationJournal(tmp_path / "state").records()[-1]["command"] == "shadow-project"
+
+
+def test_shadow_project_cli_rejects_revision_mismatch_before_projection(
+    capsys: object, tmp_path: Path
+) -> None:
+    config = local_example(tmp_path)
+    baseline = tmp_path / "legacy.json"
+    baseline.write_text(
+        json.dumps(
+            {
+                "schema_version": 1,
+                "source": "comic-pile-factory",
+                "revision": "snapshot-old",
+                "observations": [],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    code, output = invoke(
+        capsys,
+        config,
+        "shadow-project",
+        "--baseline",
+        str(baseline),
+        "--snapshot",
+        str(tmp_path / "graph.json"),
+        "--revision",
+        "snapshot-new",
+        "--at",
+        "10",
+    )
+
+    assert code == EXIT_INVALID
+    assert "baseline must describe the requested graph revision" in str(output["error"])
+
+
+def matching_shadow_report(revision: str) -> dict[str, object]:
+    dimensions = [
+        "completion",
+        "eligibility",
+        "ownership",
+        "ranking",
+        "recovery",
+        "review",
+    ]
+    return {
+        "schema_version": 1,
+        "baseline": {"source": "comic-pile-factory", "revision": revision},
+        "candidate": {"source": "rotisserie", "revision": revision},
+        "compared": len(dimensions),
+        "dimensions": dimensions,
+        "matches": True,
+        "divergences": [],
+    }
+
+
+def adoption_evidence(kind: str, *, control_revision: str = "controls-1") -> dict[str, object]:
+    return {
+        "schema_version": 1,
+        "kind": kind,
+        "lane": {"name": "issue-intake", "subjects": ["label:ready"]},
+        "control_revision": control_revision,
+        "from_stage": "canary",
+        "to_stage": "legacy" if kind == "rollback_drill" else "canary",
+    }
+
+
+def test_adopt_cli_authorizes_bounded_canary_without_remote_mutation(
+    capsys: object, tmp_path: Path
+) -> None:
+    config = local_example(tmp_path)
+    reports = []
+    for revision in ("snapshot-1", "snapshot-2"):
+        path = tmp_path / f"{revision}.json"
+        path.write_text(json.dumps(matching_shadow_report(revision)))
+        reports.append(path)
+    rollback_evidence = tmp_path / "rollback.json"
+    rollback_evidence.write_text(json.dumps(adoption_evidence("rollback_drill")))
+
+    code, output = invoke(
+        capsys,
+        config,
+        "adopt",
+        "--report",
+        str(reports[0]),
+        "--report",
+        str(reports[1]),
+        "--lane",
+        "issue-intake",
+        "--subject",
+        "label:ready",
+        "--minimum-matching-runs",
+        "2",
+        "--evidence",
+        str(rollback_evidence),
+        "--control-revision",
+        "controls-1",
+        "--operator-approved",
+    )
+
+    assert code == EXIT_OK
+    assert output["status"] == "authorized"
+    evidence = output["evidence"]
+    assert isinstance(evidence, dict)
+    assert evidence["decision"] == {
+        "schema_version": 2,
+        "action": "enter_canary",
+        "authorized": True,
+        "from_stage": "legacy",
+        "to_stage": "canary",
+        "lane": {"name": "issue-intake", "subjects": ["label:ready"]},
+        "reasons": [],
+    }
+    assert len(evidence["report_sha256"]) == 2
+    assert len(evidence["evidence_sha256"]) == 1
+    assert evidence["control_revision"] == "controls-1"
+    assert evidence["remote_mutation"] is False
+    assert not (tmp_path / "state" / "graph-state.json").exists()
+
+
+def test_adopt_cli_holds_without_approval_and_allows_evidence_free_rollback(
+    capsys: object, tmp_path: Path
+) -> None:
+    config = local_example(tmp_path)
+
+    code, held = invoke(
+        capsys,
+        config,
+        "adopt",
+        "--lane",
+        "issue-intake",
+        "--subject",
+        "label:ready",
+        "--control-revision",
+        "controls-1",
+    )
+    assert code == EXIT_REJECTED
+    assert held["status"] == "held"
+
+    code, rollback = invoke(
+        capsys,
+        config,
+        "adopt",
+        "--lane",
+        "issue-intake",
+        "--subject",
+        "label:ready",
+        "--control-revision",
+        "controls-1",
+        "--current-stage",
+        "canary",
+        "--rollback-requested",
+    )
+    assert code == EXIT_OK
+    assert rollback["evidence"]["decision"]["action"] == "rollback"  # type: ignore[index]

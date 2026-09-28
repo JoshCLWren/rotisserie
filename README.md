@@ -11,13 +11,14 @@ Rotisserie builds on operating experience with parallel implementation,
 independent review, repair, CI, merge readiness, model fallback, and
 interrupted-work recovery. Its job is to make those mechanics portable.
 
-> **Current state: guarded self-dogfood preparation is in progress.**
+> **Current state: external-adopter integration is in progress.**
 > Rotisserie now has a standalone package, generic graph and coordination
 > policy, secure GitHub adapter, application orchestration, and provider-neutral
 > worker contracts, plus a local CLI with durable state and diagnostics. The
 > operator can produce fixture, read-only projection, and credential-free
-> mutation-plan evidence. Autonomous execution and remote mutation remain
-> intentionally disabled pending maintainer review of that evidence.
+> mutation-plan evidence, completed its guarded merge canary, and now exposes a
+> versioned decision-shadow contract for adopter parity reports. General
+> autonomous execution and external-repository mutation remain disabled.
 
 ## What “graph engineering” means
 
@@ -77,7 +78,8 @@ The intended result is a system that can:
 | `prototype/` | Dependency and eligibility migration evidence with domain compatibility tests |
 | `tests/` | Rotisserie repository-safety guards |
 | `reference/legacy-factory/` | Archived migration evidence, code, tests, prompts, and disabled workflows |
-| `.github/workflows/ci.yml` | The only active Action; read-only Rotisserie CI |
+| `.github/workflows/ci.yml` | Read-only Rotisserie CI |
+| `.github/workflows/canary-merge.yml` | Manually dispatched, issue-9-only merge canary |
 
 See [MIGRATION.md](MIGRATION.md) for exact snapshot provenance and known source
 test drift. [MIGRATION_INVENTORY.md](MIGRATION_INVENTORY.md) accounts for the
@@ -85,10 +87,11 @@ intended treatment of every archived artifact.
 
 ## Safety boundary
 
-Rotisserie does **not** currently dispatch agents, mutate issues, merge pull
-requests, or deploy software. Imported operational Actions live outside
-`.github/workflows/` and therefore cannot execute. A regression test enforces
-that the sole active workflow is read-only and unscheduled.
+Rotisserie does **not** currently dispatch agents, mutate external issues, or
+deploy software. Imported operational Actions live outside `.github/workflows/`
+and therefore cannot execute. The only write-capable workflow is the completed,
+manually dispatched issue-9 canary; it is repository-scoped, allowlisted, and
+unscheduled. Regression tests enforce this boundary.
 
 The operational runtime will only be enabled after repository identity,
 permissions, credentials, dry-run behavior, and end-to-end mutation tests are
@@ -131,11 +134,11 @@ also explicitly set `local.mutations_enabled = true`. See
 [the operator guide](docs/operator.md) for the full simulated lifecycle, JSON
 contract, exit codes, recovery, and redacted diagnostics.
 
-The [dogfood guide](docs/dogfood.md) describes the first three non-activating
-stages of guarded self-dogfood, and the
-[pre-activation evidence](docs/dogfood-evidence.md) records their first run.
-This does not authorize a canary or install an
-active workflow.
+The [dogfood guide](docs/dogfood.md) and
+[lifecycle evidence](docs/dogfood-evidence.md) describe the guarded self-dogfood
+canary. The [external adopter guide](docs/adopter-integration.md) defines the
+next phase's product-policy boundary and the `decide`, `shadow`,
+`shadow-project`, and `adopt` contracts for non-mutating staged integration.
 
 ## Roadmap
 
@@ -149,7 +152,7 @@ canonical dependency-ordered plan. Current progress:
 - [x] extract dispatch, completion, recovery, and capacity orchestration;
 - [x] define provider-neutral worker, evidence, and executor contracts;
 - [x] build the operator CLI, configuration model, persistence, and observability surface;
-- [ ] safely dogfood Rotisserie on its own repository;
+- [x] safely dogfood Rotisserie on its own repository;
 - [ ] integrate ComicPile as the first external adopter through the public boundary;
 - [ ] harden and publish the first supported open-source release.
 

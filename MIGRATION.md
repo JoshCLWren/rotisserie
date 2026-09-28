@@ -197,4 +197,63 @@ merge. Producer/reviewer separation uses durable Rotisserie worker identities,
 matching ComicPile's single-account Factory contract; formal GitHub approval is
 not required. A repository variable is the kill switch. Server-side branch
 protection requires the Python 3.12, 3.13, and 3.14 CI contexts. No worker
-execution or schedule has been activated; lifecycle evidence is still pending.
+execution or schedule has been activated. The canary lifecycle and recovery
+evidence is recorded in [`docs/dogfood-evidence.md`](docs/dogfood-evidence.md).
+
+## External adopter shadowing
+
+The first ComicPile integration slice defines a versioned, provider-neutral
+decision-shadow contract under `src/rotisserie/application`. Legacy and
+Rotisserie decisions can be normalized across eligibility, ranking, ownership,
+review, completion, and recovery, then compared in a deterministic
+machine-readable report that explains missing records and every value mismatch.
+The operator exposes that contract as a read-only `shadow` command with hashed,
+durable evidence and a distinct divergence exit status; it never initializes
+graph state, acquires credentials, or contacts the adopter repository.
+
+ComicPile label vocabulary, retry rules, worker numbering, provider routes,
+prompts, workflows, credentials, and rollback controls remain adopter policy or
+adapter concerns. This slice performs no cross-repository read or mutation and
+does not activate a workflow. The boundary inventory and staged integration
+rules live in [`docs/adopter-integration.md`](docs/adopter-integration.md).
+
+A pure application cutover policy now requires complete, distinct parity runs,
+a tested rollback path, explicit operator approval, and a bounded adopter lane.
+It holds closed on incomplete or divergent evidence, requires an observed
+canary before expansion, and gives rollback requests precedence. The policy
+returns a versioned decision only; adopter adapters still own enforcement and
+no external mutation or workflow has been activated.
+
+The operator exposes this policy through a versioned `adopt` command so an
+external adopter need not import application internals. It validates serialized
+shadow reports, hashes the supplied evidence, and records a non-mutating cutover
+or rollback decision. Adoption decisions bind the reported current and next
+stages, reject out-of-order entry or expansion, and always return an active
+canary or expanded lane to the legacy stage on rollback; enforcement remains
+entirely adopter-owned.
+
+Rotisserie can now project all six normalized decision dimensions directly
+from a versioned graph snapshot through a pure application function and the
+read-only `decide` CLI. Explicit dimension declarations preserve coverage when
+a queue is empty. The command binds evidence to the exact input digest and an
+adopter-supplied graph revision, enforces configured repository scope, and
+does not initialize graph state, acquire credentials, contact a host, or
+perform a mutation.
+
+The `shadow-project` CLI now provides the direct adopter handoff: it projects a
+versioned graph snapshot and compares it with the legacy baseline atomically.
+Its durable evidence binds both exact input digests, the projected decisions,
+and the divergence report to one adopter revision. It remains repository
+scoped and credential-free, and initializes no mutable graph state.
+
+Adopter transition gates now consume versioned rollback-drill and canary-
+observation evidence instead of trusting command-line booleans. Evidence is
+bound to the exact bounded lane, stage transition, and adopter-owned control
+revision; evidence from another lane or revision fails closed. The adopter
+still owns producing that evidence and enforcing any authorized transition.
+
+Authorized decisions can now be converted into a versioned, idempotent
+transition command bound to the exact adopter control revision, lane, expected
+stage, and target stage. This makes the adopter's required compare-and-swap
+boundary explicit without giving Rotisserie a credential or host mutation
+mechanism.
