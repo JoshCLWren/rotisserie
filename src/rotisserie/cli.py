@@ -22,9 +22,11 @@ from rotisserie.adapters.github import (
 )
 from rotisserie.application import (
     CoordinationService,
+    DecisionSnapshot,
     EffectCommand,
     GraphView,
     OperationStatus,
+    compare_decisions,
 )
 from rotisserie.domain import (
     ChangeId,
@@ -113,6 +115,16 @@ def parser() -> argparse.ArgumentParser:
     dogfood.add_argument("--label", action="append", default=[])
     dogfood.add_argument("--state", choices=("open", "closed"), default="open")
     dogfood.add_argument("--expected-head")
+
+    shadow = subcommands.add_parser(
+        "shadow", help="compare normalized adopter and Rotisserie decisions"
+    )
+    shadow.add_argument(
+        "--baseline", required=True, help="baseline decision snapshot path, or - for stdin"
+    )
+    shadow.add_argument(
+        "--candidate", required=True, help="candidate decision snapshot path, or - for stdin"
+    )
     return value
 
 
@@ -125,6 +137,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         if arguments.command == "dogfood":
             output = _dogfood(arguments, config, journal, correlation_id)
             status = EXIT_OK
+        elif arguments.command == "shadow":
+            output, status = _shadow(arguments, journal, correlation_id)
         else:
             port = LocalCoordinationPort(config.snapshot, config.state_directory, config.repository)
             port.initialize()
@@ -342,6 +356,62 @@ def _dogfood(
         timestamp=int(time.time()),
     )
     return _envelope(correlation_id, "dogfood", "ok", evidence=evidence, record=record)
+
+
+def _shadow(
+    arguments: argparse.Namespace,
+    journal: OperationJournal,
+    correlation_id: str,
+) -> tuple[dict[str, Any], int]:
+    """Compare two externally normalized snapshots without acquiring or mutating host state."""
+
+    if arguments.baseline == "-" and arguments.candidate == "-":
+        raise ConfigurationError("only one shadow snapshot may be read from standard input")
+    baseline_bytes = _read_json_bytes(arguments.baseline, "baseline")
+    candidate_bytes = _read_json_bytes(arguments.candidate, "candidate")
+    baseline = DecisionSnapshot.from_dict(_json_object(baseline_bytes, "baseline"))
+    candidate = DecisionSnapshot.from_dict(_json_object(candidate_bytes, "candidate"))
+    report = compare_decisions(baseline, candidate)
+    evidence = {
+        "schema_version": 1,
+        "baseline_sha256": hashlib.sha256(baseline_bytes).hexdigest(),
+        "candidate_sha256": hashlib.sha256(candidate_bytes).hexdigest(),
+        "report": report.to_dict(),
+        "remote_mutation": False,
+    }
+    record = journal.append(
+        correlation_id=correlation_id,
+        command="shadow",
+        dry_run=True,
+        result=evidence,
+        timestamp=int(time.time()),
+    )
+    status = "match" if report.matches else "diverged"
+    exit_code = EXIT_OK if report.matches else EXIT_REJECTED
+    return _envelope(
+        correlation_id,
+        "shadow",
+        status,
+        evidence=evidence,
+        record=record,
+    ), exit_code
+
+
+def _read_json_bytes(value: str, label: str) -> bytes:
+    try:
+        return sys.stdin.buffer.read() if value == "-" else Path(value).resolve().read_bytes()
+    except OSError as exc:
+        raise ConfigurationError(f"cannot read {label} shadow snapshot: {exc}") from exc
+
+
+def _json_object(raw: bytes, label: str) -> dict[str, object]:
+    try:
+        value = json.loads(raw)
+    except json.JSONDecodeError as exc:
+        raise ConfigurationError(f"cannot parse {label} shadow snapshot: {exc}") from exc
+    if not isinstance(value, dict):
+        raise ConfigurationError(f"{label} shadow snapshot root must be an object")
+    return value
 
 
 class _ReadOnlyPort:

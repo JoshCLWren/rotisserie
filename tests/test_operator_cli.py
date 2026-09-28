@@ -6,7 +6,7 @@ import shutil
 import sys
 from pathlib import Path
 
-from rotisserie.cli import EXIT_INVALID, EXIT_OK, main
+from rotisserie.cli import EXIT_INVALID, EXIT_OK, EXIT_REJECTED, main
 from rotisserie.operator import OperationJournal, load_config, redact
 
 EXAMPLE = Path(__file__).parents[1] / "examples" / "local"
@@ -313,3 +313,103 @@ def test_dogfood_accepts_streamed_payload(
     assert isinstance(evidence, dict)
     assert evidence["payload_sha256"]
     assert evidence["remote_mutation"] is False
+
+
+def test_shadow_cli_reports_and_persists_adopter_divergence(capsys: object, tmp_path: Path) -> None:
+    config = local_example(tmp_path)
+    baseline = tmp_path / "legacy.json"
+    candidate = tmp_path / "rotisserie.json"
+    common = {
+        "schema_version": 1,
+        "revision": "comic-pile-snapshot-1",
+        "observations": [
+            {
+                "dimension": "eligibility",
+                "subject": "issue:10",
+                "outcome": "eligible",
+                "reasons": [],
+                "rank": None,
+            }
+        ],
+    }
+    baseline.write_text(json.dumps({**common, "source": "comic-pile-factory"}))
+    candidate.write_text(
+        json.dumps(
+            {
+                **common,
+                "source": "rotisserie",
+                "observations": [
+                    {
+                        **common["observations"][0],  # type: ignore[index]
+                        "outcome": "blocked",
+                        "reasons": ["dependency"],
+                    }
+                ],
+            }
+        )
+    )
+
+    code, output = invoke(
+        capsys,
+        config,
+        "shadow",
+        "--baseline",
+        str(baseline),
+        "--candidate",
+        str(candidate),
+    )
+
+    assert code == EXIT_REJECTED
+    assert output["status"] == "diverged"
+    evidence = output["evidence"]
+    assert isinstance(evidence, dict)
+    report = evidence["report"]
+    assert isinstance(report, dict)
+    assert report["matches"] is False
+    assert [item["kind"] for item in report["divergences"]] == ["outcome", "reasons"]
+    assert evidence["remote_mutation"] is False
+    assert not (tmp_path / "state" / "graph-state.json").exists()
+    assert OperationJournal(tmp_path / "state").records()[0]["command"] == "shadow"
+
+
+def test_shadow_cli_accepts_one_stream_and_rejects_revision_mismatch(
+    capsys: object, monkeypatch: object, tmp_path: Path
+) -> None:
+    config = local_example(tmp_path)
+    candidate = tmp_path / "candidate.json"
+    candidate.write_text(
+        json.dumps(
+            {
+                "schema_version": 1,
+                "source": "rotisserie",
+                "revision": "new",
+                "observations": [],
+            }
+        )
+    )
+
+    class Stream:
+        buffer = io.BytesIO(
+            json.dumps(
+                {
+                    "schema_version": 1,
+                    "source": "comic-pile-factory",
+                    "revision": "old",
+                    "observations": [],
+                }
+            ).encode()
+        )
+
+    monkeypatch.setattr(sys, "stdin", Stream())  # type: ignore[attr-defined]
+    code, output = invoke(
+        capsys,
+        config,
+        "shadow",
+        "--baseline",
+        "-",
+        "--candidate",
+        str(candidate),
+    )
+
+    assert code == EXIT_INVALID
+    assert "same graph revision" in str(output["error"])

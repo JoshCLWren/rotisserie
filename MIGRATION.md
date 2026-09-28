@@ -207,6 +207,9 @@ decision-shadow contract under `src/rotisserie/application`. Legacy and
 Rotisserie decisions can be normalized across eligibility, ranking, ownership,
 review, completion, and recovery, then compared in a deterministic
 machine-readable report that explains missing records and every value mismatch.
+The operator exposes that contract as a read-only `shadow` command with hashed,
+durable evidence and a distinct divergence exit status; it never initializes
+graph state, acquires credentials, or contacts the adopter repository.
 
 ComicPile label vocabulary, retry rules, worker numbering, provider routes,
 prompts, workflows, credentials, and rollback controls remain adopter policy or

@@ -45,6 +45,20 @@ Comparison fails closed unless both inputs name the same graph revision. That
 revision is retained in the report so results cannot be mistaken for evidence
 about a different host snapshot.
 
+An adopter can compare two normalized snapshot files through the stable CLI:
+
+```bash
+rotisserie --config operator.toml shadow \
+  --baseline comic-pile-decisions.json \
+  --candidate rotisserie-decisions.json
+```
+
+Exactly one input may be `-` to stream it over standard input. The command does
+not initialize local graph state or acquire host data. It records only the two
+input digests, the normalized report, and `remote_mutation: false` in the local
+operation journal. A match exits 0; explained divergence exits 3; malformed
+input or a revision mismatch exits 2.
+
 This contract performs no acquisition or mutation. Snapshot acquisition,
 ComicPile translation, report storage, credential scope, and later canary
 controls belong to the adopter integration. Mutation remains prohibited until
