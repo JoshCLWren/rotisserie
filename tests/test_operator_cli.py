@@ -413,3 +413,98 @@ def test_shadow_cli_accepts_one_stream_and_rejects_revision_mismatch(
 
     assert code == EXIT_INVALID
     assert "same graph revision" in str(output["error"])
+
+
+def matching_shadow_report(revision: str) -> dict[str, object]:
+    dimensions = [
+        "completion",
+        "eligibility",
+        "ownership",
+        "ranking",
+        "recovery",
+        "review",
+    ]
+    return {
+        "schema_version": 1,
+        "baseline": {"source": "comic-pile-factory", "revision": revision},
+        "candidate": {"source": "rotisserie", "revision": revision},
+        "compared": len(dimensions),
+        "dimensions": dimensions,
+        "matches": True,
+        "divergences": [],
+    }
+
+
+def test_adopt_cli_authorizes_bounded_canary_without_remote_mutation(
+    capsys: object, tmp_path: Path
+) -> None:
+    config = local_example(tmp_path)
+    reports = []
+    for revision in ("snapshot-1", "snapshot-2"):
+        path = tmp_path / f"{revision}.json"
+        path.write_text(json.dumps(matching_shadow_report(revision)))
+        reports.append(path)
+
+    code, output = invoke(
+        capsys,
+        config,
+        "adopt",
+        "--report",
+        str(reports[0]),
+        "--report",
+        str(reports[1]),
+        "--lane",
+        "issue-intake",
+        "--subject",
+        "label:ready",
+        "--minimum-matching-runs",
+        "2",
+        "--rollback-tested",
+        "--operator-approved",
+    )
+
+    assert code == EXIT_OK
+    assert output["status"] == "authorized"
+    evidence = output["evidence"]
+    assert isinstance(evidence, dict)
+    assert evidence["decision"] == {
+        "schema_version": 1,
+        "action": "enter_canary",
+        "authorized": True,
+        "lane": {"name": "issue-intake", "subjects": ["label:ready"]},
+        "reasons": [],
+    }
+    assert len(evidence["report_sha256"]) == 2
+    assert evidence["remote_mutation"] is False
+    assert not (tmp_path / "state" / "graph-state.json").exists()
+
+
+def test_adopt_cli_holds_without_approval_and_allows_evidence_free_rollback(
+    capsys: object, tmp_path: Path
+) -> None:
+    config = local_example(tmp_path)
+
+    code, held = invoke(
+        capsys,
+        config,
+        "adopt",
+        "--lane",
+        "issue-intake",
+        "--subject",
+        "label:ready",
+    )
+    assert code == EXIT_REJECTED
+    assert held["status"] == "held"
+
+    code, rollback = invoke(
+        capsys,
+        config,
+        "adopt",
+        "--lane",
+        "issue-intake",
+        "--subject",
+        "label:ready",
+        "--rollback-requested",
+    )
+    assert code == EXIT_OK
+    assert rollback["evidence"]["decision"]["action"] == "rollback"  # type: ignore[index]

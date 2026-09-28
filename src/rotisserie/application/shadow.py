@@ -147,6 +147,23 @@ class DecisionDivergence:
             "candidate": self.candidate,
         }
 
+    @classmethod
+    def from_dict(cls, data: dict[str, object]) -> DecisionDivergence:
+        raw_dimension = data.get("dimension")
+        subject = data.get("subject")
+        raw_kind = data.get("kind")
+        if not isinstance(raw_dimension, str) or not isinstance(subject, str):
+            raise ValueError("divergence dimension and subject must be strings")
+        if not isinstance(raw_kind, str):
+            raise ValueError("divergence kind must be a string")
+        try:
+            dimension = DecisionDimension(raw_dimension)
+            kind = DivergenceKind(raw_kind)
+        except ValueError as error:
+            raise ValueError("invalid decision divergence") from error
+        _required(subject, "divergence subject")
+        return cls(dimension, subject, kind, data.get("baseline"), data.get("candidate"))
+
 
 @dataclass(frozen=True)
 class ShadowReport:
@@ -180,6 +197,60 @@ class ShadowReport:
             "matches": self.matches,
             "divergences": [item.to_dict() for item in self.divergences],
         }
+
+    @classmethod
+    def from_dict(cls, data: dict[str, object]) -> ShadowReport:
+        if data.get("schema_version") != 1:
+            raise ValueError("unsupported shadow report schema version")
+        baseline = data.get("baseline")
+        candidate = data.get("candidate")
+        compared = data.get("compared")
+        dimensions = data.get("dimensions")
+        divergences = data.get("divergences")
+        if not isinstance(baseline, dict) or not isinstance(candidate, dict):
+            raise ValueError("shadow report sources must be objects")
+        baseline_source = baseline.get("source")
+        baseline_revision = baseline.get("revision")
+        candidate_source = candidate.get("source")
+        candidate_revision = candidate.get("revision")
+        if (
+            not isinstance(baseline_source, str)
+            or not isinstance(baseline_revision, str)
+            or not isinstance(candidate_source, str)
+            or not isinstance(candidate_revision, str)
+        ):
+            raise ValueError("shadow report source names and revisions must be strings")
+        if baseline_revision != candidate_revision:
+            raise ValueError("shadow report must describe one graph revision")
+        if not isinstance(compared, int) or isinstance(compared, bool) or compared < 0:
+            raise ValueError("shadow report compared count must be a non-negative integer")
+        if not isinstance(dimensions, list) or not all(
+            isinstance(item, str) for item in dimensions
+        ):
+            raise ValueError("shadow report dimensions must be a list of strings")
+        if not isinstance(divergences, list) or not all(
+            isinstance(item, dict) for item in divergences
+        ):
+            raise ValueError("shadow report divergences must be a list of objects")
+        try:
+            parsed_dimensions = tuple(DecisionDimension(item) for item in dimensions)
+        except ValueError as error:
+            raise ValueError("invalid shadow report dimension") from error
+        if len(set(parsed_dimensions)) != len(parsed_dimensions):
+            raise ValueError("shadow report dimensions must be unique")
+        parsed_divergences = tuple(DecisionDivergence.from_dict(item) for item in divergences)
+        report = cls(
+            baseline_source,
+            baseline_revision,
+            candidate_source,
+            candidate_revision,
+            compared,
+            parsed_dimensions,
+            parsed_divergences,
+        )
+        if data.get("matches") is not report.matches:
+            raise ValueError("shadow report matches flag is inconsistent with divergences")
+        return report
 
 
 def compare_decisions(baseline: DecisionSnapshot, candidate: DecisionSnapshot) -> ShadowReport:

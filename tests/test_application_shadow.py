@@ -37,6 +37,7 @@ def test_matching_snapshots_have_a_versioned_machine_readable_report() -> None:
     report = compare_decisions(baseline, candidate)
 
     assert report.matches
+    assert type(report).from_dict(report.to_dict()) == report
     assert report.to_dict() == {
         "schema_version": 1,
         "baseline": {"source": "legacy", "revision": "snapshot-a"},
@@ -116,3 +117,16 @@ def test_comparison_rejects_different_graph_revisions() -> None:
 
     with pytest.raises(ValueError, match="same graph revision"):
         compare_decisions(baseline, candidate)
+
+
+def test_shadow_report_deserialization_rejects_inconsistent_match_flag() -> None:
+    report = compare_decisions(
+        DecisionSnapshot("legacy", "snapshot-a", ()),
+        DecisionSnapshot("rotisserie", "snapshot-a", ()),
+    ).to_dict()
+    report["matches"] = False
+
+    from rotisserie.application import ShadowReport
+
+    with pytest.raises(ValueError, match="matches flag"):
+        ShadowReport.from_dict(report)

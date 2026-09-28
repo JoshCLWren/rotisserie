@@ -223,3 +223,8 @@ It holds closed on incomplete or divergent evidence, requires an observed
 canary before expansion, and gives rollback requests precedence. The policy
 returns a versioned decision only; adopter adapters still own enforcement and
 no external mutation or workflow has been activated.
+
+The operator exposes this policy through a versioned `adopt` command so an
+external adopter need not import application internals. It validates serialized
+shadow reports, hashes the supplied evidence, and records a non-mutating cutover
+or rollback decision; enforcement remains entirely adopter-owned.

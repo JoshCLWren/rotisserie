@@ -21,11 +21,16 @@ from rotisserie.adapters.github import (
     MutationTarget,
 )
 from rotisserie.application import (
+    AdoptionLane,
+    AdoptionPolicy,
     CoordinationService,
+    DecisionDimension,
     DecisionSnapshot,
     EffectCommand,
     GraphView,
     OperationStatus,
+    ShadowReport,
+    adoption_decision,
     compare_decisions,
 )
 from rotisserie.domain import (
@@ -125,6 +130,19 @@ def parser() -> argparse.ArgumentParser:
     shadow.add_argument(
         "--candidate", required=True, help="candidate decision snapshot path, or - for stdin"
     )
+
+    adopt = subcommands.add_parser(
+        "adopt", help="evaluate a non-mutating adopter cutover or rollback decision"
+    )
+    adopt.add_argument("--report", action="append", default=[], help="shadow report JSON path")
+    adopt.add_argument("--lane", required=True)
+    adopt.add_argument("--subject", action="append", required=True)
+    adopt.add_argument("--minimum-matching-runs", type=int, default=1)
+    adopt.add_argument("--operator-approved", action="store_true")
+    adopt.add_argument("--rollback-tested", action="store_true")
+    adopt.add_argument("--canary-observed", action="store_true")
+    adopt.add_argument("--request-expansion", action="store_true")
+    adopt.add_argument("--rollback-requested", action="store_true")
     return value
 
 
@@ -139,6 +157,8 @@ def main(argv: Sequence[str] | None = None) -> int:
             status = EXIT_OK
         elif arguments.command == "shadow":
             output, status = _shadow(arguments, journal, correlation_id)
+        elif arguments.command == "adopt":
+            output, status = _adopt(arguments, journal, correlation_id)
         else:
             port = LocalCoordinationPort(config.snapshot, config.state_directory, config.repository)
             port.initialize()
@@ -401,16 +421,58 @@ def _read_json_bytes(value: str, label: str) -> bytes:
     try:
         return sys.stdin.buffer.read() if value == "-" else Path(value).resolve().read_bytes()
     except OSError as exc:
-        raise ConfigurationError(f"cannot read {label} shadow snapshot: {exc}") from exc
+        raise ConfigurationError(f"cannot read {label}: {exc}") from exc
+
+
+def _adopt(
+    arguments: argparse.Namespace,
+    journal: OperationJournal,
+    correlation_id: str,
+) -> tuple[dict[str, Any], int]:
+    """Evaluate cutover evidence while leaving enforcement to the adopter."""
+
+    report_bytes = [_read_json_bytes(path, "adoption report") for path in arguments.report]
+    reports = tuple(
+        ShadowReport.from_dict(_json_object(raw, "adoption report")) for raw in report_bytes
+    )
+    decision = adoption_decision(
+        reports,
+        AdoptionLane(arguments.lane, tuple(arguments.subject)),
+        policy=AdoptionPolicy(
+            minimum_matching_runs=arguments.minimum_matching_runs,
+            required_dimensions=frozenset(DecisionDimension),
+        ),
+        operator_approved=arguments.operator_approved,
+        rollback_tested=arguments.rollback_tested,
+        canary_observed=arguments.canary_observed,
+        request_expansion=arguments.request_expansion,
+        rollback_requested=arguments.rollback_requested,
+    )
+    evidence = {
+        "schema_version": 1,
+        "report_sha256": [hashlib.sha256(raw).hexdigest() for raw in report_bytes],
+        "decision": decision.to_dict(),
+        "remote_mutation": False,
+    }
+    record = journal.append(
+        correlation_id=correlation_id,
+        command="adopt",
+        dry_run=True,
+        result=evidence,
+        timestamp=int(time.time()),
+    )
+    status = "authorized" if decision.authorized else "held"
+    exit_code = EXIT_OK if decision.authorized else EXIT_REJECTED
+    return _envelope(correlation_id, "adopt", status, evidence=evidence, record=record), exit_code
 
 
 def _json_object(raw: bytes, label: str) -> dict[str, object]:
     try:
         value = json.loads(raw)
     except json.JSONDecodeError as exc:
-        raise ConfigurationError(f"cannot parse {label} shadow snapshot: {exc}") from exc
+        raise ConfigurationError(f"cannot parse {label}: {exc}") from exc
     if not isinstance(value, dict):
-        raise ConfigurationError(f"{label} shadow snapshot root must be an object")
+        raise ConfigurationError(f"{label} root must be an object")
     return value
 
 

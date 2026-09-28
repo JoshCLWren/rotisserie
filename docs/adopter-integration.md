@@ -80,3 +80,18 @@ an adapter can always leave a canary or expanded lane. The returned decision is
 schema-versioned and machine-readable, but it performs no mutation. ComicPile
 continues to own the physical switch, credential scope, live evidence
 acquisition, and enforcement of the returned lane at its mutation boundary.
+
+The same policy is available without importing Rotisserie internals:
+
+```bash
+rotisserie --config operator.toml adopt \
+  --report parity-1.json --report parity-2.json \
+  --lane issue-intake --subject label:ready \
+  --minimum-matching-runs 2 --rollback-tested --operator-approved
+```
+
+`adopt` reads versioned shadow reports, records their digests and the decision,
+and exits 3 when policy holds the transition. `--rollback-requested` works even
+with no reports or approvals and returns a rollback authorization. The command
+never enforces the decision or performs a remote mutation; ComicPile must map
+the bounded lane and action onto its own independently scoped switch.

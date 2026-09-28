@@ -11,6 +11,8 @@ such change must be called out here and in its release notes.
 
 ### Added
 
+- Non-mutating `adopt` CLI decisions over validated shadow reports, including
+  bounded lanes, explicit approval gates, and unconditional rollback requests.
 - Fail-closed external-adopter cutover and rollback decisions with bounded
   lanes, complete shadow-evidence checks, and explicit operator approval.
 - Versioned external-adopter decision snapshots and deterministic shadow
