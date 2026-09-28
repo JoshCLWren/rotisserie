@@ -137,7 +137,8 @@ contract, exit codes, recovery, and redacted diagnostics.
 The [dogfood guide](docs/dogfood.md) and
 [lifecycle evidence](docs/dogfood-evidence.md) describe the guarded self-dogfood
 canary. The [external adopter guide](docs/adopter-integration.md) defines the
-next phase's product-policy boundary and non-mutating decision-shadow contract.
+next phase's product-policy boundary and the `decide`, `shadow`, and `adopt`
+contracts for non-mutating staged integration.
 
 ## Roadmap
 

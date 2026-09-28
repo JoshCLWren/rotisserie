@@ -31,8 +31,28 @@ internals or receive a Rotisserie credential.
 
 ## Shadow report contract
 
+An adopter first translates one acquired host view into Rotisserie's versioned
+`GraphSnapshot` shape. Rotisserie can then produce its side of the comparison
+without the adopter reimplementing scheduling policy:
+
+```bash
+rotisserie --config operator.toml decide \
+  --snapshot comic-pile-graph.json \
+  --revision comic-pile-snapshot-2026-09-28T120000Z \
+  --at 1790596800 > rotisserie-decision-evidence.json
+```
+
+`decide` evaluates eligibility, ranking, active ownership, exact-head review,
+completion readiness, and expired-lease recovery. Its decision snapshot
+explicitly declares all six dimensions even when a dimension has no subjects,
+so empty recovery or ranking queues still count as observed coverage. The
+opaque revision must identify the same acquired host view used by the legacy
+baseline. The command hashes the exact graph input, records a non-mutating
+operation, rejects graph identities outside the configured repository, and
+does not initialize mutable graph state or contact the host.
+
 `rotisserie.application.DecisionSnapshot` is schema version 1. An adopter emits
-one snapshot for the legacy baseline and one for Rotisserie. Each observation
+one snapshot for the legacy baseline and uses `decide` for Rotisserie. Each observation
 uses a stable subject identifier and one of six required dimensions:
 eligibility, ranking, ownership, review, completion, or recovery. Outcomes and
 reasons are adopter-normalized strings; ranking observations also carry a
@@ -41,7 +61,8 @@ zero-based rank.
 `compare_decisions` returns a schema-versioned `ShadowReport`. It reports
 missing observations and every outcome, reason, and rank mismatch in stable
 dimension/subject order. A report with `matches: true` contains no divergence.
-Comparison fails closed unless both inputs name the same graph revision. That
+Only dimensions declared by both inputs count as observed coverage. Comparison
+fails closed unless both inputs name the same graph revision. That
 revision is retained in the report so results cannot be mistaken for evidence
 about a different host snapshot. Reports also retain their observed decision
 dimensions so later cutover policy can reject incomplete parity evidence.

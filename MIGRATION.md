@@ -228,3 +228,11 @@ The operator exposes this policy through a versioned `adopt` command so an
 external adopter need not import application internals. It validates serialized
 shadow reports, hashes the supplied evidence, and records a non-mutating cutover
 or rollback decision; enforcement remains entirely adopter-owned.
+
+Rotisserie can now project all six normalized decision dimensions directly
+from a versioned graph snapshot through a pure application function and the
+read-only `decide` CLI. Explicit dimension declarations preserve coverage when
+a queue is empty. The command binds evidence to the exact input digest and an
+adopter-supplied graph revision, enforces configured repository scope, and
+does not initialize graph state, acquire credentials, contact a host, or
+perform a mutation.

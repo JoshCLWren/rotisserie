@@ -5,6 +5,14 @@ from __future__ import annotations
 from dataclasses import dataclass
 from enum import StrEnum
 
+from rotisserie.domain import Change, GraphSnapshot, Review, ReviewDecision, WorkerId
+from rotisserie.domain.policy import (
+    implementation_decision,
+    ranked_implementation_work,
+    readiness_decision,
+    reviewer_is_independent,
+)
+
 
 def _required(value: str, field: str) -> None:
     if not value or value != value.strip():
@@ -94,6 +102,7 @@ class DecisionSnapshot:
     source: str
     revision: str
     observations: tuple[DecisionObservation, ...]
+    dimensions: frozenset[DecisionDimension] | None = None
 
     def __post_init__(self) -> None:
         _required(self.source, "decision source")
@@ -101,12 +110,18 @@ class DecisionSnapshot:
         keys = [(item.dimension, item.subject) for item in self.observations]
         if len(set(keys)) != len(keys):
             raise ValueError("decision dimension and subject pairs must be unique")
+        observed = frozenset(item.dimension for item in self.observations)
+        if self.dimensions is None:
+            object.__setattr__(self, "dimensions", observed)
+        elif not observed.issubset(self.dimensions):
+            raise ValueError("observations must belong to declared decision dimensions")
 
     def to_dict(self) -> dict[str, object]:
         return {
             "schema_version": 1,
             "source": self.source,
             "revision": self.revision,
+            "dimensions": sorted(self.dimensions or ()),
             "observations": [item.to_dict() for item in self.observations],
         }
 
@@ -117,17 +132,113 @@ class DecisionSnapshot:
         source = data.get("source")
         revision = data.get("revision")
         observations = data.get("observations")
+        dimensions = data.get("dimensions")
         if not isinstance(source, str) or not isinstance(revision, str):
             raise ValueError("decision source and revision must be strings")
         if not isinstance(observations, list) or not all(
             isinstance(item, dict) for item in observations
         ):
             raise ValueError("decision observations must be a list of objects")
+        if dimensions is not None and (
+            not isinstance(dimensions, list)
+            or not all(isinstance(item, str) for item in dimensions)
+        ):
+            raise ValueError("decision dimensions must be a list of strings")
+        try:
+            parsed_dimensions = (
+                frozenset(DecisionDimension(item) for item in dimensions)
+                if dimensions is not None
+                else None
+            )
+        except ValueError as error:
+            raise ValueError("invalid decision snapshot dimension") from error
         return cls(
             source,
             revision,
             tuple(DecisionObservation.from_dict(item) for item in observations),
+            parsed_dimensions,
         )
+
+
+def project_decisions(
+    snapshot: GraphSnapshot, *, source: str, revision: str, at: int
+) -> DecisionSnapshot:
+    """Project portable policy outcomes for one exact adopter graph revision."""
+
+    observations: list[DecisionObservation] = []
+    ranked = ranked_implementation_work(snapshot, at=at)
+    ranks = {item.id: rank for rank, item in enumerate(ranked)}
+    for work in sorted(snapshot.works, key=lambda item: item.id):
+        subject = f"work:{work.id.key}"
+        eligibility = implementation_decision(snapshot, work.id, at=at)
+        observations.append(
+            DecisionObservation(
+                DecisionDimension.ELIGIBILITY,
+                subject,
+                "eligible" if eligibility.eligible else "blocked",
+                tuple(str(block) for block in eligibility.blocks),
+            )
+        )
+        if work.id in ranks:
+            observations.append(
+                DecisionObservation(
+                    DecisionDimension.RANKING, subject, "ranked", rank=ranks[work.id]
+                )
+            )
+        lease = snapshot.active_lease(work.id, at)
+        observations.append(
+            DecisionObservation(
+                DecisionDimension.OWNERSHIP,
+                subject,
+                _worker_key(lease.worker) if lease else "unowned",
+            )
+        )
+
+    for change in sorted(snapshot.changes, key=lambda item: item.id):
+        subject = f"change:{change.id.key}"
+        reviews = tuple(item for item in snapshot.current_reviews(change.id) if item.required)
+        review_outcome, review_reasons = _review_decision(change, reviews)
+        observations.append(
+            DecisionObservation(DecisionDimension.REVIEW, subject, review_outcome, review_reasons)
+        )
+        readiness = readiness_decision(snapshot, change.id)
+        observations.append(
+            DecisionObservation(
+                DecisionDimension.COMPLETION,
+                subject,
+                "ready" if readiness.ready else "blocked",
+                tuple(str(block) for block in readiness.blocks),
+            )
+        )
+
+    for lease in sorted(snapshot.leases, key=lambda item: item.id):
+        expired = lease.expires_at <= at
+        observations.append(
+            DecisionObservation(
+                DecisionDimension.RECOVERY,
+                f"lease:{lease.id.value}",
+                "release" if expired else "retain",
+                ("expired",) if expired else (),
+            )
+        )
+    return DecisionSnapshot(source, revision, tuple(observations), frozenset(DecisionDimension))
+
+
+def _worker_key(worker: WorkerId) -> str:
+    return f"{worker.namespace}:{worker.value}"
+
+
+def _review_decision(change: Change, reviews: tuple[Review, ...]) -> tuple[str, tuple[str, ...]]:
+    if any(item.decision is ReviewDecision.CHANGES_REQUESTED for item in reviews):
+        return "changes_requested", ()
+    if not reviews or any(item.decision is ReviewDecision.PENDING for item in reviews):
+        return "pending", ()
+    if any(
+        item.decision is ReviewDecision.APPROVED and reviewer_is_independent(change, item.reviewer)
+        for item in reviews
+    ):
+        return "approved", ()
+    return "blocked", ("independent_review_required",)
 
 
 @dataclass(frozen=True)
@@ -313,6 +424,6 @@ def compare_decisions(baseline: DecisionSnapshot, candidate: DecisionSnapshot) -
         candidate.source,
         candidate.revision,
         len(keys),
-        tuple(sorted({dimension for dimension, _subject in keys})),
+        tuple(sorted((baseline.dimensions or frozenset()) & (candidate.dimensions or frozenset()))),
         tuple(divergences),
     )

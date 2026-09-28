@@ -11,6 +11,9 @@ such change must be called out here and in its release notes.
 
 ### Added
 
+- Read-only `decide` CLI projection from versioned graph snapshots into all six
+  adopter-shadow dimensions, with explicit empty-dimension coverage, input
+  digests, repository scoping, and no mutable graph-state initialization.
 - Non-mutating `adopt` CLI decisions over validated shadow reports, including
   bounded lanes, explicit approval gates, and unconditional rollback requests.
 - Fail-closed external-adopter cutover and rollback decisions with bounded

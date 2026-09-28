@@ -68,6 +68,37 @@ def test_clean_clone_fixture_can_inspect_and_plan(capsys: object, tmp_path: Path
     assert output["ready_changes"] == ["20"]
 
 
+def test_decide_cli_projects_snapshot_without_initializing_graph_state(
+    capsys: object, tmp_path: Path
+) -> None:
+    config = local_example(tmp_path)
+
+    code, output = invoke(
+        capsys,
+        config,
+        "decide",
+        "--snapshot",
+        str(tmp_path / "graph.json"),
+        "--revision",
+        "comic-pile-snapshot-1",
+        "--at",
+        "10",
+    )
+
+    assert code == EXIT_OK
+    decisions = output["evidence"]["decisions"]  # type: ignore[index]
+    assert decisions["source"] == "rotisserie"
+    assert decisions["revision"] == "comic-pile-snapshot-1"
+    assert {item["dimension"] for item in decisions["observations"]} == {
+        "eligibility",
+        "ownership",
+        "ranking",
+        "review",
+        "completion",
+    }
+    assert not (tmp_path / "state" / "graph-state.json").exists()
+
+
 def test_mutations_are_dry_run_by_default_and_apply_requires_config(
     capsys: object, tmp_path: Path
 ) -> None:

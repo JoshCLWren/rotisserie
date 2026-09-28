@@ -47,6 +47,7 @@ from rotisserie.application.shadow import (
     DivergenceKind,
     ShadowReport,
     compare_decisions,
+    project_decisions,
 )
 
 __all__ = [
@@ -90,4 +91,5 @@ __all__ = [
     "DivergenceKind",
     "ShadowReport",
     "compare_decisions",
+    "project_decisions",
 ]

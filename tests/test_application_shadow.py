@@ -8,6 +8,27 @@ from rotisserie.application import (
     DecisionSnapshot,
     DivergenceKind,
     compare_decisions,
+    project_decisions,
+)
+from rotisserie.domain import (
+    Change,
+    ChangeId,
+    Check,
+    CheckId,
+    CheckStatus,
+    GraphSnapshot,
+    Lease,
+    LeaseId,
+    RepositoryId,
+    Review,
+    ReviewDecision,
+    ReviewId,
+    Revision,
+    RevisionId,
+    Work,
+    Worker,
+    WorkerId,
+    WorkId,
 )
 
 
@@ -54,6 +75,66 @@ def test_matching_snapshots_have_a_versioned_machine_readable_report() -> None:
         "matches": True,
         "divergences": [],
     }
+
+
+def test_graph_projection_emits_all_portable_decision_dimensions() -> None:
+    repository = RepositoryId("example.test", "acme", "project")
+    work = WorkId(repository, "1")
+    change = ChangeId(repository, "2")
+    revision = RevisionId(repository, "abc")
+    producer = WorkerId("agent", "producer")
+    reviewer = WorkerId("agent", "reviewer")
+    snapshot = GraphSnapshot(
+        works=(Work(work, "Ship it", priority=4),),
+        changes=(Change(change, work, revision, producer),),
+        revisions=(Revision(revision),),
+        workers=(Worker(producer), Worker(reviewer)),
+        leases=(Lease(LeaseId("old"), work, producer, 1, 5),),
+        checks=(Check(CheckId(revision, "ci"), CheckStatus.PASSED),),
+        reviews=(Review(ReviewId("review"), revision, reviewer, ReviewDecision.APPROVED),),
+    )
+
+    projected = project_decisions(snapshot, source="rotisserie", revision="host-7", at=10)
+
+    assert projected.revision == "host-7"
+    assert projected.dimensions == frozenset(DecisionDimension)
+    assert [item.to_dict() for item in projected.observations] == [
+        {
+            "dimension": "eligibility",
+            "subject": "work:1",
+            "outcome": "blocked",
+            "reasons": ["implementation_exists"],
+            "rank": None,
+        },
+        {
+            "dimension": "ownership",
+            "subject": "work:1",
+            "outcome": "unowned",
+            "reasons": [],
+            "rank": None,
+        },
+        {
+            "dimension": "review",
+            "subject": "change:2",
+            "outcome": "approved",
+            "reasons": [],
+            "rank": None,
+        },
+        {
+            "dimension": "completion",
+            "subject": "change:2",
+            "outcome": "ready",
+            "reasons": [],
+            "rank": None,
+        },
+        {
+            "dimension": "recovery",
+            "subject": "lease:old",
+            "outcome": "release",
+            "reasons": ["expired"],
+            "rank": None,
+        },
+    ]
 
 
 def test_every_difference_is_explained_in_stable_order() -> None:

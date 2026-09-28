@@ -32,6 +32,7 @@ from rotisserie.application import (
     ShadowReport,
     adoption_decision,
     compare_decisions,
+    project_decisions,
 )
 from rotisserie.domain import (
     ChangeId,
@@ -127,6 +128,13 @@ def parser() -> argparse.ArgumentParser:
     shadow.add_argument(
         "--baseline", required=True, help="baseline decision snapshot path, or - for stdin"
     )
+
+    decide = subcommands.add_parser(
+        "decide", help="project normalized Rotisserie decisions from a graph snapshot"
+    )
+    decide.add_argument("--snapshot", required=True, help="graph snapshot path, or - for stdin")
+    decide.add_argument("--revision", required=True, help="opaque adopter snapshot revision")
+    decide.add_argument("--at", type=int, required=True)
     shadow.add_argument(
         "--candidate", required=True, help="candidate decision snapshot path, or - for stdin"
     )
@@ -157,6 +165,8 @@ def main(argv: Sequence[str] | None = None) -> int:
             status = EXIT_OK
         elif arguments.command == "shadow":
             output, status = _shadow(arguments, journal, correlation_id)
+        elif arguments.command == "decide":
+            output, status = _decide(arguments, config, journal, correlation_id)
         elif arguments.command == "adopt":
             output, status = _adopt(arguments, journal, correlation_id)
         else:
@@ -415,6 +425,40 @@ def _shadow(
         evidence=evidence,
         record=record,
     ), exit_code
+
+
+def _decide(
+    arguments: argparse.Namespace,
+    config: OperatorConfig,
+    journal: OperationJournal,
+    correlation_id: str,
+) -> tuple[dict[str, Any], int]:
+    """Project policy from adopter-supplied graph data without host access or mutation."""
+
+    snapshot_bytes = _read_json_bytes(arguments.snapshot, "graph snapshot")
+    snapshot = GraphSnapshot.from_dict(_json_object(snapshot_bytes, "graph snapshot"))
+    repositories = {item.id.repository for item in snapshot.works}
+    repositories.update(item.id.repository for item in snapshot.changes)
+    repositories.update(item.id.repository for item in snapshot.revisions)
+    if repositories - {config.repository}:
+        raise ConfigurationError("graph snapshot is outside the configured repository")
+    decisions = project_decisions(
+        snapshot, source="rotisserie", revision=arguments.revision, at=arguments.at
+    )
+    evidence = {
+        "schema_version": 1,
+        "snapshot_sha256": hashlib.sha256(snapshot_bytes).hexdigest(),
+        "decisions": decisions.to_dict(),
+        "remote_mutation": False,
+    }
+    record = journal.append(
+        correlation_id=correlation_id,
+        command="decide",
+        dry_run=True,
+        result=evidence,
+        timestamp=int(time.time()),
+    )
+    return _envelope(correlation_id, "decide", "ok", evidence=evidence, record=record), EXIT_OK
 
 
 def _read_json_bytes(value: str, label: str) -> bytes:
