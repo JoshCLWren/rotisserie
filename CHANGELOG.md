@@ -11,6 +11,9 @@ such change must be called out here and in its release notes.
 
 ### Added
 
+- Atomic, read-only `shadow-project` CLI projection and comparison with exact
+  baseline and graph digests, repository scoping, and no intermediate
+  Rotisserie decision file.
 - Schema-version-2 adoption decisions with explicit current and next stages,
   fail-closed transition ordering, and unconditional active-lane rollback to
   the legacy stage.

@@ -446,6 +446,95 @@ def test_shadow_cli_accepts_one_stream_and_rejects_revision_mismatch(
     assert "same graph revision" in str(output["error"])
 
 
+def test_shadow_project_cli_atomically_projects_and_compares_adopter_input(
+    capsys: object, tmp_path: Path
+) -> None:
+    config = local_example(tmp_path)
+    revision = "comic-pile-snapshot-1"
+    code, projected = invoke(
+        capsys,
+        config,
+        "decide",
+        "--snapshot",
+        str(tmp_path / "graph.json"),
+        "--revision",
+        revision,
+        "--at",
+        "10",
+    )
+    assert code == EXIT_OK
+    baseline_data = projected["evidence"]["decisions"]  # type: ignore[index]
+    assert isinstance(baseline_data, dict)
+    baseline_data["source"] = "comic-pile-factory"
+    baseline = tmp_path / "legacy.json"
+    baseline.write_text(json.dumps(baseline_data), encoding="utf-8")
+
+    code, output = invoke(
+        capsys,
+        config,
+        "shadow-project",
+        "--baseline",
+        str(baseline),
+        "--snapshot",
+        str(tmp_path / "graph.json"),
+        "--revision",
+        revision,
+        "--at",
+        "10",
+    )
+
+    assert code == EXIT_OK
+    assert output["status"] == "match"
+    evidence = output["evidence"]
+    assert isinstance(evidence, dict)
+    assert evidence["baseline_sha256"]
+    assert evidence["snapshot_sha256"]
+    assert evidence["remote_mutation"] is False
+    candidate = evidence["candidate"]
+    report = evidence["report"]
+    assert isinstance(candidate, dict)
+    assert isinstance(report, dict)
+    assert candidate["source"] == "rotisserie"
+    assert report["matches"] is True
+    assert not (tmp_path / "state" / "graph-state.json").exists()
+    assert OperationJournal(tmp_path / "state").records()[-1]["command"] == "shadow-project"
+
+
+def test_shadow_project_cli_rejects_revision_mismatch_before_projection(
+    capsys: object, tmp_path: Path
+) -> None:
+    config = local_example(tmp_path)
+    baseline = tmp_path / "legacy.json"
+    baseline.write_text(
+        json.dumps(
+            {
+                "schema_version": 1,
+                "source": "comic-pile-factory",
+                "revision": "snapshot-old",
+                "observations": [],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    code, output = invoke(
+        capsys,
+        config,
+        "shadow-project",
+        "--baseline",
+        str(baseline),
+        "--snapshot",
+        str(tmp_path / "graph.json"),
+        "--revision",
+        "snapshot-new",
+        "--at",
+        "10",
+    )
+
+    assert code == EXIT_INVALID
+    assert "baseline must describe the requested graph revision" in str(output["error"])
+
+
 def matching_shadow_report(revision: str) -> dict[str, object]:
     dimensions = [
         "completion",

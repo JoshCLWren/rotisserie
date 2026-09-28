@@ -239,3 +239,9 @@ a queue is empty. The command binds evidence to the exact input digest and an
 adopter-supplied graph revision, enforces configured repository scope, and
 does not initialize graph state, acquire credentials, contact a host, or
 perform a mutation.
+
+The `shadow-project` CLI now provides the direct adopter handoff: it projects a
+versioned graph snapshot and compares it with the legacy baseline atomically.
+Its durable evidence binds both exact input digests, the projected decisions,
+and the divergence report to one adopter revision. It remains repository
+scoped and credential-free, and initializes no mutable graph state.

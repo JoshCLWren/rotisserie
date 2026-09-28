@@ -81,6 +81,26 @@ input digests, the normalized report, and `remote_mutation: false` in the local
 operation journal. A match exits 0; explained divergence exits 3; malformed
 input or a revision mismatch exits 2.
 
+For the normal integration path, the adopter can avoid materializing an
+intermediate Rotisserie decision file. `shadow-project` projects the supplied
+graph and compares it with the legacy baseline in one read-only operation:
+
+```bash
+rotisserie --config operator.toml shadow-project \
+  --baseline comic-pile-decisions.json \
+  --snapshot comic-pile-graph.json \
+  --revision comic-pile-snapshot-2026-09-28T120000Z \
+  --at 1790596800
+```
+
+The baseline must name the requested revision. The durable evidence includes
+the exact baseline and graph digests, the projected Rotisserie decisions, and
+the complete shadow report. Exactly one input may be streamed on standard
+input, allowing the adopter to keep an acquired host view out of durable local
+storage. The command enforces configured repository scope, uses the same exit
+statuses as `shadow`, and never acquires credentials or mutates local graph or
+remote host state.
+
 This contract performs no acquisition or mutation. Snapshot acquisition,
 ComicPile translation, report storage, credential scope, and later canary
 controls belong to the adopter integration. Mutation remains prohibited until
