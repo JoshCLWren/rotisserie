@@ -21,6 +21,7 @@ from rotisserie.adapters.github import (
     MutationTarget,
 )
 from rotisserie.application import (
+    AdoptionEvidence,
     AdoptionLane,
     AdoptionPolicy,
     AdoptionStage,
@@ -163,11 +164,13 @@ def parser() -> argparse.ArgumentParser:
     adopt.add_argument("--subject", action="append", required=True)
     adopt.add_argument("--minimum-matching-runs", type=int, default=1)
     adopt.add_argument(
+        "--evidence", action="append", default=[], help="adoption evidence JSON path"
+    )
+    adopt.add_argument("--control-revision", required=True)
+    adopt.add_argument(
         "--current-stage", choices=tuple(AdoptionStage), default=AdoptionStage.LEGACY
     )
     adopt.add_argument("--operator-approved", action="store_true")
-    adopt.add_argument("--rollback-tested", action="store_true")
-    adopt.add_argument("--canary-observed", action="store_true")
     adopt.add_argument("--request-expansion", action="store_true")
     adopt.add_argument("--rollback-requested", action="store_true")
     return value
@@ -551,23 +554,29 @@ def _adopt(
     reports = tuple(
         ShadowReport.from_dict(_json_object(raw, "adoption report")) for raw in report_bytes
     )
+    evidence_bytes = [_read_json_bytes(path, "adoption evidence") for path in arguments.evidence]
+    adoption_evidence = tuple(
+        AdoptionEvidence.from_dict(_json_object(raw, "adoption evidence")) for raw in evidence_bytes
+    )
     decision = adoption_decision(
         reports,
         AdoptionLane(arguments.lane, tuple(arguments.subject)),
+        adoption_evidence,
         policy=AdoptionPolicy(
             minimum_matching_runs=arguments.minimum_matching_runs,
             required_dimensions=frozenset(DecisionDimension),
         ),
+        control_revision=arguments.control_revision,
         current_stage=AdoptionStage(arguments.current_stage),
         operator_approved=arguments.operator_approved,
-        rollback_tested=arguments.rollback_tested,
-        canary_observed=arguments.canary_observed,
         request_expansion=arguments.request_expansion,
         rollback_requested=arguments.rollback_requested,
     )
     evidence = {
         "schema_version": 1,
         "report_sha256": [hashlib.sha256(raw).hexdigest() for raw in report_bytes],
+        "evidence_sha256": [hashlib.sha256(raw).hexdigest() for raw in evidence_bytes],
+        "control_revision": arguments.control_revision,
         "decision": decision.to_dict(),
         "remote_mutation": False,
     }

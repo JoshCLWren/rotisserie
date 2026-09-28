@@ -555,6 +555,17 @@ def matching_shadow_report(revision: str) -> dict[str, object]:
     }
 
 
+def adoption_evidence(kind: str, *, control_revision: str = "controls-1") -> dict[str, object]:
+    return {
+        "schema_version": 1,
+        "kind": kind,
+        "lane": {"name": "issue-intake", "subjects": ["label:ready"]},
+        "control_revision": control_revision,
+        "from_stage": "canary",
+        "to_stage": "legacy" if kind == "rollback_drill" else "canary",
+    }
+
+
 def test_adopt_cli_authorizes_bounded_canary_without_remote_mutation(
     capsys: object, tmp_path: Path
 ) -> None:
@@ -564,6 +575,8 @@ def test_adopt_cli_authorizes_bounded_canary_without_remote_mutation(
         path = tmp_path / f"{revision}.json"
         path.write_text(json.dumps(matching_shadow_report(revision)))
         reports.append(path)
+    rollback_evidence = tmp_path / "rollback.json"
+    rollback_evidence.write_text(json.dumps(adoption_evidence("rollback_drill")))
 
     code, output = invoke(
         capsys,
@@ -579,7 +592,10 @@ def test_adopt_cli_authorizes_bounded_canary_without_remote_mutation(
         "label:ready",
         "--minimum-matching-runs",
         "2",
-        "--rollback-tested",
+        "--evidence",
+        str(rollback_evidence),
+        "--control-revision",
+        "controls-1",
         "--operator-approved",
     )
 
@@ -597,6 +613,8 @@ def test_adopt_cli_authorizes_bounded_canary_without_remote_mutation(
         "reasons": [],
     }
     assert len(evidence["report_sha256"]) == 2
+    assert len(evidence["evidence_sha256"]) == 1
+    assert evidence["control_revision"] == "controls-1"
     assert evidence["remote_mutation"] is False
     assert not (tmp_path / "state" / "graph-state.json").exists()
 
@@ -614,6 +632,8 @@ def test_adopt_cli_holds_without_approval_and_allows_evidence_free_rollback(
         "issue-intake",
         "--subject",
         "label:ready",
+        "--control-revision",
+        "controls-1",
     )
     assert code == EXIT_REJECTED
     assert held["status"] == "held"
@@ -626,6 +646,8 @@ def test_adopt_cli_holds_without_approval_and_allows_evidence_free_rollback(
         "issue-intake",
         "--subject",
         "label:ready",
+        "--control-revision",
+        "controls-1",
         "--current-stage",
         "canary",
         "--rollback-requested",

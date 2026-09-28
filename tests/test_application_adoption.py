@@ -4,6 +4,8 @@ import pytest
 
 from rotisserie.application import (
     AdoptionAction,
+    AdoptionEvidence,
+    AdoptionEvidenceKind,
     AdoptionLane,
     AdoptionPolicy,
     AdoptionStage,
@@ -16,6 +18,17 @@ from rotisserie.application import (
 )
 
 LANE = AdoptionLane("issue-intake", ("label:ready",))
+CONTROL_REVISION = "controls-1"
+
+
+def evidence(kind: AdoptionEvidenceKind, lane: AdoptionLane = LANE) -> AdoptionEvidence:
+    if kind is AdoptionEvidenceKind.ROLLBACK_DRILL:
+        return AdoptionEvidence(
+            kind, lane, CONTROL_REVISION, AdoptionStage.CANARY, AdoptionStage.LEGACY
+        )
+    return AdoptionEvidence(
+        kind, lane, CONTROL_REVISION, AdoptionStage.CANARY, AdoptionStage.CANARY
+    )
 
 
 def matching_report(revision: str = "snapshot-1") -> ShadowReport:
@@ -38,10 +51,11 @@ def test_canary_requires_complete_distinct_parity_and_human_approval() -> None:
     decision = adoption_decision(
         (matching_report("one"), matching_report("two")),
         LANE,
+        (evidence(AdoptionEvidenceKind.ROLLBACK_DRILL),),
         policy=AdoptionPolicy(minimum_matching_runs=2),
+        control_revision=CONTROL_REVISION,
         current_stage=AdoptionStage.LEGACY,
         operator_approved=True,
-        rollback_tested=True,
     )
 
     assert decision.action is AdoptionAction.ENTER_CANARY
@@ -66,10 +80,11 @@ def test_cutover_holds_with_every_failed_precondition_explained() -> None:
     decision = adoption_decision(
         (partial, partial),
         LANE,
+        (),
         policy=AdoptionPolicy(minimum_matching_runs=3),
+        control_revision=CONTROL_REVISION,
         current_stage=AdoptionStage.CANARY,
         operator_approved=False,
-        rollback_tested=False,
         request_expansion=True,
     )
 
@@ -99,10 +114,11 @@ def test_unresolved_divergence_blocks_cutover() -> None:
     decision = adoption_decision(
         (compare_decisions(baseline, candidate),),
         LANE,
+        (evidence(AdoptionEvidenceKind.ROLLBACK_DRILL),),
         policy=AdoptionPolicy(required_dimensions=frozenset({DecisionDimension.REVIEW})),
+        control_revision=CONTROL_REVISION,
         current_stage=AdoptionStage.LEGACY,
         operator_approved=True,
-        rollback_tested=True,
     )
 
     assert decision.reasons == ("unresolved_divergence",)
@@ -112,11 +128,14 @@ def test_expansion_requires_an_observed_canary() -> None:
     decision = adoption_decision(
         (matching_report(),),
         LANE,
+        (
+            evidence(AdoptionEvidenceKind.ROLLBACK_DRILL),
+            evidence(AdoptionEvidenceKind.CANARY_OBSERVATION),
+        ),
         policy=AdoptionPolicy(),
+        control_revision=CONTROL_REVISION,
         current_stage=AdoptionStage.CANARY,
         operator_approved=True,
-        rollback_tested=True,
-        canary_observed=True,
         request_expansion=True,
     )
 
@@ -127,10 +146,11 @@ def test_rollback_switch_preempts_missing_or_bad_evidence() -> None:
     decision = adoption_decision(
         (),
         LANE,
+        (),
         policy=AdoptionPolicy(minimum_matching_runs=5),
+        control_revision=CONTROL_REVISION,
         current_stage=AdoptionStage.CANARY,
         operator_approved=False,
-        rollback_tested=False,
         rollback_requested=True,
     )
 
@@ -142,28 +162,33 @@ def test_adoption_transitions_hold_when_the_reported_stage_is_invalid() -> None:
     enter_again = adoption_decision(
         (matching_report(),),
         LANE,
+        (evidence(AdoptionEvidenceKind.ROLLBACK_DRILL),),
         policy=AdoptionPolicy(),
+        control_revision=CONTROL_REVISION,
         current_stage=AdoptionStage.CANARY,
         operator_approved=True,
-        rollback_tested=True,
     )
     expand_early = adoption_decision(
         (matching_report(),),
         LANE,
+        (
+            evidence(AdoptionEvidenceKind.ROLLBACK_DRILL),
+            evidence(AdoptionEvidenceKind.CANARY_OBSERVATION),
+        ),
         policy=AdoptionPolicy(),
+        control_revision=CONTROL_REVISION,
         current_stage=AdoptionStage.LEGACY,
         operator_approved=True,
-        rollback_tested=True,
-        canary_observed=True,
         request_expansion=True,
     )
     redundant_rollback = adoption_decision(
         (),
         LANE,
+        (),
         policy=AdoptionPolicy(),
+        control_revision=CONTROL_REVISION,
         current_stage=AdoptionStage.LEGACY,
         operator_approved=False,
-        rollback_tested=False,
         rollback_requested=True,
     )
 
@@ -178,3 +203,29 @@ def test_lane_and_policy_reject_unbounded_configuration() -> None:
         AdoptionLane("empty", ())
     with pytest.raises(ValueError, match="positive"):
         AdoptionPolicy(minimum_matching_runs=0)
+
+
+def test_evidence_is_versioned_and_bound_to_lane_stage_and_control_revision() -> None:
+    item = evidence(AdoptionEvidenceKind.ROLLBACK_DRILL)
+    assert AdoptionEvidence.from_dict(item.to_dict()) == item
+
+    wrong_lane = evidence(AdoptionEvidenceKind.ROLLBACK_DRILL, AdoptionLane("other", ("x",)))
+    decision = adoption_decision(
+        (matching_report(),),
+        LANE,
+        (wrong_lane,),
+        policy=AdoptionPolicy(),
+        control_revision=CONTROL_REVISION,
+        current_stage=AdoptionStage.LEGACY,
+        operator_approved=True,
+    )
+    assert decision.reasons == ("rollback_not_tested",)
+
+    with pytest.raises(ValueError, match="restore an active lane"):
+        AdoptionEvidence(
+            AdoptionEvidenceKind.ROLLBACK_DRILL,
+            LANE,
+            CONTROL_REVISION,
+            AdoptionStage.LEGACY,
+            AdoptionStage.LEGACY,
+        )

@@ -111,24 +111,37 @@ explicitly approves a bounded lane.
 
 `rotisserie.application.adoption_decision` is the provider-neutral cutover
 boundary. An adopter supplies distinct matching shadow reports, a non-empty
-lane scope, evidence that rollback was tested, and explicit operator approval.
+lane scope, versioned evidence that rollback was tested, and explicit operator
+approval.
 The policy holds closed if evidence is insufficient, replayed, incomplete, or
 divergent. Expansion additionally requires an observed canary. The required
 number of matching runs is configurable rather than hidden in adopter code.
 
-The rollback switch takes precedence over missing or failed parity evidence so
-an adapter can always leave a canary or expanded lane. The returned decision is
-schema-versioned and machine-readable, but it performs no mutation. ComicPile
-continues to own the physical switch, credential scope, live evidence
-acquisition, and enforcement of the returned lane at its mutation boundary.
+Rollback-drill and canary-observation evidence is bound to the exact lane and
+an adopter-owned control revision. A rollback drill must show an active canary
+or expanded lane returning to legacy; a canary observation must show the lane
+remaining in canary. Evidence for a different lane or control revision cannot
+authorize a transition. The rollback switch takes precedence over missing or
+failed parity evidence so an adapter can always leave a canary or expanded
+lane. The returned decision is schema-versioned and machine-readable, but it
+performs no mutation. ComicPile continues to own the physical switch,
+credential scope, live evidence acquisition, and enforcement of the returned
+lane at its mutation boundary.
 
 The same policy is available without importing Rotisserie internals:
 
 ```bash
 rotisserie --config operator.toml adopt \
   --report parity-1.json --report parity-2.json \
+  --evidence rollback-drill.json --control-revision controls-2026-09-28 \
   --lane issue-intake --subject label:ready \
-  --minimum-matching-runs 2 --rollback-tested --operator-approved
+  --minimum-matching-runs 2 --operator-approved
+```
+
+`rollback-drill.json` uses the public adoption-evidence schema:
+
+```json
+{"schema_version":1,"kind":"rollback_drill","lane":{"name":"issue-intake","subjects":["label:ready"]},"control_revision":"controls-2026-09-28","from_stage":"canary","to_stage":"legacy"}
 ```
 
 `adopt` reads versioned shadow reports, records their digests and the decision,
@@ -141,6 +154,7 @@ Entering a canary is valid only from `legacy`; expansion requires
 ```bash
 rotisserie --config operator.toml adopt \
   --lane issue-intake --subject label:ready \
+  --control-revision controls-2026-09-28 \
   --current-stage canary --rollback-requested
 ```
 

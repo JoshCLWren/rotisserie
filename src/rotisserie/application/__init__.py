@@ -3,6 +3,8 @@
 from rotisserie.application.adoption import (
     AdoptionAction,
     AdoptionDecision,
+    AdoptionEvidence,
+    AdoptionEvidenceKind,
     AdoptionLane,
     AdoptionPolicy,
     AdoptionStage,
@@ -54,6 +56,8 @@ from rotisserie.application.shadow import (
 __all__ = [
     "AdoptionAction",
     "AdoptionDecision",
+    "AdoptionEvidence",
+    "AdoptionEvidenceKind",
     "AdoptionLane",
     "AdoptionPolicy",
     "AdoptionStage",

@@ -245,3 +245,9 @@ versioned graph snapshot and compares it with the legacy baseline atomically.
 Its durable evidence binds both exact input digests, the projected decisions,
 and the divergence report to one adopter revision. It remains repository
 scoped and credential-free, and initializes no mutable graph state.
+
+Adopter transition gates now consume versioned rollback-drill and canary-
+observation evidence instead of trusting command-line booleans. Evidence is
+bound to the exact bounded lane, stage transition, and adopter-owned control
+revision; evidence from another lane or revision fails closed. The adopter
+still owns producing that evidence and enforcing any authorized transition.

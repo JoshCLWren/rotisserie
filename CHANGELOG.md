@@ -11,6 +11,8 @@ such change must be called out here and in its release notes.
 
 ### Added
 
+- Versioned adopter rollback-drill and canary-observation evidence bound to an
+  exact lane, stage transition, and adopter-owned control revision.
 - Atomic, read-only `shadow-project` CLI projection and comparison with exact
   baseline and graph digests, repository scoping, and no intermediate
   Rotisserie decision file.
