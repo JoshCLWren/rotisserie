@@ -11,6 +11,9 @@ such change must be called out here and in its release notes.
 
 ### Added
 
+- Schema-version-2 adoption decisions with explicit current and next stages,
+  fail-closed transition ordering, and unconditional active-lane rollback to
+  the legacy stage.
 - Read-only `decide` CLI projection from versioned graph snapshots into all six
   adopter-shadow dimensions, with explicit empty-dimension coverage, input
   digests, repository scoping, and no mutable graph-state initialization.

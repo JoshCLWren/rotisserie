@@ -23,6 +23,7 @@ from rotisserie.adapters.github import (
 from rotisserie.application import (
     AdoptionLane,
     AdoptionPolicy,
+    AdoptionStage,
     CoordinationService,
     DecisionDimension,
     DecisionSnapshot,
@@ -146,6 +147,9 @@ def parser() -> argparse.ArgumentParser:
     adopt.add_argument("--lane", required=True)
     adopt.add_argument("--subject", action="append", required=True)
     adopt.add_argument("--minimum-matching-runs", type=int, default=1)
+    adopt.add_argument(
+        "--current-stage", choices=tuple(AdoptionStage), default=AdoptionStage.LEGACY
+    )
     adopt.add_argument("--operator-approved", action="store_true")
     adopt.add_argument("--rollback-tested", action="store_true")
     adopt.add_argument("--canary-observed", action="store_true")
@@ -486,6 +490,7 @@ def _adopt(
             minimum_matching_runs=arguments.minimum_matching_runs,
             required_dimensions=frozenset(DecisionDimension),
         ),
+        current_stage=AdoptionStage(arguments.current_stage),
         operator_approved=arguments.operator_approved,
         rollback_tested=arguments.rollback_tested,
         canary_observed=arguments.canary_observed,

@@ -227,7 +227,10 @@ no external mutation or workflow has been activated.
 The operator exposes this policy through a versioned `adopt` command so an
 external adopter need not import application internals. It validates serialized
 shadow reports, hashes the supplied evidence, and records a non-mutating cutover
-or rollback decision; enforcement remains entirely adopter-owned.
+or rollback decision. Adoption decisions bind the reported current and next
+stages, reject out-of-order entry or expansion, and always return an active
+canary or expanded lane to the legacy stage on rollback; enforcement remains
+entirely adopter-owned.
 
 Rotisserie can now project all six normalized decision dimensions directly
 from a versioned graph snapshot through a pure application function and the

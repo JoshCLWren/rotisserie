@@ -112,7 +112,19 @@ rotisserie --config operator.toml adopt \
 ```
 
 `adopt` reads versioned shadow reports, records their digests and the decision,
-and exits 3 when policy holds the transition. `--rollback-requested` works even
-with no reports or approvals and returns a rollback authorization. The command
-never enforces the decision or performs a remote mutation; ComicPile must map
-the bounded lane and action onto its own independently scoped switch.
+and exits 3 when policy holds the transition. Its schema-version-2 decision
+records both the adopter-reported current stage and the authorized next stage.
+Entering a canary is valid only from `legacy`; expansion requires
+`--current-stage canary` plus observed canary evidence. A rollback from
+`canary` or `expanded` needs no reports or approvals and returns to `legacy`:
+
+```bash
+rotisserie --config operator.toml adopt \
+  --lane issue-intake --subject label:ready \
+  --current-stage canary --rollback-requested
+```
+
+Redundant or out-of-order transitions hold closed. The command never enforces
+the decision or performs a remote mutation; ComicPile must map the bounded lane,
+reported stage, and action onto its own independently scoped switch and reject
+the result if the host-side stage changed after evaluation.

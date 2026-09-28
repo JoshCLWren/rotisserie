@@ -5,6 +5,7 @@ from rotisserie.application.adoption import (
     AdoptionDecision,
     AdoptionLane,
     AdoptionPolicy,
+    AdoptionStage,
     adoption_decision,
 )
 from rotisserie.application.coordination import (
@@ -55,6 +56,7 @@ __all__ = [
     "AdoptionDecision",
     "AdoptionLane",
     "AdoptionPolicy",
+    "AdoptionStage",
     "adoption_decision",
     "CoordinationService",
     "CoordinationPort",

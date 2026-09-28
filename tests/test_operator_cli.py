@@ -499,9 +499,11 @@ def test_adopt_cli_authorizes_bounded_canary_without_remote_mutation(
     evidence = output["evidence"]
     assert isinstance(evidence, dict)
     assert evidence["decision"] == {
-        "schema_version": 1,
+        "schema_version": 2,
         "action": "enter_canary",
         "authorized": True,
+        "from_stage": "legacy",
+        "to_stage": "canary",
         "lane": {"name": "issue-intake", "subjects": ["label:ready"]},
         "reasons": [],
     }
@@ -535,6 +537,8 @@ def test_adopt_cli_holds_without_approval_and_allows_evidence_free_rollback(
         "issue-intake",
         "--subject",
         "label:ready",
+        "--current-stage",
+        "canary",
         "--rollback-requested",
     )
     assert code == EXIT_OK

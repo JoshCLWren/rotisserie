@@ -6,6 +6,7 @@ from rotisserie.application import (
     AdoptionAction,
     AdoptionLane,
     AdoptionPolicy,
+    AdoptionStage,
     DecisionDimension,
     DecisionObservation,
     DecisionSnapshot,
@@ -38,6 +39,7 @@ def test_canary_requires_complete_distinct_parity_and_human_approval() -> None:
         (matching_report("one"), matching_report("two")),
         LANE,
         policy=AdoptionPolicy(minimum_matching_runs=2),
+        current_stage=AdoptionStage.LEGACY,
         operator_approved=True,
         rollback_tested=True,
     )
@@ -45,9 +47,11 @@ def test_canary_requires_complete_distinct_parity_and_human_approval() -> None:
     assert decision.action is AdoptionAction.ENTER_CANARY
     assert decision.authorized
     assert decision.to_dict() == {
-        "schema_version": 1,
+        "schema_version": 2,
         "action": "enter_canary",
         "authorized": True,
+        "from_stage": "legacy",
+        "to_stage": "canary",
         "lane": {"name": "issue-intake", "subjects": ["label:ready"]},
         "reasons": [],
     }
@@ -63,6 +67,7 @@ def test_cutover_holds_with_every_failed_precondition_explained() -> None:
         (partial, partial),
         LANE,
         policy=AdoptionPolicy(minimum_matching_runs=3),
+        current_stage=AdoptionStage.CANARY,
         operator_approved=False,
         rollback_tested=False,
         request_expansion=True,
@@ -95,6 +100,7 @@ def test_unresolved_divergence_blocks_cutover() -> None:
         (compare_decisions(baseline, candidate),),
         LANE,
         policy=AdoptionPolicy(required_dimensions=frozenset({DecisionDimension.REVIEW})),
+        current_stage=AdoptionStage.LEGACY,
         operator_approved=True,
         rollback_tested=True,
     )
@@ -107,6 +113,7 @@ def test_expansion_requires_an_observed_canary() -> None:
         (matching_report(),),
         LANE,
         policy=AdoptionPolicy(),
+        current_stage=AdoptionStage.CANARY,
         operator_approved=True,
         rollback_tested=True,
         canary_observed=True,
@@ -121,6 +128,7 @@ def test_rollback_switch_preempts_missing_or_bad_evidence() -> None:
         (),
         LANE,
         policy=AdoptionPolicy(minimum_matching_runs=5),
+        current_stage=AdoptionStage.CANARY,
         operator_approved=False,
         rollback_tested=False,
         rollback_requested=True,
@@ -128,6 +136,41 @@ def test_rollback_switch_preempts_missing_or_bad_evidence() -> None:
 
     assert decision.action is AdoptionAction.ROLLBACK
     assert decision.reasons == ("rollback_requested",)
+
+
+def test_adoption_transitions_hold_when_the_reported_stage_is_invalid() -> None:
+    enter_again = adoption_decision(
+        (matching_report(),),
+        LANE,
+        policy=AdoptionPolicy(),
+        current_stage=AdoptionStage.CANARY,
+        operator_approved=True,
+        rollback_tested=True,
+    )
+    expand_early = adoption_decision(
+        (matching_report(),),
+        LANE,
+        policy=AdoptionPolicy(),
+        current_stage=AdoptionStage.LEGACY,
+        operator_approved=True,
+        rollback_tested=True,
+        canary_observed=True,
+        request_expansion=True,
+    )
+    redundant_rollback = adoption_decision(
+        (),
+        LANE,
+        policy=AdoptionPolicy(),
+        current_stage=AdoptionStage.LEGACY,
+        operator_approved=False,
+        rollback_tested=False,
+        rollback_requested=True,
+    )
+
+    assert "canary_requires_legacy_stage" in enter_again.reasons
+    assert "expansion_requires_canary_stage" in expand_early.reasons
+    assert redundant_rollback.action is AdoptionAction.HOLD
+    assert redundant_rollback.reasons[0] == "already_on_legacy"
 
 
 def test_lane_and_policy_reject_unbounded_configuration() -> None:

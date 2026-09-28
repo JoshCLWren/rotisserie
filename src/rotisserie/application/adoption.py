@@ -17,6 +17,14 @@ class AdoptionAction(StrEnum):
     ROLLBACK = "rollback"
 
 
+class AdoptionStage(StrEnum):
+    """The adopter-owned stage before and after one policy decision."""
+
+    LEGACY = "legacy"
+    CANARY = "canary"
+    EXPANDED = "expanded"
+
+
 @dataclass(frozen=True)
 class AdoptionLane:
     """An adopter-owned, bounded set of subjects eligible for a canary."""
@@ -55,6 +63,8 @@ class AdoptionDecision:
 
     action: AdoptionAction
     lane: AdoptionLane
+    from_stage: AdoptionStage
+    to_stage: AdoptionStage
     reasons: tuple[str, ...] = ()
 
     @property
@@ -63,9 +73,11 @@ class AdoptionDecision:
 
     def to_dict(self) -> dict[str, object]:
         return {
-            "schema_version": 1,
+            "schema_version": 2,
             "action": self.action,
             "authorized": self.authorized,
+            "from_stage": self.from_stage,
+            "to_stage": self.to_stage,
             "lane": {"name": self.lane.name, "subjects": list(self.lane.subjects)},
             "reasons": list(self.reasons),
         }
@@ -76,6 +88,7 @@ def adoption_decision(
     lane: AdoptionLane,
     *,
     policy: AdoptionPolicy,
+    current_stage: AdoptionStage,
     operator_approved: bool,
     rollback_tested: bool,
     canary_observed: bool = False,
@@ -84,10 +97,22 @@ def adoption_decision(
 ) -> AdoptionDecision:
     """Authorize one staged transition, with rollback taking precedence."""
 
-    if rollback_requested:
-        return AdoptionDecision(AdoptionAction.ROLLBACK, lane, ("rollback_requested",))
+    if rollback_requested and current_stage is not AdoptionStage.LEGACY:
+        return AdoptionDecision(
+            AdoptionAction.ROLLBACK,
+            lane,
+            current_stage,
+            AdoptionStage.LEGACY,
+            ("rollback_requested",),
+        )
 
     reasons: list[str] = []
+    if rollback_requested:
+        reasons.append("already_on_legacy")
+    if request_expansion and current_stage is not AdoptionStage.CANARY:
+        reasons.append("expansion_requires_canary_stage")
+    if not request_expansion and current_stage is not AdoptionStage.LEGACY:
+        reasons.append("canary_requires_legacy_stage")
     if len(reports) < policy.minimum_matching_runs:
         reasons.append("insufficient_matching_runs")
     if any(not report.matches for report in reports):
@@ -104,6 +129,9 @@ def adoption_decision(
     if request_expansion and not canary_observed:
         reasons.append("canary_not_observed")
     if reasons:
-        return AdoptionDecision(AdoptionAction.HOLD, lane, tuple(reasons))
+        return AdoptionDecision(
+            AdoptionAction.HOLD, lane, current_stage, current_stage, tuple(reasons)
+        )
     action = AdoptionAction.EXPAND if request_expansion else AdoptionAction.ENTER_CANARY
-    return AdoptionDecision(action, lane)
+    to_stage = AdoptionStage.EXPANDED if request_expansion else AdoptionStage.CANARY
+    return AdoptionDecision(action, lane, current_stage, to_stage)
