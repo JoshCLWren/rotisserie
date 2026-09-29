@@ -140,6 +140,8 @@ def parser() -> argparse.ArgumentParser:
     decide.add_argument("--at", type=int, required=True)
     decide.add_argument("--completion-backlog", type=int, default=0)
     decide.add_argument("--backlog-limit", type=int)
+    decide.add_argument("--active-changes", type=int, default=0)
+    decide.add_argument("--wip-limit", type=int)
     shadow.add_argument(
         "--candidate", required=True, help="candidate decision snapshot path, or - for stdin"
     )
@@ -160,6 +162,8 @@ def parser() -> argparse.ArgumentParser:
     shadow_project.add_argument("--at", type=int, required=True)
     shadow_project.add_argument("--completion-backlog", type=int, default=0)
     shadow_project.add_argument("--backlog-limit", type=int)
+    shadow_project.add_argument("--active-changes", type=int, default=0)
+    shadow_project.add_argument("--wip-limit", type=int)
 
     adopt = subcommands.add_parser(
         "adopt", help="evaluate a non-mutating adopter cutover or rollback decision"
@@ -474,6 +478,8 @@ def _decide(
         at=arguments.at,
         completion_backlog=arguments.completion_backlog,
         backlog_limit=arguments.backlog_limit,
+        active_changes=arguments.active_changes,
+        wip_limit=arguments.wip_limit,
     )
     evidence = {
         "schema_version": 1,
@@ -515,6 +521,8 @@ def _shadow_project(
         at=arguments.at,
         completion_backlog=arguments.completion_backlog,
         backlog_limit=arguments.backlog_limit,
+        active_changes=arguments.active_changes,
+        wip_limit=arguments.wip_limit,
     )
     report = compare_decisions(baseline, candidate)
     evidence = {

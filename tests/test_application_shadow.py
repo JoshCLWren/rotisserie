@@ -169,6 +169,29 @@ def test_projection_applies_explicit_backpressure() -> None:
     ]
 
 
+def test_projection_applies_explicit_wip_pressure() -> None:
+    repository = RepositoryId("example.test", "acme", "project")
+    work = WorkId(repository, "1")
+    snapshot = GraphSnapshot(works=(Work(work, "Wait", priority=4),))
+
+    projected = project_decisions(
+        snapshot,
+        source="rotisserie",
+        revision="host-9",
+        at=10,
+        active_changes=5,
+        wip_limit=5,
+    )
+
+    assert projected.observations[0].to_dict() == {
+        "dimension": "eligibility",
+        "subject": "work:1",
+        "outcome": "blocked",
+        "reasons": ["backpressure"],
+        "rank": None,
+    }
+
+
 def test_every_difference_is_explained_in_stable_order() -> None:
     baseline = DecisionSnapshot(
         "legacy",
