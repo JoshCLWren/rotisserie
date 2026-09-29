@@ -169,6 +169,8 @@ def project_decisions(
     at: int,
     completion_backlog: int = 0,
     backlog_limit: int | None = None,
+    active_changes: int = 0,
+    wip_limit: int | None = None,
 ) -> DecisionSnapshot:
     """Project portable policy outcomes for one exact adopter graph revision."""
 
@@ -176,11 +178,20 @@ def project_decisions(
     work_decisions = tuple(
         implementation_decision(snapshot, work.id, at=at) for work in snapshot.works
     )
-    if backlog_limit is not None:
+    if active_changes < 0:
+        raise ValueError("active changes cannot be negative")
+    if wip_limit is not None and wip_limit < 0:
+        raise ValueError("WIP limit cannot be negative")
+    pressure_backlog = completion_backlog
+    pressure_limit = backlog_limit
+    if wip_limit is not None and active_changes >= wip_limit:
+        pressure_backlog = wip_limit
+        pressure_limit = wip_limit
+    if pressure_limit is not None:
         work_decisions = apply_intake_pressure(
             work_decisions,
-            completion_backlog=completion_backlog,
-            policy=SchedulingPolicy(wip_limit=0, backlog_limit=backlog_limit),
+            completion_backlog=pressure_backlog,
+            policy=SchedulingPolicy(wip_limit=0, backlog_limit=pressure_limit),
         )
     decisions = {item.work: item for item in work_decisions}
     ranked = tuple(

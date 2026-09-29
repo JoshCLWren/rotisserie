@@ -195,6 +195,10 @@ graph snapshot digest was
 `4c21c44b4c17bdbf9d41780f1058070129084520c4f0c9f5295edb21b440b3e4`.
 No host payload, credential, or mutation plan is retained here.
 
+Adopters may also supply `--active-changes` and `--wip-limit`. This preserves
+production-side backpressure when a host pauses fresh intake because its active change
+count has reached a configured limit, even when its completion backlog is not full.
+
 This first observation did not authorize cutover. A distinct matching run, bounded
 lane definition, adopter-owned rollback drill, and explicit transition approval were
 still required before a canary could be entered.
