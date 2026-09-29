@@ -259,8 +259,13 @@ boundary explicit without giving Rotisserie a credential or host mutation
 mechanism.
 
 ComicPile now has a merged adopter translator and a read-only live acquisition path.
-The first live observation at ComicPile commit `cbea5e1ee` compared 94 decisions across
-all six dimensions with zero divergence. Completion backlog and its configured limit
-are explicit projection inputs, preserving backpressure as portable policy. This single
-run does not authorize cutover; another distinct parity run and adopter-owned canary
-and rollback evidence are still required.
+Two distinct live, same-view observations at ComicPile revisions
+`cbea5e1ee3bff4cd76f4a7dc64d48f796b80e5f4` and
+`657fe86d9a4af8f914ec8f36412368deb3027e70` each compared 94 decisions across all
+six dimensions with zero divergence. Completion backlog and its configured limit are
+explicit projection inputs, preserving backpressure as portable policy.
+
+ComicPile also owns a bounded `issue-intake` compare-and-swap control that consumes
+only the public transition command. Adopter tests cover immediate rollback and stale
+or altered transition refusal. The checked-in adopter stage remains `legacy`;
+entering the bounded canary still requires explicit operator approval.

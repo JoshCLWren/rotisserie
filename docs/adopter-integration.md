@@ -178,7 +178,7 @@ decision cannot produce a transition. The command contains no credential or
 host mutation mechanism; those remain in the adopter's independently scoped
 adapter.
 
-## First live parity observation
+## Live parity observations
 
 ComicPile's read-only adopter capture was exercised on 2026-09-28 against fetched
 upstream commit `cbea5e1ee3bff4cd76f4a7dc64d48f796b80e5f4`. The captured host view
@@ -195,6 +195,27 @@ graph snapshot digest was
 `4c21c44b4c17bdbf9d41780f1058070129084520c4f0c9f5295edb21b440b3e4`.
 No host payload, credential, or mutation plan is retained here.
 
-This is one observation, not cutover authorization. A distinct matching run, bounded
-lane definition, adopter-owned rollback drill, and explicit transition approval remain
-required before a canary may be entered.
+This first observation did not authorize cutover. A distinct matching run, bounded
+lane definition, adopter-owned rollback drill, and explicit transition approval were
+still required before a canary could be entered.
+
+A second read-only observation was captured on 2026-09-28 from ComicPile commit
+`657fe86d9a4af8f914ec8f36412368deb3027e70`. The capture again contained 44
+work nodes, three linked changes, 26 exact-head checks, one semantic review, and no
+active leases. Its source digest was
+`e03cb2f7181302bc067c1f64d71c21be1c00d3811e9e5b21648ef06e083289ba`.
+
+The second atomic `shadow-project` run compared 94 observations across all six
+required dimensions with zero divergences. The normalized baseline digest was
+`20f5adaaf5ce2370e6b3ee2cdebd1076b031d2544f3feca4a9ebd1b85ee64c0a`; the
+graph snapshot digest was
+`4c21c44b4c17bdbf9d41780f1058070129084520c4f0c9f5295edb21b440b3e4`.
+No host payload, credential, or mutation plan is retained in the repository.
+
+The two distinct matching runs satisfy the configured parity-count prerequisite.
+ComicPile commit `88fa4f3fa0bdcfb697133d37de3c88560b3e570b` adds the adopter-owned,
+bounded `issue-intake` control while leaving its checked-in stage at `legacy`. Its
+tests exercise canary entry, exact-stage and exact-revision compare-and-swap
+rejection, and immediate rollback while preserving the original Factory. Actual
+canary entry still requires explicit operator approval; the read-only observations
+and rollback drill do not grant it.
