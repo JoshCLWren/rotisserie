@@ -11,6 +11,9 @@ such change must be called out here and in its release notes.
 
 ### Added
 
+- Release-preparation threat model, architecture and adapter-author guide,
+  compatibility/support policy, and operator troubleshooting runbook.
+
 - Versioned, idempotent adopter transition commands that bind an authorized
   decision to an exact control revision, bounded lane, and compare-and-swap
   stage change without carrying credentials or host mutation behavior.
