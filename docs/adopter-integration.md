@@ -217,9 +217,30 @@ graph snapshot digest was
 No host payload, credential, or mutation plan is retained in the repository.
 
 The two distinct matching runs satisfy the configured parity-count prerequisite.
-ComicPile commit `88fa4f3fa0bdcfb697133d37de3c88560b3e570b` adds the adopter-owned,
-bounded `issue-intake` control while leaving its checked-in stage at `legacy`. Its
-tests exercise canary entry, exact-stage and exact-revision compare-and-swap
-rejection, and immediate rollback while preserving the original Factory. Actual
-canary entry still requires explicit operator approval; the read-only observations
-and rollback drill do not grant it.
+ComicPile commit `88fa4f3fa0bdcfb697133d37de3c88560b3e570b` added the adopter-owned,
+bounded `issue-intake` control. Its tests exercise canary entry, exact-stage and
+exact-revision compare-and-swap rejection, and immediate rollback while preserving
+the original Factory.
+
+After an explicit canary entry and a zero-divergence observation at ComicPile
+revision `6fdf11f92f16006a89f750a3085eaebaff361825`, ComicPile commit
+`87748a26485e97f3c061addb0c69b402bae591b1` advanced that bounded lane to
+`expanded`. ComicPile PR #2958 then merged the runtime enforcement at commit
+`a110f31b295e0f992ee0bf02466ac244d817ffb3`: the centralized assignment path
+constructs a repository-scoped graph snapshot from its live controller view,
+invokes only the public `rotisserie decide` CLI, and filters fresh issue candidates
+to the returned eligible set before any claim mutation. Missing or malformed
+control or decision evidence holds fresh intake closed; PR completion remains on
+the adopter-owned path, and changing the control back to `legacy` is the immediate
+rollback.
+
+Post-merge dispatcher run
+[`36633600180`](https://github.com/JoshCLWren/comic-pile/actions/runs/36633600180)
+checked out that merge commit, installed Rotisserie from the exact pinned commit
+`0067e8c49cb3a3142a04f6c56f19795a1e81ad3c`, and completed successfully. The
+expanded intake boundary was evaluated during centralized assignment without an
+unavailable/fail-closed error. All four emitted assignments were existing pull
+requests (`#2951`, `#2960`, `#2953`, and `#2960`); the run emitted no issue
+assignment or fresh issue claim. This is the first observed expanded-stage runtime
+execution and completes the bounded Phase 9 adoption contract without removing the
+original Factory.

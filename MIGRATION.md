@@ -267,5 +267,22 @@ explicit projection inputs, preserving backpressure as portable policy.
 
 ComicPile also owns a bounded `issue-intake` compare-and-swap control that consumes
 only the public transition command. Adopter tests cover immediate rollback and stale
-or altered transition refusal. The checked-in adopter stage remains `legacy`;
-entering the bounded canary still requires explicit operator approval.
+or altered transition refusal. After a zero-divergence canary observation, the
+checked-in adopter stage advanced to `expanded` at ComicPile commit
+`87748a26485e97f3c061addb0c69b402bae591b1`.
+
+ComicPile PR #2958 merged runtime enforcement at
+`a110f31b295e0f992ee0bf02466ac244d817ffb3`. The adopter's centralized assignment
+boundary now builds a graph snapshot from its exact live controller view and invokes
+the public, read-only `rotisserie decide` CLI before any fresh issue claim. The CLI
+is pinned to Rotisserie commit `0067e8c49cb3a3142a04f6c56f19795a1e81ad3c`;
+missing or invalid control and decision evidence holds issue intake closed, while
+the adopter retains its existing PR completion path and immediate `legacy` rollback.
+
+Post-merge ComicPile dispatcher run
+[`36633600180`](https://github.com/JoshCLWren/comic-pile/actions/runs/36633600180)
+checked out the merge commit, installed the pinned CLI, evaluated the expanded
+issue-intake boundary, and completed successfully. It emitted four PR assignments
+and no issue assignment or fresh claim. This observed runtime evidence closes the
+Phase 9 external-adopter migration contract; Phase 10 release hardening does not
+expand Rotisserie's active workflow or mutation boundary.
