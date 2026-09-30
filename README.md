@@ -11,13 +11,14 @@ Rotisserie builds on operating experience with parallel implementation,
 independent review, repair, CI, merge readiness, model fallback, and
 interrupted-work recovery. Its job is to make those mechanics portable.
 
-> **Current state: external-adopter integration is in progress.**
+> **Current state: external-adopter integration is complete; release hardening is next.**
 > Rotisserie now has a standalone package, generic graph and coordination
 > policy, secure GitHub adapter, application orchestration, and provider-neutral
 > worker contracts, plus a local CLI with durable state and diagnostics. The
 > operator can produce fixture, read-only projection, and credential-free
 > mutation-plan evidence, completed its guarded merge canary, and now exposes a
-> versioned decision-shadow contract for adopter parity reports. General
+> versioned decision-shadow contract that ComicPile consumes at its bounded
+> issue-intake runtime boundary. General
 > autonomous execution and external-repository mutation remain disabled.
 
 ## What “graph engineering” means
@@ -153,7 +154,7 @@ canonical dependency-ordered plan. Current progress:
 - [x] define provider-neutral worker, evidence, and executor contracts;
 - [x] build the operator CLI, configuration model, persistence, and observability surface;
 - [x] safely dogfood Rotisserie on its own repository;
-- [ ] integrate ComicPile as the first external adopter through the public boundary;
+- [x] integrate ComicPile as the first external adopter through the public boundary;
 - [ ] harden and publish the first supported open-source release.
 
 No adopter needs to replace working automation before the new boundary is
