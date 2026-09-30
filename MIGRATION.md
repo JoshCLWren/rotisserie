@@ -295,3 +295,10 @@ documentation slice, not completion of the release contract. Signed provenance,
 checksums, reproducible build evidence, dependency review, secret scanning,
 static security analysis, SBOM, and supported publication remain pending. No
 workflow or mutation capability is added by these documents.
+
+A local release verifier now builds twice from an exact clean Git commit using
+the locked development backend, checks byte-identical artifacts and an sdist
+wheel rebuild, and emits checksums and unsigned build evidence. The procedure
+is documented in [`docs/release.md`](docs/release.md). This establishes local
+repeatability only; signed provenance, security tooling, SBOM, and publication
+remain pending. No workflow is activated.

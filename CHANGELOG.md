@@ -11,6 +11,9 @@ such change must be called out here and in its release notes.
 
 ### Added
 
+- Local committed-source release verifier with independent build comparisons,
+  source-distribution wheel verification, checksums, and unsigned evidence.
+
 - Release-preparation threat model, architecture and adapter-author guide,
   compatibility/support policy, and operator troubleshooting runbook.
 
