@@ -111,7 +111,8 @@ uv sync --locked
 
 Build the source and wheel distributions with `uv build`. The package is still
 pre-release and does not yet expose the prototype as a supported public API.
-Version history and release-note conventions live in
+Candidate artifact reproducibility and checksums are documented in
+[the release guide](docs/release.md). Version history and release-note conventions live in
 [CHANGELOG.md](CHANGELOG.md).
 
 ### Local operator quickstart
