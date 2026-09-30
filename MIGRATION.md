@@ -286,3 +286,12 @@ issue-intake boundary, and completed successfully. It emitted four PR assignment
 and no issue assignment or fresh claim. This observed runtime evidence closes the
 Phase 9 external-adopter migration contract; Phase 10 release hardening does not
 expand Rotisserie's active workflow or mutation boundary.
+
+## Release preparation
+
+Issue #11 now has a documented current threat model, adapter-author boundary,
+compatibility and support policy, and operator recovery runbook. This is a
+documentation slice, not completion of the release contract. Signed provenance,
+checksums, reproducible build evidence, dependency review, secret scanning,
+static security analysis, SBOM, and supported publication remain pending. No
+workflow or mutation capability is added by these documents.

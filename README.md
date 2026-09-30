@@ -138,7 +138,7 @@ contract, exit codes, recovery, and redacted diagnostics.
 The [dogfood guide](docs/dogfood.md) and
 [lifecycle evidence](docs/dogfood-evidence.md) describe the guarded self-dogfood
 canary. The [external adopter guide](docs/adopter-integration.md) defines the
-next phase's product-policy boundary and the `decide`, `shadow`,
+external integration product-policy boundary and the `decide`, `shadow`,
 `shadow-project`, and `adopt` contracts for non-mutating staged integration.
 
 ## Roadmap
@@ -177,3 +177,8 @@ Rotisserie is licensed under the [Apache License 2.0](LICENSE). It permits
 commercial and private use, modification, and distribution while preserving
 copyright and license notices, and it includes an explicit contributor patent
 grant.
+
+Release preparation documentation: [architecture and adapter authors](docs/architecture.md),
+[compatibility and support](docs/compatibility.md), [threat model](docs/threat-model.md),
+and [operator runbook](docs/runbook.md). These describe the current evaluation
+boundary; a supported release has not yet been published.
