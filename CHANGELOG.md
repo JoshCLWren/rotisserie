@@ -30,8 +30,9 @@ such change must be called out here and in its release notes.
   envelope via a new `dispatch` field and `--active-changes` flag.
 - Portable exact-head review-independence rule in the domain: a reviewer must be
   absent from the exact-head contributor set (recorded lineage unioned with the
-  attested producer), with recorded provenance authorizing a single independent
-  reviewer and missing or ambiguous provenance failing closed to two distinct
+  attested producer). A single independent reviewer authorizes the head only
+  when provenance is recorded and the producer is known; an unknown or
+  unattested producer, or unrecorded provenance, fails closed to two distinct
   eligible reviewers.
 - Read-only GitHub review-evidence adapter that projects trusted review-thread
   comments into those signals. Both contributor and semantic-review markers are
