@@ -12,17 +12,27 @@ from rotisserie.adapters.github.mutations import (
     SecretToken,
 )
 from rotisserie.adapters.github.projection import GitHubProjector, ProjectionError
+from rotisserie.adapters.github.review_evidence import (
+    GitHubReviewEvidence,
+    HeadContributorMarker,
+    ReviewEvidenceError,
+    TrustedCommentPolicy,
+)
 
 __all__ = [
     "CredentialProvider",
     "GitHubMutationAdapter",
     "GitHubProjector",
+    "GitHubReviewEvidence",
     "GitHubTransport",
+    "HeadContributorMarker",
     "InMemoryMarkerStore",
     "MutationPlan",
     "MutationScope",
     "MutationTarget",
     "ProjectionError",
     "ReconciliationResult",
+    "ReviewEvidenceError",
     "SecretToken",
+    "TrustedCommentPolicy",
 ]

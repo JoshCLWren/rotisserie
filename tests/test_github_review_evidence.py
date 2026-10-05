@@ -1,0 +1,229 @@
+from __future__ import annotations
+
+from typing import Any
+
+import pytest
+
+from rotisserie.adapters.github import (
+    GitHubReviewEvidence,
+    ReviewEvidenceError,
+    TrustedCommentPolicy,
+)
+from rotisserie.domain import WorkerId, evaluate_review_independence
+from rotisserie.domain.model import RepositoryId
+
+REPO = RepositoryId("github.com", "org", "repo")
+HEAD = "a" * 40
+OTHER_HEAD = "b" * 40
+NAMESPACE = "comic-pile-factory"
+WORKER_NS = "factory-worker"
+
+
+def collector(**kwargs: Any) -> GitHubReviewEvidence:
+    params: dict[str, Any] = {"namespace": NAMESPACE, "worker_namespace": WORKER_NS}
+    params.update(kwargs)
+    return GitHubReviewEvidence(REPO, **params)
+
+
+def contributor_marker(*, pr: int, head: str, worker: str, epoch: int = 2) -> str:
+    return (
+        f"<!-- {NAMESPACE}-head-contributor-v1:"
+        f"pr-{pr}:head-{head}:worker-{worker}:epoch-{epoch} -->"
+    )
+
+
+def review_marker(*, pr: int, head: str, reviewer: str, producer: str, verdict: str) -> str:
+    return (
+        f"<!-- {NAMESPACE}-semantic-review-v1:"
+        f"pr-{pr}:head-{head}:reviewer-{reviewer}:producer-{producer}:verdict-{verdict} -->"
+    )
+
+
+def bot_comment(body: str) -> dict[str, Any]:
+    return {"user": {"login": "github-actions[bot]"}, "author_association": "NONE", "body": body}
+
+
+def worker(token: str) -> WorkerId:
+    return WorkerId(WORKER_NS, token)
+
+
+def test_parse_head_contributor_marker_round_trips() -> None:
+    evidence = collector()
+    marker = evidence.parse_head_contributor_marker(
+        contributor_marker(pr=123, head=HEAD, worker="42", epoch=99)
+    )
+    assert marker is not None
+    assert (marker.pr, marker.head, marker.worker, marker.epoch) == (123, HEAD, "42", 99)
+
+
+@pytest.mark.parametrize(
+    "line",
+    [
+        "<!-- comic-pile-factory-head-contributor-v1:pr-1:head-short:worker-1:epoch-1 -->",
+        "<!-- other-namespace-head-contributor-v1:pr-1:head-" + HEAD + ":worker-1:epoch-1 -->",
+        "not a marker at all",
+        "<!-- comic-pile-factory-head-contributor-v1:pr-1:head-" + HEAD + ":worker-1 -->",
+    ],
+)
+def test_parse_head_contributor_marker_rejects_malformed_lines(line: str) -> None:
+    assert collector().parse_head_contributor_marker(line) is None
+
+
+def test_only_whole_body_markers_establish_provenance() -> None:
+    evidence = collector()
+    forged = [
+        bot_comment(contributor_marker(pr=7, head=HEAD, worker="59") + "\n\nresume packet"),
+        bot_comment("Worker: factory-59\n" + contributor_marker(pr=7, head=HEAD, worker="59")),
+    ]
+    result = evidence.collect(forged, pr=7, head=HEAD)
+    assert result.contributors == frozenset()
+    assert not result.provenance_recorded
+
+
+def test_untrusted_authors_are_ignored() -> None:
+    evidence = collector()
+    comments = [
+        {
+            "user": {"login": "attacker"},
+            "author_association": "NONE",
+            "body": contributor_marker(pr=7, head=HEAD, worker="59"),
+        },
+        {
+            "user": {"login": "worker-app[bot]"},
+            "author_association": "OWNER",
+            "performed_via_github_app": {"slug": "comic-pile-worker"},
+            "body": contributor_marker(pr=7, head=HEAD, worker="60"),
+        },
+    ]
+    result = evidence.collect(comments, pr=7, head=HEAD)
+    assert result.contributors == frozenset()
+    assert not result.provenance_recorded
+
+
+def test_trusted_collaborator_and_bot_authors_are_honored() -> None:
+    evidence = collector()
+    comments = [
+        {
+            "user": {"login": "maintainer"},
+            "author_association": "COLLABORATOR",
+            "body": contributor_marker(pr=7, head=HEAD, worker="59"),
+        },
+        bot_comment(contributor_marker(pr=7, head=HEAD, worker="60")),
+    ]
+    result = evidence.collect(comments, pr=7, head=HEAD)
+    assert result.contributors == frozenset({worker("59"), worker("60")})
+    assert result.provenance_recorded
+
+
+def test_trusted_github_actions_app_slug_is_allowed() -> None:
+    evidence = collector()
+    comment = {
+        "user": {"login": "github-actions[bot]"},
+        "author_association": "NONE",
+        "performed_via_github_app": {"slug": "github-actions"},
+        "body": contributor_marker(pr=7, head=HEAD, worker="59"),
+    }
+    result = evidence.collect([comment], pr=7, head=HEAD)
+    assert result.contributors == frozenset({worker("59")})
+
+
+def test_lineage_spans_the_pr_while_provenance_is_exact_head() -> None:
+    evidence = collector()
+    comments = [
+        bot_comment(contributor_marker(pr=7, head=OTHER_HEAD, worker="59")),
+        bot_comment(contributor_marker(pr=7, head=HEAD, worker="29")),
+    ]
+    at_head = evidence.collect(comments, pr=7, head=HEAD)
+    assert at_head.contributors == frozenset({worker("59"), worker("29")})
+    assert at_head.provenance_recorded
+
+    only_prior_record = evidence.collect(
+        [bot_comment(contributor_marker(pr=7, head=OTHER_HEAD, worker="59"))],
+        pr=7,
+        head=HEAD,
+    )
+    assert only_prior_record.contributors == frozenset({worker("59")})
+    assert not only_prior_record.provenance_recorded
+
+
+def test_markers_for_another_pr_are_excluded() -> None:
+    evidence = collector()
+    result = evidence.collect(
+        [bot_comment(contributor_marker(pr=8, head=HEAD, worker="59"))],
+        pr=7,
+        head=HEAD,
+    )
+    assert result.contributors == frozenset()
+
+
+def test_only_approve_verdicts_on_the_exact_head_become_approvers() -> None:
+    evidence = collector()
+    comments = [
+        bot_comment(
+            review_marker(pr=7, head=HEAD, reviewer="17", producer="29", verdict="approve")
+        ),
+        bot_comment(review_marker(pr=7, head=HEAD, reviewer="18", producer="29", verdict="repair")),
+        bot_comment(
+            review_marker(pr=7, head=OTHER_HEAD, reviewer="19", producer="29", verdict="approve")
+        ),
+    ]
+    result = evidence.collect(comments, pr=7, head=HEAD, producer="29")
+    assert result.approvers == frozenset({worker("17")})
+    assert result.producer == worker("29")
+
+
+def test_collected_signals_drive_the_domain_rule_end_to_end() -> None:
+    evidence = collector()
+    comments = [
+        bot_comment(contributor_marker(pr=7, head=HEAD, worker="29")),
+        bot_comment(
+            review_marker(pr=7, head=HEAD, reviewer="29", producer="29", verdict="approve")
+        ),
+        bot_comment(
+            review_marker(pr=7, head=HEAD, reviewer="17", producer="29", verdict="approve")
+        ),
+    ]
+    collected = evidence.collect(comments, pr=7, head=HEAD, producer="29")
+    verdict = evaluate_review_independence(collected)
+    assert verdict.satisfied
+    assert verdict.eligible_reviewers == frozenset({worker("17")})
+    assert verdict.revision == collected.revision
+
+
+@pytest.mark.parametrize(
+    "kwargs",
+    [
+        {"namespace": "Comic_Pile", "worker_namespace": WORKER_NS},
+        {"namespace": NAMESPACE, "worker_namespace": "  "},
+        {"namespace": NAMESPACE, "worker_namespace": WORKER_NS, "verdicts": frozenset({"repair"})},
+    ],
+)
+def test_invalid_configuration_fails_closed(kwargs: dict[str, Any]) -> None:
+    with pytest.raises(ReviewEvidenceError):
+        GitHubReviewEvidence(REPO, **kwargs)
+
+
+@pytest.mark.parametrize("head", ["xyz", "a" * 39, "A" * 40 + "zz"])
+def test_collect_rejects_non_exact_head(head: str) -> None:
+    with pytest.raises(ReviewEvidenceError):
+        collector().collect([], pr=7, head=head)
+
+
+def test_collect_rejects_nonpositive_pr_and_empty_producer() -> None:
+    evidence = collector()
+    with pytest.raises(ReviewEvidenceError):
+        evidence.collect([], pr=0, head=HEAD)
+    with pytest.raises(ReviewEvidenceError):
+        evidence.collect([], pr=7, head=HEAD, producer="   ")
+
+
+def test_trusted_comment_policy_can_narrow_trusted_apps() -> None:
+    policy = TrustedCommentPolicy(trusted_app_slugs=frozenset())
+    evidence = collector(policy=policy)
+    comment = {
+        "user": {"login": "github-actions[bot]"},
+        "author_association": "NONE",
+        "performed_via_github_app": {"slug": "github-actions"},
+        "body": contributor_marker(pr=7, head=HEAD, worker="59"),
+    }
+    assert evidence.collect([comment], pr=7, head=HEAD).contributors == frozenset()
