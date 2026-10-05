@@ -1,5 +1,10 @@
 """Pure graph entities and deterministic snapshot behavior."""
 
+from rotisserie.domain.eligibility import (
+    EligibilitySignals,
+    EligibilityVerdict,
+    evaluate_eligibility,
+)
 from rotisserie.domain.model import (
     Boundary,
     BoundaryId,
@@ -57,6 +62,8 @@ __all__ = [
     "Check",
     "CheckId",
     "CheckStatus",
+    "EligibilitySignals",
+    "EligibilityVerdict",
     "Evidence",
     "EvidenceId",
     "EvidenceKind",
@@ -85,6 +92,7 @@ __all__ = [
     "WorkDecision",
     "allocate_capacity",
     "apply_intake_pressure",
+    "evaluate_eligibility",
     "implementation_decision",
     "lease_decision",
     "ranked_implementation_work",

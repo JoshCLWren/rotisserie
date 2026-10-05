@@ -23,10 +23,16 @@ class WorkBlock(StrEnum):
     """A stable reason why fresh implementation must not start."""
 
     NOT_OPEN = "not_open"
+    PRODUCT_EXCLUSION = "product_exclusion"
+    PARENT_WORK = "parent_work"
     DEPENDENCY_INCOMPLETE = "dependency_incomplete"
     HUMAN_BOUNDARY = "human_boundary"
+    BLOCKED = "blocked"
+    TERMINAL = "terminal"
     ACTIVE_LEASE = "active_lease"
     IMPLEMENTATION_EXISTS = "implementation_exists"
+    RETRY_BUDGET_EXHAUSTED = "retry_budget_exhausted"
+    SELECTOR_METADATA_MISSING = "selector_metadata_missing"
     CAPACITY = "capacity"
     BACKPRESSURE = "backpressure"
 
