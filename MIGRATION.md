@@ -308,3 +308,17 @@ vocabulary, the free-model TSV roster, the `factory-expected-workers.json`
 lock, scheduled worker numbering, and model catalogs. Rotisserie takes only the
 portable idea: derive the worker set and its capacity bound from configuration,
 with no numeric maximum compiled into code.
+
+## Appendix: 2026-10 drift inventory
+
+The legacy snapshot under `reference/legacy-factory/` is pinned to ComicPile
+`2dc9b675…` (2026-09-25). ComicPile has continued to run live since then. A
+documentation-only drift inventory comparing that baseline against ComicPile
+HEAD `c2e40a34…` (2026-10-05) — verified read-only against the public
+`JoshCLWren/comic-pile` history — lives in
+[`docs/migration/drift-2026-10.md`](docs/migration/drift-2026-10.md). It records
+the commit and file counts, the adopt/adapt/skip classification with commit
+SHAs, the files new since the snapshot, the paths still byte-identical to the
+archived baseline, and the planned extraction chunks (R2–R10, C1–C2). It
+activates no workflow, changes no schedule, enables no mutation or canary
+variable, and modifies nothing under `reference/legacy-factory/`.
