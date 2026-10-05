@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import pytest
+
 from rotisserie.domain import (
     DUAL_REVIEWER,
     SINGLE_REVIEWER,
@@ -210,6 +212,44 @@ def test_verdict_is_deterministic_for_identical_signals() -> None:
         contributors=frozenset({worker("1")}),
         approvers=frozenset({worker("2")}),
         producer=worker("1"),
+        producer_attested=True,
         provenance_recorded=True,
     )
     assert evaluate_review_independence(fixed) == evaluate_review_independence(fixed)
+
+
+def test_producer_attested_without_a_producer_identity_is_rejected() -> None:
+    # Round-4 B1: the fail-closed invariant lives in the domain, so an illegal
+    # signal (attested with nothing excluded) cannot be constructed at all.
+    with pytest.raises(ValueError):
+        ReviewIndependenceSignals(revision=HEAD, producer=None, producer_attested=True)
+
+
+@pytest.mark.parametrize(
+    ("provenance_recorded", "producer_attested", "producer"),
+    [
+        (True, False, None),  # provenance but producer unattested and absent
+        (True, False, WorkerId("factory-worker", "9")),  # present but unattested
+        (False, False, None),  # nothing recorded
+        (False, True, WorkerId("factory-worker", "9")),  # attested but unrecorded provenance
+    ],
+)
+def test_gate_states_that_must_never_authorize_single_review(
+    provenance_recorded: bool,
+    producer_attested: bool,
+    producer: WorkerId | None,
+) -> None:
+    # Round-4 B1 holistic sweep: single review requires provenance_recorded AND
+    # producer_attested AND a present producer. Every other legal state holds the
+    # head to two reviewers; none may satisfy a single-reviewer verdict.
+    verdict = evaluate_review_independence(
+        signals(
+            contributors=frozenset({worker("59")}),
+            approvers=frozenset({worker("18")}),
+            producer=producer,
+            producer_attested=producer_attested,
+            provenance_recorded=provenance_recorded,
+        )
+    )
+    assert verdict.required_reviewers == DUAL_REVIEWER
+    assert not verdict.satisfied

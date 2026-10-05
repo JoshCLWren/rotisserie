@@ -35,6 +35,22 @@ not yet wired to it and still consumes the legacy single-producer
 :func:`rotisserie.domain.policy.reviewer_is_independent`. Callers that need
 full exact-head contributor-set independence should evaluate this rule
 directly.
+
+Invariants (the fail-closed contract this module owns)
+------------------------------------------------------
+
+* **Always excluded** from the eligible reviewer set: every recorded
+  ``contributor`` of the exact head, unioned with the ``producer``.
+* **Single review is allowed only when all three hold:** provenance is recorded
+  for the exact head, the producer is attested by exact-head evidence
+  (``producer_attested``), and the ``producer`` identity is actually present.
+  Any other state requires two distinct eligible reviewers.
+* **Illegal signals fail closed at construction:** ``producer_attested=True``
+  with ``producer=None`` is rejected by :class:`ReviewIndependenceSignals`, so a
+  translator cannot grant single-review authority with nothing excluded.
+* **Fail-closed inputs:** unrecorded provenance, an unattested or absent
+  producer, and the absence of any independent approver each hold the head to
+  dual review or block it outright; none can silently satisfy single review.
 """
 
 from __future__ import annotations
@@ -107,6 +123,10 @@ class ReviewIndependenceSignals:
     producer_attested: bool = False
     provenance_recorded: bool = False
 
+    def __post_init__(self) -> None:
+        if self.producer_attested and self.producer is None:
+            raise ValueError("producer_attested cannot be True without a producer identity")
+
     def excluded_reviewers(self) -> frozenset[WorkerId]:
         """Return every worker barred from reviewing this head.
 
@@ -161,7 +181,9 @@ def evaluate_review_independence(
     """
 
     eligible = signals.eligible_reviewers()
-    single_reviewer_authorized = signals.provenance_recorded and signals.producer_attested
+    single_reviewer_authorized = (
+        signals.provenance_recorded and signals.producer_attested and signals.producer is not None
+    )
     required = SINGLE_REVIEWER if single_reviewer_authorized else DUAL_REVIEWER
     exclusions: list[ReviewIndependenceBlock] = []
     reasons: list[str] = []
