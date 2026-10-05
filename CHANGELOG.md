@@ -37,10 +37,12 @@ such change must be called out here and in its release notes.
   block code.
 - Read-only GitHub review-evidence adapter that projects trusted review-thread
   comments into those signals. Both contributor and semantic-review markers are
-  honored only as whole-body comments, the attested producer is authoritative
-  over any caller-supplied value, and the trusted-author set is empty by default
-  so an adopter must opt its controller identity in. The adapter performs no
-  mutation.
+  honored only as whole-body comments; identities are normalized once (strip and
+  casefold) so exclusion is case-insensitive and the reserved ``unknown``
+  sentinel cannot be forged in any casing on any field; the attested producer is
+  authoritative over any caller-supplied value; and the trusted-author set is
+  empty by default so an adopter must opt its controller identity in. The
+  adapter performs no mutation.
 - Versioned, idempotent adopter transition commands that bind an authorized
   decision to an exact control revision, bounded lane, and compare-and-swap
   stage change without carrying credentials or host mutation behavior.
