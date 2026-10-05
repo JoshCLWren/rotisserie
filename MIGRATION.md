@@ -286,3 +286,25 @@ issue-intake boundary, and completed successfully. It emitted four PR assignment
 and no issue assignment or fresh claim. This observed runtime evidence closes the
 Phase 9 external-adopter migration contract; Phase 10 release hardening does not
 expand Rotisserie's active workflow or mutation boundary.
+
+## Config-derived worker inventory
+
+The worker inventory is now config-derived rather than bounded by a hard-coded
+ceiling. An optional `[workers]` table in operator configuration declares the
+`expected`, `retired`, and `scheduled` worker identities, and a pure
+`WorkerInventory` domain value validates that membership: the expected set is
+non-empty, retired identities are disjoint from expected ones so a roster entry
+cannot silently re-enroll a retired worker, and scheduled workers are a subset
+of expected. The `plan` and `dogfood` commands derive their work-in-progress
+ceiling from the inventory size, falling back to a single worker only when no
+inventory is declared.
+
+This extracts the generic mechanism behind ComicPile commits
+`2a7f599b4ef5dbc776ad41c1674b2be9122b734b` and
+`6461f689a77544b05f80c4d333f8a0cd37907fb1` (issue #3130), which replaced the
+`<=71` fixed-model worker ceilings with a roster-derived expected-worker set.
+ComicPile keeps its product-specific concerns — the `factory:N` label
+vocabulary, the free-model TSV roster, the `factory-expected-workers.json`
+lock, scheduled worker numbering, and model catalogs. Rotisserie takes only the
+portable idea: derive the worker set and its capacity bound from configuration,
+with no numeric maximum compiled into code.

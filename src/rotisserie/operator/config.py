@@ -8,7 +8,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from rotisserie.domain import RepositoryId
+from rotisserie.domain import RepositoryId, WorkerId, WorkerInventory
 
 
 class ConfigurationError(ValueError):
@@ -24,6 +24,7 @@ class OperatorConfig:
     snapshot: Path
     state_directory: Path
     mutations_enabled: bool = False
+    workers: WorkerInventory | None = None
 
     def __post_init__(self) -> None:
         if self.repository not in self.allowed_repositories:
@@ -56,7 +57,10 @@ def load_config(path: Path) -> OperatorConfig:
     mutations_enabled = local.get("mutations_enabled", False)
     if not isinstance(mutations_enabled, bool):
         raise ConfigurationError("local.mutations_enabled must be a boolean")
-    return OperatorConfig(repository, allowed, snapshot, state_directory, mutations_enabled)
+    workers = _workers(raw.get("workers"))
+    return OperatorConfig(
+        repository, allowed, snapshot, state_directory, mutations_enabled, workers
+    )
 
 
 def _mapping(raw: Mapping[str, Any], field: str) -> Mapping[str, Any]:
@@ -75,6 +79,55 @@ def _repository(raw: Mapping[str, Any], field: str) -> RepositoryId:
         raise ConfigurationError(f"{field} requires string host, owner, and name")
     try:
         return RepositoryId(*values)  # type: ignore[arg-type]
+    except ValueError as exc:
+        raise ConfigurationError(f"invalid {field}: {exc}") from exc
+
+
+def _workers(raw: object) -> WorkerInventory | None:
+    if raw is None:
+        return None
+    table = _expect_mapping(raw, "workers")
+    expected = _worker_set(table, "expected", required=True)
+    retired = _worker_set(table, "retired", required=False)
+    scheduled = _worker_set(table, "scheduled", required=False)
+    try:
+        return WorkerInventory(expected, retired, scheduled)
+    except ValueError as exc:
+        raise ConfigurationError(f"invalid workers inventory: {exc}") from exc
+
+
+def _worker_set(raw: Mapping[str, Any], field: str, *, required: bool) -> frozenset[WorkerId]:
+    value = raw.get(field)
+    if value is None:
+        if required:
+            raise ConfigurationError(f"workers.{field} must be a non-empty array")
+        return frozenset()
+    if not isinstance(value, list):
+        raise ConfigurationError(f"workers.{field} must be an array")
+    if required and not value:
+        raise ConfigurationError(f"workers.{field} must be a non-empty array")
+    workers = [_worker_id(item, f"workers.{field}") for item in value]
+    if len(set(workers)) != len(workers):
+        raise ConfigurationError(f"workers.{field} contains duplicate worker identities")
+    return frozenset(workers)
+
+
+def _worker_id(value: object, field: str) -> WorkerId:
+    if isinstance(value, str):
+        namespace, separator, identity = value.partition(":")
+        if not separator:
+            raise ConfigurationError(f"{field} string entries must use namespace:value form")
+        parts: tuple[object, object] = (namespace, identity)
+    elif isinstance(value, Mapping):
+        parts = (value.get("namespace"), value.get("value"))
+    else:
+        raise ConfigurationError(f"{field} entries must be strings or tables")
+    if not all(isinstance(part, str) for part in parts):
+        raise ConfigurationError(f"{field} requires string worker namespace and value")
+    if any(":" in part for part in parts):  # type: ignore[operator]
+        raise ConfigurationError(f"{field} namespace and value must not contain ':'")
+    try:
+        return WorkerId(*parts)  # type: ignore[arg-type]
     except ValueError as exc:
         raise ConfigurationError(f"invalid {field}: {exc}") from exc
 

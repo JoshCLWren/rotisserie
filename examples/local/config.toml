@@ -14,3 +14,13 @@ allow = [
 snapshot = "graph.json"
 state_directory = ".rotisserie-state"
 mutations_enabled = true
+
+# The worker inventory is config-derived: the WIP ceiling and recognized owners
+# follow this membership rather than a hard-coded maximum. Adding or retiring a
+# worker is a configuration edit, never a code change to a ceiling constant.
+# "scheduled" is a declared-but-not-yet-enforced subset of "expected"; no
+# command consumes it today, so the ceiling still tracks the full expected size.
+[workers]
+expected = ["human:producer", "human:reviewer"]
+scheduled = ["human:producer"]
+retired = []

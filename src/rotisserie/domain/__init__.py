@@ -1,5 +1,6 @@
 """Pure graph entities and deterministic snapshot behavior."""
 
+from rotisserie.domain.inventory import WorkerInventory, resolve_wip_limit
 from rotisserie.domain.model import (
     Boundary,
     BoundaryId,
@@ -73,6 +74,7 @@ __all__ = [
     "Work",
     "Worker",
     "WorkerId",
+    "WorkerInventory",
     "WorkId",
     "WorkState",
     "CapacityDecision",
@@ -90,5 +92,6 @@ __all__ = [
     "ranked_implementation_work",
     "readiness_decision",
     "repair_worker",
+    "resolve_wip_limit",
     "reviewer_is_independent",
 ]

@@ -68,6 +68,54 @@ def test_clean_clone_fixture_can_inspect_and_plan(capsys: object, tmp_path: Path
     assert output["ready_changes"] == ["20"]
 
 
+def test_plan_derives_wip_limit_from_configured_worker_inventory(
+    capsys: object, tmp_path: Path
+) -> None:
+    config = local_example(tmp_path)
+    config.write_text(
+        config.read_text(encoding="utf-8")
+        + """
+[workers]
+expected = ["model:alpha", "model:beta", "model:gamma"]
+""",
+        encoding="utf-8",
+    )
+
+    code, output = invoke(capsys, config, "plan", "--at", "10")
+    assert code == EXIT_OK
+    assert output["wip_limit"] == 3
+
+    code, override = invoke(capsys, config, "plan", "--at", "10", "--max-active", "1")
+    assert code == EXIT_OK
+    assert override["wip_limit"] == 1
+
+    code, canonical = invoke(capsys, config, "plan", "--at", "10", "--wip-limit", "2")
+    assert code == EXIT_OK
+    assert canonical["wip_limit"] == 2
+
+
+def test_plan_wip_limit_defaults_to_one_without_inventory(capsys: object, tmp_path: Path) -> None:
+    config = local_example(tmp_path)
+    code, output = invoke(capsys, config, "plan", "--at", "10")
+    assert code == EXIT_OK
+    assert output["wip_limit"] == 1
+
+
+def test_doctor_reports_worker_inventory_size(capsys: object, tmp_path: Path) -> None:
+    config = local_example(tmp_path)
+    config.write_text(
+        config.read_text(encoding="utf-8")
+        + """
+[workers]
+expected = ["model:alpha", "model:beta"]
+""",
+        encoding="utf-8",
+    )
+    code, output = invoke(capsys, config, "doctor")
+    assert code == EXIT_OK
+    assert output["checks"]["worker_inventory"] == "2 expected"  # type: ignore[index]
+
+
 def test_decide_cli_projects_snapshot_without_initializing_graph_state(
     capsys: object, tmp_path: Path
 ) -> None:

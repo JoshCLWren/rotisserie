@@ -11,6 +11,13 @@ such change must be called out here and in its release notes.
 
 ### Added
 
+- Config-derived worker inventory via an optional `[workers]` TOML table
+  declaring `expected`, `retired`, and `scheduled` worker identities. `plan`
+  and `dogfood` derive their work-in-progress ceiling from the `expected` size
+  and report the resolved `wip_limit`. The `--max-active` flag is now an
+  explicit override (canonically spelled `--wip-limit`) whose default changed
+  from a fixed `1` to the configured inventory size, falling back to `1` only
+  when no `[workers]` table is present.
 - Versioned, idempotent adopter transition commands that bind an authorized
   decision to an exact control revision, bounded lane, and compare-and-swap
   stage change without carrying credentials or host mutation behavior.
