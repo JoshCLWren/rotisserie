@@ -11,6 +11,11 @@ such change must be called out here and in its release notes.
 
 ### Added
 
+- Portable, host-neutral per-node queue-eligibility rules (`evaluate_eligibility`,
+  `EligibilitySignals`, `EligibilityVerdict`) and the exclusion codes they emit.
+  `implementation_decision` delegates to this engine for one canonical
+  `WorkBlock` ordering and verdict shape, with label and marker encoding left to
+  the adopter translator.
 - Config-derived worker inventory via an optional `[workers]` TOML table
   declaring `expected`, `retired`, and `scheduled` worker identities. `plan`
   and `dogfood` derive their work-in-progress ceiling from the `expected` size
