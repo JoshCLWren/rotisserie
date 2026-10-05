@@ -8,13 +8,13 @@ from dataclasses import dataclass, field
 from enum import StrEnum
 from typing import Protocol
 
-from rotisserie.domain import ChangeId, Lease, LeaseId, RevisionId, WorkerId, WorkId
+from rotisserie.domain import ChangeId, Lease, LeaseId, RevisionId, Work, WorkerId, WorkId
 from rotisserie.domain.policy import (
     LeaseAction,
     SchedulingPolicy,
+    WorkDecision,
     allocate_capacity,
     apply_intake_pressure,
-    implementation_decision,
     lease_decision,
     ranked_implementation_work,
     readiness_decision,
@@ -162,28 +162,37 @@ class DispatchStatus(StrEnum):
 class DispatchPlan:
     """The outcome of one dispatcher planning tick.
 
-    A :attr:`DispatchStatus.NO_ELIGIBLE_WORK` tick is a *trustworthy zero*: after
-    reading the graph once, eligibility evaluation found no implementation work
-    to start and no exact-head-ready change to drain. The dispatcher must then
-    exit early and cheaply for this tick -- it spins up no worker, invokes no
-    provider or model, and issues no coordination effect. This mirrors, as
-    provider-neutral policy, ComicPile's dispatcher behavior of ending a bounded
-    session on a trustworthy zero-work tick instead of chaining a successor.
+    ``status`` separates two cases. :attr:`DispatchStatus.NO_ELIGIBLE_WORK` is a
+    *trustworthy zero*: no implementation work was eligible to start and no
+    exact-head-ready change was available to drain, so a bounded session may end
+    rather than chain a successor. :attr:`DispatchStatus.WORK_AVAILABLE` means
+    eligible work exists this tick; ``production`` and ``completion`` carry the
+    capacity-bounded work to act on and may both be empty when eligible work is
+    held back by WIP capacity or intake backpressure rather than being absent.
 
-    A :attr:`DispatchStatus.WORK_AVAILABLE` tick carries the capacity-bounded
-    work to act on. ``production`` and ``completion`` may still be empty when
-    eligible work exists but no WIP capacity remains; that is a capacity-bound
-    tick, not a trustworthy zero, so the caller should not treat it as a reason
-    to end the session.
+    This value object only records the verdict. The obligation to exit early and
+    cheaply on a trustworthy zero -- spinning up no worker, invoking no provider,
+    and issuing no effect -- belongs to the caller that runs the tick. It ports,
+    as provider-neutral policy, ComicPile's dispatcher behavior of ending a
+    bounded session on a trustworthy zero-work tick instead of chaining a
+    successor.
     """
 
     status: DispatchStatus
-    completion: tuple[ChangeId, ...] = ()
     production: tuple[WorkId, ...] = ()
+    completion: tuple[ChangeId, ...] = ()
 
     @property
     def has_work(self) -> bool:
-        return self.status is DispatchStatus.WORK_AVAILABLE
+        """Whether this tick carries actionable work to dispatch right now."""
+
+        return bool(self.production or self.completion)
+
+    @property
+    def is_trustworthy_zero(self) -> bool:
+        """Whether eligibility found nothing to do, so the session may end."""
+
+        return self.status is DispatchStatus.NO_ELIGIBLE_WORK
 
     def to_dict(self) -> dict[str, object]:
         return {
@@ -204,7 +213,8 @@ class CoordinationService:
         self, *, at: int, completion_backlog: int, policy: SchedulingPolicy
     ) -> tuple[WorkId, ...]:
         snapshot = self._port.read().snapshot
-        return _select(snapshot, at=at, completion_backlog=completion_backlog, policy=policy)
+        candidates = ranked_implementation_work(snapshot, at=at)
+        return _select(candidates, completion_backlog=completion_backlog, policy=policy)
 
     def refill(
         self,
@@ -234,20 +244,24 @@ class CoordinationService:
     ) -> DispatchPlan:
         """Plan one dispatcher tick, short-circuiting on a trustworthy zero.
 
-        The graph is read exactly once. Both the eligible production selection
-        and the exact-head-ready completion drain are derived from that single
-        snapshot. When neither yields any work, the tick is a trustworthy zero:
-        the plan reports :attr:`DispatchStatus.NO_ELIGIBLE_WORK` without
-        allocating capacity, spinning up a worker, invoking a provider, reading
-        further, or issuing any effect. Otherwise capacity is allocated and the
-        bounded work to act on is returned.
+        The graph is read exactly once. The trustworthy-zero verdict is decided
+        from *pre-pressure* eligibility: when no implementation work is eligible
+        to start and no exact-head-ready change is available to drain, the plan
+        reports :attr:`DispatchStatus.NO_ELIGIBLE_WORK` without allocating
+        capacity, reading further, or issuing any effect. Work that is eligible
+        but held back by WIP capacity or intake backpressure keeps the tick at
+        :attr:`DispatchStatus.WORK_AVAILABLE` with capacity-bounded tuples that
+        may be empty, so a congestion hold is never mislabeled a genuine idle.
         """
 
+        if active < 0:
+            raise ValueError("active count cannot be negative")
         snapshot = self._port.read().snapshot
-        production = _select(snapshot, at=at, completion_backlog=completion_backlog, policy=policy)
+        candidates = ranked_implementation_work(snapshot, at=at)
         ready = _ready_changes(snapshot)
-        if not production and not ready:
+        if not candidates and not ready:
             return DispatchPlan(DispatchStatus.NO_ELIGIBLE_WORK)
+        production = _select(candidates, completion_backlog=completion_backlog, policy=policy)
         capacity = allocate_capacity(
             completion_demand=len(ready),
             production_demand=len(production),
@@ -256,8 +270,8 @@ class CoordinationService:
         )
         return DispatchPlan(
             DispatchStatus.WORK_AVAILABLE,
-            ready[: capacity.completion],
-            production[: capacity.production],
+            production=production[: capacity.production],
+            completion=ready[: capacity.completion],
         )
 
     def completion_drain(self, *, limit: int) -> tuple[ChangeId, ...]:
@@ -421,12 +435,16 @@ class CoordinationService:
 
 
 def _select(
-    snapshot: GraphSnapshot, *, at: int, completion_backlog: int, policy: SchedulingPolicy
+    candidates: tuple[Work, ...], *, completion_backlog: int, policy: SchedulingPolicy
 ) -> tuple[WorkId, ...]:
-    decisions = tuple(
-        implementation_decision(snapshot, work.id, at=at)
-        for work in ranked_implementation_work(snapshot, at=at)
-    )
+    """Apply intake backpressure to already-eligible, ranked candidates.
+
+    ``candidates`` come from :func:`ranked_implementation_work`, which has
+    already resolved eligibility, so each is eligible until intake backpressure
+    says otherwise; no second eligibility pass is required.
+    """
+
+    decisions = tuple(WorkDecision(work.id, True) for work in candidates)
     pressured = apply_intake_pressure(
         decisions, completion_backlog=completion_backlog, policy=policy
     )

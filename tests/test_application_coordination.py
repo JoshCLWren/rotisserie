@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from dataclasses import replace
 
+import pytest
+
 from rotisserie.application import (
     CoordinationService,
     DispatchPlan,
@@ -224,6 +226,7 @@ def test_dispatch_plan_short_circuits_on_trustworthy_zero_work() -> None:
     )
     assert plan == DispatchPlan(DispatchStatus.NO_ELIGIBLE_WORK)
     assert plan.has_work is False
+    assert plan.is_trustworthy_zero is True
     assert port.reads == 1
     assert port.calls == []
     assert plan.to_dict() == {
@@ -269,9 +272,37 @@ def test_dispatch_plan_distinguishes_capacity_pressure_from_zero_work() -> None:
         at=0, active=1, completion_backlog=0, policy=SchedulingPolicy(1)
     )
     assert plan.status is DispatchStatus.WORK_AVAILABLE
-    assert plan.has_work is True
+    assert plan.is_trustworthy_zero is False
+    assert plan.has_work is False
     assert plan.production == ()
     assert plan.completion == ()
+
+
+def test_dispatch_plan_reports_intake_backpressure_as_held_work_not_zero() -> None:
+    port = CountingPort(base_snapshot())
+    plan = CoordinationService(port).dispatch_plan(
+        at=0,
+        active=0,
+        completion_backlog=1,
+        policy=SchedulingPolicy(3, backlog_limit=1),
+    )
+    assert plan.status is DispatchStatus.WORK_AVAILABLE
+    assert plan.is_trustworthy_zero is False
+    assert plan.has_work is False
+    assert plan.production == ()
+    assert plan.completion == ()
+    assert port.reads == 1
+    assert port.calls == []
+
+
+def test_dispatch_plan_rejects_negative_active_even_on_a_zero_work_graph() -> None:
+    port = CountingPort(replace(base_snapshot(), works=(), changes=()))
+    with pytest.raises(ValueError, match="active count cannot be negative"):
+        CoordinationService(port).dispatch_plan(
+            at=0, active=-1, completion_backlog=0, policy=SchedulingPolicy(3)
+        )
+    assert port.reads == 0
+    assert port.calls == []
 
 
 def test_refill_combines_capacity_backpressure_and_stable_selection() -> None:

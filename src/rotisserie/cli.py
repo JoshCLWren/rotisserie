@@ -85,7 +85,12 @@ def parser() -> argparse.ArgumentParser:
             "or 1 when no [workers] table is set"
         ),
     )
-    plan.add_argument("--active", type=int, default=0)
+    plan.add_argument(
+        "--active-changes",
+        type=int,
+        default=0,
+        help="count of work already in progress this tick (consumes WIP, not the ceiling)",
+    )
     plan.add_argument("--reserved-review", type=int, default=0)
     plan.add_argument("--backlog-limit", type=int)
 
@@ -262,15 +267,9 @@ def _execute(
     if command == "plan":
         wip_limit = resolve_wip_limit(config.workers, arguments.max_active)
         policy = SchedulingPolicy(wip_limit, arguments.reserved_review, arguments.backlog_limit)
-        selected = service.select(
-            at=arguments.at,
-            completion_backlog=arguments.completion_backlog,
-            policy=policy,
-        )
-        ready = service.completion_drain(limit=wip_limit)
         dispatch = service.dispatch_plan(
             at=arguments.at,
-            active=arguments.active,
+            active=arguments.active_changes,
             completion_backlog=arguments.completion_backlog,
             policy=policy,
         )
@@ -279,8 +278,8 @@ def _execute(
             command,
             "ok",
             wip_limit=wip_limit,
-            selected=[item.key for item in selected],
-            ready_changes=[item.key for item in ready],
+            selected=[item.key for item in dispatch.production],
+            ready_changes=[item.key for item in dispatch.completion],
             dispatch=dispatch.to_dict(),
         ), EXIT_OK
     if command == "doctor":
