@@ -322,3 +322,34 @@ SHAs, the files new since the snapshot, the paths still byte-identical to the
 archived baseline, and the planned extraction chunks (R2–R10, C1–C2). It
 activates no workflow, changes no schedule, enables no mutation or canary
 variable, and modifies nothing under `reference/legacy-factory/`.
+
+## Exact-head review independence
+
+The generic review-independence semantics from ComicPile
+`.github/scripts/factory_review_policy.py` (`head_has_authorized_approval` and
+the head-contributor provenance it consumes) now live as a pure domain rule in
+`src/rotisserie/domain/review.py`. A reviewer is eligible only when absent from
+the exact-head contributor set — the recorded change lineage unioned with the
+attested producer, because a repair stacks commits onto the prior head rather
+than rewriting it. A trusted record for the exact head authorizes one
+independent reviewer; a missing or ambiguous record fails closed to two distinct
+eligible reviewers. The rule generalizes the existing single-producer
+`reviewer_is_independent`; `readiness_decision` is intentionally left on the
+legacy check, and wiring the new rule into readiness is a later, additive step.
+
+`src/rotisserie/adapters/github/review_evidence.py` is a read-only adapter that
+decodes trusted review-thread comments into those signals. Marker and worker
+vocabularies are adopter configuration, so no `comic-pile-` strings enter the
+domain. Contributor and semantic-review markers are honored only when the entire
+comment body is one marker, closing marker-in-prose forgery for both families.
+The producer is taken from the identity attested in the exact-head review
+markers; a caller-supplied producer that contradicts it, or contradictory
+attestations for one head, fail closed. The trusted-author set is empty by
+default — a shared `GITHUB_TOKEN` Actions job posting as `github-actions[bot]`
+is not trusted unless an adopter explicitly opts its controller identity in. The
+adapter performs no mutation and activates no workflow.
+
+ComicPile keeps the product-specific encoding: the `comic-pile-factory-*` marker
+prefixes, the `factory:<n>` worker labels, the `factory/<n>-…` branch and
+`Worker: opencode-…-factory-<n>` body producer recovery, the semantic verdict
+vocabulary, and worker GitHub App slugs.
