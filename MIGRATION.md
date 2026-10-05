@@ -332,9 +332,12 @@ the head-contributor provenance it consumes) now live as a pure domain rule in
 the exact-head contributor set — the recorded change lineage unioned with the
 attested producer, because a repair stacks commits onto the prior head rather
 than rewriting it. A trusted record for the exact head authorizes one
-independent reviewer only when the producer is also known; an unknown or
-unattested producer, or a missing or ambiguous record, fails closed to two
-distinct eligible reviewers. The rule generalizes the existing single-producer
+independent reviewer only when the producer is attested by exact-head evidence;
+an unattested or unknown producer, or a missing or ambiguous record, fails
+closed to two distinct eligible reviewers under distinct stable block codes. A
+caller-supplied producer may cross-check the attestation (a mismatch fails
+closed) but never authorizes single review by itself. The rule generalizes the
+existing single-producer
 `reviewer_is_independent`; `readiness_decision` is intentionally left on the
 legacy check, and wiring the new rule into readiness is a later, additive step.
 

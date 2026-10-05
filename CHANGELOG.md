@@ -31,9 +31,10 @@ such change must be called out here and in its release notes.
 - Portable exact-head review-independence rule in the domain: a reviewer must be
   absent from the exact-head contributor set (recorded lineage unioned with the
   attested producer). A single independent reviewer authorizes the head only
-  when provenance is recorded and the producer is known; an unknown or
-  unattested producer, or unrecorded provenance, fails closed to two distinct
-  eligible reviewers.
+  when provenance is recorded and the producer is attested by exact-head
+  evidence; an unattested or unknown producer, or unrecorded provenance, fails
+  closed to two distinct eligible reviewers, each carrying a distinct stable
+  block code.
 - Read-only GitHub review-evidence adapter that projects trusted review-thread
   comments into those signals. Both contributor and semantic-review markers are
   honored only as whole-body comments, the attested producer is authoritative
