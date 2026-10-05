@@ -18,9 +18,19 @@ OTHER_HEAD = "b" * 40
 NAMESPACE = "comic-pile-factory"
 WORKER_NS = "factory-worker"
 
+CONTROLLER_POLICY = TrustedCommentPolicy(
+    bot_login="github-actions[bot]",
+    trusted_associations=frozenset({"OWNER", "MEMBER", "COLLABORATOR"}),
+    trusted_app_slugs=frozenset({"github-actions"}),
+)
+
 
 def collector(**kwargs: Any) -> GitHubReviewEvidence:
-    params: dict[str, Any] = {"namespace": NAMESPACE, "worker_namespace": WORKER_NS}
+    params: dict[str, Any] = {
+        "namespace": NAMESPACE,
+        "worker_namespace": WORKER_NS,
+        "policy": CONTROLLER_POLICY,
+    }
     params.update(kwargs)
     return GitHubReviewEvidence(REPO, **params)
 
@@ -217,8 +227,8 @@ def test_collect_rejects_nonpositive_pr_and_empty_producer() -> None:
         evidence.collect([], pr=7, head=HEAD, producer="   ")
 
 
-def test_trusted_comment_policy_can_narrow_trusted_apps() -> None:
-    policy = TrustedCommentPolicy(trusted_app_slugs=frozenset())
+def test_untrusted_app_slug_overrides_an_otherwise_trusted_login() -> None:
+    policy = TrustedCommentPolicy(bot_login="github-actions[bot]", trusted_app_slugs=frozenset())
     evidence = collector(policy=policy)
     comment = {
         "user": {"login": "github-actions[bot]"},
@@ -227,3 +237,81 @@ def test_trusted_comment_policy_can_narrow_trusted_apps() -> None:
         "body": contributor_marker(pr=7, head=HEAD, worker="59"),
     }
     assert evidence.collect([comment], pr=7, head=HEAD).contributors == frozenset()
+
+
+def test_default_trust_policy_fails_closed_and_trusts_no_one() -> None:
+    evidence = GitHubReviewEvidence(REPO, namespace=NAMESPACE, worker_namespace=WORKER_NS)
+    comments = [
+        bot_comment(contributor_marker(pr=7, head=HEAD, worker="59")),
+        {
+            "user": {"login": "maintainer"},
+            "author_association": "OWNER",
+            "body": review_marker(pr=7, head=HEAD, reviewer="17", producer="29", verdict="approve"),
+        },
+    ]
+    result = evidence.collect(comments, pr=7, head=HEAD)
+    assert result.contributors == frozenset()
+    assert result.approvers == frozenset()
+    assert not result.provenance_recorded
+
+
+def test_approve_markers_require_the_whole_body_to_resist_forgery() -> None:
+    evidence = collector()
+    approve = review_marker(pr=7, head=HEAD, reviewer="17", producer="29", verdict="approve")
+    forged = [
+        bot_comment(approve + "\n\n### Factory resume packet\nHead: `deadbeef`"),
+        bot_comment("factory: advance PR #7 with nemotron\n" + approve),
+        bot_comment("Worker: factory-17\n" + approve + "\n"),
+    ]
+    result = evidence.collect(forged, pr=7, head=HEAD, producer="29")
+    assert result.approvers == frozenset()
+
+
+def test_attested_producer_excludes_a_self_approving_producer_without_caller_param() -> None:
+    evidence = collector()
+    comments = [
+        bot_comment(contributor_marker(pr=7, head=HEAD, worker="59")),
+        bot_comment(
+            review_marker(pr=7, head=HEAD, reviewer="18", producer="18", verdict="approve")
+        ),
+    ]
+    collected = evidence.collect(comments, pr=7, head=HEAD)
+    assert collected.producer == worker("18")
+    verdict = evaluate_review_independence(collected)
+    assert not verdict.satisfied
+    assert verdict.eligible_reviewers == frozenset()
+
+
+def test_declared_producer_contradicting_attestation_fails_closed() -> None:
+    evidence = collector()
+    comments = [
+        bot_comment(
+            review_marker(pr=7, head=HEAD, reviewer="17", producer="29", verdict="approve")
+        ),
+    ]
+    with pytest.raises(ReviewEvidenceError):
+        evidence.collect(comments, pr=7, head=HEAD, producer="30")
+
+
+def test_contradictory_producer_attestations_for_one_head_fail_closed() -> None:
+    evidence = collector()
+    comments = [
+        bot_comment(
+            review_marker(pr=7, head=HEAD, reviewer="17", producer="29", verdict="approve")
+        ),
+        bot_comment(review_marker(pr=7, head=HEAD, reviewer="18", producer="30", verdict="repair")),
+    ]
+    with pytest.raises(ReviewEvidenceError):
+        evidence.collect(comments, pr=7, head=HEAD)
+
+
+def test_unknown_attested_producer_defers_to_the_declared_cross_check() -> None:
+    evidence = collector()
+    comments = [
+        bot_comment(
+            review_marker(pr=7, head=HEAD, reviewer="17", producer="unknown", verdict="approve")
+        ),
+    ]
+    collected = evidence.collect(comments, pr=7, head=HEAD, producer="29")
+    assert collected.producer == worker("29")
+    assert collected.approvers == frozenset({worker("17")})

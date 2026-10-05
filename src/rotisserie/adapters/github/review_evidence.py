@@ -12,14 +12,22 @@ Marker vocabulary is an adopter concern, so the collector is configured with a
 markers name. Rotisserie's domain never sees those strings; the GitHub- and
 product-specific encoding is confined to this adapter.
 
-Two anti-forgery rules from the source policy are preserved:
+Two anti-forgery rules from the source policy are preserved and applied to
+*every* marker family, contributor records and semantic-review markers alike:
 
 * Only comments authored by trusted actors (the controller bot login, a trusted
   association, and never an untrusted worker GitHub App) are read for
-  provenance; see :class:`TrustedCommentPolicy`.
-* A head-contributor record is honored only when the entire comment body is one
-  marker, so a worker cannot forge provenance by pasting a marker into a resume
-  packet, review prose, or a commit message.
+  provenance; see :class:`TrustedCommentPolicy`. The trusted-author set is empty
+  by default and fails closed: an adopter must opt its controller identity in.
+* A marker is honored only when the entire comment body is exactly that one
+  marker, so a worker cannot forge provenance or an approval by pasting a marker
+  into a resume packet, review prose, or a commit message.
+
+Producer identity is taken from the producer attested in the exact-head review
+markers, not from the optional caller parameter. A declared producer that
+contradicts the attested one, or contradictory attestations for the same head,
+fail closed. This prevents a producer with no recorded contribution from
+appearing as its own eligible reviewer.
 """
 
 from __future__ import annotations
@@ -51,17 +59,21 @@ class ReviewEvidenceError(ValueError):
 class TrustedCommentPolicy:
     """Which comment authors may be read for trusted review provenance.
 
-    The controller posts markers through ``GITHUB_TOKEN`` as the bot login, and
-    a repository owner/member/collaborator may run the controller during an
-    incident, so their comments are honored. A worker GitHub App is never one of
-    those actors: a non-trusted App slug is ignored even when the association
-    looks trusted. The specific worker App slugs are a product concern, so the
-    trusted slug set is configurable and defaults to the GitHub Actions app.
+    **The default fails closed: it trusts no one.** A shared default
+    ``GITHUB_TOKEN`` Actions job posts as ``github-actions[bot]``, so trusting
+    that login (or the ``github-actions`` App slug) out of the box would let any
+    worker running in Actions forge controller provenance. An adopter must
+    therefore opt its controller identity in explicitly: set ``bot_login`` to a
+    dedicated controller login and/or ``trusted_associations`` for a human
+    operator running the controller during an incident, and list only the App
+    slugs the controller legitimately posts through. Worker GitHub Apps must
+    never be added; an App slug outside ``trusted_app_slugs`` loses even when the
+    association looks trusted.
     """
 
-    bot_login: str = "github-actions[bot]"
-    trusted_associations: frozenset[str] = frozenset({"OWNER", "MEMBER", "COLLABORATOR"})
-    trusted_app_slugs: frozenset[str] = frozenset({"github-actions"})
+    bot_login: str = ""
+    trusted_associations: frozenset[str] = frozenset()
+    trusted_app_slugs: frozenset[str] = frozenset()
 
     def _performed_via_untrusted_app(self, comment: Mapping[str, Any]) -> bool:
         app = comment.get("performed_via_github_app")
@@ -73,7 +85,12 @@ class TrustedCommentPolicy:
         return slug not in self.trusted_app_slugs
 
     def trusts(self, comment: Mapping[str, Any]) -> bool:
-        """Return whether one comment was authored by a trusted actor."""
+        """Return whether one comment was authored by a trusted actor.
+
+        A positive trust signal is required: an empty ``bot_login`` never matches
+        a login and an empty ``trusted_associations`` never matches an
+        association, so the default configuration trusts nothing.
+        """
 
         if self._performed_via_untrusted_app(comment):
             return False
@@ -82,7 +99,9 @@ class TrustedCommentPolicy:
             return False
         login = str(user.get("login") or "")
         association = str(comment.get("author_association") or "")
-        return login == self.bot_login or association in self.trusted_associations
+        if self.bot_login and login == self.bot_login:
+            return True
+        return bool(association) and association in self.trusted_associations
 
 
 @dataclass(frozen=True)
@@ -93,6 +112,16 @@ class HeadContributorMarker:
     head: str
     worker: str
     epoch: int
+
+
+@dataclass(frozen=True)
+class _ReviewScan:
+    """The four evidence sets derived from one single pass over trusted bodies."""
+
+    lineage: frozenset[str]
+    exact_contributors: frozenset[str]
+    approvers: frozenset[str]
+    attested_producers: frozenset[str]
 
 
 class GitHubReviewEvidence:
@@ -167,48 +196,43 @@ class GitHubReviewEvidence:
             bodies.append(str(comment.get("body") or ""))
         return bodies
 
-    def _recorded_contributors(self, bodies: Iterable[str], *, pr: int) -> set[str]:
-        """Return every worker with a whole-body contributor record on one PR."""
+    def _scan(self, bodies: Iterable[str], *, pr: int, head: str) -> _ReviewScan:
+        """Derive every evidence set in one guarded pass over the trusted bodies.
 
-        workers: set[str] = set()
+        A single whole-body forgery guard protects both marker families, so the
+        contributor and approval anti-forgery rules cannot drift apart, and each
+        body is matched against each marker regex at most once.
+        """
+
+        lineage: set[str] = set()
+        exact_contributors: set[str] = set()
+        approvers: set[str] = set()
+        attested_producers: set[str] = set()
         for body in bodies:
-            stripped = str(body or "").strip()
+            stripped = body.strip()
             if not stripped or "\n" in stripped:
                 continue
-            marker = self.parse_head_contributor_marker(stripped)
-            if marker is None or marker.pr != pr:
+            contributor = self._contributor_re.fullmatch(stripped)
+            if contributor is not None:
+                if int(contributor["pr"]) != pr:
+                    continue
+                lineage.add(contributor["worker"])
+                if contributor["head"] == head:
+                    exact_contributors.add(contributor["worker"])
                 continue
-            workers.add(marker.worker)
-        return workers
-
-    def _exact_head_contributors(self, bodies: Iterable[str], *, pr: int, head: str) -> set[str]:
-        """Return workers whose whole-body record names this exact PR head."""
-
-        workers: set[str] = set()
-        for body in bodies:
-            stripped = str(body or "").strip()
-            if not stripped or "\n" in stripped:
+            review = self._review_re.fullmatch(stripped)
+            if review is None or int(review["pr"]) != pr or review["head"] != head:
                 continue
-            marker = self.parse_head_contributor_marker(stripped)
-            if marker is None or marker.pr != pr or marker.head != head:
-                continue
-            workers.add(marker.worker)
-        return workers
-
-    def _exact_head_approvers(self, bodies: Iterable[str], *, pr: int, head: str) -> set[str]:
-        """Return reviewers whose first-line approve marker names this exact head."""
-
-        reviewers: set[str] = set()
-        for body in bodies:
-            first_line = str(body or "").splitlines()[0] if body else ""
-            match = self._review_re.fullmatch(first_line.strip())
-            if match is None:
-                continue
-            if int(match["pr"]) != pr or match["head"] != head:
-                continue
-            if match["verdict"] == "approve":
-                reviewers.add(match["reviewer"])
-        return reviewers
+            if review["producer"] != "unknown":
+                attested_producers.add(review["producer"])
+            if review["verdict"] == "approve":
+                approvers.add(review["reviewer"])
+        return _ReviewScan(
+            frozenset(lineage),
+            frozenset(exact_contributors),
+            frozenset(approvers),
+            frozenset(attested_producers),
+        )
 
     def _worker(self, token: str) -> WorkerId:
         return WorkerId(self.worker_namespace, token)
@@ -225,8 +249,15 @@ class GitHubReviewEvidence:
 
         ``head`` is the exact 40-character revision under review. The returned
         signals carry the recorded lineage contributors, the exact-head
-        approvers, the declared producer, and whether a trusted record exists for
-        this exact head. The whole collection is read-only.
+        approvers, the authoritative producer, and whether a trusted record
+        exists for this exact head. The whole collection is read-only.
+
+        The producer is taken from the identity attested in the exact-head review
+        markers rather than from the ``producer`` parameter. The parameter is an
+        optional cross-check: when supplied it must agree with the attestation or
+        the collection fails closed. Contradictory attestations for one head also
+        fail closed. This prevents a producer with no recorded contribution from
+        slipping through as its own eligible reviewer.
         """
 
         if pr <= 0:
@@ -234,17 +265,23 @@ class GitHubReviewEvidence:
         head = head.strip().lower()
         if len(head) != 40 or any(character not in "0123456789abcdef" for character in head):
             raise ReviewEvidenceError("head must be a 40-character hexadecimal revision")
-        bodies = self.trusted_bodies(comments)
-        lineage = self._recorded_contributors(bodies, pr=pr)
-        exact = self._exact_head_contributors(bodies, pr=pr, head=head)
-        approvers = self._exact_head_approvers(bodies, pr=pr, head=head)
-        producer_token = producer.strip() if producer is not None else None
-        if producer_token == "":
+        declared = producer.strip() if producer is not None else None
+        if declared == "":
             raise ReviewEvidenceError("producer, when provided, must be a non-empty token")
+        bodies = self.trusted_bodies(comments)
+        scan = self._scan(bodies, pr=pr, head=head)
+        if len(scan.attested_producers) > 1:
+            raise ReviewEvidenceError("contradictory producer attestation for the exact head")
+        attested = next(iter(scan.attested_producers), None)
+        if attested is not None and declared is not None and declared != attested:
+            raise ReviewEvidenceError(
+                "declared producer contradicts the attested exact-head producer"
+            )
+        authoritative = attested if attested is not None else declared
         return ReviewIndependenceSignals(
             revision=RevisionId(self.repository, head),
-            contributors=frozenset(self._worker(worker) for worker in lineage),
-            approvers=frozenset(self._worker(worker) for worker in approvers),
-            producer=self._worker(producer_token) if producer_token else None,
-            provenance_recorded=bool(exact),
+            contributors=frozenset(self._worker(worker) for worker in scan.lineage),
+            approvers=frozenset(self._worker(worker) for worker in scan.approvers),
+            producer=self._worker(authoritative) if authoritative else None,
+            provenance_recorded=bool(scan.exact_contributors),
         )
