@@ -265,6 +265,11 @@ def test_dispatch_plan_reports_ready_completion_without_production() -> None:
     assert plan.status is DispatchStatus.WORK_AVAILABLE
     assert plan.production == ()
     assert plan.completion == (CHANGE,)
+    # The only work hosts an open change, so eligibility excludes it from the
+    # production selection while its ready change still drains; selection here
+    # reflects ranked eligibility, not a second ad-hoc eligibility pass.
+    assert plan.selection == ()
+    assert plan.ready == (CHANGE,)
 
 
 def test_dispatch_plan_distinguishes_capacity_pressure_from_zero_work() -> None:
@@ -303,6 +308,65 @@ def test_dispatch_plan_rejects_negative_active_even_on_a_zero_work_graph() -> No
         )
     assert port.reads == 0
     assert port.calls == []
+
+
+def test_dispatch_plan_rejects_negative_completion_backlog_even_on_a_zero_work_graph() -> None:
+    port = CountingPort(replace(base_snapshot(), works=(), changes=()))
+    with pytest.raises(ValueError, match="completion backlog cannot be negative"):
+        CoordinationService(port).dispatch_plan(
+            at=0, active=0, completion_backlog=-1, policy=SchedulingPolicy(3)
+        )
+    assert port.reads == 0
+    assert port.calls == []
+
+
+def _multi_eligible_snapshot() -> GraphSnapshot:
+    """Five eligible open works plus two works hosting exact-head-ready changes."""
+
+    eligible = tuple(
+        Work(WorkId(REPO, str(index)), f"Eligible {index}", priority=10 - index)
+        for index in range(1, 6)
+    )
+    hosts: list[Work] = []
+    changes: list[Change] = []
+    revisions: list[Revision] = []
+    checks: list[Check] = []
+    reviews: list[Review] = []
+    for number in (6, 7):
+        work_id = WorkId(REPO, str(number))
+        change_id = ChangeId(REPO, f"c{number}")
+        head = RevisionId(REPO, f"head{number}")
+        hosts.append(Work(work_id, f"Change host {number}"))
+        changes.append(Change(change_id, work_id, head, PRODUCER))
+        revisions.append(Revision(head))
+        checks.append(Check(CheckId(head, "tests"), CheckStatus.PASSED))
+        reviews.append(Review(ReviewId(f"r{number}"), head, REVIEWER, ReviewDecision.APPROVED))
+    return GraphSnapshot(
+        works=(*eligible, *hosts),
+        changes=tuple(changes),
+        revisions=tuple(revisions),
+        workers=(Worker(PRODUCER), Worker(REVIEWER)),
+        checks=tuple(checks),
+        reviews=tuple(reviews),
+    )
+
+
+def test_dispatch_plan_keeps_uncapped_sets_distinct_from_capacity_bounded_cargo() -> None:
+    plan = CoordinationService(FakePort(_multi_eligible_snapshot())).dispatch_plan(
+        at=0, active=0, completion_backlog=0, policy=SchedulingPolicy(1)
+    )
+    assert plan.status is DispatchStatus.WORK_AVAILABLE
+    assert [work.key for work in plan.selection] == ["1", "2", "3", "4", "5"]
+    assert [change.key for change in plan.ready] == ["c6", "c7"]
+    assert len(plan.production) + len(plan.completion) <= 1
+    assert plan.production == plan.selection[: len(plan.production)]
+    assert plan.completion == plan.ready[: len(plan.completion)]
+    assert plan.to_dict() == {
+        "schema_version": 1,
+        "status": "work_available",
+        "production": [work.key for work in plan.production],
+        "completion": [change.key for change in plan.completion],
+    }
 
 
 def test_refill_combines_capacity_backpressure_and_stable_selection() -> None:

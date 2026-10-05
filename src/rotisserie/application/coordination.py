@@ -170,6 +170,14 @@ class DispatchPlan:
     capacity-bounded work to act on and may both be empty when eligible work is
     held back by WIP capacity or intake backpressure rather than being absent.
 
+    ``selection`` and ``ready`` record the full, uncapped sets the capacity-bounded
+    view was cut from: ``selection`` is every work eligible to start after intake
+    backpressure, and ``ready`` is every exact-head-ready change. ``production`` is
+    always a prefix of ``selection`` and ``completion`` a prefix of ``ready``.
+    :meth:`to_dict` serializes only the capacity-bounded view, so a consumer of
+    the serialized plan sees exactly the work to act on this tick; the uncapped
+    sets are for callers that also want the full planning picture.
+
     This value object only records the verdict. The obligation to exit early and
     cheaply on a trustworthy zero -- spinning up no worker, invoking no provider,
     and issuing no effect -- belongs to the caller that runs the tick. It ports,
@@ -181,6 +189,8 @@ class DispatchPlan:
     status: DispatchStatus
     production: tuple[WorkId, ...] = ()
     completion: tuple[ChangeId, ...] = ()
+    selection: tuple[WorkId, ...] = ()
+    ready: tuple[ChangeId, ...] = ()
 
     @property
     def has_work(self) -> bool:
@@ -252,26 +262,34 @@ class CoordinationService:
         but held back by WIP capacity or intake backpressure keeps the tick at
         :attr:`DispatchStatus.WORK_AVAILABLE` with capacity-bounded tuples that
         may be empty, so a congestion hold is never mislabeled a genuine idle.
+        The plan also records the full uncapped ``selection`` and ``ready`` sets
+        the bounded view was cut from, so one read serves both the bounded tick
+        plan and a full planning preview. Bad ``active`` or ``completion_backlog``
+        input fails closed before the read, regardless of graph state.
         """
 
         if active < 0:
             raise ValueError("active count cannot be negative")
+        if completion_backlog < 0:
+            raise ValueError("completion backlog cannot be negative")
         snapshot = self._port.read().snapshot
         candidates = ranked_implementation_work(snapshot, at=at)
         ready = _ready_changes(snapshot)
         if not candidates and not ready:
             return DispatchPlan(DispatchStatus.NO_ELIGIBLE_WORK)
-        production = _select(candidates, completion_backlog=completion_backlog, policy=policy)
+        selection = _select(candidates, completion_backlog=completion_backlog, policy=policy)
         capacity = allocate_capacity(
             completion_demand=len(ready),
-            production_demand=len(production),
+            production_demand=len(selection),
             active=active,
             policy=policy,
         )
         return DispatchPlan(
             DispatchStatus.WORK_AVAILABLE,
-            production=production[: capacity.production],
+            production=selection[: capacity.production],
             completion=ready[: capacity.completion],
+            selection=selection,
+            ready=ready,
         )
 
     def completion_drain(self, *, limit: int) -> tuple[ChangeId, ...]:

@@ -278,8 +278,8 @@ def _execute(
             command,
             "ok",
             wip_limit=wip_limit,
-            selected=[item.key for item in dispatch.production],
-            ready_changes=[item.key for item in dispatch.completion],
+            selected=[item.key for item in dispatch.selection],
+            ready_changes=[item.key for item in dispatch.ready[:wip_limit]],
             dispatch=dispatch.to_dict(),
         ), EXIT_OK
     if command == "doctor":

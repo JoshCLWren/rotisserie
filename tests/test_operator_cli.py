@@ -7,6 +7,24 @@ import sys
 from pathlib import Path
 
 from rotisserie.cli import EXIT_INVALID, EXIT_OK, EXIT_REJECTED, main
+from rotisserie.domain import (
+    Change,
+    ChangeId,
+    Check,
+    CheckId,
+    CheckStatus,
+    GraphSnapshot,
+    RepositoryId,
+    Review,
+    ReviewDecision,
+    ReviewId,
+    Revision,
+    RevisionId,
+    Work,
+    Worker,
+    WorkerId,
+    WorkId,
+)
 from rotisserie.operator import OperationJournal, load_config, redact
 
 EXAMPLE = Path(__file__).parents[1] / "examples" / "local"
@@ -114,6 +132,75 @@ expected = ["model:alpha", "model:beta"]
     code, output = invoke(capsys, config, "doctor")
     assert code == EXIT_OK
     assert output["checks"]["worker_inventory"] == "2 expected"  # type: ignore[index]
+
+
+def _write_custom_graph(tmp_path: Path, snapshot: GraphSnapshot) -> Path:
+    (tmp_path / "graph.json").write_text(json.dumps(snapshot.to_dict()), encoding="utf-8")
+    config = tmp_path / "config.toml"
+    config.write_text(
+        """schema_version = 1
+[repository]
+host = "example.test"
+owner = "rotisserie"
+name = "demo"
+[repositories]
+allow = [{ host = "example.test", owner = "rotisserie", name = "demo" }]
+[local]
+snapshot = "graph.json"
+state_directory = "state"
+mutations_enabled = false
+""",
+        encoding="utf-8",
+    )
+    return config
+
+
+def test_plan_envelope_keeps_flat_fields_uncapped_under_capacity_pressure(
+    capsys: object, tmp_path: Path
+) -> None:
+    repo = RepositoryId("example.test", "rotisserie", "demo")
+    producer = WorkerId("human", "producer")
+    reviewer = WorkerId("human", "reviewer")
+    eligible = [
+        Work(WorkId(repo, str(index)), f"Eligible {index}", priority=10 - index)
+        for index in range(1, 6)
+    ]
+    hosts: list[Work] = []
+    changes: list[Change] = []
+    revisions: list[Revision] = []
+    checks: list[Check] = []
+    reviews: list[Review] = []
+    for number in (6, 7):
+        work_id = WorkId(repo, str(number))
+        head = RevisionId(repo, f"head{number}")
+        hosts.append(Work(work_id, f"Change host {number}"))
+        changes.append(Change(ChangeId(repo, str(number)), work_id, head, producer))
+        revisions.append(Revision(head))
+        checks.append(Check(CheckId(head, "tests"), CheckStatus.PASSED))
+        reviews.append(Review(ReviewId(f"r{number}"), head, reviewer, ReviewDecision.APPROVED))
+    snapshot = GraphSnapshot(
+        works=tuple(eligible + hosts),
+        changes=tuple(changes),
+        revisions=tuple(revisions),
+        workers=(Worker(producer, human=True), Worker(reviewer, human=True)),
+        checks=tuple(checks),
+        reviews=tuple(reviews),
+    )
+    config = _write_custom_graph(tmp_path, snapshot)
+
+    code, output = invoke(capsys, config, "plan", "--at", "0", "--max-active", "1")
+
+    assert code == EXIT_OK
+    # Flat fields keep their pre-PR uncapped meaning: all five eligible works and
+    # the ready changes capped only by --max-active, never by WIP capacity.
+    assert output["selected"] == ["1", "2", "3", "4", "5"]
+    assert output["ready_changes"] == ["6"]
+    # The capacity-bounded view lives only under "dispatch".
+    dispatch = output["dispatch"]
+    assert isinstance(dispatch, dict)
+    assert dispatch["status"] == "work_available"
+    assert dispatch["production"] == []
+    assert dispatch["completion"] == ["6"]
 
 
 def test_decide_cli_projects_snapshot_without_initializing_graph_state(
