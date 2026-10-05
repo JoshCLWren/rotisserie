@@ -17,12 +17,38 @@ omitted.
 remote adapters must validate repository identity and credentials before an
 effect; this local entrypoint neither accepts nor reads remote credentials.
 
+### Worker inventory
+
+An optional `[workers]` table declares the worker inventory. The inventory is
+config-derived rather than a hard-coded ceiling: the default work-in-progress
+limit for `plan` and `dogfood` is the number of `expected` workers, so growing
+or shrinking the fleet is a configuration edit instead of a code change to a
+numeric maximum.
+
+```toml
+[workers]
+expected = ["model:alpha", "model:beta", { namespace = "human", value = "lead" }]
+scheduled = ["model:alpha"]
+retired = ["model:gamma"]
+```
+
+Each entry is either a `namespace:value` string or a `{ namespace, value }`
+table. `expected` lists the active workers and must be non-empty when the table
+is present. `retired` records identities removed from rotation; it must be
+disjoint from `expected` so a later roster entry cannot silently re-enroll a
+retired worker. `scheduled` marks the subset that participates in automatic
+dispatch and must be a subset of `expected`. Duplicate identities within any
+list are rejected. When the table is omitted, the WIP limit falls back to a
+single concurrent worker unless `--max-active` is supplied explicitly.
+
 ## Commands
 
 All commands emit one versioned JSON object on standard output.
 
 - `inspect` reports graph counts.
-- `plan` selects executable work and exact-head-ready changes.
+- `plan` selects executable work and exact-head-ready changes, reporting the
+  resolved `wip_limit`. The limit defaults to the configured worker inventory
+  size and can be overridden with `--max-active`.
 - `claim`, `run`, `review`, `complete`, and `recover` are mutating commands.
 - `doctor` validates local state and reports operation metrics; `--bundle`
   writes a redacted diagnostic file.

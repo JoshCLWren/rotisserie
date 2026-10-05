@@ -46,6 +46,7 @@ from rotisserie.domain import (
     SchedulingPolicy,
     WorkerId,
     WorkId,
+    resolve_wip_limit,
 )
 from rotisserie.operator import (
     ConfigurationError,
@@ -73,7 +74,12 @@ def parser() -> argparse.ArgumentParser:
     plan = subcommands.add_parser("plan", help="plan deterministic work selection")
     plan.add_argument("--at", type=int, required=True)
     plan.add_argument("--completion-backlog", type=int, default=0)
-    plan.add_argument("--max-active", type=int, default=1)
+    plan.add_argument(
+        "--max-active",
+        type=int,
+        default=None,
+        help="WIP ceiling; defaults to the configured worker inventory size",
+    )
     plan.add_argument("--reserved-review", type=int, default=0)
     plan.add_argument("--backlog-limit", type=int)
 
@@ -119,7 +125,12 @@ def parser() -> argparse.ArgumentParser:
         help="GitHub projection payload path, or - to read it from standard input",
     )
     dogfood.add_argument("--at", type=int, required=True)
-    dogfood.add_argument("--max-active", type=int, default=1)
+    dogfood.add_argument(
+        "--max-active",
+        type=int,
+        default=None,
+        help="WIP ceiling; defaults to the configured worker inventory size",
+    )
     dogfood.add_argument("--target", help="exact dry-run target as issue:NUMBER or change:NUMBER")
     dogfood.add_argument("--label", action="append", default=[])
     dogfood.add_argument("--state", choices=("open", "closed"), default="open")
@@ -238,19 +249,19 @@ def _execute(
             graph=_graph_summary(snapshot.to_dict()),
         ), EXIT_OK
     if command == "plan":
-        policy = SchedulingPolicy(
-            arguments.max_active, arguments.reserved_review, arguments.backlog_limit
-        )
+        wip_limit = resolve_wip_limit(config.workers, arguments.max_active)
+        policy = SchedulingPolicy(wip_limit, arguments.reserved_review, arguments.backlog_limit)
         selected = service.select(
             at=arguments.at,
             completion_backlog=arguments.completion_backlog,
             policy=policy,
         )
-        ready = service.completion_drain(limit=arguments.max_active)
+        ready = service.completion_drain(limit=wip_limit)
         return _envelope(
             correlation_id,
             command,
             "ok",
+            wip_limit=wip_limit,
             selected=[item.key for item in selected],
             ready_changes=[item.key for item in ready],
         ), EXIT_OK
@@ -261,6 +272,9 @@ def _execute(
             "repository_scope": "ok",
             "local_state": "ok",
             "mutations": "enabled" if config.mutations_enabled else "disabled",
+            "worker_inventory": (
+                f"{config.workers.size} expected" if config.workers is not None else "unconfigured"
+            ),
         }
         extra: dict[str, Any] = {"checks": checks, "metrics": journal.metrics()}
         if arguments.bundle:
@@ -363,10 +377,11 @@ def _dogfood(
     if not isinstance(raw, dict):
         raise ConfigurationError("dogfood payload root must be an object")
     snapshot = GitHubProjector(config.repository).project(raw)
+    wip_limit = resolve_wip_limit(config.workers, arguments.max_active)
     selected = CoordinationService(_ReadOnlyPort(snapshot)).select(
         at=arguments.at,
         completion_backlog=0,
-        policy=SchedulingPolicy(arguments.max_active),
+        policy=SchedulingPolicy(wip_limit),
     )
     evidence: dict[str, Any] = {
         "schema_version": 1,
@@ -374,6 +389,7 @@ def _dogfood(
         "repository": _repository_key(config),
         "payload_sha256": hashlib.sha256(raw_bytes).hexdigest(),
         "graph": _graph_summary(snapshot.to_dict()),
+        "wip_limit": wip_limit,
         "selected": [item.key for item in selected],
         "remote_mutation": False,
         "activation_approved": False,
