@@ -128,6 +128,25 @@ def test_missing_provenance_fails_closed_for_a_known_producer() -> None:
     assert two_eligible.satisfied
 
 
+def test_unknown_producer_with_recorded_provenance_still_requires_dual_review() -> None:
+    # Regression for the round-2 L1/B5 fail-open: an exact-head contributor
+    # record for one worker makes provenance "recorded", but when the producer
+    # is unknown the real producer is unexcluded and could self-approve. The
+    # single-reviewer path must therefore stay closed until the producer is known.
+    verdict = evaluate_review_independence(
+        signals(
+            contributors=frozenset({worker("59")}),
+            approvers=frozenset({worker("18")}),
+            producer=None,
+            provenance_recorded=True,
+        )
+    )
+    assert not verdict.satisfied
+    assert verdict.required_reviewers == DUAL_REVIEWER
+    assert verdict.exclusions == (ReviewIndependenceBlock.INDEPENDENT_REVIEW_UNRECORDED,)
+    assert "producer is unknown" in verdict.reasons[0]
+
+
 def test_no_approvals_fail_closed() -> None:
     verdict = evaluate_review_independence(signals(provenance_recorded=True))
     assert not verdict.satisfied

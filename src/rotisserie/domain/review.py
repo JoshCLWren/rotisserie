@@ -74,13 +74,15 @@ class ReviewIndependenceSignals:
             from reviewing the head.
         approvers: The distinct workers who attested an approval for this exact
             revision. Approvals for any other head do not belong here.
-        producer: The declared producer identity recovered from durable
-            provenance, if known. The producer is always excluded from the
-            eligible reviewer set.
+        producer: The attested producer identity recovered from durable
+            provenance, or ``None`` when the producer is unknown or unattested.
+            The producer is always excluded from the eligible reviewer set, and
+            single-reviewer authorization requires it to be known so the real
+            producer cannot slip through unexcluded.
         provenance_recorded: Whether a trusted contributor record exists for this
-            exact revision. ``True`` means the lineage of the head is accounted
-            for and one eligible reviewer authorizes it. ``False`` means the
-            record is missing or ambiguous and review fails closed to two
+            exact revision. A single eligible reviewer authorizes the head only
+            when provenance is recorded *and* the producer is known; otherwise
+            the record is missing or ambiguous and review fails closed to two
             distinct eligible reviewers.
     """
 
@@ -133,14 +135,18 @@ def evaluate_review_independence(
     """Decide whether exact-head approvals satisfy worker-independent review.
 
     The rule fails closed: a reviewer is eligible only when absent from the
-    exact-head contributor set, and recorded provenance determines whether one
-    eligible reviewer suffices or two distinct eligible reviewers are required.
-    Reasons are emitted in a fixed order so verdicts are deterministic for
-    identical signals.
+    exact-head contributor set. A single eligible reviewer authorizes the head
+    only when provenance is recorded *and* the producer is known; when the
+    producer is unknown or unattested, or provenance is unrecorded, two distinct
+    eligible reviewers are required so an unexcluded producer cannot
+    self-authorize its own head. Reasons are emitted in a fixed order so
+    verdicts are deterministic for identical signals.
     """
 
     eligible = signals.eligible_reviewers()
-    required = SINGLE_REVIEWER if signals.provenance_recorded else DUAL_REVIEWER
+    producer_known = signals.producer is not None
+    single_reviewer_authorized = signals.provenance_recorded and producer_known
+    required = SINGLE_REVIEWER if single_reviewer_authorized else DUAL_REVIEWER
     exclusions: list[ReviewIndependenceBlock] = []
     reasons: list[str] = []
 
@@ -149,9 +155,14 @@ def evaluate_review_independence(
         reasons.append("no approver is independent of the exact-head contributor set")
     elif len(eligible) < required:
         exclusions.append(ReviewIndependenceBlock.INDEPENDENT_REVIEW_UNRECORDED)
+        detail = (
+            "exact-head provenance is unrecorded"
+            if not signals.provenance_recorded
+            else "the exact-head producer is unknown"
+        )
         reasons.append(
-            "exact-head provenance is unrecorded: two distinct independent "
-            f"reviewers are required but only {len(eligible)} approved"
+            f"{detail}: two distinct independent reviewers are required but only "
+            f"{len(eligible)} of the approvers are independent"
         )
 
     satisfied = not exclusions
