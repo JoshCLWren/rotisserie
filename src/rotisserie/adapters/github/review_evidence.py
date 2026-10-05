@@ -259,12 +259,14 @@ class GitHubReviewEvidence:
         approvers, the authoritative producer, and whether a trusted record
         exists for this exact head. The whole collection is read-only.
 
-        The producer is taken from the identity attested in the exact-head review
-        markers rather than from the ``producer`` parameter. The parameter is an
-        optional cross-check: when supplied it must agree with the attestation or
-        the collection fails closed. Contradictory attestations for one head also
-        fail closed. This prevents a producer with no recorded contribution from
-        slipping through as its own eligible reviewer.
+        Only a producer attested in the exact-head review markers can authorize
+        single review: the returned ``producer_attested`` is ``True`` only for
+        that case. The ``producer`` parameter is an optional cross-check that
+        must agree with the attestation or the collection fails closed; on its
+        own, with nothing attested, it is still excluded from eligible reviewers
+        but never satisfies single-review authorization. Contradictory
+        attestations for one head also fail closed. This keeps a producer with no
+        recorded contribution from slipping through as its own eligible reviewer.
         """
 
         if pr <= 0:
@@ -290,5 +292,6 @@ class GitHubReviewEvidence:
             contributors=frozenset(self._worker(worker) for worker in scan.lineage),
             approvers=frozenset(self._worker(worker) for worker in scan.approvers),
             producer=self._worker(authoritative) if authoritative else None,
+            producer_attested=attested is not None,
             provenance_recorded=bool(scan.exact_contributors),
         )

@@ -194,10 +194,31 @@ def test_collected_signals_drive_the_domain_rule_end_to_end() -> None:
         ),
     ]
     collected = evidence.collect(comments, pr=7, head=HEAD, producer="29")
+    assert collected.producer_attested
     verdict = evaluate_review_independence(collected)
     assert verdict.satisfied
     assert verdict.eligible_reviewers == frozenset({worker("17")})
     assert verdict.revision == collected.revision
+
+
+def test_caller_producer_without_attestation_cannot_authorize_single_review() -> None:
+    # Round-3 V1/L1 (a): a caller-supplied producer with nothing attested is a
+    # cross-check only. It is excluded, but must not downgrade the fail-closed
+    # dual-review requirement to a single reviewer.
+    evidence = collector()
+    comments = [
+        bot_comment(contributor_marker(pr=7, head=HEAD, worker="59")),
+        bot_comment(
+            review_marker(pr=7, head=HEAD, reviewer="18", producer="unknown", verdict="approve")
+        ),
+    ]
+    collected = evidence.collect(comments, pr=7, head=HEAD, producer="29")
+    assert collected.producer == worker("29")
+    assert not collected.producer_attested
+    assert collected.provenance_recorded
+    verdict = evaluate_review_independence(collected)
+    assert not verdict.satisfied
+    assert verdict.required_reviewers == 2
 
 
 @pytest.mark.parametrize(
@@ -359,4 +380,5 @@ def test_unknown_attested_producer_defers_to_the_declared_cross_check() -> None:
     ]
     collected = evidence.collect(comments, pr=7, head=HEAD, producer="29")
     assert collected.producer == worker("29")
+    assert not collected.producer_attested
     assert collected.approvers == frozenset({worker("17")})
