@@ -23,12 +23,13 @@ def signals(**kwargs: object) -> ReviewIndependenceSignals:
     return ReviewIndependenceSignals(**base)  # type: ignore[arg-type]
 
 
-def test_recorded_provenance_authorizes_a_single_independent_reviewer() -> None:
+def test_attested_producer_with_recorded_provenance_authorizes_single_review() -> None:
     verdict = evaluate_review_independence(
         signals(
             contributors=frozenset({worker("18")}),
             approvers=frozenset({worker("19")}),
             producer=worker("18"),
+            producer_attested=True,
             provenance_recorded=True,
         )
     )
@@ -90,6 +91,7 @@ def test_repairer_in_lineage_cannot_approve_a_later_head() -> None:
             contributors=contributors,
             approvers=frozenset({worker("59")}),
             producer=worker("29"),
+            producer_attested=True,
             provenance_recorded=True,
         )
     )
@@ -99,6 +101,7 @@ def test_repairer_in_lineage_cannot_approve_a_later_head() -> None:
             contributors=contributors,
             approvers=frozenset({worker("17")}),
             producer=worker("29"),
+            producer_attested=True,
             provenance_recorded=True,
         )
     )
@@ -132,7 +135,8 @@ def test_unknown_producer_with_recorded_provenance_still_requires_dual_review() 
     # Regression for the round-2 L1/B5 fail-open: an exact-head contributor
     # record for one worker makes provenance "recorded", but when the producer
     # is unknown the real producer is unexcluded and could self-approve. The
-    # single-reviewer path must therefore stay closed until the producer is known.
+    # single-reviewer path must therefore stay closed until the producer is
+    # attested, and the cause carries its own stable code (round-3 C1/V2).
     verdict = evaluate_review_independence(
         signals(
             contributors=frozenset({worker("59")}),
@@ -143,8 +147,46 @@ def test_unknown_producer_with_recorded_provenance_still_requires_dual_review() 
     )
     assert not verdict.satisfied
     assert verdict.required_reviewers == DUAL_REVIEWER
-    assert verdict.exclusions == (ReviewIndependenceBlock.INDEPENDENT_REVIEW_UNRECORDED,)
-    assert "producer is unknown" in verdict.reasons[0]
+    assert verdict.exclusions == (ReviewIndependenceBlock.INDEPENDENT_REVIEW_PRODUCER_UNKNOWN,)
+    assert "producer is unattested" in verdict.reasons[0]
+
+
+def test_unattested_caller_producer_cannot_authorize_single_review() -> None:
+    # Round-3 V1/L1: a producer that is present but not attested by exact-head
+    # evidence (for example a caller-supplied cross-check) is still excluded, but
+    # must not by itself downgrade the fail-closed dual-review requirement.
+    verdict = evaluate_review_independence(
+        signals(
+            contributors=frozenset({worker("59")}),
+            approvers=frozenset({worker("18")}),
+            producer=worker("29"),
+            producer_attested=False,
+            provenance_recorded=True,
+        )
+    )
+    assert not verdict.satisfied
+    assert verdict.required_reviewers == DUAL_REVIEWER
+    assert verdict.exclusions == (ReviewIndependenceBlock.INDEPENDENT_REVIEW_PRODUCER_UNKNOWN,)
+
+
+def test_unrecorded_and_unattested_causes_use_distinct_stable_codes() -> None:
+    # Round-3 C1/V2: the machine-readable code must match the cause.
+    unrecorded = evaluate_review_independence(
+        signals(approvers=frozenset({worker("19")}), provenance_recorded=False)
+    )
+    assert unrecorded.exclusions == (ReviewIndependenceBlock.INDEPENDENT_REVIEW_UNRECORDED,)
+    assert "provenance is unrecorded" in unrecorded.reasons[0]
+
+    unattested = evaluate_review_independence(
+        signals(
+            approvers=frozenset({worker("19")}),
+            producer=worker("29"),
+            producer_attested=False,
+            provenance_recorded=True,
+        )
+    )
+    assert unattested.exclusions == (ReviewIndependenceBlock.INDEPENDENT_REVIEW_PRODUCER_UNKNOWN,)
+    assert "producer is unattested" in unattested.reasons[0]
 
 
 def test_no_approvals_fail_closed() -> None:
