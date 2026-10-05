@@ -151,6 +151,49 @@ class RefillDecision:
     production: tuple[WorkId, ...]
 
 
+class DispatchStatus(StrEnum):
+    """Whether one dispatcher planning tick found work to act on."""
+
+    NO_ELIGIBLE_WORK = "no_eligible_work"
+    WORK_AVAILABLE = "work_available"
+
+
+@dataclass(frozen=True)
+class DispatchPlan:
+    """The outcome of one dispatcher planning tick.
+
+    A :attr:`DispatchStatus.NO_ELIGIBLE_WORK` tick is a *trustworthy zero*: after
+    reading the graph once, eligibility evaluation found no implementation work
+    to start and no exact-head-ready change to drain. The dispatcher must then
+    exit early and cheaply for this tick -- it spins up no worker, invokes no
+    provider or model, and issues no coordination effect. This mirrors, as
+    provider-neutral policy, ComicPile's dispatcher behavior of ending a bounded
+    session on a trustworthy zero-work tick instead of chaining a successor.
+
+    A :attr:`DispatchStatus.WORK_AVAILABLE` tick carries the capacity-bounded
+    work to act on. ``production`` and ``completion`` may still be empty when
+    eligible work exists but no WIP capacity remains; that is a capacity-bound
+    tick, not a trustworthy zero, so the caller should not treat it as a reason
+    to end the session.
+    """
+
+    status: DispatchStatus
+    completion: tuple[ChangeId, ...] = ()
+    production: tuple[WorkId, ...] = ()
+
+    @property
+    def has_work(self) -> bool:
+        return self.status is DispatchStatus.WORK_AVAILABLE
+
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "schema_version": 1,
+            "status": self.status,
+            "production": [item.key for item in self.production],
+            "completion": [item.key for item in self.completion],
+        }
+
+
 class CoordinationService:
     """Execute application operations with mutation-boundary revalidation."""
 
@@ -161,14 +204,7 @@ class CoordinationService:
         self, *, at: int, completion_backlog: int, policy: SchedulingPolicy
     ) -> tuple[WorkId, ...]:
         snapshot = self._port.read().snapshot
-        decisions = tuple(
-            implementation_decision(snapshot, work.id, at=at)
-            for work in ranked_implementation_work(snapshot, at=at)
-        )
-        pressured = apply_intake_pressure(
-            decisions, completion_backlog=completion_backlog, policy=policy
-        )
-        return tuple(decision.work for decision in pressured if decision.eligible)
+        return _select(snapshot, at=at, completion_backlog=completion_backlog, policy=policy)
 
     def refill(
         self,
@@ -188,18 +224,49 @@ class CoordinationService:
         )
         return RefillDecision(capacity.completion, production[: capacity.production])
 
+    def dispatch_plan(
+        self,
+        *,
+        at: int,
+        active: int,
+        completion_backlog: int,
+        policy: SchedulingPolicy,
+    ) -> DispatchPlan:
+        """Plan one dispatcher tick, short-circuiting on a trustworthy zero.
+
+        The graph is read exactly once. Both the eligible production selection
+        and the exact-head-ready completion drain are derived from that single
+        snapshot. When neither yields any work, the tick is a trustworthy zero:
+        the plan reports :attr:`DispatchStatus.NO_ELIGIBLE_WORK` without
+        allocating capacity, spinning up a worker, invoking a provider, reading
+        further, or issuing any effect. Otherwise capacity is allocated and the
+        bounded work to act on is returned.
+        """
+
+        snapshot = self._port.read().snapshot
+        production = _select(snapshot, at=at, completion_backlog=completion_backlog, policy=policy)
+        ready = _ready_changes(snapshot)
+        if not production and not ready:
+            return DispatchPlan(DispatchStatus.NO_ELIGIBLE_WORK)
+        capacity = allocate_capacity(
+            completion_demand=len(ready),
+            production_demand=len(production),
+            active=active,
+            policy=policy,
+        )
+        return DispatchPlan(
+            DispatchStatus.WORK_AVAILABLE,
+            ready[: capacity.completion],
+            production[: capacity.production],
+        )
+
     def completion_drain(self, *, limit: int) -> tuple[ChangeId, ...]:
         """Select exact-head-ready changes in stable identity order."""
 
         if limit < 0:
             raise ValueError("completion drain limit cannot be negative")
         snapshot = self._port.read().snapshot
-        ready = (
-            change.id
-            for change in sorted(snapshot.changes, key=lambda item: item.id)
-            if readiness_decision(snapshot, change.id).ready
-        )
-        return tuple(ready)[:limit]
+        return _ready_changes(snapshot)[:limit]
 
     def claim(self, lease: Lease, *, operation: str, at: int) -> OperationResult:
         view = self._port.read()
@@ -351,6 +418,27 @@ class CoordinationService:
         return OperationResult(
             command.operation, OperationStatus.APPLIED, (command.idempotency_key,)
         )
+
+
+def _select(
+    snapshot: GraphSnapshot, *, at: int, completion_backlog: int, policy: SchedulingPolicy
+) -> tuple[WorkId, ...]:
+    decisions = tuple(
+        implementation_decision(snapshot, work.id, at=at)
+        for work in ranked_implementation_work(snapshot, at=at)
+    )
+    pressured = apply_intake_pressure(
+        decisions, completion_backlog=completion_backlog, policy=policy
+    )
+    return tuple(decision.work for decision in pressured if decision.eligible)
+
+
+def _ready_changes(snapshot: GraphSnapshot) -> tuple[ChangeId, ...]:
+    return tuple(
+        change.id
+        for change in sorted(snapshot.changes, key=lambda item: item.id)
+        if readiness_decision(snapshot, change.id).ready
+    )
 
 
 def _rejected(

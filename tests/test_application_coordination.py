@@ -4,6 +4,8 @@ from dataclasses import replace
 
 from rotisserie.application import (
     CoordinationService,
+    DispatchPlan,
+    DispatchStatus,
     EffectCommand,
     EffectConflict,
     EffectKind,
@@ -201,6 +203,75 @@ def test_recovery_releases_expired_and_preserves_live_leases() -> None:
     result = CoordinationService(port).recover(operation="recover", at=10)
     assert result.status is OperationStatus.APPLIED
     assert port.snapshot.leases == (live,)
+
+
+class CountingPort(FakePort):
+    """A fake that records how many times its graph was read."""
+
+    def __init__(self, snapshot: GraphSnapshot) -> None:
+        super().__init__(snapshot)
+        self.reads = 0
+
+    def read(self) -> GraphView:
+        self.reads += 1
+        return super().read()
+
+
+def test_dispatch_plan_short_circuits_on_trustworthy_zero_work() -> None:
+    port = CountingPort(replace(base_snapshot(), works=(), changes=()))
+    plan = CoordinationService(port).dispatch_plan(
+        at=10, active=0, completion_backlog=0, policy=SchedulingPolicy(3)
+    )
+    assert plan == DispatchPlan(DispatchStatus.NO_ELIGIBLE_WORK)
+    assert plan.has_work is False
+    assert port.reads == 1
+    assert port.calls == []
+    assert plan.to_dict() == {
+        "schema_version": 1,
+        "status": "no_eligible_work",
+        "production": [],
+        "completion": [],
+    }
+
+
+def test_dispatch_plan_reports_zero_work_when_all_work_is_ineligible() -> None:
+    lease = Lease(LeaseId("lease"), WORK, PRODUCER, 0, 100)
+    port = CountingPort(replace(base_snapshot(), leases=(lease,)))
+    plan = CoordinationService(port).dispatch_plan(
+        at=10, active=0, completion_backlog=0, policy=SchedulingPolicy(3)
+    )
+    assert plan.status is DispatchStatus.NO_ELIGIBLE_WORK
+    assert plan.has_work is False
+    assert port.calls == []
+
+
+def test_dispatch_plan_returns_bounded_production_when_work_is_eligible() -> None:
+    plan = CoordinationService(FakePort(base_snapshot())).dispatch_plan(
+        at=0, active=0, completion_backlog=0, policy=SchedulingPolicy(3)
+    )
+    assert plan.status is DispatchStatus.WORK_AVAILABLE
+    assert plan.has_work is True
+    assert plan.production == (WORK,)
+    assert plan.completion == ()
+
+
+def test_dispatch_plan_reports_ready_completion_without_production() -> None:
+    plan = CoordinationService(FakePort(base_snapshot(ready=True))).dispatch_plan(
+        at=0, active=0, completion_backlog=0, policy=SchedulingPolicy(3, reserved_review=1)
+    )
+    assert plan.status is DispatchStatus.WORK_AVAILABLE
+    assert plan.production == ()
+    assert plan.completion == (CHANGE,)
+
+
+def test_dispatch_plan_distinguishes_capacity_pressure_from_zero_work() -> None:
+    plan = CoordinationService(FakePort(base_snapshot())).dispatch_plan(
+        at=0, active=1, completion_backlog=0, policy=SchedulingPolicy(1)
+    )
+    assert plan.status is DispatchStatus.WORK_AVAILABLE
+    assert plan.has_work is True
+    assert plan.production == ()
+    assert plan.completion == ()
 
 
 def test_refill_combines_capacity_backpressure_and_stable_selection() -> None:
