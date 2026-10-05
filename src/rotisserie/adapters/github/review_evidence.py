@@ -28,6 +28,23 @@ markers, not from the optional caller parameter. A declared producer that
 contradicts the attested one, or contradictory attestations for the same head,
 fail closed. This prevents a producer with no recorded contribution from
 appearing as its own eligible reviewer.
+
+Identity normalization and the sentinel (one place)
+----------------------------------------------------
+
+Every identity token (``worker``, ``reviewer``, ``producer``) crosses the trust
+boundary from prose a worker can influence, so each is normalized exactly once,
+by :func:`_normalize_identity` (strip then casefold), before any comparison or
+``WorkerId`` construction. This keeps exclusion case-insensitive, so ``Alice``
+cannot dodge exclusion by reviewing as ``alice``.
+
+The literal ``unknown`` (in any casing or surrounding whitespace) is a reserved
+sentinel that no worker may own:
+
+* On ``producer`` it means "no known producer": it is never recorded as an
+  attestation, so it can never raise ``producer_attested``.
+* On ``worker`` or ``reviewer`` it fails closed: the record is dropped, so a
+  sentinel-named identity establishes no provenance and casts no approval.
 """
 
 from __future__ import annotations
@@ -45,17 +62,33 @@ from rotisserie.domain import (
 )
 
 _NAMESPACE_RE = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
+# The reserved "no known producer" sentinel, matched case-insensitively on every
+# identity field after normalization.
 _UNKNOWN_PRODUCER = "unknown"
-# A worker/reviewer identity token. Every identity is immediately followed by a
-# ``:`` delimiter in the marker grammar, so the negative lookahead reserves the
-# bare ``unknown`` sentinel: a worker literally named ``unknown`` cannot be
-# encoded as an identity and its markers simply fail to match (fail closed),
-# while ``producer`` still accepts ``unknown`` as the "no known producer" value.
-_IDENTITY = r"(?!unknown:)[^:\s>]+"
+# One permissive identity token for every field; the sentinel reservation and
+# case-insensitive normalization are enforced in code (see _normalize_identity),
+# not in the regex, so there is a single place that owns identity policy.
 _TOKEN = r"[^:\s>]+"
 _DEFAULT_VERDICTS = frozenset(
     {"approve", "repair", "reject", "obsolete", "duplicate", "superseded", "delivered"}
 )
+
+
+def _normalize_identity(token: str) -> str:
+    """Return the single canonical form of one identity token (strip, casefold).
+
+    Every worker, reviewer, and producer value is normalized through here before
+    any equality check or ``WorkerId`` construction, so sentinel detection and
+    exclusion are case- and whitespace-insensitive in exactly one place.
+    """
+
+    return token.strip().casefold()
+
+
+def _is_sentinel(token: str) -> bool:
+    """Return whether a token is the reserved ``unknown`` sentinel after normalizing."""
+
+    return _normalize_identity(token) == _UNKNOWN_PRODUCER
 
 
 class ReviewEvidenceError(ValueError):
@@ -164,25 +197,34 @@ class GitHubReviewEvidence:
         self._contributor_re = re.compile(
             rf"^<!-- {escaped}-head-contributor-v1:"
             rf"pr-(?P<pr>\d+):head-(?P<head>[0-9a-f]{{40}}):"
-            rf"worker-(?P<worker>{_IDENTITY}):epoch-(?P<epoch>\d+) -->$"
+            rf"worker-(?P<worker>{_TOKEN}):epoch-(?P<epoch>\d+) -->$"
         )
         self._review_re = re.compile(
             rf"^<!-- {escaped}-semantic-review-v1:"
             rf"pr-(?P<pr>\d+):head-(?P<head>[0-9a-f]{{40}}):"
-            rf"reviewer-(?P<reviewer>{_IDENTITY}):producer-(?P<producer>{_TOKEN}):"
+            rf"reviewer-(?P<reviewer>{_TOKEN}):producer-(?P<producer>{_TOKEN}):"
             rf"verdict-(?P<verdict>{verdict_alternation}) -->$"
         )
 
     def parse_head_contributor_marker(self, line: str) -> HeadContributorMarker | None:
-        """Parse one exact head-contributor marker line, or return ``None``."""
+        """Parse one head-contributor marker line, or return ``None``.
+
+        ``None`` is returned both for a line that is not a well-formed marker and
+        for one whose worker is the reserved ``unknown`` sentinel (in any
+        casing), since no contributor may own that identity. The returned
+        ``worker`` is normalized (stripped and casefolded).
+        """
 
         match = self._contributor_re.fullmatch(line.strip())
         if match is None:
             return None
+        worker = _normalize_identity(match["worker"])
+        if worker == _UNKNOWN_PRODUCER:
+            return None
         return HeadContributorMarker(
             pr=int(match["pr"]),
             head=match["head"],
-            worker=match["worker"],
+            worker=worker,
             epoch=int(match["epoch"]),
         )
 
@@ -204,11 +246,14 @@ class GitHubReviewEvidence:
         return bodies
 
     def _scan(self, bodies: Iterable[str], *, pr: int, head: str) -> _ReviewScan:
-        """Derive every evidence set in one guarded pass over the trusted bodies.
+        """Derive every evidence set in one guarded, normalized pass over bodies.
 
         A single whole-body forgery guard protects both marker families, so the
         contributor and approval anti-forgery rules cannot drift apart, and each
-        body is matched against each marker regex at most once.
+        body is matched against each marker regex at most once. Every identity is
+        normalized through :func:`_normalize_identity`; a sentinel-valued worker
+        or reviewer drops its record (fail closed), and a sentinel-valued
+        producer is simply not recorded as an attestation.
         """
 
         lineage: set[str] = set()
@@ -223,17 +268,24 @@ class GitHubReviewEvidence:
             if contributor is not None:
                 if int(contributor["pr"]) != pr:
                     continue
-                lineage.add(contributor["worker"])
+                worker = _normalize_identity(contributor["worker"])
+                if worker == _UNKNOWN_PRODUCER:
+                    continue
+                lineage.add(worker)
                 if contributor["head"] == head:
-                    exact_contributors.add(contributor["worker"])
+                    exact_contributors.add(worker)
                 continue
             review = self._review_re.fullmatch(stripped)
             if review is None or int(review["pr"]) != pr or review["head"] != head:
                 continue
-            if review["producer"] != _UNKNOWN_PRODUCER:
-                attested_producers.add(review["producer"])
+            reviewer = _normalize_identity(review["reviewer"])
+            if reviewer == _UNKNOWN_PRODUCER:
+                continue
+            producer = _normalize_identity(review["producer"])
+            if producer != _UNKNOWN_PRODUCER:
+                attested_producers.add(producer)
             if review["verdict"] == "approve":
-                approvers.add(review["reviewer"])
+                approvers.add(reviewer)
         return _ReviewScan(
             frozenset(lineage),
             frozenset(exact_contributors),
@@ -267,6 +319,14 @@ class GitHubReviewEvidence:
         but never satisfies single-review authorization. Contradictory
         attestations for one head also fail closed. This keeps a producer with no
         recorded contribution from slipping through as its own eligible reviewer.
+
+        Raises:
+            ReviewEvidenceError: if ``pr`` is not positive; if ``head`` is not an
+                exact 40-character hexadecimal revision; if the ``producer``
+                cross-check is empty or is the reserved ``unknown`` sentinel; if
+                a comment is not an object; if more than one distinct producer is
+                attested for the exact head; or if the ``producer`` cross-check
+                contradicts the attested producer.
         """
 
         if pr <= 0:
@@ -274,9 +334,13 @@ class GitHubReviewEvidence:
         head = head.strip().lower()
         if len(head) != 40 or any(character not in "0123456789abcdef" for character in head):
             raise ReviewEvidenceError("head must be a 40-character hexadecimal revision")
-        declared = producer.strip() if producer is not None else None
-        if declared == "":
-            raise ReviewEvidenceError("producer, when provided, must be a non-empty token")
+        declared: str | None = None
+        if producer is not None:
+            declared = _normalize_identity(producer)
+            if declared == "":
+                raise ReviewEvidenceError("producer, when provided, must be a non-empty token")
+            if declared == _UNKNOWN_PRODUCER:
+                raise ReviewEvidenceError("producer cross-check cannot be the unknown sentinel")
         bodies = self.trusted_bodies(comments)
         scan = self._scan(bodies, pr=pr, head=head)
         if len(scan.attested_producers) > 1:

@@ -382,3 +382,92 @@ def test_unknown_attested_producer_defers_to_the_declared_cross_check() -> None:
     assert collected.producer == worker("29")
     assert not collected.producer_attested
     assert collected.approvers == frozenset({worker("17")})
+
+
+# Round-4 holistic sweep: sentinel casings/variants across every identity field
+# must never yield a satisfied single-reviewer verdict.
+SENTINEL_PROBES = ["unknown", "Unknown", "UNKNOWN", " unknown ", "unknown2"]
+
+
+@pytest.mark.parametrize("probe", SENTINEL_PROBES)
+def test_sentinel_probe_on_producer_and_reviewer_never_authorizes_single_review(
+    probe: str,
+) -> None:
+    # The probe is the self-approving producer/reviewer. If it is read as the
+    # sentinel, producer_attested stays False and dual review is required; if it
+    # is a real identity, it is excluded as its own producer. Either way, never
+    # a single-reviewer satisfy.
+    evidence = collector()
+    comments = [
+        bot_comment(contributor_marker(pr=7, head=HEAD, worker="59")),
+        bot_comment(
+            review_marker(pr=7, head=HEAD, reviewer=probe, producer=probe, verdict="approve")
+        ),
+    ]
+    collected = evidence.collect(comments, pr=7, head=HEAD)
+    verdict = evaluate_review_independence(collected)
+    assert not verdict.satisfied
+
+
+@pytest.mark.parametrize("probe", ["unknown", "Unknown", "UNKNOWN"])
+def test_sentinel_cased_worker_establishes_no_provenance(probe: str) -> None:
+    evidence = collector()
+    assert (
+        evidence.parse_head_contributor_marker(contributor_marker(pr=7, head=HEAD, worker=probe))
+        is None
+    )
+    collected = evidence.collect(
+        [bot_comment(contributor_marker(pr=7, head=HEAD, worker=probe))], pr=7, head=HEAD
+    )
+    assert collected.contributors == frozenset()
+    assert not collected.provenance_recorded
+
+
+@pytest.mark.parametrize("probe", SENTINEL_PROBES)
+def test_sentinel_probe_as_caller_cross_check_is_handled_closed(probe: str) -> None:
+    # A caller cross-check that normalizes to the sentinel must fail closed; a
+    # real identity cross-check that contradicts no attestation is accepted but,
+    # with nothing attested, still requires dual review.
+    evidence = collector()
+    comments = [bot_comment(contributor_marker(pr=7, head=HEAD, worker="59"))]
+    if probe.strip().casefold() == "unknown":
+        with pytest.raises(ReviewEvidenceError):
+            evidence.collect(comments, pr=7, head=HEAD, producer=probe)
+        return
+    collected = evidence.collect(comments, pr=7, head=HEAD, producer=probe)
+    assert not collected.producer_attested
+    assert not evaluate_review_independence(collected).satisfied
+
+
+def test_case_variant_reviewer_cannot_dodge_contributor_exclusion() -> None:
+    # Round-4 L1: normalized exclusion means a contributor recorded as "Alice"
+    # cannot approve its own head by reviewing as "alice".
+    evidence = collector()
+    comments = [
+        bot_comment(contributor_marker(pr=7, head=HEAD, worker="Alice")),
+        bot_comment(
+            review_marker(pr=7, head=HEAD, reviewer="alice", producer="29", verdict="approve")
+        ),
+    ]
+    collected = evidence.collect(comments, pr=7, head=HEAD, producer="29")
+    assert collected.contributors == frozenset({worker("alice")})
+    verdict = evaluate_review_independence(collected)
+    assert not verdict.satisfied
+
+
+def test_case_variant_producer_sentinel_is_not_attested() -> None:
+    # Round-4 L1: a case-variant producer sentinel must not read as attested and
+    # must not downgrade to single review.
+    evidence = collector()
+    comments = [
+        bot_comment(contributor_marker(pr=7, head=HEAD, worker="59")),
+        bot_comment(
+            review_marker(pr=7, head=HEAD, reviewer="18", producer="Unknown", verdict="approve")
+        ),
+    ]
+    collected = evidence.collect(comments, pr=7, head=HEAD)
+    assert collected.producer is None
+    assert not collected.producer_attested
+    verdict = evaluate_review_independence(collected)
+    assert not verdict.satisfied
+    assert verdict.required_reviewers == 2
