@@ -312,9 +312,9 @@ with no numeric maximum compiled into code.
 ## Appendix: 2026-10 drift inventory
 
 The legacy snapshot under `reference/legacy-factory/` is pinned to ComicPile
-`2dc9b675…` (2026-09-25). ComicPile has continued to run live since then. A
-documentation-only drift inventory comparing that baseline against ComicPile
-HEAD `c2e40a34…` (2026-10-05) — verified read-only against the public
+`2dc9b675e1a8` (2026-09-26 UTC). ComicPile has continued to run live since then.
+A documentation-only drift inventory comparing that baseline against ComicPile
+HEAD `c2e40a34b5e2` (2026-10-05 UTC) — verified read-only against the public
 `JoshCLWren/comic-pile` history — lives in
 [`docs/migration/drift-2026-10.md`](docs/migration/drift-2026-10.md). It records
 the commit and file counts, the adopt/adapt/skip classification with commit
