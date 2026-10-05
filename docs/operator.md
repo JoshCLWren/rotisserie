@@ -33,13 +33,18 @@ retired = ["model:gamma"]
 ```
 
 Each entry is either a `namespace:value` string or a `{ namespace, value }`
-table. `expected` lists the active workers and must be non-empty when the table
-is present. `retired` records identities removed from rotation; it must be
-disjoint from `expected` so a later roster entry cannot silently re-enroll a
-retired worker. `scheduled` marks the subset that participates in automatic
-dispatch and must be a subset of `expected`. Duplicate identities within any
-list are rejected. When the table is omitted, the WIP limit falls back to a
-single concurrent worker unless `--max-active` is supplied explicitly.
+table; neither the namespace nor the value may contain a colon, so both forms
+canonicalize to the same identity. `expected` lists the active workers and must
+be non-empty when the table is present. `retired` records identities removed
+from rotation; it must be disjoint from `expected` so a later roster entry
+cannot silently re-enroll a retired worker. `scheduled` is a
+declared-but-not-yet-enforced subset of `expected`: it records which workers an
+operator intends for automatic dispatch, but no command consumes it today and
+the WIP ceiling still derives from the full `expected` size. This mirrors the
+deferred `decide`/`shadow-project` parity boundary. Duplicate identities within
+any list are rejected. When the table is omitted, the WIP limit falls back to a
+single concurrent worker unless `--wip-limit` (also spelled `--max-active`) is
+supplied explicitly.
 
 ## Commands
 
@@ -48,7 +53,7 @@ All commands emit one versioned JSON object on standard output.
 - `inspect` reports graph counts.
 - `plan` selects executable work and exact-head-ready changes, reporting the
   resolved `wip_limit`. The limit defaults to the configured worker inventory
-  size and can be overridden with `--max-active`.
+  size and can be overridden with `--wip-limit` (also spelled `--max-active`).
 - `claim`, `run`, `review`, `complete`, and `recover` are mutating commands.
 - `doctor` validates local state and reports operation metrics; `--bundle`
   writes a redacted diagnostic file.

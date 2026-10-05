@@ -89,6 +89,10 @@ expected = ["model:alpha", "model:beta", "model:gamma"]
     assert code == EXIT_OK
     assert override["wip_limit"] == 1
 
+    code, canonical = invoke(capsys, config, "plan", "--at", "10", "--wip-limit", "2")
+    assert code == EXIT_OK
+    assert canonical["wip_limit"] == 2
+
 
 def test_plan_wip_limit_defaults_to_one_without_inventory(capsys: object, tmp_path: Path) -> None:
     config = local_example(tmp_path)

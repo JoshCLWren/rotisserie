@@ -102,7 +102,9 @@ def _worker_set(raw: Mapping[str, Any], field: str, *, required: bool) -> frozen
         if required:
             raise ConfigurationError(f"workers.{field} must be a non-empty array")
         return frozenset()
-    if not isinstance(value, list) or (required and not value):
+    if not isinstance(value, list):
+        raise ConfigurationError(f"workers.{field} must be an array")
+    if required and not value:
         raise ConfigurationError(f"workers.{field} must be a non-empty array")
     workers = [_worker_id(item, f"workers.{field}") for item in value]
     if len(set(workers)) != len(workers):
@@ -122,6 +124,8 @@ def _worker_id(value: object, field: str) -> WorkerId:
         raise ConfigurationError(f"{field} entries must be strings or tables")
     if not all(isinstance(part, str) for part in parts):
         raise ConfigurationError(f"{field} requires string worker namespace and value")
+    if any(":" in part for part in parts):  # type: ignore[operator]
+        raise ConfigurationError(f"{field} namespace and value must not contain ':'")
     try:
         return WorkerId(*parts)  # type: ignore[arg-type]
     except ValueError as exc:

@@ -75,10 +75,15 @@ def parser() -> argparse.ArgumentParser:
     plan.add_argument("--at", type=int, required=True)
     plan.add_argument("--completion-backlog", type=int, default=0)
     plan.add_argument(
+        "--wip-limit",
         "--max-active",
+        dest="max_active",
         type=int,
         default=None,
-        help="WIP ceiling; defaults to the configured worker inventory size",
+        help=(
+            "WIP ceiling; defaults to the configured worker inventory size, "
+            "or 1 when no [workers] table is set"
+        ),
     )
     plan.add_argument("--reserved-review", type=int, default=0)
     plan.add_argument("--backlog-limit", type=int)
@@ -126,10 +131,15 @@ def parser() -> argparse.ArgumentParser:
     )
     dogfood.add_argument("--at", type=int, required=True)
     dogfood.add_argument(
+        "--wip-limit",
         "--max-active",
+        dest="max_active",
         type=int,
         default=None,
-        help="WIP ceiling; defaults to the configured worker inventory size",
+        help=(
+            "WIP ceiling; defaults to the configured worker inventory size, "
+            "or 1 when no [workers] table is set"
+        ),
     )
     dogfood.add_argument("--target", help="exact dry-run target as issue:NUMBER or change:NUMBER")
     dogfood.add_argument("--label", action="append", default=[])

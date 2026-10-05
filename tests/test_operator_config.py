@@ -43,11 +43,11 @@ retired = ["model:gamma"]
     assert config.workers is not None
     inventory = config.workers
     assert inventory.size == 3
-    assert inventory.is_expected(WorkerId("model", "alpha"))
-    assert inventory.is_expected(WorkerId("human", "lead"))
-    assert inventory.is_scheduled(WorkerId("model", "alpha"))
-    assert inventory.is_retired(WorkerId("model", "gamma"))
-    assert not inventory.is_expected(WorkerId("model", "gamma"))
+    assert WorkerId("model", "alpha") in inventory.expected
+    assert WorkerId("human", "lead") in inventory.expected
+    assert WorkerId("model", "alpha") in inventory.scheduled
+    assert WorkerId("model", "gamma") in inventory.retired
+    assert WorkerId("model", "gamma") not in inventory.expected
 
 
 def test_empty_retired_array_is_allowed(tmp_path: Path) -> None:
@@ -114,6 +114,34 @@ def test_string_entry_without_namespace_separator_is_rejected(tmp_path: Path) ->
 expected = ["alpha"]
 """
     with pytest.raises(ConfigurationError, match="namespace:value form"):
+        load_config(write_config(tmp_path, workers))
+
+
+def test_colon_bearing_identity_is_rejected(tmp_path: Path) -> None:
+    workers = """
+[workers]
+expected = ["model:alpha:extra"]
+"""
+    with pytest.raises(ConfigurationError, match="must not contain ':'"):
+        load_config(write_config(tmp_path, workers))
+
+
+def test_colon_bearing_table_value_is_rejected(tmp_path: Path) -> None:
+    workers = """
+[workers]
+expected = [{ namespace = "model", value = "a:b" }]
+"""
+    with pytest.raises(ConfigurationError, match="must not contain ':'"):
+        load_config(write_config(tmp_path, workers))
+
+
+def test_non_list_optional_set_reports_array_not_non_empty(tmp_path: Path) -> None:
+    workers = """
+[workers]
+expected = ["model:alpha"]
+retired = "model:beta"
+"""
+    with pytest.raises(ConfigurationError, match=r"workers.retired must be an array$"):
         load_config(write_config(tmp_path, workers))
 
 

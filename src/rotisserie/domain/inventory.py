@@ -5,7 +5,6 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from rotisserie.domain.model import WorkerId
-from rotisserie.domain.policy import SchedulingPolicy
 
 
 @dataclass(frozen=True)
@@ -16,9 +15,14 @@ class WorkerInventory:
     set of recognized owners follow the ``expected`` membership supplied by
     configuration, never a numeric maximum baked into code. ``retired`` records
     identities removed from rotation so a later roster entry cannot silently
-    re-enroll them, and ``scheduled`` marks the subset that participates in
-    automatic dispatch. Adding or removing a worker is a configuration edit, not
-    a code change to a ceiling constant.
+    re-enroll them.
+
+    ``scheduled`` is a declared-but-not-yet-enforced subset of ``expected``: it
+    records which workers an operator intends for automatic dispatch, but no
+    command consumes it today. Capacity still derives from the full ``expected``
+    size, mirroring the deferred ``decide``/``shadow-project`` parity boundary.
+    Adding or removing a worker is a configuration edit, not a code change to a
+    ceiling constant.
     """
 
     expected: frozenset[WorkerId]
@@ -39,26 +43,6 @@ class WorkerInventory:
         """Number of expected workers; the config-derived capacity ceiling."""
 
         return len(self.expected)
-
-    def is_expected(self, worker: WorkerId) -> bool:
-        return worker in self.expected
-
-    def is_retired(self, worker: WorkerId) -> bool:
-        return worker in self.retired
-
-    def is_scheduled(self, worker: WorkerId) -> bool:
-        return worker in self.scheduled
-
-
-def scheduling_policy(
-    inventory: WorkerInventory,
-    *,
-    reserved_review: int = 0,
-    backlog_limit: int | None = None,
-) -> SchedulingPolicy:
-    """Derive a scheduling policy whose WIP limit is the inventory size."""
-
-    return SchedulingPolicy(inventory.size, reserved_review, backlog_limit)
 
 
 def resolve_wip_limit(inventory: WorkerInventory | None, override: int | None) -> int:
