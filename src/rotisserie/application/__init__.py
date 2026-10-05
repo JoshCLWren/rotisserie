@@ -15,6 +15,8 @@ from rotisserie.application.adoption import (
 from rotisserie.application.coordination import (
     CoordinationPort,
     CoordinationService,
+    DispatchPlan,
+    DispatchStatus,
     EffectCommand,
     EffectConflict,
     EffectFailure,
@@ -68,6 +70,8 @@ __all__ = [
     "prepare_adoption_transition",
     "CoordinationService",
     "CoordinationPort",
+    "DispatchPlan",
+    "DispatchStatus",
     "EffectCommand",
     "EffectConflict",
     "EffectFailure",

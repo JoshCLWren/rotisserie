@@ -23,6 +23,11 @@ such change must be called out here and in its release notes.
   explicit override (canonically spelled `--wip-limit`) whose default changed
   from a fixed `1` to the configured inventory size, falling back to `1` only
   when no `[workers]` table is present.
+- Provider-neutral dispatcher zero-work short-circuit: a single-read
+  `dispatch_plan` tick that reports a trustworthy `NO_ELIGIBLE_WORK` status
+  versus a capacity-bounded `WORK_AVAILABLE`, distinguishing genuine idle from
+  WIP-capacity or intake-backpressure holds, surfaced in the `plan` CLI
+  envelope via a new `dispatch` field and `--active-changes` flag.
 - Versioned, idempotent adopter transition commands that bind an authorized
   decision to an exact control revision, bounded lane, and compare-and-swap
   stage change without carrying credentials or host mutation behavior.

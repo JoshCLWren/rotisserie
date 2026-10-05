@@ -8,13 +8,13 @@ from dataclasses import dataclass, field
 from enum import StrEnum
 from typing import Protocol
 
-from rotisserie.domain import ChangeId, Lease, LeaseId, RevisionId, WorkerId, WorkId
+from rotisserie.domain import ChangeId, Lease, LeaseId, RevisionId, Work, WorkerId, WorkId
 from rotisserie.domain.policy import (
     LeaseAction,
     SchedulingPolicy,
+    WorkDecision,
     allocate_capacity,
     apply_intake_pressure,
-    implementation_decision,
     lease_decision,
     ranked_implementation_work,
     readiness_decision,
@@ -151,6 +151,68 @@ class RefillDecision:
     production: tuple[WorkId, ...]
 
 
+class DispatchStatus(StrEnum):
+    """Whether one dispatcher planning tick found work to act on."""
+
+    NO_ELIGIBLE_WORK = "no_eligible_work"
+    WORK_AVAILABLE = "work_available"
+
+
+@dataclass(frozen=True)
+class DispatchPlan:
+    """The outcome of one dispatcher planning tick.
+
+    ``status`` separates two cases. :attr:`DispatchStatus.NO_ELIGIBLE_WORK` is a
+    *trustworthy zero*: no implementation work was eligible to start and no
+    exact-head-ready change was available to drain, so a bounded session may end
+    rather than chain a successor. :attr:`DispatchStatus.WORK_AVAILABLE` means
+    eligible work exists this tick; ``production`` and ``completion`` carry the
+    capacity-bounded work to act on and may both be empty when eligible work is
+    held back by WIP capacity or intake backpressure rather than being absent.
+
+    ``selection`` and ``ready`` record the full, uncapped sets the capacity-bounded
+    view was cut from: ``selection`` is every work eligible to start after intake
+    backpressure, and ``ready`` is every exact-head-ready change. ``production`` is
+    always a prefix of ``selection`` and ``completion`` a prefix of ``ready``.
+    :meth:`to_dict` serializes only the capacity-bounded view, so a consumer of
+    the serialized plan sees exactly the work to act on this tick; the uncapped
+    sets are for callers that also want the full planning picture.
+
+    This value object only records the verdict. The obligation to exit early and
+    cheaply on a trustworthy zero -- spinning up no worker, invoking no provider,
+    and issuing no effect -- belongs to the caller that runs the tick. It ports,
+    as provider-neutral policy, ComicPile's dispatcher behavior of ending a
+    bounded session on a trustworthy zero-work tick instead of chaining a
+    successor.
+    """
+
+    status: DispatchStatus
+    production: tuple[WorkId, ...] = ()
+    completion: tuple[ChangeId, ...] = ()
+    selection: tuple[WorkId, ...] = ()
+    ready: tuple[ChangeId, ...] = ()
+
+    @property
+    def has_work(self) -> bool:
+        """Whether this tick carries actionable work to dispatch right now."""
+
+        return bool(self.production or self.completion)
+
+    @property
+    def is_trustworthy_zero(self) -> bool:
+        """Whether eligibility found nothing to do, so the session may end."""
+
+        return self.status is DispatchStatus.NO_ELIGIBLE_WORK
+
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "schema_version": 1,
+            "status": self.status,
+            "production": [item.key for item in self.production],
+            "completion": [item.key for item in self.completion],
+        }
+
+
 class CoordinationService:
     """Execute application operations with mutation-boundary revalidation."""
 
@@ -161,14 +223,8 @@ class CoordinationService:
         self, *, at: int, completion_backlog: int, policy: SchedulingPolicy
     ) -> tuple[WorkId, ...]:
         snapshot = self._port.read().snapshot
-        decisions = tuple(
-            implementation_decision(snapshot, work.id, at=at)
-            for work in ranked_implementation_work(snapshot, at=at)
-        )
-        pressured = apply_intake_pressure(
-            decisions, completion_backlog=completion_backlog, policy=policy
-        )
-        return tuple(decision.work for decision in pressured if decision.eligible)
+        candidates = ranked_implementation_work(snapshot, at=at)
+        return _select(candidates, completion_backlog=completion_backlog, policy=policy)
 
     def refill(
         self,
@@ -188,18 +244,61 @@ class CoordinationService:
         )
         return RefillDecision(capacity.completion, production[: capacity.production])
 
+    def dispatch_plan(
+        self,
+        *,
+        at: int,
+        active: int,
+        completion_backlog: int,
+        policy: SchedulingPolicy,
+    ) -> DispatchPlan:
+        """Plan one dispatcher tick, short-circuiting on a trustworthy zero.
+
+        The graph is read exactly once. The trustworthy-zero verdict is decided
+        from *pre-pressure* eligibility: when no implementation work is eligible
+        to start and no exact-head-ready change is available to drain, the plan
+        reports :attr:`DispatchStatus.NO_ELIGIBLE_WORK` without allocating
+        capacity, reading further, or issuing any effect. Work that is eligible
+        but held back by WIP capacity or intake backpressure keeps the tick at
+        :attr:`DispatchStatus.WORK_AVAILABLE` with capacity-bounded tuples that
+        may be empty, so a congestion hold is never mislabeled a genuine idle.
+        The plan also records the full uncapped ``selection`` and ``ready`` sets
+        the bounded view was cut from, so one read serves both the bounded tick
+        plan and a full planning preview. Bad ``active`` or ``completion_backlog``
+        input fails closed before the read, regardless of graph state.
+        """
+
+        if active < 0:
+            raise ValueError("active count cannot be negative")
+        if completion_backlog < 0:
+            raise ValueError("completion backlog cannot be negative")
+        snapshot = self._port.read().snapshot
+        candidates = ranked_implementation_work(snapshot, at=at)
+        ready = _ready_changes(snapshot)
+        if not candidates and not ready:
+            return DispatchPlan(DispatchStatus.NO_ELIGIBLE_WORK)
+        selection = _select(candidates, completion_backlog=completion_backlog, policy=policy)
+        capacity = allocate_capacity(
+            completion_demand=len(ready),
+            production_demand=len(selection),
+            active=active,
+            policy=policy,
+        )
+        return DispatchPlan(
+            DispatchStatus.WORK_AVAILABLE,
+            production=selection[: capacity.production],
+            completion=ready[: capacity.completion],
+            selection=selection,
+            ready=ready,
+        )
+
     def completion_drain(self, *, limit: int) -> tuple[ChangeId, ...]:
         """Select exact-head-ready changes in stable identity order."""
 
         if limit < 0:
             raise ValueError("completion drain limit cannot be negative")
         snapshot = self._port.read().snapshot
-        ready = (
-            change.id
-            for change in sorted(snapshot.changes, key=lambda item: item.id)
-            if readiness_decision(snapshot, change.id).ready
-        )
-        return tuple(ready)[:limit]
+        return _ready_changes(snapshot)[:limit]
 
     def claim(self, lease: Lease, *, operation: str, at: int) -> OperationResult:
         view = self._port.read()
@@ -351,6 +450,31 @@ class CoordinationService:
         return OperationResult(
             command.operation, OperationStatus.APPLIED, (command.idempotency_key,)
         )
+
+
+def _select(
+    candidates: tuple[Work, ...], *, completion_backlog: int, policy: SchedulingPolicy
+) -> tuple[WorkId, ...]:
+    """Apply intake backpressure to already-eligible, ranked candidates.
+
+    ``candidates`` come from :func:`ranked_implementation_work`, which has
+    already resolved eligibility, so each is eligible until intake backpressure
+    says otherwise; no second eligibility pass is required.
+    """
+
+    decisions = tuple(WorkDecision(work.id, True) for work in candidates)
+    pressured = apply_intake_pressure(
+        decisions, completion_backlog=completion_backlog, policy=policy
+    )
+    return tuple(decision.work for decision in pressured if decision.eligible)
+
+
+def _ready_changes(snapshot: GraphSnapshot) -> tuple[ChangeId, ...]:
+    return tuple(
+        change.id
+        for change in sorted(snapshot.changes, key=lambda item: item.id)
+        if readiness_decision(snapshot, change.id).ready
+    )
 
 
 def _rejected(
