@@ -305,6 +305,51 @@ def test_contradictory_producer_attestations_for_one_head_fail_closed() -> None:
         evidence.collect(comments, pr=7, head=HEAD)
 
 
+def test_unknown_producer_marker_blocks_single_reviewer_self_approval() -> None:
+    # Round-2 L1/B5 end-to-end: a producer-unknown approval plus an exact-head
+    # contributor record for a different worker must not authorize a single
+    # reviewer, so the real (unexcluded) producer cannot self-approve.
+    evidence = collector()
+    comments = [
+        bot_comment(contributor_marker(pr=7, head=HEAD, worker="59")),
+        bot_comment(
+            review_marker(pr=7, head=HEAD, reviewer="18", producer="unknown", verdict="approve")
+        ),
+    ]
+    collected = evidence.collect(comments, pr=7, head=HEAD)
+    assert collected.producer is None
+    assert collected.provenance_recorded
+    verdict = evaluate_review_independence(collected)
+    assert not verdict.satisfied
+    assert verdict.required_reviewers == 2
+
+
+def test_worker_named_unknown_cannot_forge_the_producer_sentinel() -> None:
+    # Round-2 L2: the widened identity token must not let a worker literally
+    # named "unknown" collide with the producer sentinel. Its markers fail to
+    # match and establish no provenance, approval, or escaped exclusion.
+    evidence = collector()
+    assert (
+        evidence.parse_head_contributor_marker(
+            contributor_marker(pr=7, head=HEAD, worker="unknown")
+        )
+        is None
+    )
+    comments = [
+        bot_comment(contributor_marker(pr=7, head=HEAD, worker="unknown")),
+        bot_comment(
+            review_marker(
+                pr=7, head=HEAD, reviewer="unknown", producer="unknown", verdict="approve"
+            )
+        ),
+    ]
+    result = evidence.collect(comments, pr=7, head=HEAD)
+    assert result.contributors == frozenset()
+    assert result.approvers == frozenset()
+    assert not result.provenance_recorded
+    assert result.producer is None
+
+
 def test_unknown_attested_producer_defers_to_the_declared_cross_check() -> None:
     evidence = collector()
     comments = [

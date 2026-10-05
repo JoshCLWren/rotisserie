@@ -45,6 +45,13 @@ from rotisserie.domain import (
 )
 
 _NAMESPACE_RE = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
+_UNKNOWN_PRODUCER = "unknown"
+# A worker/reviewer identity token. Every identity is immediately followed by a
+# ``:`` delimiter in the marker grammar, so the negative lookahead reserves the
+# bare ``unknown`` sentinel: a worker literally named ``unknown`` cannot be
+# encoded as an identity and its markers simply fail to match (fail closed),
+# while ``producer`` still accepts ``unknown`` as the "no known producer" value.
+_IDENTITY = r"(?!unknown:)[^:\s>]+"
 _TOKEN = r"[^:\s>]+"
 _DEFAULT_VERDICTS = frozenset(
     {"approve", "repair", "reject", "obsolete", "duplicate", "superseded", "delivered"}
@@ -157,12 +164,12 @@ class GitHubReviewEvidence:
         self._contributor_re = re.compile(
             rf"^<!-- {escaped}-head-contributor-v1:"
             rf"pr-(?P<pr>\d+):head-(?P<head>[0-9a-f]{{40}}):"
-            rf"worker-(?P<worker>{_TOKEN}):epoch-(?P<epoch>\d+) -->$"
+            rf"worker-(?P<worker>{_IDENTITY}):epoch-(?P<epoch>\d+) -->$"
         )
         self._review_re = re.compile(
             rf"^<!-- {escaped}-semantic-review-v1:"
             rf"pr-(?P<pr>\d+):head-(?P<head>[0-9a-f]{{40}}):"
-            rf"reviewer-(?P<reviewer>{_TOKEN}):producer-(?P<producer>{_TOKEN}):"
+            rf"reviewer-(?P<reviewer>{_IDENTITY}):producer-(?P<producer>{_TOKEN}):"
             rf"verdict-(?P<verdict>{verdict_alternation}) -->$"
         )
 
@@ -223,7 +230,7 @@ class GitHubReviewEvidence:
             review = self._review_re.fullmatch(stripped)
             if review is None or int(review["pr"]) != pr or review["head"] != head:
                 continue
-            if review["producer"] != "unknown":
+            if review["producer"] != _UNKNOWN_PRODUCER:
                 attested_producers.add(review["producer"])
             if review["verdict"] == "approve":
                 approvers.add(review["reviewer"])
