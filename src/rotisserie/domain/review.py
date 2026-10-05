@@ -29,6 +29,12 @@ exists for the exact revision (``provenance_recorded``), one eligible reviewer
 authorizes it. When no such record exists, the evidence is missing or ambiguous
 and the rule refuses to assume the apparent reviewer never touched the head: it
 requires two distinct eligible reviewers instead.
+
+This rule is additive: :func:`rotisserie.domain.policy.readiness_decision` is
+not yet wired to it and still consumes the legacy single-producer
+:func:`rotisserie.domain.policy.reviewer_is_independent`. Callers that need
+full exact-head contributor-set independence should evaluate this rule
+directly.
 """
 
 from __future__ import annotations

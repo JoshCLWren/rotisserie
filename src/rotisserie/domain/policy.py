@@ -261,7 +261,14 @@ def apply_intake_pressure(
 
 
 def reviewer_is_independent(change: Change, reviewer: WorkerId) -> bool:
-    """Require a known producer and a different reviewer identity."""
+    """Require a known producer and a different reviewer identity.
+
+    This is the legacy single-producer independence check that
+    :func:`readiness_decision` still consumes. For the full exact-head
+    contributor-set independence rule (recorded lineage, single-vs-dual reviewer
+    requirements, and fail-closed handling of missing provenance), prefer
+    :func:`rotisserie.domain.review.evaluate_review_independence`.
+    """
 
     return change.producer is not None and change.producer != reviewer
 
