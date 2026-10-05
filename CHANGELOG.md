@@ -11,6 +11,12 @@ such change must be called out here and in its release notes.
 
 ### Added
 
+- Portable, host-neutral per-node queue-eligibility rules (`evaluate_eligibility`,
+  `EligibilitySignals`, `EligibilityVerdict`) and the exclusion codes they emit.
+  `implementation_decision` delegates to this engine for one canonical
+  `WorkBlock` ordering and verdict shape, with label and marker encoding left to
+  the adopter translator.
+
 - Versioned, idempotent adopter transition commands that bind an authorized
   decision to an exact control revision, bounded lane, and compare-and-swap
   stage change without carrying credentials or host mutation behavior.

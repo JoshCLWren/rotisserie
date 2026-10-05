@@ -6,6 +6,11 @@ import math
 from dataclasses import dataclass
 from enum import StrEnum
 
+from rotisserie.domain.eligibility import (
+    EligibilitySignals,
+    WorkBlock,
+    evaluate_eligibility,
+)
 from rotisserie.domain.model import (
     Change,
     ChangeId,
@@ -18,23 +23,24 @@ from rotisserie.domain.model import (
 )
 from rotisserie.domain.snapshot import GraphSnapshot
 
-
-class WorkBlock(StrEnum):
-    """A stable reason why fresh implementation must not start."""
-
-    NOT_OPEN = "not_open"
-    PRODUCT_EXCLUSION = "product_exclusion"
-    PARENT_WORK = "parent_work"
-    DEPENDENCY_INCOMPLETE = "dependency_incomplete"
-    HUMAN_BOUNDARY = "human_boundary"
-    BLOCKED = "blocked"
-    TERMINAL = "terminal"
-    ACTIVE_LEASE = "active_lease"
-    IMPLEMENTATION_EXISTS = "implementation_exists"
-    RETRY_BUDGET_EXHAUSTED = "retry_budget_exhausted"
-    SELECTOR_METADATA_MISSING = "selector_metadata_missing"
-    CAPACITY = "capacity"
-    BACKPRESSURE = "backpressure"
+__all__ = [
+    "CapacityDecision",
+    "LeaseAction",
+    "LeaseDecision",
+    "ReadinessBlock",
+    "ReadinessDecision",
+    "SchedulingPolicy",
+    "WorkBlock",
+    "WorkDecision",
+    "allocate_capacity",
+    "apply_intake_pressure",
+    "implementation_decision",
+    "lease_decision",
+    "ranked_implementation_work",
+    "readiness_decision",
+    "repair_worker",
+    "reviewer_is_independent",
+]
 
 
 class LeaseAction(StrEnum):
@@ -104,26 +110,47 @@ class ReadinessDecision:
     blocks: tuple[ReadinessBlock, ...] = ()
 
 
-def implementation_decision(snapshot: GraphSnapshot, work: WorkId, *, at: int) -> WorkDecision:
-    """Decide whether one work node may receive a new implementation lease."""
+def _snapshot_signals(
+    snapshot: GraphSnapshot, work: WorkId, *, at: int, as_owner: bool
+) -> EligibilitySignals:
+    """Build the per-node eligibility signals derivable from the graph snapshot.
+
+    Only the signals the base graph can prove are populated; the adopter-decoded
+    signals (product exclusion, parent, blocked, terminal, retry budget,
+    selector metadata) are not present in the snapshot and keep their default of
+    "not excluded". When ``as_owner`` is set, the active lease and any existing
+    implementation are the owner's own and must not block its revalidation.
+    """
 
     work_by_id = {item.id: item for item in snapshot.works}
-    item = work_by_id[work]
-    blocks: list[WorkBlock] = []
-    if item.state is not WorkState.OPEN:
-        blocks.append(WorkBlock.NOT_OPEN)
-    if any(
-        work_by_id[required].state is not WorkState.COMPLETED
+    unresolved = frozenset(
+        required
         for required in snapshot.prerequisites(work)
-    ):
-        blocks.append(WorkBlock.DEPENDENCY_INCOMPLETE)
-    if not snapshot.boundaries_satisfied(work):
-        blocks.append(WorkBlock.HUMAN_BOUNDARY)
-    if snapshot.active_lease(work, at) is not None:
-        blocks.append(WorkBlock.ACTIVE_LEASE)
-    if any(change.work == work for change in snapshot.changes):
-        blocks.append(WorkBlock.IMPLEMENTATION_EXISTS)
-    return WorkDecision(work, not blocks, tuple(blocks))
+        if work_by_id[required].state is not WorkState.COMPLETED
+    )
+    return EligibilitySignals(
+        work=work,
+        state=work_by_id[work].state,
+        human_gate=not snapshot.boundaries_satisfied(work),
+        active_lease=False if as_owner else snapshot.active_lease(work, at) is not None,
+        unresolved_dependencies=unresolved,
+        implementation_exists=(
+            False if as_owner else any(change.work == work for change in snapshot.changes)
+        ),
+    )
+
+
+def implementation_decision(snapshot: GraphSnapshot, work: WorkId, *, at: int) -> WorkDecision:
+    """Decide whether one work node may receive a new implementation lease.
+
+    This is the snapshot-level entrypoint. It derives the per-node signals the
+    graph can prove and delegates to :func:`evaluate_eligibility`, so the
+    reported :class:`WorkBlock` codes and their canonical order match the
+    portable rule engine exactly.
+    """
+
+    verdict = evaluate_eligibility(_snapshot_signals(snapshot, work, at=at, as_owner=False))
+    return WorkDecision(work, verdict.eligible, verdict.blocks)
 
 
 def ranked_implementation_work(snapshot: GraphSnapshot, *, at: int) -> tuple[Work, ...]:
@@ -175,19 +202,15 @@ def lease_decision(
 
 
 def _lease_revalidation_block(snapshot: GraphSnapshot, work: WorkId) -> WorkBlock | None:
-    """Return the first condition that invalidates an already-owned lease."""
+    """Return the first condition that invalidates an already-owned lease.
 
-    work_by_id = {item.id: item for item in snapshot.works}
-    if work_by_id[work].state is not WorkState.OPEN:
-        return WorkBlock.NOT_OPEN
-    if any(
-        work_by_id[required].state is not WorkState.COMPLETED
-        for required in snapshot.prerequisites(work)
-    ):
-        return WorkBlock.DEPENDENCY_INCOMPLETE
-    if not snapshot.boundaries_satisfied(work):
-        return WorkBlock.HUMAN_BOUNDARY
-    return None
+    Revalidation shares the canonical ordering by delegating to
+    :func:`evaluate_eligibility` as the lease owner, so the active lease and any
+    existing implementation do not count against the holder.
+    """
+
+    verdict = evaluate_eligibility(_snapshot_signals(snapshot, work, at=0, as_owner=True))
+    return verdict.blocks[0] if verdict.blocks else None
 
 
 def allocate_capacity(

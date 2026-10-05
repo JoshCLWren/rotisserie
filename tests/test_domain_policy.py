@@ -5,12 +5,16 @@ from dataclasses import replace
 import pytest
 
 from rotisserie.domain import (
+    Boundary,
+    BoundaryId,
+    BoundaryKind,
     CapacityDecision,
     Change,
     ChangeId,
     Check,
     CheckId,
     CheckStatus,
+    EligibilitySignals,
     GraphSnapshot,
     Lease,
     LeaseAction,
@@ -30,6 +34,7 @@ from rotisserie.domain import (
     WorkState,
     allocate_capacity,
     apply_intake_pressure,
+    evaluate_eligibility,
     implementation_decision,
     lease_decision,
     ranked_implementation_work,
@@ -112,6 +117,48 @@ def test_existing_change_suppresses_duplicate_implementation() -> None:
     snapshot, _ = change_snapshot()
     decision = implementation_decision(snapshot, wid("work"), at=0)
     assert decision.blocks == (WorkBlock.IMPLEMENTATION_EXISTS,)
+
+
+def _derived_signals(snapshot: GraphSnapshot, work: WorkId, at: int) -> EligibilitySignals:
+    work_by_id = {item.id: item for item in snapshot.works}
+    unresolved = frozenset(
+        required
+        for required in snapshot.prerequisites(work)
+        if work_by_id[required].state is not WorkState.COMPLETED
+    )
+    return EligibilitySignals(
+        work=work,
+        state=work_by_id[work].state,
+        human_gate=not snapshot.boundaries_satisfied(work),
+        active_lease=snapshot.active_lease(work, at) is not None,
+        unresolved_dependencies=unresolved,
+        implementation_exists=any(change.work == work for change in snapshot.changes),
+    )
+
+
+def test_implementation_decision_agrees_with_eligibility_engine() -> None:
+    work = Work(wid("multi"), "Multi")
+    prereq = Work(wid("prereq"), "Prereq")
+    head = rid("head")
+    snapshot = GraphSnapshot(
+        works=(work, prereq),
+        changes=(Change(ChangeId(REPO, "c"), work.id, head, PRODUCER),),
+        revisions=(Revision(head),),
+        workers=(Worker(PRODUCER),),
+        leases=(Lease(LeaseId("l"), work.id, PRODUCER, acquired_at=10, expires_at=20),),
+        boundaries=(Boundary(BoundaryId("b"), work.id, BoundaryKind.HUMAN_APPROVAL),),
+        dependencies=frozenset({(work.id, prereq.id)}),
+    )
+    decision = implementation_decision(snapshot, work.id, at=15)
+    verdict = evaluate_eligibility(_derived_signals(snapshot, work.id, 15))
+    assert decision.eligible == verdict.eligible
+    assert decision.blocks == verdict.blocks
+    assert decision.blocks == (
+        WorkBlock.HUMAN_BOUNDARY,
+        WorkBlock.ACTIVE_LEASE,
+        WorkBlock.DEPENDENCY_INCOMPLETE,
+        WorkBlock.IMPLEMENTATION_EXISTS,
+    )
 
 
 def test_live_lease_is_released_when_work_is_no_longer_open() -> None:

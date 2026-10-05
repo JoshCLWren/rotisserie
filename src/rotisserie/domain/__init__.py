@@ -3,6 +3,7 @@
 from rotisserie.domain.eligibility import (
     EligibilitySignals,
     EligibilityVerdict,
+    WorkBlock,
     evaluate_eligibility,
 )
 from rotisserie.domain.model import (
@@ -39,7 +40,6 @@ from rotisserie.domain.policy import (
     ReadinessBlock,
     ReadinessDecision,
     SchedulingPolicy,
-    WorkBlock,
     WorkDecision,
     allocate_capacity,
     apply_intake_pressure,

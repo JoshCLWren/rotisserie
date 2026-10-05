@@ -31,14 +31,32 @@ already translated out of its host or product vocabulary:
 | `retry_budget_exhausted` | A bounded retry budget is spent; the node waits for new evidence. |
 | `missing_selector_metadata` | Selector-scoped metadata tokens a specific selector requires but the node lacks. |
 
-`evaluate_eligibility(signals)` returns an `EligibilityVerdict` carrying the
-stable `WorkBlock` exclusion codes in canonical evaluation order plus parallel
-human-readable reasons. A node is eligible only when no exclusion applies.
+`evaluate_eligibility(signals)` returns an `EligibilityVerdict` whose `blocks`
+tuple carries the stable `WorkBlock` codes in canonical evaluation order. The
+field is named `blocks` so the verdict shares one vocabulary with
+`WorkDecision.blocks`. `reasons[i]` is the human-readable explanation of
+`blocks[i]`: the two tuples always have the same length, and both are empty when
+the node is eligible. Read `verdict.eligible` for the yes/no outcome rather than
+expecting a positive reason string.
 
-The evaluation is pure, deterministic, and fails closed: `state` must be
-supplied explicitly (there is no implicit "assumed open"), every applicable
-exclusion is reported rather than only the first, and the sole eligible outcome
-is the absence of any exclusion.
+The evaluation is pure, deterministic, and fails closed. Three fields that back
+`AGENTS.md` hard invariants have no default and must be supplied explicitly, so a
+forgotten field cannot silently pass a gate: `state` (there is no implicit
+"assumed open"), `human_gate` (the human-only boundary decision), and
+`active_lease` (lease ownership). Every applicable block is reported rather than
+only the first, and the sole eligible outcome is the absence of any block.
+`EligibilityVerdict` validates these invariants on construction.
+
+## Relationship to `implementation_decision`
+
+`evaluate_eligibility` is the per-node source of truth for the `WorkBlock`
+vocabulary. The snapshot-level `implementation_decision` (in
+`rotisserie.domain.policy`) builds the signal subset the graph can prove and
+delegates here, so both report the same codes in one canonical order; it then
+layers the dynamic, snapshot-level gates (ranking, capacity, backpressure, lease
+liveness) on top. Start from `implementation_decision` when you hold a
+`GraphSnapshot`; start from `evaluate_eligibility` when you have already decoded
+a single node's signals.
 
 ## Evaluation order
 
@@ -62,6 +80,21 @@ completion backpressure, lease liveness) remain in `rotisserie.domain.policy`
 (`allocate_capacity`, `apply_intake_pressure`, `lease_decision`) and the
 application coordination layer. They are applied on top of the per-node verdict,
 not inside it.
+
+## Enforcement status on the live lease path
+
+`implementation_decision` and `lease_decision` enforce only the blocks the base
+`GraphSnapshot` can prove today: `NOT_OPEN`, `HUMAN_BOUNDARY`, `ACTIVE_LEASE`,
+`DEPENDENCY_INCOMPLETE`, and `IMPLEMENTATION_EXISTS`. The six adopter-decoded
+codes — `PRODUCT_EXCLUSION`, `PARENT_WORK`, `BLOCKED`, `TERMINAL`,
+`RETRY_BUDGET_EXHAUSTED`, and `SELECTOR_METADATA_MISSING` — are **not** yet
+derivable from the base graph, so a node excluded only by one of them is not
+blocked on the live lease path by this chunk. Wiring them requires carrying the
+decoded signals through the snapshot and coordination layer (for example as
+graph attributes or an adopter-supplied signal map); that integration is a
+tracked follow-up and is deliberately out of this chunk's porting scope. Until
+then, treat those six codes as the portable rule vocabulary that an adopter's
+own selector consults, not as an active gate inside Rotisserie's lease path.
 
 ## Mapping to ComicPile
 
