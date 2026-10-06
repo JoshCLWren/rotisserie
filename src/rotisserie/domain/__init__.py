@@ -51,6 +51,14 @@ from rotisserie.domain.policy import (
     repair_worker,
     reviewer_is_independent,
 )
+from rotisserie.domain.review import (
+    DUAL_REVIEWER,
+    SINGLE_REVIEWER,
+    ReviewIndependenceBlock,
+    ReviewIndependenceSignals,
+    ReviewIndependenceVerdict,
+    evaluate_review_independence,
+)
 from rotisserie.domain.snapshot import GraphSnapshot, InvalidGraph
 
 __all__ = [
@@ -89,12 +97,18 @@ __all__ = [
     "LeaseDecision",
     "ReadinessBlock",
     "ReadinessDecision",
+    "ReviewIndependenceBlock",
+    "ReviewIndependenceSignals",
+    "ReviewIndependenceVerdict",
     "SchedulingPolicy",
+    "SINGLE_REVIEWER",
+    "DUAL_REVIEWER",
     "WorkBlock",
     "WorkDecision",
     "allocate_capacity",
     "apply_intake_pressure",
     "evaluate_eligibility",
+    "evaluate_review_independence",
     "implementation_decision",
     "lease_decision",
     "ranked_implementation_work",

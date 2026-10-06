@@ -28,6 +28,21 @@ such change must be called out here and in its release notes.
   versus a capacity-bounded `WORK_AVAILABLE`, distinguishing genuine idle from
   WIP-capacity or intake-backpressure holds, surfaced in the `plan` CLI
   envelope via a new `dispatch` field and `--active-changes` flag.
+- Portable exact-head review-independence rule in the domain: a reviewer must be
+  absent from the exact-head contributor set (recorded lineage unioned with the
+  attested producer). A single independent reviewer authorizes the head only
+  when provenance is recorded and the producer is attested by exact-head
+  evidence; an unattested or unknown producer, or unrecorded provenance, fails
+  closed to two distinct eligible reviewers, each carrying a distinct stable
+  block code.
+- Read-only GitHub review-evidence adapter that projects trusted review-thread
+  comments into those signals. Both contributor and semantic-review markers are
+  honored only as whole-body comments; identities are normalized once (strip and
+  casefold) so exclusion is case-insensitive and the reserved ``unknown``
+  sentinel cannot be forged in any casing on any field; the attested producer is
+  authoritative over any caller-supplied value; and the trusted-author set is
+  empty by default so an adopter must opt its controller identity in. The
+  adapter performs no mutation.
 - Versioned, idempotent adopter transition commands that bind an authorized
   decision to an exact control revision, bounded lane, and compare-and-swap
   stage change without carrying credentials or host mutation behavior.
