@@ -1,9 +1,10 @@
 # Local operator guide
 
-The Rotisserie CLI currently operates only on a repository-scoped local graph
-snapshot. It performs no network access, starts no daemon, and does not invoke
-an AI provider. This is the supported safe simulation boundary before guarded
-self-dogfood.
+The simulation commands operate on a repository-scoped local graph snapshot
+without network access or a daemon. The opt-in `execute` command additionally
+runs one explicitly assigned trusted worker process, using a separate execution
+configuration gate. See the [worker process guide](worker-process.md) for its
+wire protocol, real-process example, authority checks and recovery limits.
 
 ## Configuration
 
@@ -57,10 +58,13 @@ All commands emit one versioned JSON object on standard output.
 - `claim`, `run`, `review`, `complete`, and `recover` are mutating commands.
 - `doctor` validates local state and reports operation metrics; `--bundle`
   writes a redacted diagnostic file.
+- `execute --assignment FILE` plans one worker handoff; `--apply` additionally
+  requires `[execution].enabled=true`, an active lease and a verified checkout.
 
 Mutating commands are dry-run unless `--apply` is present. A dry-run writes a
 schema-versioned operation record but does not alter graph state. Applying also
-requires `local.mutations_enabled = true`, providing two explicit gates.
+requires `local.mutations_enabled = true`, providing two explicit gates for
+simulation state. Worker execution has its own independent gate described above.
 
 ## Simulated lifecycle
 
@@ -97,7 +101,7 @@ Exit codes are stable for schema version 1:
 | `0` | Inspection, plan, dry-run, applied operation, or no-op succeeded |
 | `2` | CLI usage, configuration, input, or local-state validation failed |
 | `3` | Coordination policy rejected the operation |
-| `4` | Reserved for an operational failure that could not be classified safely |
+| `4` | A worker execution ended with a failure, timeout, cancellation, malformed output, or exhausted transient fallback |
 
 Callers may supply `--correlation-id`; otherwise the entrypoint generates a
 UUID. Never put a credential in a correlation ID or any other CLI argument.
