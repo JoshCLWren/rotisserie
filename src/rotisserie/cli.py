@@ -37,6 +37,13 @@ from rotisserie.application import (
     prepare_adoption_transition,
     project_decisions,
 )
+from rotisserie.application.controller import (
+    AcquisitionFailure,
+    ControllerRequest,
+    ControllerResult,
+    ControllerStatus,
+    plan_assignment,
+)
 from rotisserie.application.process import assignment_from_dict, resume_from_dict
 from rotisserie.application.runtime import Outcome
 from rotisserie.domain import (
@@ -58,6 +65,7 @@ from rotisserie.operator import (
     OperatorConfig,
     load_config,
 )
+from rotisserie.operator.controller import controller_view_from_dict
 from rotisserie.operator.execution import execute_assignment, execution_plan
 
 EXIT_OK = 0
@@ -217,6 +225,17 @@ def parser() -> argparse.ArgumentParser:
     adopt.add_argument("--operator-approved", action="store_true")
     adopt.add_argument("--request-expansion", action="store_true")
     adopt.add_argument("--rollback-requested", action="store_true")
+    controller = subcommands.add_parser(
+        "controller-plan", help="plan one fresh-work controller tick"
+    )
+    controller.add_argument("--view", required=True, help="captured acquisition JSON path")
+    controller.add_argument("--assignment", required=True, help="trusted assignment JSON path")
+    controller.add_argument("--operation", required=True)
+    controller.add_argument("--lease-id", required=True)
+    controller.add_argument("--at", type=int, required=True)
+    controller.add_argument("--max-observation-age", type=int, required=True)
+    controller.add_argument("--wip-limit", type=int)
+    controller.add_argument("--backlog-limit", type=int)
     return value
 
 
@@ -237,6 +256,8 @@ def main(argv: Sequence[str] | None = None) -> int:
             output, status = _decide(arguments, config, journal, correlation_id)
         elif arguments.command == "adopt":
             output, status = _adopt(arguments, journal, correlation_id)
+        elif arguments.command == "controller-plan":
+            output, status = _controller_plan(arguments, config, journal, correlation_id)
         elif arguments.command == "execute":
             output, status = _worker_execute(arguments, config, journal, correlation_id)
         else:
@@ -833,6 +854,68 @@ def _envelope(correlation_id: str, command: str, status: str, **values: Any) -> 
 def _write(value: dict[str, Any]) -> None:
     json.dump(value, sys.stdout, sort_keys=True, separators=(",", ":"))
     sys.stdout.write("\n")
+
+
+def _controller_plan(
+    arguments: argparse.Namespace,
+    config: OperatorConfig,
+    journal: OperationJournal,
+    correlation_id: str,
+) -> tuple[dict[str, Any], int]:
+    if config.workers is None:
+        raise ConfigurationError("controller requires an explicit worker inventory")
+    view_bytes = _read_json_bytes(arguments.view, "controller view")
+    assignment_bytes = _read_json_bytes(arguments.assignment, "controller assignment")
+    view = controller_view_from_dict(_json_object(view_bytes, "controller view"))
+    assignment = assignment_from_dict(_json_object(assignment_bytes, "controller assignment"))
+    request = ControllerRequest(
+        config.repository,
+        assignment,
+        LeaseId(arguments.lease_id),
+        arguments.operation,
+        SchedulingPolicy(
+            resolve_wip_limit(config.workers, arguments.wip_limit), 0, arguments.backlog_limit
+        ),
+        arguments.at,
+        arguments.max_observation_age,
+        config.workers.expected,
+    )
+    try:
+        result = plan_assignment(view, request)
+    except AcquisitionFailure:
+        result = ControllerResult(ControllerStatus.ACQUISITION_FAILED)
+    evidence = {
+        "schema_version": 1,
+        "view_sha256": hashlib.sha256(view_bytes).hexdigest(),
+        "assignment_sha256": hashlib.sha256(assignment_bytes).hexdigest(),
+        "version": view.graph.version,
+        "operation": request.operation,
+        "lease_id": request.lease_id.value,
+        "workers": [
+            {"namespace": worker.namespace, "value": worker.value}
+            for worker in sorted(request.workers)
+        ],
+        "at": request.at,
+        "max_observation_age": request.max_observation_age,
+        "wip_limit": request.policy.wip_limit,
+        "backlog_limit": request.policy.backlog_limit,
+        "result": result.to_dict(),
+    }
+    record = journal.append(
+        correlation_id=correlation_id,
+        command="controller-plan",
+        dry_run=True,
+        result=evidence,
+        timestamp=int(time.time()),
+    )
+    status = (
+        EXIT_OK
+        if result.status in {ControllerStatus.SELECTED, ControllerStatus.ZERO}
+        else EXIT_REJECTED
+    )
+    return _envelope(
+        correlation_id, "controller-plan", str(result.status), evidence=evidence, record=record
+    ), status
 
 
 if __name__ == "__main__":

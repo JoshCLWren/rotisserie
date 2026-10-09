@@ -1,0 +1,27 @@
+{
+  "schema_version": 1,
+  "id": "demo-1",
+  "worker": {
+    "namespace": "demo",
+    "value": "one"
+  },
+  "objective": "Demonstrate fresh work handoff",
+  "repository_context": "",
+  "change": null,
+  "timeout_seconds": 10,
+  "authority": {
+    "work": {
+      "repository": {
+        "host": "example.test",
+        "owner": "rotisserie",
+        "name": "demo"
+      },
+      "key": "1"
+    },
+    "revision": null,
+    "permissions": [
+      "read"
+    ],
+    "expires_at": 70
+  }
+}

@@ -383,3 +383,21 @@ ComicPile source or workflow changed in this slice. The runtime extraction is
 not a live adopter cutover; same-view parity, bounded observation and rollback
 remain prerequisites for deleting duplicated code. The full boundary, example
 and recovery limits are in [`docs/worker-process.md`](docs/worker-process.md).
+
+## Bounded fresh-assignment controller
+
+The first issue #29 capability now composes deterministic fresh-work selection,
+claim, execution handoff and proven dispatch-failure compensation over explicit
+application acquisition/CAS/dispatch ports. Acquisition versions cover graph,
+capacity and liveness together; unknown observations and ambiguous effects hold
+closed, while expired leases require explicit recovery instead of implicit
+reassignment. Trusted assignments use the existing #28 process contract.
+
+The versioned `controller-plan` entrypoint and fixture-backed thin caller record
+exact input digests without credentials, remote effects, graph initialization or
+worker execution. The live source audit is pinned to ComicPile
+`b83a5a7f2c82eaa4764ade87681c5be5db23d2e7`. This is the fresh-assignment slice,
+not completion or full live-controller parity: recovery, exact-head independent
+review/completion, concrete adopter enforcement, golden live comparison and
+observed cutover/rollback remain under issue #29. The port obligations and
+remaining boundaries are in [`docs/assignment-controller.md`](docs/assignment-controller.md).
