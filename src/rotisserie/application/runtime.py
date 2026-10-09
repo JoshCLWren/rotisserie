@@ -8,7 +8,7 @@ from dataclasses import dataclass
 from enum import StrEnum
 from typing import Protocol
 
-from rotisserie.domain import ChangeId, RevisionId, WorkerId, WorkId
+from rotisserie.domain import ChangeId, GraphSnapshot, RevisionId, WorkerId, WorkId, WorkState
 
 
 def _required(value: str, field_name: str) -> None:
@@ -94,8 +94,8 @@ class Assignment:
 
     def __post_init__(self) -> None:
         _required(self.objective, "objective")
-        _reject_secret_material(self.objective, "objective")
-        _reject_secret_material(self.repository_context, "repository context")
+        require_secret_free(self.objective, "objective")
+        require_secret_free(self.repository_context, "repository context")
         if self.timeout_seconds <= 0:
             raise ValueError("assignment timeout must be positive")
         if self.change is not None:
@@ -136,6 +136,8 @@ class RuntimeEvidence:
     def __post_init__(self) -> None:
         _required(self.source, "evidence source")
         _required(self.summary, "evidence summary")
+        require_secret_free(self.source, "evidence source")
+        require_secret_free(self.summary, "evidence summary")
 
 
 @dataclass(frozen=True)
@@ -154,10 +156,10 @@ class ResumePacket:
         _required(self.checkpoint, "checkpoint")
         if self.updated_at < 0:
             raise ValueError("resume timestamp cannot be negative")
-        _reject_secret_material(self.checkpoint, "checkpoint")
+        require_secret_free(self.checkpoint, "checkpoint")
         for step in self.completed_steps:
             _required(step, "completed step")
-            _reject_secret_material(step, "completed step")
+            require_secret_free(step, "completed step")
 
     def to_dict(self) -> dict[str, object]:
         return {
@@ -190,7 +192,7 @@ class AttemptEvent:
         if self.state is AttemptState.PROGRESS and self.progress is None:
             raise ValueError("progress events require progress")
         if self.message is not None:
-            _reject_secret_material(self.message, "event message")
+            require_secret_free(self.message, "event message")
 
 
 @dataclass(frozen=True)
@@ -204,7 +206,7 @@ class ExecutionResult:
 
     def __post_init__(self) -> None:
         if self.detail is not None:
-            _reject_secret_material(self.detail, "result detail")
+            require_secret_free(self.detail, "result detail")
         if self.retry_after_seconds is not None and self.retry_after_seconds < 0:
             raise ValueError("retry delay cannot be negative")
         for item in self.evidence:
@@ -244,6 +246,36 @@ class RuntimeResult:
     result: ExecutionResult
     executor: str | None
     attempts: tuple[AttemptId, ...]
+
+
+def validate_assignment(assignment: Assignment, snapshot: GraphSnapshot, *, at: int) -> None:
+    """Revalidate leased work, human gates and exact-head authority before execution."""
+    if at < 0:
+        raise ValueError("execution timestamp cannot be negative")
+    work = assignment.authority.work
+    repositories = {
+        *(item.id.repository for item in snapshot.works),
+        *(item.id.repository for item in snapshot.changes),
+        *(item.id.repository for item in snapshot.revisions),
+    }
+    if repositories - {work.repository}:
+        raise ValueError("execution graph is outside configured repository")
+    item = next((item for item in snapshot.works if item.id == work), None)
+    if item is None:
+        raise ValueError("assignment work is absent from the configured graph")
+    if item.state is not WorkState.OPEN:
+        raise ValueError("assignment work is no longer open")
+    if not snapshot.boundaries_satisfied(work):
+        raise ValueError("assignment work has an unsatisfied human boundary")
+    lease = snapshot.active_lease(work, at)
+    if lease is None or lease.worker != assignment.worker:
+        raise ValueError("execution requires an active lease owned by the assignment worker")
+    if not at < assignment.authority.expires_at <= lease.expires_at:
+        raise ValueError("assignment authority exceeds the active lease")
+    if assignment.change is not None:
+        change = next((item for item in snapshot.changes if item.id == assignment.change), None)
+        if change is None or change.work != work or change.head != assignment.authority.revision:
+            raise ValueError("assignment change does not match the leased work and exact head")
 
 
 class WorkerRuntime:
@@ -382,14 +414,22 @@ _SECRET_MARKERS = (
     "bearer ",
     "api_key=",
     "api-key=",
+    "token=",
+    "password=",
+    "secret=",
     "private key",
     "ghp_",
+    "gho_",
+    "ghs_",
+    "ghu_",
+    "ghr_",
     "github_pat_",
     "sk-",
 )
 
 
-def _reject_secret_material(value: str, field_name: str) -> None:
+def require_secret_free(value: str, field_name: str) -> None:
+    """Reject recognizable credentials before crossing a prompt or durable boundary."""
     lowered = value.casefold()
     if any(marker in lowered for marker in _SECRET_MARKERS):
         raise ValueError(f"{field_name} contains credential-like material")

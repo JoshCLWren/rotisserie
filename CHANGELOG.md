@@ -11,6 +11,14 @@ such change must be called out here and in its release notes.
 
 ### Added
 
+- Opt-in operational worker execution through `execute`, a strict version 1
+  assignment/process JSON contract, and a trusted POSIX subprocess adapter.
+  Active-lease, repository, inventory, human-boundary and exact-head checks
+  guard execution; shared deadlines, cancellation, heartbeat records, local
+  duplicate locks and durable receipts bound each attempt. Only unavailable
+  or rate-limited results fall back. Dry-run starts no subprocess and the
+  separate `[execution].enabled` gate is disabled by default. This activates
+  no workflow, automatic dispatch, remote mutation or live adopter cutover.
 - Portable, host-neutral per-node queue-eligibility rules (`evaluate_eligibility`,
   `EligibilitySignals`, `EligibilityVerdict`) and the exclusion codes they emit.
   `implementation_decision` delegates to this engine for one canonical

@@ -37,6 +37,8 @@ from rotisserie.application import (
     prepare_adoption_transition,
     project_decisions,
 )
+from rotisserie.application.process import assignment_from_dict, resume_from_dict
+from rotisserie.application.runtime import Outcome
 from rotisserie.domain import (
     ChangeId,
     GraphSnapshot,
@@ -56,6 +58,7 @@ from rotisserie.operator import (
     OperatorConfig,
     load_config,
 )
+from rotisserie.operator.execution import execute_assignment, execution_plan
 
 EXIT_OK = 0
 EXIT_INVALID = 2
@@ -107,6 +110,11 @@ def parser() -> argparse.ArgumentParser:
     run.add_argument("work")
     run.add_argument("worker")
     run.add_argument("--at", type=int, required=True)
+
+    execute = subcommands.add_parser("execute", help="plan or execute one bounded worker process")
+    _mutation_flag(execute)
+    execute.add_argument("--assignment", type=Path, required=True)
+    execute.add_argument("--resume", type=Path)
 
     review = subcommands.add_parser("review", help="request independent exact-head review")
     _mutation_flag(review)
@@ -229,6 +237,8 @@ def main(argv: Sequence[str] | None = None) -> int:
             output, status = _decide(arguments, config, journal, correlation_id)
         elif arguments.command == "adopt":
             output, status = _adopt(arguments, journal, correlation_id)
+        elif arguments.command == "execute":
+            output, status = _worker_execute(arguments, config, journal, correlation_id)
         else:
             port = LocalCoordinationPort(config.snapshot, config.state_directory, config.repository)
             port.initialize()
@@ -245,6 +255,50 @@ def main(argv: Sequence[str] | None = None) -> int:
         return EXIT_INVALID
     _write(output)
     return status
+
+
+def _worker_execute(
+    arguments: argparse.Namespace,
+    config: OperatorConfig,
+    journal: OperationJournal,
+    correlation_id: str,
+) -> tuple[dict[str, Any], int]:
+    def read(path: Path) -> object:
+        with path.open("rb") as stream:
+            data = stream.read(1_048_577)
+        if len(data) > 1_048_576:
+            raise ValueError("worker input exceeds the process contract bound")
+        try:
+            return json.loads(data)
+        except (ValueError, RecursionError):
+            raise ValueError("invalid worker input JSON") from None
+
+    try:
+        assignment = assignment_from_dict(read(arguments.assignment))
+    except RecursionError:
+        raise ValueError("worker input nesting exceeds the process contract bound") from None
+    plan = execution_plan(assignment, config)
+    if not arguments.apply:
+        record = journal.append(
+            correlation_id=correlation_id,
+            command="execute",
+            dry_run=True,
+            result=plan,
+            timestamp=int(time.time()),
+        )
+        return _envelope(correlation_id, "execute", "planned", plan=plan, record=record), EXIT_OK
+    resume = resume_from_dict(read(arguments.resume)) if arguments.resume else None
+    result = execute_assignment(assignment, config, journal, correlation_id, resume=resume)
+    record = journal.append(
+        correlation_id=correlation_id,
+        command="execute",
+        dry_run=False,
+        result=result,
+        timestamp=int(time.time()),
+    )
+    outcome = result["result"]["outcome"]
+    status = EXIT_OK if outcome in {Outcome.SUCCEEDED, Outcome.NO_DIFF} else EXIT_FAILED
+    return _envelope(correlation_id, "execute", "completed", result=result, record=record), status
 
 
 def _execute(

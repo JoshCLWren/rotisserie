@@ -11,15 +11,17 @@ Rotisserie builds on operating experience with parallel implementation,
 independent review, repair, CI, merge readiness, model fallback, and
 interrupted-work recovery. Its job is to make those mechanics portable.
 
-> **Current state: external-adopter integration is complete; release hardening is next.**
+> **Current state: bounded adopter integration is complete; operational runtime extraction is next.**
 > Rotisserie now has a standalone package, generic graph and coordination
 > policy, secure GitHub adapter, application orchestration, and provider-neutral
 > worker contracts, plus a local CLI with durable state and diagnostics. The
 > operator can produce fixture, read-only projection, and credential-free
 > mutation-plan evidence, completed its guarded merge canary, and now exposes a
 > versioned decision-shadow contract that ComicPile consumes at its bounded
-> issue-intake runtime boundary. General
-> autonomous execution and external-repository mutation remain disabled.
+> issue-intake runtime boundary. The opt-in `execute` command now owns bounded
+> local worker process execution. The live controller and provider bridges
+> remain in ComicPile pending operational extraction and verified cutover.
+> General autonomous dispatch and external-repository mutation remain disabled.
 
 ## What “graph engineering” means
 
@@ -73,6 +75,8 @@ The intended result is a system that can:
 | `src/rotisserie/domain/` | Provider-neutral graph values and pure coordination policy |
 | `src/rotisserie/application/` | Versioned, idempotent coordination use cases over effect protocols |
 | `src/rotisserie/application/runtime.py` | Bounded worker, attempt, evidence, recovery, and executor contracts |
+| `src/rotisserie/application/process.py` | Versioned assignment/request/result contract for trusted worker bridges |
+| `src/rotisserie/adapters/process.py` | Bounded POSIX process lifecycle, deadlines, cancellation, and heartbeat handling |
 | `src/rotisserie/adapters/github/` | Repository-scoped GitHub projection and bounded mutation contracts |
 | `src/rotisserie/operator/` | Versioned local configuration, durable simulation state, records, metrics, and diagnostics |
 | `src/rotisserie/cli.py` | One-operation CLI with dry-run mutation plans and stable JSON output |
@@ -88,8 +92,10 @@ intended treatment of every archived artifact.
 
 ## Safety boundary
 
-Rotisserie does **not** currently dispatch agents, mutate external issues, or
-deploy software. Imported operational Actions live outside `.github/workflows/`
+Rotisserie can execute an explicitly assigned, leased local worker process when
+both operator configuration and `execute --apply` authorize it. It does **not**
+automatically dispatch agents, mutate external issues, or deploy software.
+Imported operational Actions live outside `.github/workflows/`
 and therefore cannot execute. The only write-capable workflow is the completed,
 manually dispatched issue-9 canary; it is repository-scoped, allowlisted, and
 unscheduled. Regression tests enforce this boundary.
@@ -141,6 +147,13 @@ canary. The [external adopter guide](docs/adopter-integration.md) defines the
 next phase's product-policy boundary and the `decide`, `shadow`,
 `shadow-project`, and `adopt` contracts for non-mutating staged integration.
 
+The [worker process guide](docs/worker-process.md) documents the first executable
+runtime extraction and a complete credential-free demo:
+
+```bash
+uv run python examples/worker-process/demo.py
+```
+
 ## Roadmap
 
 The [roadmap issue](https://github.com/JoshCLWren/rotisserie/issues/1) is the
@@ -155,7 +168,11 @@ canonical dependency-ordered plan. Current progress:
 - [x] build the operator CLI, configuration model, persistence, and observability surface;
 - [x] safely dogfood Rotisserie on its own repository;
 - [x] integrate ComicPile as the first external adopter through the public boundary;
+- [ ] move the operational controller and worker machinery upstream, leaving ComicPile with configuration and thin bridges;
 - [ ] harden and publish the first supported open-source release.
+
+Operational extraction takes priority over release publication. Interim adopter
+pins can validate runtime slices before a supported public release exists.
 
 No adopter needs to replace working automation before the new boundary is
 proven.

@@ -8,11 +8,25 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from rotisserie.adapters.process import ProcessSpec
 from rotisserie.domain import RepositoryId, WorkerId, WorkerInventory
 
 
 class ConfigurationError(ValueError):
     """Raised when operator configuration is unsafe or malformed."""
+
+
+@dataclass(frozen=True)
+class ExecutionConfig:
+    worktree: Path
+    executors: tuple[ProcessSpec, ...]
+    enabled: bool = False
+
+    def __post_init__(self) -> None:
+        if not self.worktree.is_absolute() or not self.executors:
+            raise ConfigurationError("execution requires an absolute worktree and executors")
+        if len({item.name for item in self.executors}) != len(self.executors):
+            raise ConfigurationError("execution executor names must be unique")
 
 
 @dataclass(frozen=True)
@@ -25,6 +39,7 @@ class OperatorConfig:
     state_directory: Path
     mutations_enabled: bool = False
     workers: WorkerInventory | None = None
+    execution: ExecutionConfig | None = None
 
     def __post_init__(self) -> None:
         if self.repository not in self.allowed_repositories:
@@ -59,8 +74,47 @@ def load_config(path: Path) -> OperatorConfig:
         raise ConfigurationError("local.mutations_enabled must be a boolean")
     workers = _workers(raw.get("workers"))
     return OperatorConfig(
-        repository, allowed, snapshot, state_directory, mutations_enabled, workers
+        repository,
+        allowed,
+        snapshot,
+        state_directory,
+        mutations_enabled,
+        workers,
+        _execution(raw.get("execution"), path.parent),
     )
+
+
+def _execution(value: object, base: Path) -> ExecutionConfig | None:
+    if value is None:
+        return None
+    table = _expect_mapping(value, "execution")
+    if set(table) - {"worktree", "enabled", "executors"}:
+        raise ConfigurationError("unknown execution configuration field")
+    enabled = table.get("enabled", False)
+    if not isinstance(enabled, bool):
+        raise ConfigurationError("execution.enabled must be a boolean")
+    worktree_raw = table.get("worktree")
+    if not isinstance(worktree_raw, str) or not worktree_raw.strip():
+        raise ConfigurationError("execution.worktree must be a path")
+    worktree = (base / worktree_raw).resolve()
+    entries = table.get("executors")
+    if not isinstance(entries, list) or not entries:
+        raise ConfigurationError("execution.executors must be a non-empty array")
+    specs: list[ProcessSpec] = []
+    for entry in entries:
+        item = _expect_mapping(entry, "execution.executors")
+        if set(item) != {"name", "argv"}:
+            raise ConfigurationError("executor requires only name and argv")
+        name, argv = item["name"], item["argv"]
+        if not isinstance(name, str) or not isinstance(argv, list):
+            raise ConfigurationError("executor requires string name and argv array")
+        if not all(isinstance(argument, str) for argument in argv):
+            raise ConfigurationError("executor argv requires strings")
+        try:
+            specs.append(ProcessSpec(name, tuple(argv)))
+        except ValueError as exc:
+            raise ConfigurationError(str(exc)) from exc
+    return ExecutionConfig(worktree, tuple(specs), enabled)
 
 
 def _mapping(raw: Mapping[str, Any], field: str) -> Mapping[str, Any]:

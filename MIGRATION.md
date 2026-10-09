@@ -357,3 +357,29 @@ ComicPile keeps the product-specific encoding: the `comic-pile-factory-*` marker
 prefixes, the `factory:<n>` worker labels, the `factory/<n>-…` branch and
 `Worker: opencode-…-factory-<n>` body producer recovery, the semantic verdict
 vocabulary, and worker GitHub App slugs.
+
+## Operational runtime fast lane
+
+The maintainer prioritized moving the operational Factory runtime out of
+ComicPile on 2026-10-07, ahead of release publication. The first executable
+slice (issue #28) extracts process lifecycle from the archived
+`free-model-factory-worker.sh` and `free-model-factory-worker-primitives.sh` into
+the existing provider-neutral runtime, a versioned application process contract,
+a bounded POSIX process adapter, and the public `execute` entrypoint.
+
+Execution requires an explicit active lease, configured repository/worker and
+checkout scope, current change head, satisfied human boundaries, separate local
+execution configuration, and `--apply`. Dry-run starts no subprocess. The
+runtime enforces deadline/expiry, kills process groups, records heartbeats,
+suppresses duplicate callers with durable receipts and local locks, and permits
+fallback only for unavailability/rate limits. Interrupted receipts require
+explicit matching resume evidence. Recognizable credentials and malformed or
+foreign results are refused before persistence; raw process output is discarded.
+
+The live ComicPile controller was inspected read-only at
+`03b95add5c7d8363588ef2883c1a0d719e23a80b`. It still owns live acquisition,
+claim/release, provider bridges, review/completion and workflow topology. No
+ComicPile source or workflow changed in this slice. The runtime extraction is
+not a live adopter cutover; same-view parity, bounded observation and rollback
+remain prerequisites for deleting duplicated code. The full boundary, example
+and recovery limits are in [`docs/worker-process.md`](docs/worker-process.md).
