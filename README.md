@@ -194,3 +194,8 @@ Rotisserie is licensed under the [Apache License 2.0](LICENSE). It permits
 commercial and private use, modification, and distribution while preserving
 copyright and license notices, and it includes an explicit contributor patent
 grant.
+
+The operational extraction also exposes a credential-free
+[`controller-plan` fixture caller](docs/assignment-controller.md) for one bounded
+fresh assignment. Live host enforcement, recovery and review/completion cutover
+remain tracked under issue #29.

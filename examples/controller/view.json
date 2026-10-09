@@ -1,0 +1,50 @@
+{
+  "schema_version": 1,
+  "version": "fixture-view-1",
+  "snapshot": {
+    "schema_version": 1,
+    "works": [
+      {
+        "id": {
+          "repository": {
+            "host": "example.test",
+            "owner": "rotisserie",
+            "name": "demo"
+          },
+          "key": "1"
+        },
+        "title": "Demonstrate controller handoff",
+        "state": "open",
+        "priority": 0
+      }
+    ],
+    "changes": [],
+    "revisions": [],
+    "workers": [
+      {
+        "id": {
+          "namespace": "demo",
+          "value": "one"
+        },
+        "human": false
+      }
+    ],
+    "leases": [],
+    "checks": [],
+    "reviews": [],
+    "evidence": [],
+    "capacities": [],
+    "boundaries": [],
+    "dependencies": []
+  },
+  "observed_at": 10,
+  "active": 0,
+  "completion_backlog": 0,
+  "liveness": [
+    {
+      "namespace": "demo",
+      "value": "one",
+      "state": "idle"
+    }
+  ]
+}
