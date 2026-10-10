@@ -1,4 +1,5 @@
 """Focused tests: no GitHub API calls or credentials needed."""
+
 from datetime import UTC, datetime
 
 import pytest
@@ -25,12 +26,15 @@ def observation(time: str, remaining: int) -> dict:
 
 def test_history_low_water_and_single_exhaustion_transition() -> None:
     now = datetime(2026, 10, 10, 17, 0, tzinfo=UTC)
-    data = aggregate([
-        observation("2026-10-10T14:00:00Z", 70),
-        observation("2026-10-10T15:00:00Z", 0),
-        observation("2026-10-10T15:30:00Z", 0),
-        observation("2026-10-10T16:00:00Z", 120),
-    ], now)
+    data = aggregate(
+        [
+            observation("2026-10-10T14:00:00Z", 70),
+            observation("2026-10-10T15:00:00Z", 0),
+            observation("2026-10-10T15:30:00Z", 0),
+            observation("2026-10-10T16:00:00Z", 120),
+        ],
+        now,
+    )
     core = data["installations"][0]["core"]
     assert core["low_water_24h"] == 0
     assert core["remaining"] == 120
