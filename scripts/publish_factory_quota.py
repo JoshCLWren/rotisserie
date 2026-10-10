@@ -58,7 +58,9 @@ def sanitize(raw: dict[str, Any]) -> dict[str, Any]:
             )
             reset = iso(value.get("reset_at"))
             if (
-                any(v is None for v in (limit, remaining, used))
+                limit is None
+                or remaining is None
+                or used is None
                 or limit <= 0
                 or remaining > limit
                 or used > limit
