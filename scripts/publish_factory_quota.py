@@ -3,6 +3,7 @@
 Input is a trusted private collection artifact, never public raw headers/logs.
 Unverified measurements are omitted instead of replaced with personal quotas.
 """
+
 import json
 import sys
 from datetime import datetime, timezone
@@ -87,7 +88,9 @@ def sanitize(raw):
 
 def main():
     if len(sys.argv) != 3:
-        raise SystemExit("usage: publish_factory_quota.py private-observations.json public-data.json")
+        raise SystemExit(
+            "usage: publish_factory_quota.py private-observations.json public-data.json"
+        )
     raw = json.loads(Path(sys.argv[1]).read_text(encoding="utf-8"))
     output = sanitize(raw)
     Path(sys.argv[2]).parent.mkdir(parents=True, exist_ok=True)
