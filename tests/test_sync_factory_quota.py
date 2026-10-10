@@ -49,6 +49,14 @@ def test_no_measurements_cannot_publish_fake_healthy_data() -> None:
         aggregate([], datetime(2026, 10, 10, 17, 0, tzinfo=UTC))
 
 
+def test_rejects_old_samples_even_if_publisher_runs_today() -> None:
+    with pytest.raises(ValueError, match="stale"):
+        aggregate(
+            [observation("2026-10-10T10:00:00Z", 4990)],
+            datetime(2026, 10, 10, 17, 0, tzinfo=UTC),
+        )
+
+
 def test_invalid_bucket_cannot_publish() -> None:
     bad = observation("2026-10-10T16:00:00Z", 4500)
     bad["resources"]["core"]["limit"] = -1
