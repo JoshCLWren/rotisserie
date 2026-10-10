@@ -34,8 +34,10 @@ def utc(value: str) -> datetime:
 def api(path: str, *args: str) -> bytes:
     # Separate narrowly scoped installation tokens, never an operator PAT.
     token_name = (
-        "FACTORY_SOURCE_TOKEN" if path.startswith(f"repos/{SOURCE}/")
-        else "FACTORY_PUBLISH_TOKEN" if path.startswith(f"repos/{DESTINATION}/")
+        "FACTORY_SOURCE_TOKEN"
+        if path.startswith(f"repos/{SOURCE}/")
+        else "FACTORY_PUBLISH_TOKEN"
+        if path.startswith(f"repos/{DESTINATION}/")
         else None
     )
     if token_name is None or not os.environ.get(token_name):
