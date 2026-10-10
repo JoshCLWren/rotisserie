@@ -1,0 +1,50 @@
+name: Publish Factory API Budgets
+
+on:
+  schedule:
+    # Collect once per hour, after ComicPile's :17 observer.
+    - cron: '32 * * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: publish-factory-api-budgets
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    # Never execute private artifact processing from a PR or an untrusted branch.
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - name: Verify dedicated observability App configuration
+        env:
+          APP_ID: ${{ secrets.FACTORY_OBSERVABILITY_APP_ID }}
+          PRIVATE_KEY: ${{ secrets.FACTORY_OBSERVABILITY_APP_PRIVATE_KEY }}
+        run: |
+          if [[ -z "$APP_ID" || -z "$PRIVATE_KEY" ]]; then
+            echo "::error::Dedicated factory observability App credentials are not configured; no data published."
+            exit 1
+          fi
+      - name: Create short-lived cross-repository installation token
+        uses: actions/create-github-app-token@v2
+        id: app
+        with:
+          app-id: ${{ secrets.FACTORY_OBSERVABILITY_APP_ID }}
+          private-key: ${{ secrets.FACTORY_OBSERVABILITY_APP_PRIVATE_KEY }}
+          owner: JoshCLWren
+          repositories: |
+            comic-pile
+            JoshCLWren.github.io
+          permission-actions: read
+          permission-contents: write
+      - name: Publish allowlisted measurements only
+        env:
+          GH_TOKEN: ${{ steps.app.outputs.token }}
+        run: python3 -m scripts.sync_factory_quota
