@@ -1,13 +1,14 @@
 """Focused tests: no GitHub API calls or credentials needed."""
 
 from datetime import UTC, datetime
+from typing import Any
 
 import pytest
 
 from scripts.sync_factory_quota import aggregate
 
 
-def observation(time: str, remaining: int) -> dict:
+def observation(time: str, remaining: int) -> dict[str, Any]:
     return {
         "observed_at": time,
         "credential_kind": "github-actions-installation",
