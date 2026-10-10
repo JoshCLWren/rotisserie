@@ -54,7 +54,9 @@ def api(path: str, *args: str) -> bytes:
 
 
 def observations_from_artifacts(now: datetime) -> list[dict[str, Any]]:
-    response = json.loads(api(f"repos/{SOURCE}/actions/artifacts?name={ARTIFACT_NAME}&per_page=100"))
+    response = json.loads(
+        api(f"repos/{SOURCE}/actions/artifacts?name={ARTIFACT_NAME}&per_page=100")
+    )
     candidates = [
         item
         for item in response.get("artifacts", [])
