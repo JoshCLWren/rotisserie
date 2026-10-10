@@ -6,13 +6,14 @@ Unverified measurements are omitted instead of replaced with personal quotas.
 
 import json
 import sys
+from typing import Any
 from datetime import UTC, datetime
 from pathlib import Path
 
 BUCKETS = ("core", "graphql", "search")
 
 
-def iso(value):
+def iso(value: Any) -> str | None:
     try:
         date = datetime.fromisoformat(value.replace("Z", "+00:00"))
         if date.tzinfo is None:
@@ -22,15 +23,15 @@ def iso(value):
         return None
 
 
-def integer(value):
+def integer(value: Any) -> int | None:
     return value if type(value) is int and value >= 0 else None
 
 
-def sanitize(raw):
+def sanitize(raw: dict[str, Any]) -> dict[str, Any]:
     published = iso(raw.get("observed_at"))
     if not published:
         raise ValueError("trusted observation timestamp required")
-    installations = []
+    installations: list[dict[str, Any]] = []
     # Accept an authenticated ComicPile observer sample as well as an
     # aggregate built from multiple private observations.
     observations = raw.get("installations")
@@ -47,7 +48,7 @@ def sanitize(raw):
             or not all(c.islower() or c.isdigit() or c == "-" for c in alias)
         ):
             continue
-        clean = {"alias": alias}
+        clean: dict[str, Any] = {"alias": alias}
         for kind in BUCKETS:
             value = row.get("resources", row).get(kind, {})
             if not isinstance(value, dict):
@@ -86,7 +87,7 @@ def sanitize(raw):
     }
 
 
-def main():
+def main() -> None:
     if len(sys.argv) != 3:
         raise SystemExit(
             "usage: publish_factory_quota.py private-observations.json public-data.json"
