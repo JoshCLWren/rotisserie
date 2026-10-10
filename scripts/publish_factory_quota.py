@@ -4,12 +4,13 @@ Input is a trusted private collection artifact, never public raw headers/logs.
 Unverified measurements are omitted instead of replaced with personal quotas.
 """
 import json
-import math
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
 
 BUCKETS = ("core", "graphql", "search")
+
+
 def iso(value):
     try:
         date = datetime.fromisoformat(value.replace("Z", "+00:00"))
@@ -19,8 +20,10 @@ def iso(value):
     except (TypeError, AttributeError, ValueError):
         return None
 
+
 def integer(value):
     return value if type(value) is int and value >= 0 else None
+
 
 def sanitize(raw):
     published = iso(raw.get("observed_at"))
@@ -36,18 +39,36 @@ def sanitize(raw):
         # Use only internally assigned display aliases; never emit installation
         # IDs, repository metadata, headers, tokens, or raw consumer URLs.
         alias = row.get("public_alias")
-        if not isinstance(alias, str) or not alias.startswith("factory-") or len(alias) > 30 or not all(c.islower() or c.isdigit() or c == "-" for c in alias):
+        if (
+            not isinstance(alias, str)
+            or not alias.startswith("factory-")
+            or len(alias) > 30
+            or not all(c.islower() or c.isdigit() or c == "-" for c in alias)
+        ):
             continue
         clean = {"alias": alias}
         for kind in BUCKETS:
             value = row.get("resources", row).get(kind, {})
             if not isinstance(value, dict):
                 continue
-            limit, remaining, used = (integer(value.get(key)) for key in ("limit", "remaining", "used"))
+            limit, remaining, used = (
+                integer(value.get(key)) for key in ("limit", "remaining", "used")
+            )
             reset = iso(value.get("reset_at"))
-            if any(v is None for v in (limit, remaining, used)) or limit <= 0 or remaining > limit or used > limit or not reset:
+            if (
+                any(v is None for v in (limit, remaining, used))
+                or limit <= 0
+                or remaining > limit
+                or used > limit
+                or not reset
+            ):
                 continue
-            clean[kind] = {"limit": limit, "remaining": remaining, "used": used, "reset_at": reset}
+            clean[kind] = {
+                "limit": limit,
+                "remaining": remaining,
+                "used": used,
+                "reset_at": reset,
+            }
             low = integer(value.get("low_water_24h"))
             if low is not None and low <= limit:
                 clean[kind]["low_water_24h"] = low
@@ -63,13 +84,17 @@ def sanitize(raw):
         "ai_models": {"summary": "Unavailable"},
     }
 
+
 def main():
     if len(sys.argv) != 3:
         raise SystemExit("usage: publish_factory_quota.py private-observations.json public-data.json")
     raw = json.loads(Path(sys.argv[1]).read_text(encoding="utf-8"))
     output = sanitize(raw)
     Path(sys.argv[2]).parent.mkdir(parents=True, exist_ok=True)
-    Path(sys.argv[2]).write_text(json.dumps(output, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    Path(sys.argv[2]).write_text(
+        json.dumps(output, indent=2, sort_keys=True) + "\n", encoding="utf-8"
+    )
+
 
 if __name__ == "__main__":
     main()
