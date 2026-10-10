@@ -401,3 +401,22 @@ not completion or full live-controller parity: recovery, exact-head independent
 review/completion, concrete adopter enforcement, golden live comparison and
 observed cutover/rollback remain under issue #29. The port obligations and
 remaining boundaries are in [`docs/assignment-controller.md`](docs/assignment-controller.md).
+
+
+## Bounded controller recovery
+
+Issue #29 now also has an application stale-lease recovery operation and public
+planning-only `controller-recovery-plan` fixture caller. One call releases at
+most one exact expired lease after fresh trusted activity and complete idle
+liveness attestations, reacquisition and durable full-view/full-lease CAS.
+Observation failures, liveness holds, recent activity, conflicts and ambiguous
+writes have distinct versioned results. This supersedes neither the local
+coordination simulation nor any live adopter runtime.
+
+The read-only source refresh used ComicPile main
+`8692c718458282af9300edffce72035145ff6655` on 2026-10-09; source functions,
+deliberate strengthening and adapter enforcement obligations are recorded in
+[`docs/assignment-controller.md`](docs/assignment-controller.md). Production
+CAS enforcement, exact-head review/completion, golden live parity, provider
+bridges and observed rollback/cutover remain follow-on work. No external
+repository, workflow or archived artifact changed.

@@ -45,6 +45,7 @@ from rotisserie.application.controller import (
     plan_assignment,
 )
 from rotisserie.application.process import assignment_from_dict, resume_from_dict
+from rotisserie.application.recovery import RecoveryRequest, RecoveryStatus, plan_recovery
 from rotisserie.application.runtime import Outcome
 from rotisserie.domain import (
     ChangeId,
@@ -65,7 +66,7 @@ from rotisserie.operator import (
     OperatorConfig,
     load_config,
 )
-from rotisserie.operator.controller import controller_view_from_dict
+from rotisserie.operator.controller import controller_view_from_dict, recovery_view_from_dict
 from rotisserie.operator.execution import execute_assignment, execution_plan
 
 EXIT_OK = 0
@@ -236,6 +237,14 @@ def parser() -> argparse.ArgumentParser:
     controller.add_argument("--max-observation-age", type=int, required=True)
     controller.add_argument("--wip-limit", type=int)
     controller.add_argument("--backlog-limit", type=int)
+    recovery = subcommands.add_parser(
+        "controller-recovery-plan", help="plan one expired-lease recovery"
+    )
+    recovery.add_argument("--view", required=True)
+    recovery.add_argument("--operation", required=True)
+    recovery.add_argument("--at", type=int, required=True)
+    recovery.add_argument("--max-observation-age", type=int, required=True)
+    recovery.add_argument("--inactivity-ttl", type=int, required=True)
     return value
 
 
@@ -256,6 +265,8 @@ def main(argv: Sequence[str] | None = None) -> int:
             output, status = _decide(arguments, config, journal, correlation_id)
         elif arguments.command == "adopt":
             output, status = _adopt(arguments, journal, correlation_id)
+        elif arguments.command == "controller-recovery-plan":
+            output, status = _controller_recovery_plan(arguments, config, journal, correlation_id)
         elif arguments.command == "controller-plan":
             output, status = _controller_plan(arguments, config, journal, correlation_id)
         elif arguments.command == "execute":
@@ -915,6 +926,55 @@ def _controller_plan(
     )
     return _envelope(
         correlation_id, "controller-plan", str(result.status), evidence=evidence, record=record
+    ), status
+
+
+def _controller_recovery_plan(
+    arguments: argparse.Namespace,
+    config: OperatorConfig,
+    journal: OperationJournal,
+    correlation_id: str,
+) -> tuple[dict[str, Any], int]:
+    if config.workers is None:
+        raise ConfigurationError("recovery requires an explicit worker inventory")
+    raw = _read_json_bytes(arguments.view, "recovery view")
+    view = recovery_view_from_dict(_json_object(raw, "recovery view"))
+    request = RecoveryRequest(
+        config.repository,
+        arguments.operation,
+        arguments.at,
+        arguments.max_observation_age,
+        arguments.inactivity_ttl,
+        config.workers.expected,
+    )
+    result = plan_recovery(view, request)
+    evidence = {
+        "schema_version": 1,
+        "view_sha256": hashlib.sha256(raw).hexdigest(),
+        "version": view.controller.graph.version,
+        "operation": request.operation,
+        "at": request.at,
+        "max_observation_age": request.max_observation_age,
+        "inactivity_ttl": request.inactivity_ttl,
+        "workers": [{"namespace": x.namespace, "value": x.value} for x in sorted(request.workers)],
+        "result": result.to_dict(),
+    }
+    record = journal.append(
+        correlation_id=correlation_id,
+        command="controller-recovery-plan",
+        dry_run=True,
+        result=evidence,
+        timestamp=int(time.time()),
+    )
+    status = (
+        EXIT_OK if result.status in {RecoveryStatus.PLANNED, RecoveryStatus.ZERO} else EXIT_REJECTED
+    )
+    return _envelope(
+        correlation_id,
+        "controller-recovery-plan",
+        str(result.status),
+        evidence=evidence,
+        record=record,
     ), status
 
 
