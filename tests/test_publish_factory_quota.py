@@ -4,7 +4,7 @@ from scripts.publish_factory_quota import sanitize
 
 
 class QuotaSanitizationTests(unittest.TestCase):
-    def test_no_secret_or_private_metadata_leaks(self):
+    def test_no_secret_or_private_metadata_leaks(self) -> None:
         sample = {
             "observed_at": "2026-10-10T13:00:00Z",
             "token": "secret",
@@ -30,7 +30,7 @@ class QuotaSanitizationTests(unittest.TestCase):
         self.assertNotIn("secret-project", str(public))
         self.assertNotIn("123", str(public))
 
-    def test_accepts_authenticated_comicpile_sample(self):
+    def test_accepts_authenticated_comicpile_sample(self) -> None:
         sample = {
             "observed_at": "2026-10-10T14:00:00Z",
             "credential_kind": "github-actions-installation",
@@ -47,7 +47,7 @@ class QuotaSanitizationTests(unittest.TestCase):
         result = sanitize(sample)
         self.assertEqual(result["installations"][0]["core"]["remaining"], 3200)
 
-    def test_bad_or_missing_measurements_not_healthy(self):
+    def test_bad_or_missing_measurements_not_healthy(self) -> None:
         sample = {
             "observed_at": "2026-10-10T13:00:00Z",
             "installations": [{"public_alias": "factory-primary", "core": {"limit": 5000}}],
