@@ -27,7 +27,12 @@ def sanitize(raw):
     if not published:
         raise ValueError("trusted observation timestamp required")
     installations = []
-    for idx, row in enumerate(raw.get("installations", [])):
+    # Accept an authenticated ComicPile observer sample as well as an
+    # aggregate built from multiple private observations.
+    observations = raw.get("installations")
+    if observations is None and raw.get("credential_kind") == "github-actions-installation":
+        observations = [raw]
+    for row in observations or []:
         # Use only internally assigned display aliases; never emit installation
         # IDs, repository metadata, headers, tokens, or raw consumer URLs.
         alias = row.get("public_alias")
@@ -35,7 +40,7 @@ def sanitize(raw):
             continue
         clean = {"alias": alias}
         for kind in BUCKETS:
-            value = row.get(kind, {})
+            value = row.get("resources", row).get(kind, {})
             if not isinstance(value, dict):
                 continue
             limit, remaining, used = (integer(value.get(key)) for key in ("limit", "remaining", "used"))
