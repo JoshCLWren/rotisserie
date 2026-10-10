@@ -32,11 +32,21 @@ def utc(value: str) -> datetime:
 
 
 def api(path: str, *args: str) -> bytes:
+    # Separate narrowly scoped installation tokens, never an operator PAT.
+    token_name = (
+        "FACTORY_SOURCE_TOKEN" if path.startswith(f"repos/{SOURCE}/")
+        else "FACTORY_PUBLISH_TOKEN" if path.startswith(f"repos/{DESTINATION}/")
+        else None
+    )
+    if token_name is None or not os.environ.get(token_name):
+        raise ValueError("Missing scoped publisher credential")
+    env = os.environ.copy()
+    env["GH_TOKEN"] = os.environ[token_name]
     result = subprocess.run(
         ["gh", "api", path, *args],
         check=True,
         capture_output=True,
-        env=os.environ.copy(),
+        env=env,
     )
     return result.stdout
 
@@ -79,6 +89,8 @@ def aggregate(samples: list[dict[str, Any]], now: datetime) -> dict[str, Any]:
         raise ValueError("No authenticated, recent installation observations; refusing publication")
     samples = sorted(samples, key=lambda s: utc(s["observed_at"]))
     latest = samples[-1]
+    if now - utc(latest["observed_at"]) > timedelta(hours=2):
+        raise ValueError("Newest authenticated quota observation is stale")
     raw: dict[str, Any] = {
         "observed_at": now.isoformat(),
         "installations": [latest],
@@ -115,8 +127,8 @@ def aggregate(samples: list[dict[str, Any]], now: datetime) -> dict[str, Any]:
 
 
 def main() -> None:
-    if not os.environ.get("GH_TOKEN"):
-        raise SystemExit("Missing dedicated GitHub App publishing token")
+    if not os.environ.get("FACTORY_SOURCE_TOKEN") or not os.environ.get("FACTORY_PUBLISH_TOKEN"):
+        raise SystemExit("Missing separate scoped factory observation and publishing tokens")
     now = datetime.now(UTC)
     payload = aggregate(observations_from_artifacts(now), now)
     path = f"repos/{DESTINATION}/contents/factory-health/data.json"
