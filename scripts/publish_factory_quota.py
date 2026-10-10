@@ -6,9 +6,9 @@ Unverified measurements are omitted instead of replaced with personal quotas.
 
 import json
 import sys
-from typing import Any
 from datetime import UTC, datetime
 from pathlib import Path
+from typing import Any
 
 BUCKETS = ("core", "graphql", "search")
 
