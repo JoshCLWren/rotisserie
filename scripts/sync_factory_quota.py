@@ -19,7 +19,7 @@ from scripts.publish_factory_quota import sanitize
 
 SOURCE = "JoshCLWren/comic-pile"
 DESTINATION = "JoshCLWren/JoshCLWren.github.io"
-ARTIFACT_PREFIX = "factory-api-quota-"
+ARTIFACT_NAME = "factory-api-quota"
 MAX_ARTIFACTS = 26
 MAX_OBSERVATION_BYTES = 32768
 
@@ -54,12 +54,12 @@ def api(path: str, *args: str) -> bytes:
 
 
 def observations_from_artifacts(now: datetime) -> list[dict[str, Any]]:
-    response = json.loads(api(f"repos/{SOURCE}/actions/artifacts?per_page=100"))
+    response = json.loads(api(f"repos/{SOURCE}/actions/artifacts?name={ARTIFACT_NAME}&per_page=100"))
     candidates = [
         item
         for item in response.get("artifacts", [])
         if isinstance(item.get("name"), str)
-        and item["name"].startswith(ARTIFACT_PREFIX)
+        and item["name"] == ARTIFACT_NAME
         and not item.get("expired")
         and utc(item["created_at"]) >= now - timedelta(hours=25)
     ]
