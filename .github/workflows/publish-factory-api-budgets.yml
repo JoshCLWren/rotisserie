@@ -16,7 +16,7 @@ concurrency:
 jobs:
   publish:
     # Never execute private artifact processing from a PR or an untrusted branch.
-    if: github.ref == 'refs/heads/main'
+    if: github.ref == 'refs/heads/main' && vars.FACTORY_OBSERVABILITY_ENABLED == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 8
     steps:
