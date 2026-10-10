@@ -1,0 +1,195 @@
+{
+  "schema_version": 1,
+  "controller": {
+    "schema_version": 1,
+    "version": "1",
+    "snapshot": {
+      "schema_version": 1,
+      "works": [
+        {
+          "id": {
+            "repository": {
+              "host": "example.test",
+              "owner": "org",
+              "name": "repo"
+            },
+            "key": "12"
+          },
+          "title": "Capability",
+          "state": "open",
+          "priority": 0
+        }
+      ],
+      "changes": [
+        {
+          "id": {
+            "repository": {
+              "host": "example.test",
+              "owner": "org",
+              "name": "repo"
+            },
+            "key": "15"
+          },
+          "work": {
+            "repository": {
+              "host": "example.test",
+              "owner": "org",
+              "name": "repo"
+            },
+            "key": "12"
+          },
+          "head": {
+            "repository": {
+              "host": "example.test",
+              "owner": "org",
+              "name": "repo"
+            },
+            "value": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+          },
+          "producer": {
+            "namespace": "agent",
+            "value": "producer"
+          }
+        }
+      ],
+      "revisions": [
+        {
+          "id": {
+            "repository": {
+              "host": "example.test",
+              "owner": "org",
+              "name": "repo"
+            },
+            "value": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+          }
+        },
+        {
+          "id": {
+            "repository": {
+              "host": "example.test",
+              "owner": "org",
+              "name": "repo"
+            },
+            "value": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+          }
+        }
+      ],
+      "workers": [
+        {
+          "id": {
+            "namespace": "agent",
+            "value": "producer"
+          },
+          "human": false
+        },
+        {
+          "id": {
+            "namespace": "agent",
+            "value": "repairer"
+          },
+          "human": false
+        },
+        {
+          "id": {
+            "namespace": "agent",
+            "value": "reviewer"
+          },
+          "human": false
+        }
+      ],
+      "leases": [],
+      "checks": [],
+      "reviews": [],
+      "evidence": [],
+      "capacities": [],
+      "boundaries": [],
+      "dependencies": []
+    },
+    "observed_at": 10,
+    "active": 0,
+    "completion_backlog": 0,
+    "liveness": [
+      {
+        "namespace": "agent",
+        "value": "producer",
+        "state": "idle"
+      },
+      {
+        "namespace": "agent",
+        "value": "repairer",
+        "state": "idle"
+      },
+      {
+        "namespace": "agent",
+        "value": "reviewer",
+        "state": "idle"
+      }
+    ]
+  },
+  "candidates": [
+    {
+      "provenance": {
+        "change": "15",
+        "revision": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "contributors": [
+          {
+            "namespace": "agent",
+            "value": "producer"
+          },
+          {
+            "namespace": "agent",
+            "value": "repairer"
+          }
+        ],
+        "approvers": [
+          {
+            "namespace": "agent",
+            "value": "reviewer"
+          }
+        ],
+        "producer": {
+          "namespace": "agent",
+          "value": "producer"
+        },
+        "producer_attested": true,
+        "provenance_recorded": true,
+        "observed_at": 10,
+        "complete": true,
+        "trusted": true
+      },
+      "reviews": [
+        {
+          "id": "semantic-approval-1",
+          "revision": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "reviewer": {
+            "namespace": "agent",
+            "value": "reviewer"
+          },
+          "decision": "approved",
+          "required": true
+        }
+      ],
+      "ci": [
+        {
+          "revision": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "name": "tests",
+          "status": "passed",
+          "required": true
+        }
+      ],
+      "readiness": [
+        {
+          "revision": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "name": "mechanical",
+          "status": "passed",
+          "required": true
+        }
+      ],
+      "observed_at": 10,
+      "complete": true,
+      "trusted": true
+    }
+  ],
+  "liveness_complete": true,
+  "records": []
+}

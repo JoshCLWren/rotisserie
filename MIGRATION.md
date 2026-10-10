@@ -442,3 +442,27 @@ strengthening, race tests and production adapter obligations are documented in
 merge authority, concrete adopter enforcement, golden live same-view parity,
 provider bridges and observed rollback/cutover remain under issue #29. ComicPile,
 active workflows and archived evidence are unchanged.
+
+
+## Bounded completion controller
+
+Issue #29 now includes one exact-head completion decision, durable claim and
+expected-head merge handoff through explicit application ports. It reuses
+complete trusted contributor-set provenance and domain independent review,
+requires separate semantic-review and all configured exact-head CI/readiness
+evidence, and preserves human gates, prerequisites, ownership, liveness and
+capacity. Every effect requires fresh reacquisition and full-view/full-binding
+CAS; the actual merge requires a host-enforced expected-head fence. Durable
+attempting/unknown records preserve uncertain outcomes without compensation or
+unsafe retries. Completion grants no linked-issue closure or release authority.
+
+The public version-1 `controller-completion-plan` CLI and fixture caller perform
+planning only. ComicPile main was refreshed read-only at
+`8692c718458282af9300edffce72035145ff6655` on 2026-10-09. The working semantic /
+mechanical / expected-head merge sequence, deliberate safety strengthening,
+source comparison and separately classified post-merge reconciliation are in
+[`docs/assignment-controller.md`](docs/assignment-controller.md). Concrete
+production enforcement, golden live same-view parity, provider bridges, safe
+completion adjudication/release, post-merge reconciliation and observed
+rollback/cutover remain follow-on work. Issue #29 remains open; ComicPile,
+workflows, the issue-9 canary and archived evidence remain unchanged.
