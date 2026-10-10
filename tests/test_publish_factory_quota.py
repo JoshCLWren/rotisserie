@@ -28,6 +28,7 @@ class QuotaSanitizationTests(unittest.TestCase):
         self.assertNotIn("secret", str(public))
         self.assertNotIn("secret-project", str(public))
         self.assertNotIn("123", str(public))
+
     def test_accepts_authenticated_comicpile_sample(self):
         sample = {
             "observed_at": "2026-10-10T14:00:00Z",
@@ -48,9 +49,7 @@ class QuotaSanitizationTests(unittest.TestCase):
     def test_bad_or_missing_measurements_not_healthy(self):
         sample = {
             "observed_at": "2026-10-10T13:00:00Z",
-            "installations": [
-                {"public_alias": "factory-primary", "core": {"limit": 5000}}
-            ],
+            "installations": [{"public_alias": "factory-primary", "core": {"limit": 5000}}],
         }
         public = sanitize(sample)
         self.assertNotIn("core", public["installations"][0])
