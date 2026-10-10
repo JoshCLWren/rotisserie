@@ -11,6 +11,13 @@ such change must be called out here and in its release notes.
 
 ### Added
 
+- Bounded exact-head independent-review claim/request and process handoff over
+  explicit acquisition, trusted provenance/liveness, durable CAS and dispatch
+  ports. Contributor-set independence, exact durable bindings, concurrent-state
+  fences and proven-refusal-only compensation guard mutation authority. The
+  version-1 `controller-review-plan` CLI and fixture caller perform planning
+  only; completion, production enforcement and live adopter cutover remain open.
+
 - Opt-in operational worker execution through `execute`, a strict version 1
   assignment/process JSON contract, and a trusted POSIX subprocess adapter.
   Active-lease, repository, inventory, human-boundary and exact-head checks

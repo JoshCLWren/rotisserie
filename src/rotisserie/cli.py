@@ -46,6 +46,7 @@ from rotisserie.application.controller import (
 )
 from rotisserie.application.process import assignment_from_dict, resume_from_dict
 from rotisserie.application.recovery import RecoveryRequest, RecoveryStatus, plan_recovery
+from rotisserie.application.review_controller import ReviewRequest, ReviewStatus, plan_review
 from rotisserie.application.runtime import Outcome
 from rotisserie.domain import (
     ChangeId,
@@ -66,7 +67,11 @@ from rotisserie.operator import (
     OperatorConfig,
     load_config,
 )
-from rotisserie.operator.controller import controller_view_from_dict, recovery_view_from_dict
+from rotisserie.operator.controller import (
+    controller_view_from_dict,
+    recovery_view_from_dict,
+    review_view_from_dict,
+)
 from rotisserie.operator.execution import execute_assignment, execution_plan
 
 EXIT_OK = 0
@@ -237,6 +242,17 @@ def parser() -> argparse.ArgumentParser:
     controller.add_argument("--max-observation-age", type=int, required=True)
     controller.add_argument("--wip-limit", type=int)
     controller.add_argument("--backlog-limit", type=int)
+    review_controller = subcommands.add_parser(
+        "controller-review-plan", help="plan one exact-head independent review"
+    )
+    review_controller.add_argument("--view", required=True)
+    review_controller.add_argument("--assignment", required=True)
+    review_controller.add_argument("--operation", required=True)
+    review_controller.add_argument("--lease-id", required=True)
+    review_controller.add_argument("--at", type=int, required=True)
+    review_controller.add_argument("--max-observation-age", type=int, required=True)
+    review_controller.add_argument("--wip-limit", type=int)
+    review_controller.add_argument("--backlog-limit", type=int)
     recovery = subcommands.add_parser(
         "controller-recovery-plan", help="plan one expired-lease recovery"
     )
@@ -267,6 +283,8 @@ def main(argv: Sequence[str] | None = None) -> int:
             output, status = _adopt(arguments, journal, correlation_id)
         elif arguments.command == "controller-recovery-plan":
             output, status = _controller_recovery_plan(arguments, config, journal, correlation_id)
+        elif arguments.command == "controller-review-plan":
+            output, status = _controller_review_plan(arguments, config, journal, correlation_id)
         elif arguments.command == "controller-plan":
             output, status = _controller_plan(arguments, config, journal, correlation_id)
         elif arguments.command == "execute":
@@ -972,6 +990,64 @@ def _controller_recovery_plan(
     return _envelope(
         correlation_id,
         "controller-recovery-plan",
+        str(result.status),
+        evidence=evidence,
+        record=record,
+    ), status
+
+
+def _controller_review_plan(
+    arguments: argparse.Namespace,
+    config: OperatorConfig,
+    journal: OperationJournal,
+    correlation_id: str,
+) -> tuple[dict[str, Any], int]:
+    if config.workers is None:
+        raise ConfigurationError("review controller requires an explicit worker inventory")
+    raw = _read_json_bytes(arguments.view, "review view")
+    assignment_raw = _read_json_bytes(arguments.assignment, "review assignment")
+    view = review_view_from_dict(_json_object(raw, "review view"))
+    assignment = assignment_from_dict(_json_object(assignment_raw, "review assignment"))
+    request = ReviewRequest(
+        config.repository,
+        assignment,
+        LeaseId(arguments.lease_id),
+        arguments.operation,
+        SchedulingPolicy(
+            resolve_wip_limit(config.workers, arguments.wip_limit), 0, arguments.backlog_limit
+        ),
+        arguments.at,
+        arguments.max_observation_age,
+        config.workers.expected,
+    )
+    result = plan_review(view, request)
+    evidence = {
+        "schema_version": 1,
+        "view_sha256": hashlib.sha256(raw).hexdigest(),
+        "assignment_sha256": hashlib.sha256(assignment_raw).hexdigest(),
+        "version": view.controller.graph.version,
+        "operation": request.operation,
+        "lease_id": request.lease_id.value,
+        "at": request.at,
+        "max_observation_age": request.max_observation_age,
+        "wip_limit": request.policy.wip_limit,
+        "backlog_limit": request.policy.backlog_limit,
+        "workers": [{"namespace": x.namespace, "value": x.value} for x in sorted(request.workers)],
+        "result": result.to_dict(),
+    }
+    record = journal.append(
+        correlation_id=correlation_id,
+        command="controller-review-plan",
+        dry_run=True,
+        result=evidence,
+        timestamp=int(time.time()),
+    )
+    status = (
+        EXIT_OK if result.status in {ReviewStatus.SELECTED, ReviewStatus.ZERO} else EXIT_REJECTED
+    )
+    return _envelope(
+        correlation_id,
+        "controller-review-plan",
         str(result.status),
         evidence=evidence,
         record=record,

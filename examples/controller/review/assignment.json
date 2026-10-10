@@ -1,0 +1,35 @@
+{
+  "schema_version": 1,
+  "id": "review-15",
+  "worker": {
+    "namespace": "agent",
+    "value": "reviewer"
+  },
+  "objective": "Review exact revision",
+  "repository_context": "",
+  "change": "15",
+  "timeout_seconds": 1800,
+  "authority": {
+    "work": {
+      "repository": {
+        "host": "example.test",
+        "owner": "org",
+        "name": "repo"
+      },
+      "key": "12"
+    },
+    "revision": {
+      "repository": {
+        "host": "example.test",
+        "owner": "org",
+        "name": "repo"
+      },
+      "value": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    },
+    "permissions": [
+      "read",
+      "report_evidence"
+    ],
+    "expires_at": 30
+  }
+}

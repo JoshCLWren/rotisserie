@@ -6,9 +6,24 @@ from typing import Any
 
 from rotisserie.application.controller import ControllerView, Liveness
 from rotisserie.application.coordination import GraphView
-from rotisserie.application.process import _secret_free
+from rotisserie.application.process import (
+    _integer,
+    _object,
+    _secret_free,
+    _text,
+    _version,
+    _worker,
+    assignment_from_dict,
+)
 from rotisserie.application.recovery import ActivityEvidence, RecoveryView, lease_to_dict
-from rotisserie.domain import GraphSnapshot, WorkerId
+from rotisserie.application.review_controller import ReviewBinding, ReviewCandidate, ReviewView
+from rotisserie.domain import (
+    ChangeId,
+    GraphSnapshot,
+    ReviewIndependenceSignals,
+    RevisionId,
+    WorkerId,
+)
 
 
 def controller_view_from_dict(value: object) -> ControllerView:
@@ -91,3 +106,87 @@ def recovery_view_from_dict(value: object) -> RecoveryView:
             )
         )
     return RecoveryView(controller, tuple(activity), value["liveness_complete"])
+
+
+def review_view_from_dict(value: object) -> ReviewView:
+    """Strict captured review envelope; fixture attestations grant no live authority."""
+    _secret_free(value)
+    raw = _object(
+        value, {"schema_version", "controller", "candidates", "liveness_complete", "bindings"}
+    )
+    _version(raw)
+    controller = controller_view_from_dict(raw["controller"])
+    repository = None
+    if controller.graph.snapshot.works:
+        repository = controller.graph.snapshot.works[0].id.repository
+    if not isinstance(raw["candidates"], list) or not isinstance(raw["bindings"], list):
+        raise ValueError("review candidates and bindings must be arrays")
+
+    def candidate(value: object) -> ReviewCandidate:
+        item = _object(
+            value,
+            {
+                "change",
+                "revision",
+                "contributors",
+                "approvers",
+                "producer",
+                "producer_attested",
+                "provenance_recorded",
+                "observed_at",
+                "complete",
+                "trusted",
+            },
+        )
+        if repository is None:
+            raise ValueError("review candidates require a repository-scoped graph")
+
+        def identities(key: str) -> frozenset[WorkerId]:
+            if not isinstance(item[key], list):
+                raise ValueError("review identities must be arrays")
+            workers = tuple(_worker(x) for x in item[key])
+            if len(set(workers)) != len(workers):
+                raise ValueError("ambiguous review identities")
+            return frozenset(workers)
+
+        for key in ("producer_attested", "provenance_recorded", "complete", "trusted"):
+            if type(item[key]) is not bool:
+                raise ValueError("review attestations require booleans")
+        return ReviewCandidate(
+            ChangeId(repository, _text(item["change"])),
+            ReviewIndependenceSignals(
+                RevisionId(repository, _text(item["revision"])),
+                identities("contributors"),
+                identities("approvers"),
+                _worker(item["producer"]) if item["producer"] is not None else None,
+                item["producer_attested"],
+                item["provenance_recorded"],
+            ),
+            _integer(item["observed_at"]),
+            item["complete"],
+            item["trusted"],
+        )
+
+    bindings = []
+    for value in raw["bindings"]:
+        item = _object(value, {"schema_version", "lease", "candidate", "assignment"})
+        _version(item)
+        lease_raw = _object(item["lease"], {"id", "work", "worker", "acquired_at", "expires_at"})
+        _integer(lease_raw["acquired_at"])
+        _integer(lease_raw["expires_at"])
+        lease = next(
+            (x for x in controller.graph.snapshot.leases if lease_to_dict(x) == lease_raw), None
+        )
+        if lease is None:
+            raise ValueError("review binding requires an exact captured lease")
+        bindings.append(
+            ReviewBinding(
+                lease, candidate(item["candidate"]), assignment_from_dict(item["assignment"])
+            )
+        )
+    return ReviewView(
+        controller,
+        tuple(candidate(x) for x in raw["candidates"]),
+        raw["liveness_complete"],
+        tuple(bindings),
+    )

@@ -420,3 +420,25 @@ deliberate strengthening and adapter enforcement obligations are recorded in
 CAS enforcement, exact-head review/completion, golden live parity, provider
 bridges and observed rollback/cutover remain follow-on work. No external
 repository, workflow or archived artifact changed.
+
+
+## Bounded independent-review controller
+
+The next issue #29 capability adds one exact-head independent-review assignment
+and handoff over explicit acquisition, trusted liveness, atomic durable
+claim/request CAS and dispatch ports. Complete trusted contributor-set and
+producer provenance is required before mutation; formal host approvals and the
+domain's unknown-provenance approval fallback confer no controller authority.
+A full durable binding fences the lease, review request and process assignment
+to one change/head. Reacquisition and full-view CAS guard claim, handoff and
+proven-refusal compensation; uncertain outcomes retain ownership.
+
+The planning-only `controller-review-plan` CLI and fixture caller record exact
+input digests without graph initialization, credentials, effects or workers.
+The read-only ComicPile refresh is pinned to main
+`8692c718458282af9300edffce72035145ff6655` on 2026-10-09. Sources, deliberate
+strengthening, race tests and production adapter obligations are documented in
+[`docs/assignment-controller.md`](docs/assignment-controller.md). Completion /
+merge authority, concrete adopter enforcement, golden live same-view parity,
+provider bridges and observed rollback/cutover remain under issue #29. ComicPile,
+active workflows and archived evidence are unchanged.
