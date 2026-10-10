@@ -3,6 +3,7 @@
 The publisher runs only in Rotisserie's trusted main-branch workflow.
 It never exports the downloaded artifacts or any repository metadata.
 """
+
 from __future__ import annotations
 
 import base64
@@ -45,7 +46,8 @@ def api(path: str, *args: str) -> bytes:
 def observations_from_artifacts(now: datetime) -> list[dict[str, Any]]:
     response = json.loads(api(f"repos/{SOURCE}/actions/artifacts?per_page=100"))
     candidates = [
-        item for item in response.get("artifacts", [])
+        item
+        for item in response.get("artifacts", [])
         if isinstance(item.get("name"), str)
         and item["name"].startswith(ARTIFACT_PREFIX)
         and not item.get("expired")
@@ -93,10 +95,7 @@ def aggregate(samples: list[dict[str, Any]], now: datetime) -> dict[str, Any]:
     for bucket in ("core", "graphql", "search"):
         if bucket not in current:
             continue
-        values = [
-            s.get("resources", {}).get(bucket, {}).get("remaining")
-            for s in samples
-        ]
+        values = [s.get("resources", {}).get(bucket, {}).get("remaining") for s in samples]
         valid = [v for v in values if type(v) is int and 0 <= v <= current[bucket]["limit"]]
         if valid:
             current[bucket]["low_water_24h"] = min(valid)
@@ -123,7 +122,9 @@ def main() -> None:
     now = datetime.now(UTC)
     payload = aggregate(observations_from_artifacts(now), now)
     path = f"repos/{DESTINATION}/contents/factory-health/data.json"
-    encoded = base64.b64encode((json.dumps(payload, sort_keys=True, indent=2) + "\n").encode()).decode()
+    encoded = base64.b64encode(
+        (json.dumps(payload, sort_keys=True, indent=2) + "\n").encode()
+    ).decode()
     try:
         existing = json.loads(api(path))
         sha = existing["sha"]
@@ -133,9 +134,14 @@ def main() -> None:
             raise
         sha = None
     fields = [
-        "--method", "PUT", "-f", "branch=main",
-        "-f", "message=chore: refresh sanitized factory API budgets",
-        "-f", f"content={encoded}",
+        "--method",
+        "PUT",
+        "-f",
+        "branch=main",
+        "-f",
+        "message=chore: refresh sanitized factory API budgets",
+        "-f",
+        f"content={encoded}",
     ]
     if sha:
         fields += ["-f", f"sha={sha}"]
