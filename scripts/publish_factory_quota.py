@@ -6,7 +6,7 @@ Unverified measurements are omitted instead of replaced with personal quotas.
 
 import json
 import sys
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 BUCKETS = ("core", "graphql", "search")
@@ -17,7 +17,7 @@ def iso(value):
         date = datetime.fromisoformat(value.replace("Z", "+00:00"))
         if date.tzinfo is None:
             raise ValueError("timezone required")
-        return date.astimezone(timezone.utc).isoformat().replace("+00:00", "Z")
+        return date.astimezone(UTC).isoformat().replace("+00:00", "Z")
     except (TypeError, AttributeError, ValueError):
         return None
 
