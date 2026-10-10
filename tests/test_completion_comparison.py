@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import gzip
 import hashlib
 import json
 import shutil
@@ -334,8 +335,8 @@ def test_source_and_capture_integrity_are_checked_before_interpretation(
     shutil.copytree(EXAMPLE / "source", tmp_path / "source")
     with pytest.raises(ValueError, match="repin"):
         verified_source(tmp_path / "source", "b" * 40)
-    path = tmp_path / "source/factory-review-controller.py.txt"
-    path.write_bytes(path.read_bytes() + b"\n")
+    path = tmp_path / "source/factory-review-controller.py.txt.gz"
+    path.write_bytes(gzip.compress(gzip.decompress(path.read_bytes()) + b"\n", mtime=0))
     with pytest.raises(ValueError, match="integrity"):
         verified_source(tmp_path / "source", SOURCE_SHA)
 

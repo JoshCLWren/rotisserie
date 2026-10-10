@@ -10,7 +10,9 @@ ComicPile main was fetched read-only on 2026-10-09 at
 `8692c718458282af9300edffce72035145ff6655`. The archived source remains
 `2dc9b675e1a828b526f074c5f5c151293dedcdee`. The checked-in source files under
 `examples/completion-comparison/source/` are byte-identical evidence from the
-refreshed commit, stored as `.txt` so they cannot be imported or activated.
+refreshed commit, stored as compressed `.txt.gz` so they cannot be imported or activated.
+Decompression recovers the exact source bytes, including original whitespace;
+the integrity check hashes those bytes, not a reformatted copy.
 `completion_source.py` pins their SHA-256 digests in reviewed code. A different
 upstream SHA or changed source bytes refuses comparison until a new audit and
 pin update. Supplying a rewritten manifest cannot authorize different code. Before an

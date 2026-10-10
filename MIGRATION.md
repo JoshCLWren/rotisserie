@@ -472,7 +472,7 @@ workflows, the issue-9 canary and archived evidence remain unchanged.
 Issue #29 now includes a read-only captured-host translation and golden source
 comparison at refreshed ComicPile main
 `8692c718458282af9300edffce72035145ff6655`. Byte-identical current review/policy,
-main-health and ready-drain files are separately pinned as inert `.txt` evidence;
+main-health and ready-drain files are separately pinned as inert `.txt.gz` evidence;
 the archived extraction baseline remains untouched. Only explicitly allowlisted
 decision functions execute against captured reads. Legacy demotion requests are
 recorded without effects; worker, merge, repair and post-merge paths are unavailable.

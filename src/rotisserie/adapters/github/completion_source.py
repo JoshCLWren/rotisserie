@@ -9,6 +9,7 @@ import __future__
 
 import ast
 import builtins
+import gzip
 import hashlib
 import json
 import re
@@ -95,7 +96,11 @@ def verified_source(directory: Path, sha: str) -> dict[str, bytes]:
         raise ValueError("source refresh changed: audit and repin before comparison")
     result = {}
     for name, digest in SOURCE_FILES.items():
-        value = (directory / name).read_bytes()
+        try:
+            with gzip.open(directory / f"{name}.gz", "rb") as stream:
+                value = stream.read(1024 * 1024 + 1)
+        except OSError as error:
+            raise ValueError(f"pinned source integrity mismatch: {name}") from error
         if hashlib.sha256(value).hexdigest() != digest:
             raise ValueError(f"pinned source integrity mismatch: {name}")
         result[name] = value
