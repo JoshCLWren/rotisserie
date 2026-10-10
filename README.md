@@ -197,5 +197,6 @@ grant.
 
 The operational extraction also exposes a credential-free
 [`controller-plan` fixture caller](docs/assignment-controller.md) for one bounded
-fresh assignment. Live host enforcement, recovery and review/completion cutover
+fresh assignment, with recovery, exact-head review and guarded completion
+planning callers documented alongside it. Live host enforcement and adopter cutover
 remain tracked under issue #29.

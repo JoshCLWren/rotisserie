@@ -37,6 +37,7 @@ from rotisserie.application import (
     prepare_adoption_transition,
     project_decisions,
 )
+from rotisserie.application.completion_controller import CompletionStatus, plan_completion
 from rotisserie.application.controller import (
     AcquisitionFailure,
     ControllerRequest,
@@ -67,6 +68,7 @@ from rotisserie.operator import (
     OperatorConfig,
     load_config,
 )
+from rotisserie.operator.completion import completion_request_from_dict, completion_view_from_dict
 from rotisserie.operator.controller import (
     controller_view_from_dict,
     recovery_view_from_dict,
@@ -253,6 +255,11 @@ def parser() -> argparse.ArgumentParser:
     review_controller.add_argument("--max-observation-age", type=int, required=True)
     review_controller.add_argument("--wip-limit", type=int)
     review_controller.add_argument("--backlog-limit", type=int)
+    completion = subcommands.add_parser(
+        "controller-completion-plan", help="plan one guarded exact-head completion"
+    )
+    completion.add_argument("--view", required=True)
+    completion.add_argument("--request", required=True)
     recovery = subcommands.add_parser(
         "controller-recovery-plan", help="plan one expired-lease recovery"
     )
@@ -285,6 +292,8 @@ def main(argv: Sequence[str] | None = None) -> int:
             output, status = _controller_recovery_plan(arguments, config, journal, correlation_id)
         elif arguments.command == "controller-review-plan":
             output, status = _controller_review_plan(arguments, config, journal, correlation_id)
+        elif arguments.command == "controller-completion-plan":
+            output, status = _controller_completion_plan(arguments, config, journal, correlation_id)
         elif arguments.command == "controller-plan":
             output, status = _controller_plan(arguments, config, journal, correlation_id)
         elif arguments.command == "execute":
@@ -1048,6 +1057,52 @@ def _controller_review_plan(
     return _envelope(
         correlation_id,
         "controller-review-plan",
+        str(result.status),
+        evidence=evidence,
+        record=record,
+    ), status
+
+
+def _controller_completion_plan(
+    arguments: argparse.Namespace,
+    config: OperatorConfig,
+    journal: OperationJournal,
+    correlation_id: str,
+) -> tuple[dict[str, Any], int]:
+    if config.workers is None:
+        raise ConfigurationError("completion requires an explicit worker inventory")
+    raw = _read_json_bytes(arguments.view, "completion view")
+    request_raw = _read_json_bytes(arguments.request, "completion request")
+    view = completion_view_from_dict(_json_object(raw, "completion view"))
+    request = completion_request_from_dict(_json_object(request_raw, "completion request"))
+    if request.repository != config.repository or request.workers != config.workers.expected:
+        raise ConfigurationError(
+            "completion request must match configured repository and inventory"
+        )
+    result = plan_completion(view, request)
+    evidence = {
+        "schema_version": 1,
+        "view_sha256": hashlib.sha256(raw).hexdigest(),
+        "request_sha256": hashlib.sha256(request_raw).hexdigest(),
+        "version": view.controller.graph.version,
+        "request": request.to_dict(),
+        "result": result.to_dict(),
+    }
+    record = journal.append(
+        correlation_id=correlation_id,
+        command="controller-completion-plan",
+        dry_run=True,
+        result=evidence,
+        timestamp=int(time.time()),
+    )
+    status = (
+        EXIT_OK
+        if result.status in {CompletionStatus.SELECTED, CompletionStatus.ZERO}
+        else EXIT_REJECTED
+    )
+    return _envelope(
+        correlation_id,
+        "controller-completion-plan",
         str(result.status),
         evidence=evidence,
         record=record,

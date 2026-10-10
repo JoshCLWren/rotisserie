@@ -11,12 +11,20 @@ such change must be called out here and in its release notes.
 
 ### Added
 
+- Bounded exact-head completion claim and guarded merge handoff with complete
+  trusted contributor provenance, semantic review, CI/readiness evidence,
+  durable full-view CAS and an actual expected-head merge fence. Versioned
+  completion records retain uncertain outcomes and suppress duplicate attempts;
+  no compensating release or post-merge authority is implied. The public
+  `controller-completion-plan` CLI and fixture caller perform planning only.
+  Production enforcement and live adopter parity/cutover remain follow-on work.
+
 - Bounded exact-head independent-review claim/request and process handoff over
   explicit acquisition, trusted provenance/liveness, durable CAS and dispatch
   ports. Contributor-set independence, exact durable bindings, concurrent-state
   fences and proven-refusal-only compensation guard mutation authority. The
   version-1 `controller-review-plan` CLI and fixture caller perform planning
-  only; completion, production enforcement and live adopter cutover remain open.
+  only; production enforcement and live adopter cutover remain open.
 
 - Opt-in operational worker execution through `execute`, a strict version 1
   assignment/process JSON contract, and a trusted POSIX subprocess adapter.

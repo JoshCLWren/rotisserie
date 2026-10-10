@@ -1,4 +1,4 @@
-# Bounded assignment, recovery and review controllers
+# Bounded assignment, recovery, review and completion controllers
 
 Issue #29 starts with one coherent portable capability: selecting, claiming and
 handing off **at most one fresh implementation assignment**. The application
@@ -87,9 +87,9 @@ acknowledgements, changed human gates, dispatch refusal and compensation races.
 
 ## Remaining issue #29 work
 
-The remaining capabilities are exact-head completion authority and a public
-effect/caller boundary backed by concrete adopter CAS enforcement. The bounded
-independent-review handoff is described below. Formal
+The portable exact-head review and completion capabilities are described below.
+A public effect/caller boundary backed by concrete adopter CAS enforcement
+remains follow-on work. Formal
 host approvals alone must never grant that authority. Current product eligibility
 and worker-specific ranking need translation before a real adopter may claim
 parity with this fresh-work planner.
@@ -328,3 +328,181 @@ same-view comparison, provider bridges, observed bounded execution and tested
 rollback/cutover remain follow-on work. No ComicPile file, workflow, schedule or
 archived evidence changed. No Rotisserie issue was executed autonomously.
 Issue #29 remains open.
+
+## Bounded exact-head completion and guarded merge
+
+The fourth issue #29 slice supplies `CompletionController.tick`, pure
+`plan_completion`, `CompletionRequest`, `CompletionEvidence`, `CompletionView`,
+`CompletionBinding`, `CompletionRecord`, `CompletionEffect` and version-1
+`CompletionResult`. It selects the first adapter-ordered completion demand and
+attempts at most one merge through `CompletionPort.acquire`, `claim` and
+`complete`. A held first demand is never skipped. No repair/review loop, worker
+execution, label normalization or post-merge operation is performed.
+
+This follows the working ComicPile path: semantic exact-head authorization,
+contributor exclusion, required CI, mechanical readiness, then an expected-head
+merge. The existing contributor-set domain verdict is reused directly. The
+older `readiness_decision` and `CoordinationService.completion` remain local
+simulation contracts with single-producer readiness; neither grants this
+controller authority. Formal host approvals in the graph cannot satisfy the
+separate semantic-review evidence lane. A formal change request or unresolved
+thread can still block through adopter-supplied mechanical readiness evidence.
+
+### Authority and observations
+
+`ReviewCandidate` is reused as complete, trusted, fresh exact-head provenance.
+The producer must be known, attested, match the graph and belong to the complete
+reachable contributor lineage. All contributor/approver identities must resolve
+to known graph workers. Missing provenance holds even with two approvals: the
+domain's historical fallback does not confer controller mutation authority.
+
+Completion evidence separately includes complete trusted latest semantic review
+records and exact-head CI/readiness `Check` values. Its attestation covers every
+required read, pagination, identity ambiguity, revoked reviews and invalidated
+checks. The approved semantic workers must equal the provenance approver set;
+no required pending/rejected review, stale revision or contributor approval can
+satisfy independent review. CI/readiness required names must exactly match the
+explicit non-empty configured sets. Missing gates, unknown states, failed checks,
+stale/future evidence, untrusted/incomplete acquisition and contradictory
+required graph checks hold closed. The graph's generic evidence objects alone
+are not proof that a required mechanical gate passed.
+
+Adapters translate open/draft/mergeability, current-head thread and host review
+blockers, target eligibility and any additional product gates into named
+readiness checks. Host context names and the distinction between optional and
+required checks are explicit caller configuration; there are no product
+contexts built into portable code. Fixtures attest to these shapes only, never
+to live trust or authority.
+
+`CompletionRequest` carries the configured repository, exact change/head,
+completion owner, operation/lease identities, clock, observation-age bound,
+positive lease TTL, inventory, WIP/backlog policy and required gate sets. The
+acquisition includes fresh global trusted complete liveness, including unresolved
+activity. Missing/unknown configured or leased-worker liveness holds even with
+an empty queue. Completion participants (owner, contributors and semantic
+approvers) must be idle. Known unrelated activity uses capacity; **any new
+activity after selection** invalidates the observation. Every existing lease,
+including expired leases, fences its target/owner. Duplicate implementations of
+one work and durable completion records suppress a second attempt.
+
+Results distinguish `no_eligible_completion_work`, `acquisition_failed`,
+`provenance_hold`, `review_hold`, `ci_hold`, `readiness_hold`, `human_gate_hold`,
+`prerequisite_hold`, `liveness_hold`, `capacity_hold`, `backpressure_hold` and
+`ownership_hold`. Human boundaries require the existing human identity rule;
+explicit prerequisites must be completed. An empty completion lane says nothing
+about fresh/review demand. The optional backlog ceiling is caller policy, not
+an inherited ComicPile production-intake threshold; callers draining completion
+can leave it unset. The total WIP ceiling governs the claimed completion slot.
+
+### Durable claim and effect obligations
+
+Apply reacquires and compares the full semantic view before claim. Claim must
+atomically persist **both** the full exact lease and a `claimed` completion
+record. The binding includes the request, complete provenance/review/check
+records and a digest of the entire authorizing graph, gates, demand, liveness,
+capacity and prior durable records. This digest and the full binding contribute
+to command identity. Merely storing a work-scoped lease loses required authority.
+
+After claim, reacquisition must show that exact lease/binding/phase and only the
+expected slot increment. Changed head, contributors, evidence, prerequisites,
+human gates, worker activity, demand, capacity/backlog, renewal, replacement or
+lost binding holds closed. Even refreshed observation timestamps conservatively
+require a new decision. At every mutation boundary, the adapter must atomically
+CAS the complete view token and full binding and recheck current clock, lease
+expiry, observation age, eligibility and all authority conditions. The token
+covers evidence and activity changes as well as graph/ownership changes.
+
+**The actual merge must enforce `expected_revision` in its host transaction.**
+Reacquiring the head immediately before an unfenced merge is insufficient.
+The full-view fence must also remain effective through the mutation: an adopter
+needs serialization/host enforcement that prevents or rejects evidence,
+contributor, liveness and human-gate changes between CAS and merge. A local CAS
+followed by an independently mutable remote host is not that guarantee.
+This PR specifies and tests these obligations with a fake; it supplies no
+production distributed enforcement adapter.
+
+Before the remote effect, `complete` durably transitions the record to
+`attempting`. It records `completed`, proven `refused`/`failed`, or `unknown`
+before acknowledgement. A crash or lost acknowledgement leaves `attempting`
+or `unknown`, durably distinguishable from proven non-application. These records
+and completed tombstones survive lease expiry. Deduplication must bind the exact
+change/head/request/evidence; `attempting`/`unknown` cannot be replayed as a fresh
+merge, including under a new operation or lease identity. `EffectConflict` and
+`EffectFailure` prove no merge; other exceptions or malformed outcomes are
+uncertain. Results retain attempted command identities for reconciliation.
+
+This slice retains ownership on every refusal, failure or uncertain outcome and
+implements **no compensating release**. Safe adjudication/release is separate
+follow-on work. Recovery adapters must honor completion receipts, never infer
+safe release or retry from expiry/inactivity alone, and never delete uncertain
+completion state through the generic lease-recovery port. A proven completed
+change does not mark its linked work completed, close a host issue, publish a
+release or authorize any other post-merge side effect. An adopter must keep
+host closing-keyword side effects outside this command's authority or obtain
+separate authorization; a host merge API must not silently broaden the scope.
+
+### Public planning boundary
+
+```sh
+uv run python examples/controller/completion/caller.py
+```
+
+`controller-completion-plan --view VIEW --request REQUEST` accepts strict
+version-1 JSON and requires a configured allowlisted repository and exact worker
+inventory match. The request is fully versioned and includes explicit time/TTL,
+capacity and required-context inputs. It records both exact input digests, the
+view token, request and result in the append-only operator journal. No graph
+state, credentials, mutation/merge port or worker is accessed. There is no apply
+flag. Exit 0 means selected or a proven completion zero, 3 means held and 2 means
+malformed input/configuration. The fixture is not golden live parity evidence.
+
+### Source provenance and deliberate differences
+
+ComicPile main was fetched read-only on 2026-10-09 at exact SHA
+`8692c718458282af9300edffce72035145ff6655`. Inspection covered:
+
+- `.github/scripts/factory_completion_controller.py` (`signal_completion_mode`,
+  `candidate_is_batch_executable`) and `factory_full_completion_controller.py`
+  (`current_demand`, `signal_dispatch`): demand/capacity signalling, recovery and
+  product worker routing stay in adapters/configuration or earlier capabilities.
+- `factory-review-controller.py` (`authorize_ready`, `mechanical_merge_gate`,
+  `interpret_required_checks`, `current_head_review_gate`, `interpret_review_threads`,
+  `poll_mergeable_gate`, `handle_review`, `record_contribution`) and
+  `factory_review_policy.py` (`head_contributor_provenance`,
+  `head_has_authorized_approval`, `trusted_comment_bodies`): exact-head semantic
+  approval, contributor lineage and mechanical fail-closed behavior inform this
+  controller; payload/marker/actor translation remains adapter-owned.
+- `.github/workflows/factory-ready-merge-drain.yml`: current authorization and
+  gates followed by `--match-head-commit`; main-health context, host concurrency,
+  product ordering and post-merge closure are adopter policy. This operation
+  retains the expected-head merge guard without activating the workflow.
+- `.github/scripts/factory_post_merge_closure.py` and
+  `.github/workflows/factory-release-reconcile.yml`: linked-issue closure,
+  protected/manual/acceptance-parent handling, successor-work checks, closure
+  sweeps and release-writer dispatch are distinct post-merge reconciliation.
+  Their graphs and human acceptance gates need separate contracts before cutover.
+
+These were compared with archived baseline
+`2dc9b675e1a828b526f074c5f5c151293dedcdee`, particularly the old single-producer
+`head_has_authorized_approval`, `authorize_ready`, identical mechanical-gate
+sequence and archived merge/release workflows. Current source strengthens
+contributor lineage exclusion; Rotisserie reuses that domain rule. The archived
+single-producer authorization and current missing-provenance dual-review fallback
+are deliberately insufficient for controller mutation authority.
+
+| Behavior | Working source retained | Deliberate strengthening / boundary |
+| --- | --- | --- |
+| Semantic approval at current head | Required before merge | Complete trusted semantic records; formal approvals cannot substitute |
+| Producer and prior repairers excluded | Current contributor lineage rule | Complete attested producer/lineage before ownership mutation |
+| Required checks / mechanical gates | Missing, failed, unknown or unresolved gates block | Explicit exact-head CI/readiness sets and complete trusted acquisition |
+| Merge head guard | Host `--match-head-commit` | Required at actual effect, alongside full-view CAS enforcement |
+| Drain iteration and retries | Adapter-declared demand order | One attempt, no skip over holds and no automatic uncertain retry |
+| Ownership / concurrency | Source controller and host serialization | Atomic durable exact binding, full-view CAS and explicit fresh liveness |
+| Post-merge closure / release | Separate source scripts/workflows | No authority inherited; separate adopter reconciliation contract |
+
+Tests exercise these source-derived gate scenarios and the deliberate refusal,
+race and uncertainty strengthening. They do not execute a live ComicPile view
+or prove golden same-view parity. Production adopter enforcement, golden live
+parity, provider bridges, safe completion reconciliation/release, post-merge
+reconciliation and observed rollback/cutover remain under #29. ComicPile, active
+workflows, the issue-9 canary and all archived evidence are unchanged.

@@ -1,0 +1,42 @@
+{
+  "schema_version": 1,
+  "repository": {
+    "host": "example.test",
+    "owner": "org",
+    "name": "repo"
+  },
+  "change": "15",
+  "revision": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "worker": {
+    "namespace": "agent",
+    "value": "reviewer"
+  },
+  "lease_id": "completion-lease-1",
+  "operation": "demo-completion-1",
+  "at": 10,
+  "max_observation_age": 0,
+  "lease_ttl": 20,
+  "workers": [
+    {
+      "namespace": "agent",
+      "value": "producer"
+    },
+    {
+      "namespace": "agent",
+      "value": "repairer"
+    },
+    {
+      "namespace": "agent",
+      "value": "reviewer"
+    }
+  ],
+  "wip_limit": 3,
+  "reserved_review": 0,
+  "backlog_limit": null,
+  "required_ci": [
+    "tests"
+  ],
+  "required_readiness": [
+    "mechanical"
+  ]
+}
