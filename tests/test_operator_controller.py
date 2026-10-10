@@ -68,3 +68,67 @@ def test_acquisition_envelope_rejects_untrustworthy_observations(field: str, val
     raw[field] = value
     with pytest.raises(ValueError):
         controller_view_from_dict(raw)
+
+
+def test_recovery_cli_plans_and_holds_without_mutable_state(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    shutil.copytree(EXAMPLE, tmp_path, dirs_exist_ok=True)
+    args = [
+        "--config",
+        str(tmp_path / "config.toml"),
+        "controller-recovery-plan",
+        "--view",
+        str(tmp_path / "recovery-view.json"),
+        "--operation",
+        "recover-demo",
+        "--at",
+        "20",
+        "--max-observation-age",
+        "0",
+        "--inactivity-ttl",
+        "10",
+    ]
+    assert main(args) == EXIT_OK
+    output = json.loads(capsys.readouterr().out)
+    assert output["status"] == "recovery_planned"
+    assert output["evidence"]["result"]["lease"]["id"] == "expired-demo"
+    assert len(output["evidence"]["view_sha256"]) == 64
+    assert not (tmp_path / ".rotisserie-state" / "graph.json").exists()
+    raw = json.loads((tmp_path / "recovery-view.json").read_text())
+    raw["liveness_complete"] = False
+    (tmp_path / "recovery-view.json").write_text(json.dumps(raw))
+    assert main(args) == EXIT_REJECTED
+    assert json.loads(capsys.readouterr().out)["status"] == "liveness_hold"
+    raw["activity"].append(raw["activity"][0])
+    (tmp_path / "recovery-view.json").write_text(json.dumps(raw))
+    assert main(args) == EXIT_INVALID
+    capsys.readouterr()
+
+
+@pytest.mark.parametrize(
+    "field,value",
+    [
+        ("schema_version", True),
+        ("liveness_complete", None),
+        ("liveness_complete", "true"),
+        ("activity", None),
+    ],
+)
+def test_recovery_envelope_rejects_malformed_fields(field: str, value: object) -> None:
+    from rotisserie.operator.controller import recovery_view_from_dict
+
+    raw = json.loads((EXAMPLE / "recovery-view.json").read_text())
+    raw[field] = value
+    with pytest.raises(ValueError):
+        recovery_view_from_dict(raw)
+
+
+def test_recovery_envelope_rejects_boolean_exact_lease_timestamp() -> None:
+    from rotisserie.operator.controller import recovery_view_from_dict
+
+    raw = json.loads((EXAMPLE / "recovery-view.json").read_text())
+    raw["activity"][0]["lease"]["acquired_at"] = True
+    with pytest.raises(ValueError):
+        recovery_view_from_dict(raw)
