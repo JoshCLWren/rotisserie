@@ -1,0 +1,12 @@
+schema_version = 1
+[repository]
+host = "github.com"
+owner = "JoshCLWren"
+name = "comic-pile"
+[repositories]
+allow = [{host = "github.com", owner = "JoshCLWren", name = "comic-pile"}]
+[local]
+snapshot = "unused.json"
+state_directory = ".rotisserie-state"
+[workers]
+expected = ["factory:6", "factory:7", "factory:8", "factory:9"]

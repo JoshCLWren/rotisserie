@@ -466,3 +466,23 @@ production enforcement, golden live same-view parity, provider bridges, safe
 completion adjudication/release, post-merge reconciliation and observed
 rollback/cutover remain follow-on work. Issue #29 remains open; ComicPile,
 workflows, the issue-9 canary and archived evidence remain unchanged.
+
+## Same-view completion acquisition and source comparison
+
+Issue #29 now includes a read-only captured-host translation and golden source
+comparison at refreshed ComicPile main
+`8692c718458282af9300edffce72035145ff6655`. Byte-identical current review/policy,
+main-health and ready-drain files are separately pinned as inert `.txt` evidence;
+the archived extraction baseline remains untouched. Only explicitly allowlisted
+decision functions execute against captured reads. Legacy demotion requests are
+recorded without effects; worker, merge, repair and post-merge paths are unavailable.
+
+The public `controller-completion-compare` caller generates both the actual
+source decision and the versioned Rotisserie completion input from one exact
+capture. Integrity bindings and machine reasons distinguish existing stricter
+writer/lineage, latest-review, named-check, ownership and uncertainty requirements
+from unexplained drift. Neither system's approval or completion policy changed.
+The synthetic golden fixture is not live parity or production mutation authority.
+Concrete host acquisition/enforcement, provider bridges, safe uncertain-completion
+reconciliation and observed rollback/cutover remain follow-on work; #29 remains
+open. Details are in [docs/completion-comparison.md](docs/completion-comparison.md).

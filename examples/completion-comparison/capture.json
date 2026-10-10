@@ -1,0 +1,202 @@
+{
+  "schema_version": 1,
+  "repository": {
+    "host": "github.com",
+    "owner": "JoshCLWren",
+    "name": "comic-pile"
+  },
+  "source_sha": "8692c718458282af9300edffce72035145ff6655",
+  "selected_pr": 15,
+  "expected_head": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "observed_at": 10,
+  "pr": {
+    "number": 15,
+    "work": 12,
+    "base_repository": "JoshCLWren/comic-pile",
+    "headRefOid": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "headRefName": "factory/6-12-demo",
+    "body": "",
+    "labels": [
+      "factory:ready",
+      "factory:unowned"
+    ],
+    "state": "OPEN",
+    "isDraft": false,
+    "mergeable": "MERGEABLE"
+  },
+  "other_prs": [],
+  "issues": [
+    {
+      "number": 12,
+      "title": "Synthetic completion comparison",
+      "state": "open",
+      "labels": [
+        "factory:ready"
+      ],
+      "prerequisites": [],
+      "human_required": false
+    }
+  ],
+  "comments": [
+    {
+      "id": 1,
+      "user": {
+        "login": "github-actions[bot]"
+      },
+      "author_association": "NONE",
+      "body": "<!-- comic-pile-factory-head-contributor-v1:pr-15:head-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:worker-6:epoch-10 -->"
+    },
+    {
+      "id": 2,
+      "user": {
+        "login": "github-actions[bot]"
+      },
+      "author_association": "NONE",
+      "body": "<!-- comic-pile-factory-head-contributor-v1:pr-15:head-bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb:worker-7:epoch-10 -->"
+    },
+    {
+      "id": 3,
+      "user": {
+        "login": "github-actions[bot]"
+      },
+      "author_association": "NONE",
+      "body": "<!-- comic-pile-factory-semantic-review-v1:pr-15:head-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:reviewer-8:producer-6:verdict-approve -->"
+    }
+  ],
+  "checks": [
+    {
+      "name": "tests",
+      "state": "SUCCESS"
+    }
+  ],
+  "checks_revision": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "host_reviews": [],
+  "inline_comments": [],
+  "threads": {
+    "nodes": [],
+    "pageInfo": {
+      "hasNextPage": false
+    }
+  },
+  "attestations": {
+    "graph": {
+      "complete": true,
+      "trusted": true,
+      "observed_at": 10
+    },
+    "comments": {
+      "complete": true,
+      "trusted": true,
+      "observed_at": 10
+    },
+    "lineage": {
+      "complete": true,
+      "trusted": true,
+      "observed_at": 10
+    },
+    "checks": {
+      "complete": true,
+      "trusted": true,
+      "observed_at": 10
+    },
+    "host_reviews": {
+      "complete": true,
+      "trusted": true,
+      "observed_at": 10
+    },
+    "inline_comments": {
+      "complete": true,
+      "trusted": true,
+      "observed_at": 10
+    },
+    "threads": {
+      "complete": true,
+      "trusted": true,
+      "observed_at": 10
+    },
+    "liveness": {
+      "complete": true,
+      "trusted": true,
+      "observed_at": 10
+    },
+    "main_health": {
+      "complete": true,
+      "trusted": true,
+      "observed_at": 10
+    }
+  },
+  "reachable_heads": [
+    "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+  ],
+  "liveness": [
+    {
+      "worker": "6",
+      "state": "idle"
+    },
+    {
+      "worker": "7",
+      "state": "idle"
+    },
+    {
+      "worker": "8",
+      "state": "idle"
+    },
+    {
+      "worker": "9",
+      "state": "idle"
+    }
+  ],
+  "leases": [],
+  "completion_records": [],
+  "active": 0,
+  "completion_backlog": 0,
+  "configuration": {
+    "marker_namespace": "comic-pile-factory",
+    "worker_namespace": "factory",
+    "bot_login": "github-actions[bot]",
+    "trusted_associations": [
+      "OWNER",
+      "MEMBER",
+      "COLLABORATOR"
+    ],
+    "trusted_app_slugs": [
+      "github-actions"
+    ],
+    "workers": [
+      "6",
+      "7",
+      "8",
+      "9"
+    ],
+    "completion_owner": "9",
+    "ready_label": "factory:ready",
+    "owner_labels": {
+      "factory:6": "6",
+      "factory:7": "7",
+      "factory:8": "8",
+      "factory:9": "9"
+    },
+    "at": 10,
+    "max_observation_age": 0,
+    "lease_ttl": 20,
+    "wip_limit": 4,
+    "backlog_limit": null,
+    "required_ci": [
+      "tests"
+    ],
+    "owner_label_pattern": "^factory:(?:local|[0-9]+)$"
+  },
+  "main_sha": "8692c718458282af9300edffce72035145ff6655",
+  "main_runs": {
+    "workflow_runs": [
+      {
+        "id": 1,
+        "name": "CI",
+        "event": "push",
+        "head_sha": "8692c718458282af9300edffce72035145ff6655",
+        "conclusion": "success"
+      }
+    ]
+  }
+}
