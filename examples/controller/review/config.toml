@@ -1,0 +1,12 @@
+schema_version = 1
+[repository]
+host = "example.test"
+owner = "org"
+name = "repo"
+[repositories]
+allow = [{host = "example.test", owner = "org", name = "repo"}]
+[local]
+snapshot = "unused.json"
+state_directory = ".rotisserie-state"
+[workers]
+expected = ["agent:producer", "agent:repairer", "agent:reviewer"]
