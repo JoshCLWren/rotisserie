@@ -11,10 +11,8 @@ import io
 import json
 import os
 import subprocess
-import sys
 import zipfile
 from datetime import UTC, datetime, timedelta
-from pathlib import Path
 from typing import Any
 
 from scripts.publish_factory_quota import sanitize
