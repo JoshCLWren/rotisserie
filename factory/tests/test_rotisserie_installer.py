@@ -62,6 +62,8 @@ def test_every_adopter_checkout_is_followed_by_the_pinned_runtime(template: Path
             assert runtime["with"]["persist-credentials"] is False, job
             assert "secrets." not in str(runtime), job
             assert "overlay.sh" in overlay["run"], job
+            assert runtime.get("if") == step.get("if"), job
+            assert overlay.get("if") == step.get("if"), job
 
 
 def test_render_preserves_template_text_outside_inserted_steps() -> None:
@@ -211,3 +213,18 @@ def test_templates_that_run_factory_tests_are_not_installed_by_default(tmp_path:
     installed = {path.name for path in install.install(repo, source="example/rotisserie", ref=REF)}
     assert not installed & install.ROTISSERIE_CI_ONLY
     assert "factory-ready-merge-drain.yml" in installed
+
+
+def test_conditional_checkout_conditions_the_runtime_steps() -> None:
+    template = (
+        "on: workflow_dispatch\njobs:\n  run:\n    runs-on: ubuntu-latest\n    steps:\n"
+        "      - name: Checkout only on failure\n        if: >-\n          env.FAILED == 'true'\n"
+        "          && github.event_name == 'workflow_run'\n        uses: actions/checkout@v7\n"
+        "      - run: echo done\n"
+    )
+    steps = _steps(install.render(template, source="example/rotisserie", ref=REF))[0][1]
+    condition = "env.FAILED == 'true' && github.event_name == 'workflow_run'"
+    assert steps[0]["if"] == condition
+    assert steps[1]["if"] == condition and steps[1]["with"]["repository"] == "example/rotisserie"
+    assert steps[2]["if"] == condition and "overlay.sh" in steps[2]["run"]
+    assert steps[3] == {"run": "echo done"}
