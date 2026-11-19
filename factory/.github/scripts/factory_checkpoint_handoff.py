@@ -105,11 +105,14 @@ def checkpoint_refs(repo: str, run_id: str | None = None) -> list[dict]:
         for node in nodes:
             if not isinstance(node, dict):
                 raise RuntimeError("Malformed checkpoint ref node")
-            branch = node.get("name")
+            # GitHub returns Ref.name relative to refPrefix, e.g. "44242119390".
+            relative = node.get("name")
             target = node.get("target")
-            if (not isinstance(branch, str) or not branch.startswith(PREFIX)
+            if (not isinstance(relative, str) or not relative or relative.startswith("/")
+                    or ".." in relative.split("/")
                     or not isinstance(target, dict) or not SHA.fullmatch(str(target.get("oid", "")))):
                 raise RuntimeError("Invalid checkpoint ref; retaining work")
+            branch = PREFIX + relative
             full_ref = "refs/heads/" + branch
             if full_ref in seen_refs:
                 raise RuntimeError("Repeated checkpoint ref across pages; retaining work")

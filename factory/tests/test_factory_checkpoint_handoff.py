@@ -385,7 +385,8 @@ def test_checkpoint_cursor_pagination_recovers_101_refs_and_targeted_run(
         batch = matched[start:start + 100]
         end = start + len(batch)
         return {"data": {"repository": {"refs": {
-            "nodes": [{"name": branch, "target": {"oid": HEAD}} for branch in batch],
+            "nodes": [{"name": branch.removeprefix(handoff.PREFIX), "target": {"oid": HEAD}}
+                      for branch in batch],
             "pageInfo": {"hasNextPage": end < len(matched),
                          "endCursor": str(end) if end < len(matched) else None},
         }}}}
@@ -422,7 +423,8 @@ def test_checkpoint_cursor_repetition_fails_closed(monkeypatch: pytest.MonkeyPat
         assert isinstance(variables, dict)
         calls.append(variables["after"])
         return {"data": {"repository": {"refs": {
-            "nodes": [{"name": BRANCH, "target": {"oid": HEAD}}] if len(calls) == 1 else [],
+            "nodes": [{"name": BRANCH.removeprefix(handoff.PREFIX), "target": {"oid": HEAD}}]
+            if len(calls) == 1 else [],
             "pageInfo": {"hasNextPage": True, "endCursor": "stuck"},
         }}}}
 
@@ -473,7 +475,7 @@ def test_checkpoint_second_page_missing_connection_fails_closed(monkeypatch: pyt
         seen.append(variables["after"])
         if len(seen) == 1:
             return {"data": {"repository": {"refs": {
-                "nodes": [{"name": BRANCH, "target": {"oid": HEAD}}],
+                "nodes": [{"name": BRANCH.removeprefix(handoff.PREFIX), "target": {"oid": HEAD}}],
                 "pageInfo": {"hasNextPage": True, "endCursor": "next"},
             }}}}
         return {"data": {"repository": {"refs": None}}}
@@ -529,3 +531,16 @@ def test_worker_evidence_survives_checkpoint_retirement_without_second_run_read(
     path = tmp_path / "result.json"
     path.write_text(json.dumps(result))
     assert json.loads(path.read_text())["worker"] == "46"
+
+
+def test_graphql_ref_names_are_relative_to_the_ref_prefix(monkeypatch) -> None:
+    """GitHub strips refPrefix from Ref.name; a full-name node is not a real response."""
+    def api(*args, **kwargs):
+        return {"data": {"repository": {"refs": {
+            "nodes": [{"name": "44242119390", "target": {"oid": HEAD}}],
+            "pageInfo": {"hasNextPage": False, "endCursor": None},
+        }}}}
+    monkeypatch.setattr(handoff, "api", api)
+    assert handoff.checkpoint_refs("o/r") == [
+        {"ref": "refs/heads/factory/work-checkpoints/44242119390", "object": {"sha": HEAD}},
+    ]
