@@ -5,7 +5,6 @@
 .agents/skills/plan-task-handoff/
 .github/actions/factory-state-cache/
 .github/actions/factory-syntax/
-.github/actions/fork-ci-toolchain/
 .github/factory-state-schema.sql
 .github/scripts/classify-fixed-model-run.py
 .github/scripts/factory-canonical-merge-route.sh

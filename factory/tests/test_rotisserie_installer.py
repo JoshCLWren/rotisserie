@@ -110,6 +110,7 @@ def test_overlay_never_ships_adopter_state_or_adopter_docs() -> None:
         "docs/ISSUE_EXECUTION_PROTOCOL.md",
         "docs/PRODUCT_ACCEPTANCE_PROTOCOL.md",
         ".rotisserie/config.toml",
+        ".github/actions/fork-ci-toolchain",
     )
     assert not set(forbidden) & {path.rstrip("/") for path in OVERLAY_PATHS}
     assert all(not path.startswith(".github/workflows/") for path in OVERLAY_PATHS)
