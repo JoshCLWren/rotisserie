@@ -65,7 +65,7 @@ def test_every_adopter_checkout_is_followed_by_the_pinned_runtime(template: Path
 
 
 def test_render_preserves_template_text_outside_inserted_steps() -> None:
-    template = (FACTORY / ".github" / "workflows" / "factory-fast-merge.yml").read_text(
+    template = (FACTORY / ".github" / "workflows" / "factory-ready-merge-drain.yml").read_text(
         encoding="utf-8"
     )
     rendered = install.render(template, source="example/rotisserie", ref=REF)
@@ -100,7 +100,6 @@ def test_ref_must_be_an_exact_commit() -> None:
 
 def test_overlay_never_ships_adopter_state_or_adopter_docs() -> None:
     forbidden = (
-        ".github/factory-fast-merge.json",
         ".github/factory-quota-pauses.json",
         ".github/factory-rotisserie-control.json",
         ".github/factory-source-budgets.json",
@@ -177,9 +176,9 @@ def test_install_writes_templates_under_their_own_names(tmp_path: Path) -> None:
     repo.mkdir()
     _git(repo, "init", "-q")
     written = install.install(
-        repo, source="example/rotisserie", ref=REF, names=["factory-fast-merge.yml"]
+        repo, source="example/rotisserie", ref=REF, names=["factory-ready-merge-drain.yml"]
     )
-    assert written == [repo / ".github" / "workflows" / "factory-fast-merge.yml"]
+    assert written == [repo / ".github" / "workflows" / "factory-ready-merge-drain.yml"]
     with pytest.raises(install.InstallError):
         install.install(repo, source="example/rotisserie", ref=REF, names=["missing.yml"])
 
@@ -211,4 +210,4 @@ def test_templates_that_run_factory_tests_are_not_installed_by_default(tmp_path:
     _git(repo, "init", "-q")
     installed = {path.name for path in install.install(repo, source="example/rotisserie", ref=REF)}
     assert not installed & install.ROTISSERIE_CI_ONLY
-    assert "factory-fast-merge.yml" in installed
+    assert "factory-ready-merge-drain.yml" in installed

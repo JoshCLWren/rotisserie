@@ -25,7 +25,7 @@ BUDGETS_PATH = GITHUB_DIR / "factory-source-budgets.json"
 ENTRY_TITLE_RE = re.compile(r"^Factory (?P<worker>\d+) · fixed-model entry$")
 PROTECTED_WORKERS: frozenset[int] = frozenset()
 # Cloudflare Workers Free hard-stops daily neuron usage. Enforce a conservative
-# source cap here so this factory-only guard remains on the fast-merge allowlist.
+# source cap here.
 HARD_FREE_SOURCE_DISPATCH_CAPS = {"cloudflare-workers-ai": 1}
 
 
