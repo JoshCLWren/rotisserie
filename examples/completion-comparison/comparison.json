@@ -1,0 +1,504 @@
+{
+  "acquisition_findings": [],
+  "binding_sha256": "f78d70040e600bd9c0b35862c33fcc5172cd658e5d25a2ef054d66dd911a46b2",
+  "capture_sha256": "51dcd8f120d01aafc0540213f160f78d1902fffde6fe262e622f2f540b60ee0c",
+  "comparison_scope": "one_declared_exact_head_completion_eligibility",
+  "completion_request": {
+    "at": 10,
+    "backlog_limit": null,
+    "change": "15",
+    "lease_id": "comparison-51dcd8f120d01aafc0540213f160f78d1902fffde6fe262e622f2f540b60ee0c",
+    "lease_ttl": 20,
+    "max_observation_age": 0,
+    "operation": "comparison-51dcd8f120d01aafc0540213f160f78d1902fffde6fe262e622f2f540b60ee0c",
+    "repository": {
+      "host": "github.com",
+      "name": "comic-pile",
+      "owner": "JoshCLWren"
+    },
+    "required_ci": [
+      "tests"
+    ],
+    "required_readiness": [
+      "main_health",
+      "mergeable",
+      "host_review",
+      "eligibility"
+    ],
+    "reserved_review": 0,
+    "revision": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "schema_version": 1,
+    "wip_limit": 4,
+    "worker": {
+      "namespace": "factory",
+      "value": "9"
+    },
+    "workers": [
+      {
+        "namespace": "factory",
+        "value": "6"
+      },
+      {
+        "namespace": "factory",
+        "value": "7"
+      },
+      {
+        "namespace": "factory",
+        "value": "8"
+      },
+      {
+        "namespace": "factory",
+        "value": "9"
+      }
+    ]
+  },
+  "completion_view": {
+    "candidates": [
+      {
+        "ci": [
+          {
+            "name": "tests",
+            "required": true,
+            "revision": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "status": "passed"
+          }
+        ],
+        "complete": true,
+        "observed_at": 10,
+        "provenance": {
+          "approvers": [
+            {
+              "namespace": "factory",
+              "value": "8"
+            }
+          ],
+          "change": "15",
+          "complete": true,
+          "contributors": [
+            {
+              "namespace": "factory",
+              "value": "6"
+            },
+            {
+              "namespace": "factory",
+              "value": "7"
+            }
+          ],
+          "observed_at": 10,
+          "producer": {
+            "namespace": "factory",
+            "value": "6"
+          },
+          "producer_attested": true,
+          "provenance_recorded": true,
+          "revision": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "trusted": true
+        },
+        "readiness": [
+          {
+            "name": "main_health",
+            "required": true,
+            "revision": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "status": "passed"
+          },
+          {
+            "name": "mergeable",
+            "required": true,
+            "revision": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "status": "passed"
+          },
+          {
+            "name": "host_review",
+            "required": true,
+            "revision": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "status": "passed"
+          },
+          {
+            "name": "eligibility",
+            "required": true,
+            "revision": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "status": "passed"
+          }
+        ],
+        "reviews": [
+          {
+            "decision": "approved",
+            "id": "comment-3",
+            "required": true,
+            "reviewer": {
+              "namespace": "factory",
+              "value": "8"
+            },
+            "revision": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+          }
+        ],
+        "trusted": true
+      }
+    ],
+    "controller": {
+      "active": 0,
+      "completion_backlog": 0,
+      "liveness": [
+        {
+          "namespace": "factory",
+          "state": "idle",
+          "value": "6"
+        },
+        {
+          "namespace": "factory",
+          "state": "idle",
+          "value": "7"
+        },
+        {
+          "namespace": "factory",
+          "state": "idle",
+          "value": "8"
+        },
+        {
+          "namespace": "factory",
+          "state": "idle",
+          "value": "9"
+        }
+      ],
+      "observed_at": 10,
+      "schema_version": 1,
+      "snapshot": {
+        "boundaries": [],
+        "capacities": [],
+        "changes": [
+          {
+            "head": {
+              "repository": {
+                "host": "github.com",
+                "name": "comic-pile",
+                "owner": "JoshCLWren"
+              },
+              "value": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+            },
+            "id": {
+              "key": "15",
+              "repository": {
+                "host": "github.com",
+                "name": "comic-pile",
+                "owner": "JoshCLWren"
+              }
+            },
+            "producer": {
+              "namespace": "factory",
+              "value": "6"
+            },
+            "work": {
+              "key": "12",
+              "repository": {
+                "host": "github.com",
+                "name": "comic-pile",
+                "owner": "JoshCLWren"
+              }
+            }
+          }
+        ],
+        "checks": [],
+        "dependencies": [],
+        "evidence": [],
+        "leases": [],
+        "reviews": [],
+        "revisions": [
+          {
+            "id": {
+              "repository": {
+                "host": "github.com",
+                "name": "comic-pile",
+                "owner": "JoshCLWren"
+              },
+              "value": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+            }
+          }
+        ],
+        "schema_version": 1,
+        "workers": [
+          {
+            "human": false,
+            "id": {
+              "namespace": "factory",
+              "value": "6"
+            }
+          },
+          {
+            "human": false,
+            "id": {
+              "namespace": "factory",
+              "value": "7"
+            }
+          },
+          {
+            "human": false,
+            "id": {
+              "namespace": "factory",
+              "value": "8"
+            }
+          },
+          {
+            "human": false,
+            "id": {
+              "namespace": "factory",
+              "value": "9"
+            }
+          }
+        ],
+        "works": [
+          {
+            "id": {
+              "key": "12",
+              "repository": {
+                "host": "github.com",
+                "name": "comic-pile",
+                "owner": "JoshCLWren"
+              }
+            },
+            "priority": 0,
+            "state": "open",
+            "title": "Synthetic completion comparison"
+          }
+        ]
+      },
+      "version": "8692c718458282af9300edffce72035145ff6655:51dcd8f120d01aafc0540213f160f78d1902fffde6fe262e622f2f540b60ee0c"
+    },
+    "liveness_complete": true,
+    "records": [],
+    "schema_version": 1
+  },
+  "cutover_authority": false,
+  "deliberate_holds": [],
+  "excluded_effects": [
+    "claim",
+    "expected_head_merge",
+    "repair_or_review_loop",
+    "post_merge_linked_issue_closure",
+    "acceptance_parent_checks",
+    "release_publication",
+    "reconciliation"
+  ],
+  "kind": "completion_source_comparison",
+  "legacy": {
+    "authorization": {
+      "approvers": [
+        "8"
+      ],
+      "authorized": true,
+      "contributors": [
+        "6",
+        "7"
+      ],
+      "head": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "producer": "6",
+      "provenance_complete": true
+    },
+    "expected_revision": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "main_health": {
+      "failing": 0,
+      "failing_names": "",
+      "total": 1
+    },
+    "mechanical": {
+      "decision": "pass",
+      "reason": "all exact-head mechanical gates passed"
+    },
+    "merge_invoked": false,
+    "reads": [
+      "main_health",
+      "pr",
+      "comments",
+      "pr",
+      "checks",
+      "host_reviews",
+      "inline_comments"
+    ],
+    "selected": true,
+    "suppressed_effects": []
+  },
+  "matches": true,
+  "mutation_boundary": {
+    "bounded": "one_declared_completion_target",
+    "cas": "required_by_completion_controller_not_enforced_by_comparison",
+    "expected_head": "planned_only_no_host_merge_transaction",
+    "provenance": "known_attested_producer_and_complete_reachable_contributors",
+    "uncertainty": "all_durable_completion_receipts_fence_fresh_attempts"
+  },
+  "production_authority": false,
+  "remote_mutation": false,
+  "rotisserie": {
+    "binding": {
+      "authorization_digest": "8ba37957a06138d45a9deddefb472413745aabeaefcbb79a42083ba0abb4a682",
+      "evidence": {
+        "ci": [
+          {
+            "name": "tests",
+            "required": true,
+            "revision": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "status": "passed"
+          }
+        ],
+        "complete": true,
+        "observed_at": 10,
+        "provenance": {
+          "approvers": [
+            {
+              "namespace": "factory",
+              "value": "8"
+            }
+          ],
+          "change": "15",
+          "complete": true,
+          "contributors": [
+            {
+              "namespace": "factory",
+              "value": "6"
+            },
+            {
+              "namespace": "factory",
+              "value": "7"
+            }
+          ],
+          "observed_at": 10,
+          "producer": {
+            "namespace": "factory",
+            "value": "6"
+          },
+          "producer_attested": true,
+          "provenance_recorded": true,
+          "revision": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "trusted": true
+        },
+        "readiness": [
+          {
+            "name": "main_health",
+            "required": true,
+            "revision": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "status": "passed"
+          },
+          {
+            "name": "mergeable",
+            "required": true,
+            "revision": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "status": "passed"
+          },
+          {
+            "name": "host_review",
+            "required": true,
+            "revision": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "status": "passed"
+          },
+          {
+            "name": "eligibility",
+            "required": true,
+            "revision": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "status": "passed"
+          }
+        ],
+        "reviews": [
+          {
+            "decision": "approved",
+            "id": "comment-3",
+            "required": true,
+            "reviewer": {
+              "namespace": "factory",
+              "value": "8"
+            },
+            "revision": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+          }
+        ],
+        "trusted": true
+      },
+      "lease": {
+        "acquired_at": 10,
+        "expires_at": 30,
+        "id": "comparison-51dcd8f120d01aafc0540213f160f78d1902fffde6fe262e622f2f540b60ee0c",
+        "work": {
+          "key": "12",
+          "repository": {
+            "host": "github.com",
+            "name": "comic-pile",
+            "owner": "JoshCLWren"
+          }
+        },
+        "worker": {
+          "namespace": "factory",
+          "value": "9"
+        }
+      },
+      "request": {
+        "at": 10,
+        "backlog_limit": null,
+        "change": "15",
+        "lease_id": "comparison-51dcd8f120d01aafc0540213f160f78d1902fffde6fe262e622f2f540b60ee0c",
+        "lease_ttl": 20,
+        "max_observation_age": 0,
+        "operation": "comparison-51dcd8f120d01aafc0540213f160f78d1902fffde6fe262e622f2f540b60ee0c",
+        "repository": {
+          "host": "github.com",
+          "name": "comic-pile",
+          "owner": "JoshCLWren"
+        },
+        "required_ci": [
+          "tests"
+        ],
+        "required_readiness": [
+          "eligibility",
+          "host_review",
+          "main_health",
+          "mergeable"
+        ],
+        "reserved_review": 0,
+        "revision": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "schema_version": 1,
+        "wip_limit": 4,
+        "worker": {
+          "namespace": "factory",
+          "value": "9"
+        },
+        "workers": [
+          {
+            "namespace": "factory",
+            "value": "6"
+          },
+          {
+            "namespace": "factory",
+            "value": "7"
+          },
+          {
+            "namespace": "factory",
+            "value": "8"
+          },
+          {
+            "namespace": "factory",
+            "value": "9"
+          }
+        ]
+      },
+      "schema_version": 1
+    },
+    "commands": [],
+    "schema_version": 1,
+    "status": "selected"
+  },
+  "safety_holds": [],
+  "schema_version": 1,
+  "shared_hold": false,
+  "source_classification": {
+    "factory-release-reconcile.yml": "separate_release_dispatch_no_completion_authority",
+    "factory-work-controller.py": "adopter_ordering_acquisition_and_ownership",
+    "factory_completion_controller.py": "adopter_demand_capacity_and_worker_routing",
+    "factory_full_completion_controller.py": "adopter_demand_and_dispatch_signalling",
+    "factory_migration_lane.py": "separate_migration_reconciliation_not_executed",
+    "factory_post_merge_closure.py": "separate_post_merge_issue_and_acceptance_reconciliation"
+  },
+  "source_files": {
+    "factory-ready-merge-drain.yml.txt": "fa8c2f5133ba89529c7e248cc5db6a7e2b5e9195c3f085db585f12705c8c6d9f",
+    "factory-review-controller.py.txt": "47ff31461e3fea5c5941b8b5dabd1d1527458c553883b928565ee2125eada573",
+    "factory_main_health.py.txt": "9761cf1e919ec20ed0923fa3b581fbf03002dae3677ffd9e008afe7e5abe4d44",
+    "factory_review_policy.py.txt": "2e4694ef4ca50dab4017a7ede760671e0ab1575977ce879ba789fd66c9cc9ca6"
+  },
+  "source_sha": "8692c718458282af9300edffce72035145ff6655",
+  "unexplained_divergences": [],
+  "worker_invoked": false
+}

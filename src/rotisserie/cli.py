@@ -20,6 +20,10 @@ from rotisserie.adapters.github import (
     MutationScope,
     MutationTarget,
 )
+from rotisserie.adapters.github.completion_capture import (
+    CompletionCapture,
+    compare_completion_capture,
+)
 from rotisserie.application import (
     AdoptionEvidence,
     AdoptionLane,
@@ -268,6 +272,14 @@ def parser() -> argparse.ArgumentParser:
     recovery.add_argument("--at", type=int, required=True)
     recovery.add_argument("--max-observation-age", type=int, required=True)
     recovery.add_argument("--inactivity-ttl", type=int, required=True)
+    comparison = subcommands.add_parser(
+        "controller-completion-compare", help="compare pinned source using one captured PR view"
+    )
+    comparison.add_argument("--capture", required=True, help="captured JSON path, or - for stdin")
+    comparison.add_argument("--capture-digest", required=True)
+    comparison.add_argument("--source-sha", required=True)
+    comparison.add_argument("--source-directory", required=True, type=Path)
+
     return value
 
 
@@ -292,6 +304,10 @@ def main(argv: Sequence[str] | None = None) -> int:
             output, status = _controller_recovery_plan(arguments, config, journal, correlation_id)
         elif arguments.command == "controller-review-plan":
             output, status = _controller_review_plan(arguments, config, journal, correlation_id)
+        elif arguments.command == "controller-completion-compare":
+            output, status = _controller_completion_compare(
+                arguments, config, journal, correlation_id
+            )
         elif arguments.command == "controller-completion-plan":
             output, status = _controller_completion_plan(arguments, config, journal, correlation_id)
         elif arguments.command == "controller-plan":
@@ -1107,6 +1123,47 @@ def _controller_completion_plan(
         evidence=evidence,
         record=record,
     ), status
+
+
+def _controller_completion_compare(
+    arguments: argparse.Namespace,
+    config: OperatorConfig,
+    journal: OperationJournal,
+    correlation_id: str,
+) -> tuple[dict[str, Any], int]:
+    raw = _read_json_bytes(arguments.capture, "completion capture")
+    capture = CompletionCapture.read(
+        raw, digest=arguments.capture_digest, source_sha=arguments.source_sha
+    )
+    if capture.raw["repository"] != {
+        "host": config.repository.host,
+        "owner": config.repository.owner,
+        "name": config.repository.name,
+    }:
+        raise ConfigurationError("capture must match configured repository")
+    evidence = compare_completion_capture(
+        capture, source_directory=arguments.source_directory, source_sha=arguments.source_sha
+    )
+    request = completion_request_from_dict(evidence["completion_request"])
+    if config.workers is None or request.workers != config.workers.expected:
+        raise ConfigurationError("capture must match configured worker inventory")
+    status = (
+        "unexplained_divergence"
+        if evidence["unexplained_divergences"]
+        else "deliberate_safety_hold"
+        if evidence["deliberate_holds"]
+        else "match"
+    )
+    record = journal.append(
+        correlation_id=correlation_id,
+        command="controller-completion-compare",
+        dry_run=True,
+        result=evidence,
+        timestamp=int(time.time()),
+    )
+    return _envelope(
+        correlation_id, "controller-completion-compare", status, evidence=evidence, record=record
+    ), EXIT_OK if status == "match" else EXIT_REJECTED
 
 
 if __name__ == "__main__":

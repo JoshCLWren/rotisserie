@@ -244,3 +244,14 @@ requests (`#2951`, `#2960`, `#2953`, and `#2960`); the run emitted no issue
 assignment or fresh issue claim. This is the first observed expanded-stage runtime
 execution and completes the bounded Phase 9 adoption contract without removing the
 original Factory.
+
+## Completion source comparison
+
+The read-only `controller-completion-compare` slice now derives actual pinned
+ComicPile ready-head decisions and versioned Rotisserie completion inputs from
+one capture, rather than accepting two separately written baselines. It reports
+existing safety differences separately from unexplained drift and binds source
+and capture integrity. Its synthetic golden fixture does not replace live parity
+observations and cannot authorize adoption. See
+[completion-comparison.md](completion-comparison.md) for the public caller,
+source audit and remaining host/CAS/cutover boundary.

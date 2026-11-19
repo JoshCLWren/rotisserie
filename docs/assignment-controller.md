@@ -506,3 +506,15 @@ or prove golden same-view parity. Production adopter enforcement, golden live
 parity, provider bridges, safe completion reconciliation/release, post-merge
 reconciliation and observed rollback/cutover remain under #29. ComicPile, active
 workflows, the issue-9 canary and all archived evidence are unchanged.
+
+## Read-only same-view completion comparison
+
+The next issue #29 slice runs the actual pinned ComicPile completion decision
+functions and `CompletionController` planning against one repository-scoped
+capture. `controller-completion-compare` emits both decisions and the generated
+version-1 completion input, bound to the refreshed source SHA and exact capture
+digest. It separates proven existing safety holds from unexplained differences
+and records suppressed legacy label effects. Neither approval policy changed.
+The source-backed golden fixture, public caller, capture obligations and limits
+are documented in [completion-comparison.md](completion-comparison.md).
+This is synthetic source comparison evidence, not live parity or host enforcement.
