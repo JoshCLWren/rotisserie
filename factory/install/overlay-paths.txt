@@ -11,7 +11,6 @@
 .github/scripts/factory-dispatch-production-deploy.sh
 .github/scripts/factory-expected-workers.cjs
 .github/scripts/factory-fast-checks.sh
-.github/scripts/factory-fast-merge.py
 .github/scripts/factory-fcm-provider-health.cjs
 .github/scripts/factory-fork-execute.sh
 .github/scripts/factory-fork-worker.sh
@@ -104,7 +103,6 @@ docs/CHATGPT_FACTORY_PROMPT.md
 docs/FACTORY_API_BUDGET_PUBLISHING.md
 docs/FACTORY_CANONICAL_MODEL_IDS.md
 docs/FACTORY_CHECKPOINTS.md
-docs/FACTORY_FAST_MERGE.md
 docs/FACTORY_GITHUB_VISIBILITY.md
 docs/FACTORY_NEON_STATE.md
 docs/FACTORY_QUEUE_ELIGIBILITY.md

@@ -26,7 +26,7 @@ own `docs/ISSUE_EXECUTION_PROTOCOL.md` and `docs/PRODUCT_ACCEPTANCE_PROTOCOL.md`
 
 ```bash
 python3 factory/install/install.py /path/to/adopter --ref <rotisserie-commit-sha>
-python3 factory/install/install.py /path/to/adopter --ref <sha> --workflow factory-fast-merge.yml
+python3 factory/install/install.py /path/to/adopter --ref <sha> --workflow factory-ready-merge-drain.yml
 ```
 
 `--ref` must be a full commit SHA. Installed files keep the template names, so a
