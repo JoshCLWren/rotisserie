@@ -138,7 +138,7 @@ jobs:
           # Authoritative remote-ref/PR enrichment distinguishes persisted work
           # from validated PR delivery. Never convert a failing worker into success.
           checkpoint_args=(--repo "$GITHUB_REPOSITORY" --run-id "$GITHUB_RUN_ID"
-            --cleanup --outcome "$RUNNER_TEMP/worker-outcome.json")
+            --outcome "$RUNNER_TEMP/worker-outcome.json")
           if [[ -n "$delivery_pr" ]]; then
             checkpoint_args+=(--delivered-pr "$delivery_pr")
           fi
@@ -223,7 +223,7 @@ jobs:
         run: |
           set -Eeuo pipefail
           python3 .github/scripts/factory_outcome_reconcile.py \
-            --repo "$GITHUB_REPOSITORY" --hours 12 --limit 3 \
+            --repo "$GITHUB_REPOSITORY" --hours 12 --limit 1 --max-pages 1 \
             --exclude-run "$GITHUB_RUN_ID"
 
       # The signed-in Actions run, not Neon, owns this durable handoff record.

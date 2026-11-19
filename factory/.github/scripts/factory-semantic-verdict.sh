@@ -109,6 +109,55 @@ if sys.argv[3] and not policy.report_matches_mission(report, sys.argv[3]):
 PY
 }
 
+factory_incomplete_acceptance_report() {
+  local review_log="$1" acceptance_script="$2" mission_text="$3"
+  python3 - "$review_log" "$acceptance_script" "$mission_text" <<'PY'
+import importlib.util
+import re
+import sys
+from pathlib import Path
+
+spec = importlib.util.spec_from_file_location("factory_issue_acceptance", sys.argv[2])
+if spec is None or spec.loader is None:
+    raise SystemExit(1)
+policy = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(policy)
+report = policy.report_from_text(Path(sys.argv[1]).read_text(encoding="utf-8"))
+if report is None:
+    raise SystemExit(1)
+mission = sys.argv[3]
+identity = re.findall(
+    r"(?m)^ISSUE ACCEPTANCE: #([1-9][0-9]*), head ([a-f0-9]{40}), "
+    r"issue digest ([a-f0-9]{64})\.$",
+    mission,
+)
+counts = re.findall(r"(?m)^ACCEPTANCE_CRITERIA_COUNT=([1-9][0-9]*)$", mission)
+if len(identity) != 1 or len(counts) != 1:
+    raise SystemExit(1)
+issue, head, digest = identity[0]
+if (report.get("issue"), report.get("head"), report.get("issue_digest")) != (
+        int(issue), head, digest):
+    raise SystemExit(1)
+items = report.get("items")
+count = int(counts[0])
+if not isinstance(items, list) or count > 1000 or len(items) != count:
+    raise SystemExit(1)
+non_closing = "This is a review-only `Part of` handoff" in mission
+allowed = {"pass", "remaining"} if non_closing else {"pass"}
+bad = []
+for i, item in enumerate(items, 1):
+    if not isinstance(item, dict) or item.get("id") != f"A{i}":
+        raise SystemExit(1)
+    status = str(item.get("status") or "missing")
+    if status not in allowed:
+        bad.append(f"A{i}={status[:24]}")
+if not bad:
+    raise SystemExit(1)
+print("Reviewer did not substantiate every acceptance criterion: "
+      + ", ".join(bad[:16]) + (f" and {len(bad)-16} more" if len(bad) > 16 else ""))
+PY
+}
+
 factory_append_recovered_acceptance_report() {
   local primary_log="$1" recovery_log="$2" acceptance_script="$3" expected_head="$4"
   local mission_text="${5:-}"

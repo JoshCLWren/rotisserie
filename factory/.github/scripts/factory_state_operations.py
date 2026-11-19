@@ -261,7 +261,13 @@ def historical_failure_streak(
             if not model_only:
                 break
             continue
-        if row["event_type"] == "worker_completed":
+        if row["event_type"] == "worker_completed" or (
+            not model_only and row["event_type"] == "worker_failed"
+            and detail.get("delivery_outcome") == "persisted"
+            and detail.get("persisted_work") is True
+        ):
+            # Delivered code resets a worker retry streak but never rewrites
+            # the underlying failed execution or its model-specific history.
             break
         if row["event_type"] != "worker_failed" or detail.get("configured") is False:
             continue
@@ -341,8 +347,10 @@ async def project_runtime(conn: Any, repo: str, run_id: int, outcome: dict[str, 
     persisted = outcome.get("persisted_work") is True
     delivered = (persisted and outcome.get("delivery_outcome") == "persisted"
                  and str(outcome.get("delivery_pr") or "").isdecimal())
-    completed = classification == "success" or delivered
-    failed = classification not in {"success", "no_work", "unconfigured"} and not delivered
+    # Terminal worker execution and eventual persisted PR delivery are
+    # independent measurements. A failed attempt remains a failed attempt.
+    completed = classification == "success"
+    failed = classification not in {"success", "no_work", "unconfigured"}
     observed = datetime.now(timezone.utc)
     # A trusted job-log collector can attest multiple attempted free models.
     # This evidence belongs to this same idempotent runtime transaction.

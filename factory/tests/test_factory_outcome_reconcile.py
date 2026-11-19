@@ -123,3 +123,67 @@ def test_entry_persister_runs_reconciliation_without_owning_the_verdict() -> Non
     assert step["continue-on-error"] is True
     assert '--exclude-run "$GITHUB_RUN_ID"' in step["run"]
     assert entry["jobs"]["persist_outcome"]["permissions"]["actions"] == "read"
+
+
+def test_bounded_pages_reconcile_runs_beyond_first_hundred() -> None:
+    """A high-throughput day must still recover completed run #101 and beyond."""
+    calls: list[str] = []
+    first = [_run(1000 + i) for i in range(100)]
+    second = [_run(900 + i) for i in range(24)]
+
+    def api(path: str, *, raw: bool = False) -> str:
+        if "/workflows/" in path:
+            calls.append(path)
+            return json.dumps({"workflow_runs": first if "&page=1" in path else second})
+        raise AssertionError("No per-run reads needed during candidate discovery")
+
+    found = RECONCILE.candidate_runs(REPO, api, now=NOW, hours=24,
+                                     exclude=set(), max_pages=4)
+    assert len(found) == 124
+    assert {entry["id"] for entry in found} == {str(item["id"]) for item in first + second}
+    assert len(calls) == 2
+    assert calls[0].endswith("page=1") and calls[1].endswith("page=2")
+
+
+def test_repeated_completed_run_page_is_deferred_before_any_writes() -> None:
+    """Duplicate pagination cannot silently truncate or double-credit runs."""
+    calls: list[str] = []
+    persisted: list[str] = []
+
+    def api(path: str, *, raw: bool = False) -> str:
+        calls.append(path)
+        return json.dumps({"workflow_runs": [_run(1000 + i) for i in range(100)]})
+
+    summary = RECONCILE.reconcile(
+        REPO, api=api, recorded=lambda _repo, _ids: set(),
+        record=lambda _repo, run, _outcome, _log: persisted.append(run) or 1,
+        now=NOW, hours=24, limit=10, max_pages=3, exclude=set(),
+    )
+    assert summary["deferred"].startswith("Repeated completed Entry run page")
+    assert summary["checked"] == 0 and persisted == []
+    assert len(calls) == 2
+
+
+def test_interrupted_persister_is_not_falsely_backfilled_then_late_run_recovers() -> None:
+    """An active persistence job stays pending; a later pass gets one terminal record."""
+    api_busy, _ = _api([_run(400)], persist_status="in_progress")
+    pending, first = _reconcile(api_busy, recorded=set())
+    assert first == [] and pending["skipped"] == ["400"]
+    api_done, _ = _api([_run(400)], persist_status="completed")
+    persisted: set[str] = set()
+    committed: list[str] = []
+
+    def record(_repo: str, run_id: str, _outcome: dict, _log: str) -> int:
+        if run_id in persisted:
+            return 0
+        persisted.add(run_id)
+        committed.append(run_id)
+        return 1
+
+    for _ in range(2):
+        RECONCILE.reconcile(
+            REPO, api=api_done, recorded=lambda _repo, ids: persisted & set(ids),
+            record=record, now=NOW, hours=24, max_pages=3,
+            limit=5, exclude=set(),
+        )
+    assert committed == ["400"]

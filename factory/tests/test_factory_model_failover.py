@@ -355,10 +355,50 @@ def test_opencode_v2_fleet_discovery_and_selection(tmp_path, monkeypatch):
     assert picked["runtime_model"] == "opencode/generated-free"
 
 
-def test_worker_never_blocks_provider_for_model_credit_error():
+def test_worker_blocks_only_proven_account_quota_for_one_assignment():
     worker = (ROOT / ".github/scripts/free-model-factory-worker.sh").read_text()
     clause = worker.split('attempted_pairs+=("$(jq -nc --arg source "$SOURCE"', 1)[1]
     clause = clause.split("record_model_failover_failure", 1)[0]
     assert "failure_scope=model" in clause
-    assert "failure_scope=account" not in clause
-    assert 'blocked_providers+=("$SOURCE")' not in clause
+    assert 'if [[ "$failure_class" == provider_quota ]] && account_wide_failure; then' in clause
+    assert "failure_scope=account" in clause
+    assert 'blocked_providers+=("$SOURCE")' in clause
+    assert 'for provider in "${blocked_providers[@]}"' in worker
+    # The account scope is local to this assignment. Durable Neon backoffs
+    # remain model-specific and do not suppress healthy sibling models.
+    from factory_state_operations import validate_intermediate_model_failures
+    assert validate_intermediate_model_failures([
+        {"source": "nvidia", "model": "generated/exhausted",
+         "outcome": "provider_quota", "scope": "account"},
+    ], "nvidia") == [("nvidia", "generated/exhausted", "provider_quota", "model")]
+
+
+
+def test_account_breaker_requires_direct_branded_provider_envelope(tmp_path: Path) -> None:
+    """A user quote of an account-refusal string must not block every model."""
+    import subprocess
+
+    script = (ROOT / ".github/scripts/free-model-factory-worker.sh").read_text()
+    begin = script.split("account_wide_failure() {", 1)[1]
+    code = begin.split("<<'PY'\n", 1)[1].split("\nPY", 1)[0]
+    path = tmp_path / "attempt.log"
+    model = "generated/synthetic-free"
+    message = (
+        "The account behind this API key doesn't have enough credits. "
+        "Please [top up](<https://enter.pollinations.ai/top-up?"
+        "ref=agent_low_balance_topup>) or [complete a quest]("
+        "<https://enter.pollinations.ai/quests?"
+        "ref=agent_low_balance_quests>), then try again."
+    )
+
+    def recognized(data: str) -> bool:
+        path.write_text(data)
+        proc = subprocess.run([sys.executable, "-c", code, str(path), model],
+                              text=True, capture_output=True, timeout=5, check=False)
+        assert not proc.stderr
+        return proc.returncode == 0
+
+    assert recognized(f"> build · {model}\n{message}\n")
+    assert not recognized(f"> build · {model}\nThe model says payment required\n{message}\n")
+    assert not recognized(f"> build · {model}\nNatural language mentions payment required\n")
+    assert not recognized(f"> build · generated/another\n{message}\n")
