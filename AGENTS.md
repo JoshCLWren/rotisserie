@@ -36,6 +36,15 @@ and migrate, never as Rotisserie product code or a public API.
 - Preserve `reference/legacy-factory/` as migration evidence until an
   issue explicitly replaces or removes each reference artifact.
 
+## Factory runtime boundary
+
+`factory/` holds the factory runtime that adopter repositories install. Its
+`.github/workflows/` files are templates: they never run in Rotisserie and do
+not count as active workflows. They run in adopter repositories through
+`factory/install/install.py`, pinned to a Rotisserie commit. Adopter-specific
+values belong in the adopter's `.rotisserie/config.toml`, not in `factory/`.
+Run the factory suite from `factory/` (`uv run --locked pytest -n auto`).
+
 ## Architecture boundaries
 
 Maintain these layers as the extraction proceeds:
