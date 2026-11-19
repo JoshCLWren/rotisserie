@@ -1193,7 +1193,7 @@ async def _reset_model_health(conn: Any, repo: str, include_retired: bool = Fals
 def main() -> int:
     parser=argparse.ArgumentParser(description=__doc__)
     parser.add_argument("command",choices=("bootstrap","filter","rank","stats","ingest-check","checkpoint","sync-catalog","export-model-exclusions","export-candidate-health","export-fleet-failover-sources","reset-model-health"))
-    parser.add_argument("--repo",default=os.environ["GITHUB_REPOSITORY"])
+    parser.add_argument("--repo",default=os.environ.get("GITHUB_REPOSITORY") or __import__("factory_config").repository())
     parser.add_argument("--file",type=Path)
     parser.add_argument("--scope")
     parser.add_argument("--worker",default="")

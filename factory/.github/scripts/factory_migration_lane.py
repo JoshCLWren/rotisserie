@@ -19,7 +19,7 @@ from collections.abc import Iterable
 from dataclasses import dataclass
 from typing import Any
 
-REPO = os.environ["GITHUB_REPOSITORY"]
+REPO = os.environ.get("GITHUB_REPOSITORY") or __import__("factory_config").repository()
 GH_TIMEOUT_SECONDS = 120
 WAIT_LABEL = "factory:migration-wait"
 MIGRATION_PREFIX = "alembic/versions/"

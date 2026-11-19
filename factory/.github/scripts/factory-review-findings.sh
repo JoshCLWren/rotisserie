@@ -181,7 +181,7 @@ FACTORY_UNRESOLVED_THREADS_QUERY='query($owner:String!,$name:String!,$number:Int
 # when the last page still reports hasNextPage. Resolution is per thread, so
 # nested comments are not needed for this count.
 factory_count_unresolved_review_threads() {
-  local pr="$1" repo="${2:-${GITHUB_REPOSITORY:?GITHUB_REPOSITORY must name the adopter repository}}" pages
+  local pr="$1" repo="${2:-${GITHUB_REPOSITORY:-$(python3 "$(dirname "${BASH_SOURCE[0]}")/factory_config.py" repository)}}" pages
   pages="$(gh api graphql --paginate -F owner="${repo%%/*}" -F name="${repo##*/}" -F number="$pr" \
     -f query="$FACTORY_UNRESOLVED_THREADS_QUERY" 2>/dev/null)" || return 1
   jq -sr '
@@ -258,7 +258,7 @@ factory_fetch_review_threads() {
 # falls back to inspecting threads directly.
 factory_collect_review_findings() {
   local pr="$1" head="$2" out="$3"
-  local repo="${GITHUB_REPOSITORY:?GITHUB_REPOSITORY must name the adopter repository}" dir warnings=()
+  local repo="${GITHUB_REPOSITORY:-$(python3 "$(dirname "${BASH_SOURCE[0]}")/factory_config.py" repository)}" dir warnings=()
   dir="$(mktemp -d)"
   # Sidecars for the wrapper gate: the complete normalized thread document and
   # the open Greptile findings. They are removed first and written only from a
@@ -492,7 +492,7 @@ factory_greptile_reply_body() {
 # threads. Returns non-zero when any post fails.
 factory_post_greptile_outcome_replies() {
   local valid="$1" head="$2" threads_doc="${3:-}" status=0 thread outcome text commit title marker body
-  local repo="${GITHUB_REPOSITORY:?GITHUB_REPOSITORY must name the adopter repository}"
+  local repo="${GITHUB_REPOSITORY:-$(python3 "$(dirname "${BASH_SOURCE[0]}")/factory_config.py" repository)}"
   while IFS= read -r entry; do
     [[ -n "$entry" ]] || continue
     thread="$(jq -r '.thread_id' <<< "$entry")"

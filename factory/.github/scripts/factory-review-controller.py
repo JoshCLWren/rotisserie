@@ -48,7 +48,7 @@ review_marker = _review_policy.review_marker
 semantic_repair_heads = _review_policy.semantic_repair_heads
 trusted_comment_bodies = _review_policy.trusted_comment_bodies
 
-REPO = os.environ["GITHUB_REPOSITORY"]
+REPO = os.environ.get("GITHUB_REPOSITORY") or __import__("factory_config").repository()
 OWNER_RE = re.compile(r"^factory:(?:unowned|local|[1-9][0-9]*)$")
 FIXED_WORKER_RE = re.compile(r"^(?:[6-9]|[1-9][0-9]+)$")
 HEAD_RE = re.compile(r"^[0-9a-f]{40}$")

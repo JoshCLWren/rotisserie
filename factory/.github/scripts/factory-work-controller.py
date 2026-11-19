@@ -31,7 +31,7 @@ from factory_source_budget import budget_block_reason, worker_sources
 from factory_attempt_history import read_comment_history
 from factory_discovery import canonical_target, discover, update_labels
 from factory_state_ledger import acquire_lease, release_lease, renew_verified_workers, worker_claim
-REPO = os.environ["GITHUB_REPOSITORY"]
+REPO = os.environ.get("GITHUB_REPOSITORY") or __import__("factory_config").repository()
 REPO_OWNER, REPO_NAME = REPO.split("/", 1)
 GH_TIMEOUT_SECONDS = env_positive_int("FACTORY_GH_TIMEOUT_SECONDS", 120)
 ASSIGNMENT_WRITER_WORKFLOW_PATH = ".github/workflows/fixed-model-factory-dispatch.yml"

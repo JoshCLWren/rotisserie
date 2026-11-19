@@ -39,7 +39,7 @@ from factory_work_policy import (
 )
 
 DIMENSIONS = ["completion", "eligibility", "ownership", "ranking", "recovery", "review"]
-REPOSITORY_SLUG = os.environ["GITHUB_REPOSITORY"]
+REPOSITORY_SLUG = os.environ.get("GITHUB_REPOSITORY") or __import__("factory_config").repository()
 REPOSITORY = {
     "host": "github.com",
     "owner": REPOSITORY_SLUG.split("/", 1)[0],

@@ -21,7 +21,7 @@ from factory_review_policy import (
 )
 from factory_work_policy import FIXED_LEASE_TTL_SECONDS, LOCAL_LEASE_TTL_SECONDS, owner_of
 
-REPOSITORY = os.environ["GITHUB_REPOSITORY"]
+REPOSITORY = os.environ.get("GITHUB_REPOSITORY") or __import__("factory_config").repository()
 FACTORY_OWNER_RE = re.compile(r"^factory:(?P<worker>local|[1-9]|[1-9][0-9])$")
 JsonCommand = Callable[[list[str]], object]
 

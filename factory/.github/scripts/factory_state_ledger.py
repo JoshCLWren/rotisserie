@@ -646,7 +646,7 @@ def main() -> int:
     parser.add_argument("--status", choices=sorted(LIFECYCLE_STATUSES))
     parser.add_argument("--log", help="Trusted completed factory job log, for exact smoke timeout attribution")
     parser.add_argument("--run-id", required=True)
-    parser.add_argument("--repo", default=os.environ["GITHUB_REPOSITORY"])
+    parser.add_argument("--repo", default=os.environ.get("GITHUB_REPOSITORY") or __import__("factory_config").repository())
     args = parser.parse_args()
     if args.command == "lifecycle":
         if not args.worker or not args.status:

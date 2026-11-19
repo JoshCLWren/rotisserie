@@ -320,7 +320,7 @@ def main(argv: list[str]) -> int:
         return 2
     if not os.environ.get("FACTORY_STATE_DSN_FILE"):
         raise RuntimeError("cache cleanup requires trusted Neon credentials")
-    repo = os.environ["GITHUB_REPOSITORY"]
+    repo = os.environ.get("GITHUB_REPOSITORY") or __import__("factory_config").repository()
     retired_kv = 0
     retired_events = 0
     for _ in range(5):

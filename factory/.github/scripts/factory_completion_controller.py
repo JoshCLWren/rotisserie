@@ -15,7 +15,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
-REPO = os.environ["GITHUB_REPOSITORY"]
+REPO = os.environ.get("GITHUB_REPOSITORY") or __import__("factory_config").repository()
 GH_TIMEOUT_SECONDS = 120
 # Keep in sync with factory_work_policy.FACTORY_REVIEW_BACKLOG_LIMIT (incident #2309).
 REVIEW_BACKLOG_LIMIT = 3

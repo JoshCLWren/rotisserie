@@ -24,7 +24,7 @@ import zipfile
 
 from factory_worker_slots import resolve
 
-REPO = os.environ["GITHUB_REPOSITORY"]
+REPO = os.environ.get("GITHUB_REPOSITORY") or __import__("factory_config").repository()
 REPO_OWNER, REPO_NAME = REPO.split("/", 1)
 EXECUTION_PATH = ".github/workflows/factory-fork-execution.yml"
 EXECUTION_WORKFLOW = "Factory Fork Execution"
