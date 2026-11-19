@@ -1,0 +1,34 @@
+name: Production Deploy Recovery
+
+on:
+  workflow_run:
+    workflows: [Deploy Production]
+    types: [completed]
+    branches: [main]
+  schedule:
+    - cron: '*/15 * * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+  issues: write
+  pull-requests: read
+
+concurrency:
+  group: production-deploy-recovery
+  cancel-in-progress: false
+
+jobs:
+  reconcile:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: main
+          persist-credentials: false
+      - name: Route failed attempted releases into reviewed factory repairs
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python3 .github/scripts/factory_deploy_recovery.py

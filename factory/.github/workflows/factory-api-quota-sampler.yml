@@ -1,0 +1,61 @@
+name: Factory API Quota Sampler
+
+# On-demand diagnosis of the shared Actions installation REST budget.
+# Samples /rate_limit (free: it does not consume quota) every few seconds and,
+# every 30s, records which workflow runs are in progress (one request). Each
+# drop in the remaining budget can then be attributed to the jobs running at
+# that moment. Read-only; never part of the factory's normal cadence.
+on:
+  workflow_dispatch:
+    inputs:
+      minutes:
+        description: Sampling window in minutes (1-30)
+        required: false
+        default: '15'
+        type: string
+
+permissions:
+  actions: read
+  contents: read
+
+concurrency:
+  group: factory-api-quota-sampler
+  cancel-in-progress: true
+
+jobs:
+  sample:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - name: Sample installation REST budget with active runs
+        env:
+          GH_TOKEN: ${{ github.token }}
+          MINUTES: ${{ inputs.minutes }}
+        run: |
+          set -Eeuo pipefail
+          [[ "$MINUTES" =~ ^[0-9]+$ ]] && (( MINUTES >= 1 && MINUTES <= 30 )) || MINUTES=15
+          end=$(( $(date +%s) + MINUTES * 60 ))
+          last_runs=0 previous=''
+          echo "time used remaining delta | active runs (sampled every 30s)"
+          while (( $(date +%s) < end )); do
+            now="$(date -u +%H:%M:%S)"
+            # /rate_limit stays readable at 0 remaining; tolerate transient errors.
+            if ! sample="$(gh api rate_limit --jq '.resources.core | "\(.used) \(.remaining)"' 2>/dev/null)"; then
+              sleep 5
+              continue
+            fi
+            read -r used remaining <<< "$sample"
+            delta=0
+            [[ -z "$previous" ]] || delta=$(( used - previous ))
+            (( delta >= 0 )) || delta="reset"
+            active=''
+            if (( $(date +%s) - last_runs >= 30 )); then
+              last_runs=$(date +%s)
+              active="$(gh api "repos/${GITHUB_REPOSITORY}/actions/runs?status=in_progress&per_page=50" \
+                --jq '[.workflow_runs[] | .name] | group_by(.) | map("\(.[0])×\(length)") | join(", ")' \
+                2>/dev/null || echo 'run list unavailable (quota exhausted)')"
+            fi
+            echo "${now} ${used} ${remaining} ${delta} | ${active}"
+            previous="$used"
+            sleep 5
+          done

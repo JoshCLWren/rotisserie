@@ -1,0 +1,19 @@
+{
+  "source": "recorded-opencode-cli",
+  "note": "mimo-v2.5-free is absent; paid deepseek-v4-flash remains; NVIDIA pin still listed by OpenCode even though a fake integrate.api dump would omit it.",
+  "integrate_api_missing": ["stepfun-ai/step-3.7-flash"],
+  "providers": {
+    "opencode": [
+      {"id": "big-pickle", "cost": {"input": 0, "output": 0}},
+      {"id": "nemotron-3-ultra-free", "cost": {"input": 0, "output": 0}},
+      {"id": "deepseek-v4-flash", "cost": {"input": 0.8, "output": 0.8}}
+    ],
+    "nvidia": [
+      {"id": "stepfun-ai/step-3.7-flash"},
+      {"id": "nvidia/nemotron-3-nano-30b-a3b"}
+    ],
+    "openrouter": [
+      {"id": "cohere/north-mini-code:free"}
+    ]
+  }
+}

@@ -1,0 +1,48 @@
+name: Local Ollama Review
+
+# Trusted bridge: GitHub Actions attests (standard factory scheme). Inference
+# can be any OpenAI-compatible provider (Ollama local, Josh's ChatGPT, etc.)
+# via REVIEW_PROVIDER_URL/KEY/MODEL secrets. Trust = Josh's login credential
+# (OWNER) + github-actions[bot] attestor; external/fork comments are treated
+# as untrusted data and never drive the queue. No PR head checkout.
+on:
+  workflow_dispatch:
+    inputs:
+      pr:
+        description: PR number
+        required: true
+        type: string
+  repository_dispatch:
+    types: [local-ollama-review]
+
+permissions:
+  actions: write # Dispatch the existing canonical ready-merge drain on trusted readiness.
+  contents: read
+  issues: write
+  pull-requests: write
+
+concurrency:
+  # A single 4-GB GPU serves both manual and fleet-triggered reviews.
+  group: local-ollama-review
+  queue: max
+  cancel-in-progress: false
+
+jobs:
+  review:
+    runs-on: ubuntu-latest
+    # Three hours is deliberately generous while measuring slow on-device inference.
+    timeout-minutes: 180
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: main
+          persist-credentials: false
+      - name: Run provider-backed controller review (standard scheme)
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REVIEW_PROVIDER_URL: ${{ secrets.REVIEW_PROVIDER_URL || secrets.LOCAL_OLLAMA_URL }}
+          REVIEW_PROVIDER_KEY: ${{ secrets.REVIEW_PROVIDER_KEY || secrets.LOCAL_OLLAMA_KEY }}
+          REVIEW_PROVIDER_MODEL: ${{ vars.REVIEW_PROVIDER_MODEL || 'qwen2.5-coder:7b' }}
+          PR_INPUT: ${{ inputs.pr }}
+          PR_PAYLOAD: ${{ github.event.client_payload.pr }}
+        run: bash .github/scripts/local-ollama-review.sh

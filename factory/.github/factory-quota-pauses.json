@@ -1,0 +1,23 @@
+{
+  "schema_version": 1,
+  "pauses": [
+    {
+      "worker": 48,
+      "provider": "mistral",
+      "model": "codestral-latest",
+      "paused_until": "2026-11-01T00:00:00Z",
+      "reason": "provider_quota: Mistral 'API budget exhausted' (HTTP 402 billing_api_budget_exhausted); monthly spend limit resets at the next calendar month",
+      "reset_source": "config",
+      "evidence_run": "39130057572"
+    },
+    {
+      "worker": 55,
+      "provider": "ollama-cloud",
+      "model": "nemotron-3-nano:30b",
+      "paused_until": "2026-11-01T00:00:00Z",
+      "reason": "provider_quota: Ollama Cloud monthly usage limit reached (HTTP 429 'reached your monthly usage limit')",
+      "reset_source": "config",
+      "evidence_run": "38255409735"
+    }
+  ]
+}

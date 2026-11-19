@@ -1,0 +1,56 @@
+name: Fixed Model Factory Roster Successor
+run-name: Roster wakeup after ${{ inputs.delay_seconds }}s
+
+on:
+  workflow_dispatch:
+    inputs:
+      delay_seconds:
+        description: Validated delay before the next roster-mode dispatcher run
+        required: true
+        type: string
+
+# This workflow is a timer, NOT an assignment writer. In particular, it must
+# never join the fixed-model-factory-dispatch lease group or the dispatcher's
+# workflow ingress group. It is deliberately unable to mutate issues or PRs.
+permissions:
+  contents: read
+  actions: write
+
+# Coalesce duplicate timers without interrupting an in-progress delay.
+# Only the eventual dispatcher acquires the shared assignment lock.
+concurrency:
+  group: fixed-model-factory-roster-successor
+  queue: single
+  cancel-in-progress: false
+
+jobs:
+  wait_and_wake:
+    runs-on: ubuntu-latest
+    timeout-minutes: 70
+    permissions:
+      actions: write
+      contents: read
+    steps:
+      - name: Wait outside the lease lock and wake one roster cycle
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          DELAY_SECONDS: ${{ inputs.delay_seconds }}
+        run: |
+          set -Eeuo pipefail
+          if [[ ! "$DELAY_SECONDS" =~ ^[1-9][0-9]*$ ]]; then
+            echo '::error::Roster delay must be a positive integer' >&2
+            exit 1
+          fi
+          # Caller sends 240s for productive/error recovery and 15..3700s
+          # for the observed installation quota reset. Never accept a longer
+          # or speculative wait. The hourly watchdog is the fallback.
+          if (( DELAY_SECONDS < 15 || DELAY_SECONDS > 3700 )); then
+            echo '::error::Roster delay must be between 15 and 3700 seconds' >&2
+            exit 1
+          fi
+
+          echo "Roster successor sleeping ${DELAY_SECONDS}s outside assignment serialization"
+          sleep "$DELAY_SECONDS"
+          gh workflow run fixed-model-factory-dispatch.yml \
+            --repo "$GITHUB_REPOSITORY" --ref main -f mode=roster

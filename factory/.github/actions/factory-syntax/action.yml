@@ -1,0 +1,17 @@
+name: Install factory syntax parsers
+description: Install pinned, offline-at-runtime parsers used by delivery gates.
+runs:
+  using: composite
+  steps:
+    - uses: actions/setup-python@v7
+      with:
+        python-version: '3.14'
+    - name: Create isolated factory parser runtime
+      shell: bash
+      run: |
+        set -Eeuo pipefail
+        parser_runtime="$RUNNER_TEMP/factory-syntax-runtime"
+        python3 -m venv "$parser_runtime"
+        "$parser_runtime/bin/python" -m pip install --disable-pip-version-check \
+          --only-binary=:all: -r "$GITHUB_ACTION_PATH/requirements.txt"
+        echo "$parser_runtime/bin" >> "$GITHUB_PATH"

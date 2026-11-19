@@ -1,0 +1,26 @@
+{
+  "schema": "comic-pile-factory-worker-github-app-v1",
+  "provenance_key": "worker",
+  "notes": "Bootstrap names once. Do not re-roll on later reads. Placeholders stay null until Josh creates the GitHub App. This file is worker 48 only.",
+  "faker": {
+    "distribution": "Faker",
+    "version": "40.40.0",
+    "locale": "en_US",
+    "constructor": "new Faker() per worker",
+    "seed": "seed_instance(worker_number + 100)",
+    "first_call": "name()"
+  },
+  "workers": {
+    "48": {
+      "worker": 48,
+      "display_name": "Mark Cordova",
+      "app_id": 5275306,
+      "app_login": "mark-cordova[bot]",
+      "installation_id": 170306933,
+      "app_id_secret": "FACTORY_WORKER_48_APP_ID",
+      "installation_id_secret": "FACTORY_WORKER_48_INSTALLATION_ID",
+      "private_key_secret": "FACTORY_WORKER_48_APP_PRIVATE_KEY",
+      "profile": "Autonomous ComicPile Factory worker. This GitHub App is the visible push and pull-request identity for durable factory worker 48 only. It is not a trusted factory-marker author. Trusted marker comments stay on github-actions[bot]. Model and worker number stay in human-readable pull request text."
+    }
+  }
+}

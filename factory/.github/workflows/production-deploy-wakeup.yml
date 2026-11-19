@@ -1,0 +1,71 @@
+name: Production Deploy Wakeup
+
+on:
+  workflow_run:
+    workflows:
+      - Fixed Model Factory Entry
+    types:
+      - completed
+  workflow_dispatch:
+
+# Factory workers can merge with the repository GITHUB_TOKEN. GitHub intentionally
+# suppresses push-triggered workflows for writes made with that token, so the
+# normal Deploy Production `push: main` trigger is not sufficient. This workflow
+# observes worker completion directly and explicitly dispatches deployment only
+# when main advanced while that worker was running.
+concurrency:
+  group: production-deploy-wakeup
+  cancel-in-progress: true
+
+permissions:
+  actions: write
+  contents: read
+
+jobs:
+  reconcile:
+    name: Wake deploy when factory advanced main
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Compare worker start SHA with current main
+        id: main
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          STARTED_SHA: ${{ github.event.workflow_run.head_sha }}
+        run: |
+          set -Eeuo pipefail
+          current_sha="$(gh api "repos/${GITHUB_REPOSITORY}/commits/main" --jq '.sha')"
+          echo "current_sha=$current_sha" >> "$GITHUB_OUTPUT"
+
+          # Manual dispatch is an explicit reconciliation request.
+          if [[ "$GITHUB_EVENT_NAME" == "workflow_dispatch" ]]; then
+            echo "deploy_required=true" >> "$GITHUB_OUTPUT"
+            echo "Manual production reconciliation requested for ${current_sha}."
+            exit 0
+          fi
+
+          if [[ -z "${STARTED_SHA:-}" ]]; then
+            echo "Missing triggering worker head SHA; failing closed rather than silently skipping deployment." >&2
+            exit 1
+          fi
+
+          if [[ "$current_sha" == "$STARTED_SHA" ]]; then
+            echo "deploy_required=false" >> "$GITHUB_OUTPUT"
+            echo "Factory did not advance main (${current_sha}); no deployment wakeup needed."
+          else
+            echo "deploy_required=true" >> "$GITHUB_OUTPUT"
+            echo "Main advanced while factory ran: ${STARTED_SHA} -> ${current_sha}."
+          fi
+
+      - name: Dispatch production deployment reconciliation
+        if: steps.main.outputs.deploy_required == 'true'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -Eeuo pipefail
+          gh workflow run deploy-production.yml \
+            --repo "$GITHUB_REPOSITORY" \
+            --ref main
+          echo "Dispatched Deploy Production for current main ${GITHUB_REPOSITORY}@${{ steps.main.outputs.current_sha }}."

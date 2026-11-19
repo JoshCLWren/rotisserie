@@ -1,0 +1,134 @@
+name: PR-Agent Advisory Review
+
+# Advisory AI pull request review with PR-Agent v0.48.0 (The-PR-Agent/pr-agent, MIT).
+#
+# - ADVISORY ONLY. This job is continue-on-error, it is NOT a required check, and it
+#   must never be added to the CI Summary `needs` list in ci.yml.
+# - Review only: auto_review on, auto_describe and auto_improve off, so each PR event
+#   costs about one model call.
+# - Output is published as a GitHub check run (github.publish_as_check_run).
+# - Free models only, through OpenAI-compatible gateways. No paid OpenRouter.
+#   Provider chain, each step runs only if the previous ones did not succeed:
+#     1. Routeway   minimax-m2.7:free                       (ROUTEWAY_API_KEY)
+#     2. Requesty   nvidia/nemotron-3-ultra-550b-a55b        (REQUESTY_API_KEY)
+#     3. OrcaRouter z-ai/glm-5.3-flash-free                  (ORCAROUTER_API_KEY)
+#   Routeway goes first because the Requesty and OrcaRouter keys are shared with the
+#   factory workers' daily quota. ROUTEWAY_API_KEY may be unset; then the chain falls
+#   through to Requesty, then OrcaRouter. If no key is set the job warns and passes.
+#   Routeway deepseek-v4-flash:free was tried first and rejected: on a real PR-Agent
+#   review it spent the whole output budget and returned empty content
+#   (finish_reason=length), so Routeway now serves minimax-m2.7:free.
+# - PR-Agent v0.48.0 treats api_base and keys as host-only settings (ignored in
+#   .pr_agent.toml) and supports one OpenAI-compatible endpoint per run, so the
+#   cross-provider fallback is the step chain below. See .pr_agent.toml for the rest.
+
+on:
+  pull_request:
+    types: [opened, reopened, ready_for_review, synchronize]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pr-agent-review-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  pr-agent-review:
+    name: PR-Agent advisory review
+    # Skip bot senders. Factory PRs are opened as JoshCLWren (a User), so they are
+    # still reviewed. Drafts are reviewed once they are marked ready_for_review.
+    if: ${{ github.event.sender.type != 'Bot' && github.event.pull_request.draft == false }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    continue-on-error: true
+    permissions:
+      contents: read
+      pull-requests: write
+      issues: write
+      checks: write
+    env:
+      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      GITHUB_ACTION_CONFIG__AUTO_REVIEW: "true"
+      GITHUB_ACTION_CONFIG__AUTO_DESCRIBE: "false"
+      GITHUB_ACTION_CONFIG__AUTO_IMPROVE: "false"
+      GITHUB_ACTION_CONFIG__PR_ACTIONS: '["opened", "reopened", "ready_for_review"]'
+      GITHUB_ACTION_CONFIG__HANDLE_PUSH_TRIGGER: "true"
+      GITHUB_ACTION_CONFIG__PUSH_COMMANDS: '["/review"]'
+      GITHUB__PUBLISH_AS_CHECK_RUN: "true"
+      # No same-provider fallback; the cross-provider fallback is the step chain.
+      CONFIG__FALLBACK_MODELS: "[]"
+      # openai/-prefixed gateway models are not in PR-Agent's MAX_TOKENS table.
+      CONFIG__CUSTOM_MODEL_MAX_TOKENS: "64000"
+      # Explicit output cap so reasoning models are not cut off by a small provider default.
+      CONFIG__MAX_OUTPUT_TOKENS: "8192"
+      # Advisory only: do not add review-effort or security labels to PRs (factory PRs use labels).
+      PR_REVIEWER__ENABLE_REVIEW_LABELS_EFFORT: "false"
+      PR_REVIEWER__ENABLE_REVIEW_LABELS_SECURITY: "false"
+    steps:
+      - name: Detect configured free providers
+        id: keys
+        env:
+          ROUTEWAY_API_KEY: ${{ secrets.ROUTEWAY_API_KEY }}
+          REQUESTY_API_KEY: ${{ secrets.REQUESTY_API_KEY }}
+          ORCAROUTER_API_KEY: ${{ secrets.ORCAROUTER_API_KEY }}
+        run: |
+          has() { if [ -n "$1" ]; then echo true; else echo false; fi; }
+          {
+            echo "routeway=$(has "$ROUTEWAY_API_KEY")"
+            echo "requesty=$(has "$REQUESTY_API_KEY")"
+            echo "orcarouter=$(has "$ORCAROUTER_API_KEY")"
+          } >> "$GITHUB_OUTPUT"
+
+      # PR-Agent v0.48.0 (git tag v0.48.0, commit 981344be2755e303df501e18e3f60b848a188a80).
+      # Release image tags are immutable per PR-Agent SECURITY.md.
+      - name: "Review (primary: Routeway minimax-m2.7:free)"
+        id: routeway
+        if: ${{ steps.keys.outputs.routeway == 'true' }}
+        continue-on-error: true
+        uses: docker://pragent/pr-agent:0.48.0-github_action
+        env:
+          OPENAI__KEY: ${{ secrets.ROUTEWAY_API_KEY }}
+          OPENAI__API_BASE: https://api.routeway.ai/v1
+          CONFIG__MODEL: "openai/minimax-m2.7:free"
+
+      - name: "Review (fallback 1: Requesty nemotron-3-ultra)"
+        id: requesty
+        if: ${{ steps.keys.outputs.requesty == 'true' && steps.routeway.outcome != 'success' }}
+        continue-on-error: true
+        uses: docker://pragent/pr-agent:0.48.0-github_action
+        env:
+          OPENAI__KEY: ${{ secrets.REQUESTY_API_KEY }}
+          OPENAI__API_BASE: https://router.requesty.ai/v1
+          CONFIG__MODEL: "openai/nvidia/nemotron-3-ultra-550b-a55b"
+
+      - name: "Review (fallback 2: OrcaRouter glm-5.3-flash-free)"
+        id: orcarouter
+        if: ${{ steps.keys.outputs.orcarouter == 'true' && steps.routeway.outcome != 'success' && steps.requesty.outcome != 'success' }}
+        continue-on-error: true
+        uses: docker://pragent/pr-agent:0.48.0-github_action
+        env:
+          OPENAI__KEY: ${{ secrets.ORCAROUTER_API_KEY }}
+          OPENAI__API_BASE: https://api.orcarouter.ai/v1
+          CONFIG__MODEL: "openai/z-ai/glm-5.3-flash-free"
+
+      - name: Summarize advisory review
+        if: ${{ always() }}
+        env:
+          ROUTEWAY_OUTCOME: ${{ steps.routeway.outcome }}
+          REQUESTY_OUTCOME: ${{ steps.requesty.outcome }}
+          ORCAROUTER_OUTCOME: ${{ steps.orcarouter.outcome }}
+        run: |
+          {
+            echo "### PR-Agent advisory review (not a required check)"
+            echo ""
+            echo "| Provider | Model | Outcome |"
+            echo "| --- | --- | --- |"
+            echo "| Routeway | minimax-m2.7:free | ${ROUTEWAY_OUTCOME:-skipped} |"
+            echo "| Requesty | nvidia/nemotron-3-ultra-550b-a55b | ${REQUESTY_OUTCOME:-skipped} |"
+            echo "| OrcaRouter | z-ai/glm-5.3-flash-free | ${ORCAROUTER_OUTCOME:-skipped} |"
+          } >> "$GITHUB_STEP_SUMMARY"
+          if [ "$ROUTEWAY_OUTCOME" != "success" ] && [ "$REQUESTY_OUTCOME" != "success" ] && [ "$ORCAROUTER_OUTCOME" != "success" ]; then
+            echo "::warning::PR-Agent advisory review did not run: no free provider key was set or every provider failed."
+          fi
+          exit 0

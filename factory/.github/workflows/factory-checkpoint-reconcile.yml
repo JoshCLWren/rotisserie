@@ -1,0 +1,59 @@
+name: Factory Checkpoint Reconciliation
+
+# A separate runner survives worker cancellation; scheduled sweeping also covers
+# suppressed workflow_run events and temporary publication/API failures.
+on:
+  workflow_run:
+    workflows: [Fixed Model Factory Entry]
+    types: [completed]
+  schedule:
+    - cron: '17 * * * *'
+  workflow_dispatch:
+    inputs:
+      run_id:
+        description: 'Optional canonical factory run ID, otherwise sweep saved checkpoints'
+        required: false
+        type: string
+
+permissions:
+  contents: write
+  pull-requests: write
+  issues: write
+  actions: read
+
+concurrency:
+  group: factory-checkpoint-reconciliation
+  cancel-in-progress: false
+
+jobs:
+  reconcile:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout trusted main only
+        uses: actions/checkout@v7
+        with:
+          ref: main
+          persist-credentials: false
+      - name: Publish saved work and retire incorporated checkpoints
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TARGET_RUN: ${{ github.event.workflow_run.id || inputs.run_id || '' }}
+        run: |
+          set -Eeuo pipefail
+          args=(--repo "$GITHUB_REPOSITORY" --cleanup)
+          if [[ -n "$TARGET_RUN" ]]; then
+            [[ "$TARGET_RUN" =~ ^[1-9][0-9]*$ ]] || exit 1
+            args+=(--run-id "$TARGET_RUN")
+          else
+            args+=(--sweep)
+          fi
+          python3 .github/scripts/factory_checkpoint_handoff.py "${args[@]}" \
+            | tee "$RUNNER_TEMP/factory-checkpoint-result.json"
+          {
+            echo '### Checkpoint recovery'
+            echo '```json'
+            cat "$RUNNER_TEMP/factory-checkpoint-result.json"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
