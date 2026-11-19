@@ -100,8 +100,8 @@ def test_idle_is_not_a_successful_delivery_or_failed_worker(monkeypatch):
 
 
 
-def test_timed_out_agent_with_verified_delivery_is_completed(monkeypatch):
-    """Worker 82: a real code handoff is not erased by its agent timeout."""
+def test_timed_out_agent_with_verified_delivery_stays_failed(monkeypatch):
+    """A code handoff cannot rewrite the original agent timeout."""
     records = []
     monkeypatch.setattr(ledger, "record_events", lambda _, events: records.extend(events) or len(events))
     ledger.record_runtime_outcome("owner/repo", "43639844249", {
@@ -109,7 +109,7 @@ def test_timed_out_agent_with_verified_delivery_is_completed(monkeypatch):
         "persisted_work": True, "delivery_outcome": "persisted",
         "delivery_pr": "5129", "selected_kind": "issue", "selected_number": "4839",
     })
-    assert records[0]["event_type"] == "worker_completed"
+    assert records[0]["event_type"] == "worker_failed"
     assert records[0]["outcome_class"] == "agent_timeout"
     assert records[0]["delivery_outcome"] == "persisted"
     assert records[0]["delivery_pr"] == "5129"
@@ -459,3 +459,101 @@ def test_trusted_terminal_collector_retries_scoped_reads_and_idempotent_writes()
     operations = (root / ".github/scripts/factory_state_operations.py").read_text()
     assert "INSERT INTO public.factory_runtime_event_keys(repo,run_id)" in operations
     assert "ON CONFLICT DO NOTHING RETURNING run_id" in operations
+
+
+def test_verified_saved_checkpoint_is_a_separate_receipt_even_after_timeout(monkeypatch):
+    records = []
+    monkeypatch.setattr(ledger, "record_events",
+                        lambda _repo, events: records.extend(events) or len(events))
+    ledger.record_runtime_outcome("owner/repo", "43639844249", {
+        "worker": "82", "outcome_class": "agent_timeout",
+        "persisted_work": False, "delivery_outcome": "none",
+        "checkpoint_saved": True, "checkpoint_published": True,
+        "checkpoint_sha": "a" * 40, "work_pr": 5129,
+    })
+    assert [row["event_type"] for row in records] == [
+        "worker_failed", "checkpoint_saved", "checkpoint_pr_linked",
+    ]
+    assert records[0]["event_id"] == "runtime:43639844249"
+    assert records[0]["outcome_class"] == "agent_timeout"
+    assert records[1]["event_id"].startswith("checkpoint:43639844249:saved:")
+    assert records[2]["work_pr"] == "5129"
+    assert all(row["event_type"] != "checkpoint_pr_merged" for row in records)
+
+
+def test_checkpoint_reconciliation_requires_verified_remote_evidence(monkeypatch):
+    records = []
+    monkeypatch.setattr(ledger, "record_events",
+                        lambda _repo, events: records.extend(events) or len(events))
+    observed = {
+        "worker": "82", "run_id": "43639844249",
+        "saved": True, "checkpoint_sha": "a" * 40,
+        "published": True, "work_pr": 5129,
+        "merged": True, "merge_sha": "b" * 40,
+    }
+    assert ledger.record_checkpoint_evidence("owner/repo", [observed]) == 3
+    assert [row["event_type"] for row in records] == [
+        "checkpoint_saved", "checkpoint_pr_linked", "checkpoint_pr_merged",
+    ]
+    assert records[-1]["merge_sha"] == "b" * 40
+    records.clear()
+    assert ledger.record_checkpoint_evidence("owner/repo", [
+        {**observed, "checkpoint_sha": "not-a-sha"},
+        {**observed, "saved": False},
+    ]) == 0
+    assert not records
+    records.clear()
+    assert ledger.record_checkpoint_evidence("owner/repo", [{
+        **observed, "merged": False,
+    }]) == 2
+    assert all(row["event_type"] != "checkpoint_pr_merged" for row in records)
+
+
+def test_checkpoint_receipts_use_stable_idempotency_keys(monkeypatch):
+    seen = set()
+    def fake_record(_repo, entries):
+        count = 0
+        for entry in entries:
+            if entry["event_id"] not in seen:
+                seen.add(entry["event_id"])
+                count += 1
+        return count
+    monkeypatch.setattr(ledger, "record_events", fake_record)
+    result = {"worker": "82", "run_id": "43639844249", "saved": True,
+              "checkpoint_sha": "a" * 40, "published": True, "work_pr": 5129}
+    assert ledger.record_checkpoint_evidence("owner/repo", [result]) == 2
+    assert ledger.record_checkpoint_evidence("owner/repo", [result]) == 0
+    assert ledger.record_checkpoint_evidence("owner/repo", [
+        {**result, "merged": True, "merge_sha": "b" * 40},
+    ]) == 1
+
+
+
+def test_same_run_new_head_and_validation_state_get_separate_receipts(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A second exact head can be linked without discarding the first link."""
+    rows: list[dict] = []
+    monkeypatch.setattr(ledger, "record_events",
+                        lambda _repo, entries: rows.extend(entries) or len(entries))
+    base = {"worker": "82", "run_id": "43639844249", "saved": True,
+            "checkpoint_sha": "a" * 40, "published": True, "work_pr": 5129}
+    ledger.record_checkpoint_evidence("owner/repo", [base, {
+        **base, "checkpoint_sha": "b" * 40, "validated": True,
+    }])
+    links = [item for item in rows if item["event_type"] == "checkpoint_pr_linked"]
+    assert len(links) == 2
+    assert links[0]["event_id"] != links[1]["event_id"]
+    assert links[1]["validated"] is True
+
+
+def test_receipts_cli_fails_explicitly_without_neon(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path,
+) -> None:
+    """Missing DSN is never reported as zero successfully written receipts."""
+    monkeypatch.delenv("FACTORY_STATE_DSN_FILE", raising=False)
+    monkeypatch.setattr(sys, "argv", ["factory_state_ledger.py", "checkpoint-receipts",
+                         "--repo", "owner/repo", "--run-id", "1234",
+                         "--file", str(tmp_path / "receipts.json")])
+    with pytest.raises(RuntimeError, match="ledger not configured"):
+        ledger.main()

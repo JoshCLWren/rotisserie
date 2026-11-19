@@ -793,3 +793,23 @@ def test_reset_cutoff_prevents_old_failures_rebuilding_fibonacci():
         assert "created_at>GREATEST" in sql
         assert "SELECT updated_at FROM public.factory_state_kv" in sql
         assert "'-infinity'::timestamptz" in sql
+
+
+
+def test_delivered_failed_execution_is_worker_retry_boundary_not_model_success():
+    """An agent_timeout with persisted code remains a failure, but resets worker retry."""
+    def event(kind: str, run_id: int, *, delivered: bool = False) -> dict:
+        return {"event_type": kind, "detail": {
+            "source": "kilo-auto", "model": "kilo-auto/free",
+            "run_id": str(run_id), "outcome_class": "agent_timeout",
+            "exact_model_proven": True,
+            "persisted_work": delivered,
+            "delivery_outcome": "persisted" if delivered else "none",
+        }}
+    rows = [event("worker_failed", 73), event("worker_failed", 72, delivered=True),
+            event("worker_failed", 71)]
+    assert operations.historical_failure_streak(rows, 74, "kilo-auto",
+        "kilo-auto/free", model_only=False) == 1
+    # Model retry policy remains independent of delivered code.
+    assert operations.historical_failure_streak(rows, 74, "kilo-auto",
+        "kilo-auto/free", model_only=True) >= 1

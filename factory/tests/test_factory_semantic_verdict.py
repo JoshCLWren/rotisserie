@@ -394,3 +394,58 @@ def test_worker_fails_over_on_zero_exit_provider_account_refusal() -> None:
     assert 'zero_exit_provider_refusal "$attempt_elapsed"' in guard
     assert "agent_status=1" in guard
     assert "|| recovery_status=$?" in text
+
+
+def test_partial_acceptance_ready_is_actionable_repair_not_review_loop(tmp_path: Path) -> None:
+    """Production-shaped 16-item acceptance cannot claim READY with partial criteria."""
+    mission = (
+        f"ISSUE ACCEPTANCE: #4916, head {RECOVERY_HEAD}, issue digest {'b' * 64}.\n"
+        "ACCEPTANCE_CRITERIA_COUNT=16\n"
+    )
+    report = recovery_report()
+    items = report["items"]
+    assert isinstance(items, list)
+    original = items[0]
+    assert isinstance(original, dict)
+    report["items"] = [
+        {**original, "id": f"A{index}",
+         "status": "partial" if index in {5, 13, 14} else "met"}
+        for index in range(1, 17)
+    ]
+    log = tmp_path / "review.log"
+    log.write_text(
+        "Reviewed source and required checks.\n"
+        + "FACTORY_ACCEPTANCE_V1=" + json.dumps(report)
+        + "\nFACTORY_GATE_READY\n"
+    )
+    call = (
+        "factory_incomplete_acceptance_report "
+        f"{shlex.quote(str(log))} {shlex.quote(str(POLICY))} {shlex.quote(mission)}"
+    )
+    result = run_bash(call)
+    assert result.returncode == 0, result.stderr
+    for criterion in ("A5=partial", "A13=partial", "A14=partial"):
+        assert criterion in result.stdout
+    assert run_bash(
+        "factory_has_acceptance_report "
+        f"{shlex.quote(str(log))} {shlex.quote(str(POLICY))} {shlex.quote(mission)}"
+    ).returncode != 0
+    worker = WORKER.read_text()
+    assert 'incomplete_acceptance="$(factory_incomplete_acceptance_report' in worker
+    assert 'append_wrapper_gate_reason "$incomplete_acceptance"' in worker
+    assert "verdict='repair'" in worker
+
+
+def test_stale_acceptance_report_cannot_force_repair_or_ready(tmp_path: Path) -> None:
+    """A report for a foreign head cannot control another PR's stage."""
+    report = recovery_report("c" * 40)
+    items = report["items"]
+    assert isinstance(items, list)
+    report["items"] = [{**item, "status": "partial"} for item in items]
+    log = tmp_path / "stale.log"
+    log.write_text("FACTORY_ACCEPTANCE_V1=" + json.dumps(report) + "\n")
+    mission = (f"ISSUE ACCEPTANCE: #4916, head {RECOVERY_HEAD}, "
+               f"issue digest {'b' * 64}.\nACCEPTANCE_CRITERIA_COUNT=1\n")
+    cmd = ("factory_incomplete_acceptance_report "
+           f"{shlex.quote(str(log))} {shlex.quote(str(POLICY))} {shlex.quote(mission)}")
+    assert run_bash(cmd).returncode != 0

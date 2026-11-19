@@ -181,3 +181,18 @@ def test_install_writes_templates_under_their_own_names(tmp_path: Path) -> None:
     assert written == [repo / ".github" / "workflows" / "factory-fast-merge.yml"]
     with pytest.raises(install.InstallError):
         install.install(repo, source="example/rotisserie", ref=REF, names=["missing.yml"])
+
+
+def test_every_factory_script_is_overlaid() -> None:
+    listed = {path.rstrip("/") for path in OVERLAY_PATHS}
+    scripts = [
+        path
+        for path in (FACTORY / ".github" / "scripts").iterdir()
+        if path.is_file() and not path.name.startswith("test_") and ".test." not in path.name
+    ]
+    missing = sorted(
+        f".github/scripts/{path.name}"
+        for path in scripts
+        if f".github/scripts/{path.name}" not in listed
+    )
+    assert missing == []

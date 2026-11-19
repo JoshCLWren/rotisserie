@@ -606,11 +606,12 @@ def record_runtime_outcome(repo: str, run_id: str, outcome: dict[str, Any]) -> i
     if not WORKER_RE.fullmatch(worker) or not run_id.isdecimal():
         raise ValueError("invalid trusted runtime outcome identity")
     status = str(outcome.get("outcome_class") or "unknown_failure")
-    # Execution can time out despite a verified code push and successful PR handoff.
+    # A saved checkpoint or even a merged PR cannot rewrite the original
+    # model execution result. Delivery is recorded through separate receipts.
     delivered = (outcome.get("delivery_outcome") == "persisted"
                  and outcome.get("persisted_work") is True
                  and str(outcome.get("delivery_pr") or "").isdecimal())
-    event_type = ("worker_completed" if status == "success" or delivered
+    event_type = ("worker_completed" if status == "success"
                   else "worker_idle" if status == "no_work" else "worker_failed")
     inserted = record_events(repo, [{
         "event_type": event_type,
@@ -626,6 +627,11 @@ def record_runtime_outcome(repo: str, run_id: str, outcome: dict[str, Any]) -> i
         "selected_kind": outcome.get("selected_kind"),
         "selected_number": outcome.get("selected_number"),
         "persisted_work": bool(outcome.get("persisted_work")),
+        "checkpoint_saved": outcome.get("checkpoint_saved") is True,
+        "checkpoint_published": outcome.get("checkpoint_published") is True,
+        "checkpoint_validated": outcome.get("checkpoint_validated") is True,
+        "checkpoint_sha": outcome.get("checkpoint_sha") or "",
+        "work_pr": outcome.get("work_pr") or "",
         "model_failures": outcome.get("model_failures") or [],
         "trusted_source_switch": outcome.get("trusted_source_switch") is True,
         "observed_at": datetime.now(timezone.utc).isoformat(),
@@ -634,13 +640,79 @@ def record_runtime_outcome(repo: str, run_id: str, outcome: dict[str, Any]) -> i
     from factory_state_operations import enabled as health_enabled, record_runtime
     if health_enabled():
         record_runtime(repo, int(run_id), outcome)
+    # The trusted persistence controller already verified the exact remote
+    # checkpoint and canonical PR. These receipts remain independent when
+    # the source session timed out or validation failed.
+    if outcome.get("checkpoint_saved") is True:
+        inserted += record_checkpoint_evidence(repo, [{
+            "worker": worker, "run_id": run_id,
+            "saved": True, "checkpoint_sha": outcome.get("checkpoint_sha"),
+            "published": outcome.get("checkpoint_published") is True,
+            "validated": outcome.get("checkpoint_validated") is True,
+            "work_pr": outcome.get("work_pr"),
+        }])
     return inserted
+
+
+def checkpoint_evidence_events(repo: str, result: dict[str, Any]) -> list[dict[str, Any]]:
+    """Build independent receipts from trusted remote-ref/PR verification.
+
+    A checkpoint proves saved bytes, not successful execution or merge. The
+    source run, verified checkpoint SHA and canonical PR link are explicit.
+    A merged receipt is only emitted after the trusted controller independently
+    confirms that the saved bytes are included in the merged PR.
+    """
+    run_id = str(result.get("run_id") or "")
+    worker = str(result.get("worker") or "")
+    head = str(result.get("checkpoint_sha") or "")
+    if not run_id.isdecimal() or not WORKER_RE.fullmatch(worker):
+        return []
+    if result.get("saved") is not True or not re.fullmatch(r"[a-f0-9]{40}", head):
+        return []
+    common = {"worker": worker, "run_id": run_id, "checkpoint_sha": head,
+              "observed_at": datetime.now(timezone.utc).isoformat()}
+    records = [{
+        **common, "event_type": "checkpoint_saved",
+        "event_id": f"checkpoint:{run_id}:saved:{head}",
+    }]
+    pr = str(result.get("work_pr") or "")
+    if not (result.get("published") is True and pr.isdecimal() and int(pr) > 0):
+        return records
+    records.append({
+        **common, "event_type": "checkpoint_pr_linked",
+        "event_id": f"checkpoint:{run_id}:pr:{pr}:head:{head}:validated:{int(result.get('validated') is True)}",
+        "work_pr": pr,
+        "validated": result.get("validated") is True,
+    })
+    if result.get("merged") is True:
+        merge_sha = str(result.get("merge_sha") or "")
+        if re.fullmatch(r"[a-f0-9]{40}", merge_sha):
+            records.append({
+                **common, "event_type": "checkpoint_pr_merged",
+                "event_id": f"checkpoint:{run_id}:merged:{pr}:head:{head}",
+                "work_pr": pr, "merge_sha": merge_sha,
+                "merge_basis": result.get("merge_basis") or "verified_pr",
+                "exact_bytes_included": result.get("exact_bytes_included"),
+            })
+    return records
+
+
+def record_checkpoint_evidence(repo: str, results: list[dict[str, Any]]) -> int:
+    """Idempotent reconciliation receipts, independent of the terminal event."""
+    if not isinstance(results, list) or len(results) > 10000:
+        raise ValueError("Invalid bounded checkpoint reconciliation data")
+    entries: list[dict[str, Any]] = []
+    for result in results:
+        if not isinstance(result, dict):
+            raise ValueError("Invalid checkpoint reconciliation result")
+        entries.extend(checkpoint_evidence_events(repo, result))
+    return record_events(repo, entries)
 
 
 def main() -> int:
     import argparse
     parser = argparse.ArgumentParser()
-    parser.add_argument("command", choices=["runtime-outcome", "lifecycle"])
+    parser.add_argument("command", choices=["runtime-outcome", "lifecycle", "checkpoint-receipts"])
     parser.add_argument("--file")
     parser.add_argument("--worker")
     parser.add_argument("--status", choices=sorted(LIFECYCLE_STATUSES))
@@ -648,6 +720,16 @@ def main() -> int:
     parser.add_argument("--run-id", required=True)
     parser.add_argument("--repo", default=os.environ.get("GITHUB_REPOSITORY") or __import__("factory_config").repository())
     args = parser.parse_args()
+    if args.command == "checkpoint-receipts":
+        if not args.file:
+            parser.error("checkpoint-receipts requires --file")
+        if not enabled():
+            raise RuntimeError("Neon checkpoint receipts unavailable: restricted ledger not configured")
+        with open(args.file, encoding="utf-8") as stream:
+            payload = json.load(stream)
+        count = record_checkpoint_evidence(args.repo, payload)
+        print(f"[factory-ledger] recorded {count} independent checkpoint receipt(s)")
+        return 0
     if args.command == "lifecycle":
         if not args.worker or not args.status:
             parser.error("lifecycle requires --worker and --status")

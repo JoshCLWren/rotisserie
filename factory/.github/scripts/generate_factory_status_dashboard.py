@@ -523,6 +523,7 @@ def collect_snapshot() -> dict[str, Any]:
     return {
         "delivery_funnel": delivery_rows,
         "delivery_funnel_error": delivery_error,
+        "delivery_evidence": view.get("delivery_evidence"),
         "heartbeat_health": heartbeat_report,
         "generated_at": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
         "open_prs": github_search_total(completion, "is:pr is:open"),
@@ -816,6 +817,37 @@ def render_dashboard(snapshot: Mapping[str, Any]) -> str:
         f'<a class="metric" href="{url}"><span>{label}</span><strong>{esc(value)}</strong></a>'
         for label, value, url in cards
     )
+    evidence = snapshot.get("delivery_evidence")
+    if isinstance(evidence, Mapping):
+        rows = [
+            ("Terminal attempts", "terminal_runs"),
+            ("Successful executions", "successful_runs"),
+            ("Failed executions", "failed_runs"),
+            ("Runs with verified saved bytes", "checkpoint_runs"),
+            ("Distinct work PRs linked", "linked_prs"),
+            ("Work PRs verified merged", "merged_prs"),
+        ]
+        evidence_html = (
+            '<section class="panel" style="margin-top:12px">'
+            '<h2>Trusted delivery evidence · last 7 days</h2>'
+            '<div class="grid" style="margin-top:0">'
+            + "".join(
+                f'<div class="row"><span>{esc(label)}</span>'
+                f'<strong>{esc(evidence.get(key, "unavailable"))}</strong></div>'
+                for label, key in rows
+            )
+            + '</div><div class="notes">Execution outcome, saved checkpoints, '
+            'PR linkage, and merge incorporation are separate. Counts are '
+            'distinct source runs or distinct PRs, not one interchangeable '
+            '“completed” metric.</div></section>'
+        )
+    else:
+        evidence_html = (
+            '<section class="panel" style="margin-top:12px">'
+            '<h2>Trusted delivery evidence · last 7 days</h2>'
+            '<div class="muted">Neon delivery evidence unavailable; counts '
+            'not inferred from PRs or worker exits.</div></section>'
+        )
     pipeline_html = "".join(
         f'<a class="row" href="{REPO_URL}/pulls?q=is%3Aopen+label%3A{query}">'
         f"<span>{label}</span><strong>{esc(pipeline[key])}</strong></a>"
@@ -847,6 +879,7 @@ def render_dashboard(snapshot: Mapping[str, Any]) -> str:
 <header><div><h1>🏭 ComicPile Factory</h1><div class="sub">Can the fleet move work, and which factories are actually useful?</div></div><div class="sub">Generated {esc(snapshot['generated_at'])} · refreshes every 5 min · <a href="{REPO_URL}/actions">Actions ↗</a></div></header>
 <section class="verdict {esc(verdict_class)}"><span class="dot"></span><div><strong>{esc(verdict_title)}</strong>{esc(verdict_detail)}</div></section>
 <section class="metrics">{cards_html}</section>
+{evidence_html}
 <section class="grid">
 <div class="panel"><h2>Live allocation</h2><div><span class="big">{completion_pct}%</span> completion · <span class="big">{production_pct}%</span> production</div><div class="ratio"><div class="completion"></div><div class="production"></div></div><div class="muted">Target completion workers: <strong>{esc(snapshot['completion_target'])}</strong> from {esc(snapshot['idle_workers'])} currently idle.</div><div class="sub">{esc(funnel_text)}</div></div>
 <div class="panel"><h2>Fleet capacity</h2><div class="row"><span>Executable slots</span><strong class="good">{esc(snapshot['executable_slot_capacity'])}</strong></div><div class="row"><span>Executable provider/models</span><strong>{esc(snapshot['executable_candidate_count'])}</strong></div><div class="row"><span>Slot health</span><strong>{esc(snapshot['healthy_slots'])} healthy · {esc(snapshot['degraded_slots'])} degraded</strong></div><div class="row"><span>Excluded</span><strong>{esc(snapshot['cooling_slots'])} cooling · {esc(snapshot['unavailable_slots'])} unavailable</strong></div><div class="sub">{esc(snapshot['busy_workers'])} working · {esc(snapshot['idle_workers'])} idle executable · {esc(snapshot['configured_workers'])} configured</div></div>
