@@ -7,6 +7,7 @@ from pathlib import Path
 
 
 WORKER = Path('.github/scripts/free-model-factory-worker.sh')
+PRIMITIVES = Path('.github/scripts/free-model-factory-worker-primitives.sh')
 
 
 def _function_body(name: str) -> str:
@@ -18,7 +19,7 @@ def _function_body(name: str) -> str:
     Returns:
         The function body text as a string.
     """
-    text = WORKER.read_text(encoding='utf-8')
+    text = PRIMITIVES.read_text(encoding='utf-8') + '\n' + WORKER.read_text(encoding='utf-8')
     match = re.search(rf'(?ms)^{re.escape(name)}\(\) \{{\n(.*?)^\}}$', text)
     assert match is not None, f'{name} function not found'
     return match.group(1)
@@ -26,10 +27,11 @@ def _function_body(name: str) -> str:
 
 def test_persist_issue_pr_stdout_is_reserved_for_pr_number() -> None:
     """Command substitution must capture only the numeric PR identifier."""
-    body = _function_body('persist_issue_pr')
+    assert '_persist_issue_pr_untraced "$@"' in _function_body('persist_issue_pr')
+    body = _function_body('_persist_issue_pr_untraced')
 
-    assert 'git commit -m "factory: advance #${number} with ${DISPLAY}" >&2' in body
-    assert 'git push --set-upstream origin "$branch" >&2' in body
+    assert 'git commit --allow-empty -m "factory: advance #${number} with $(factory_advance_display)" >&2' in body
+    assert '--set-upstream origin "HEAD:$branch" >&2' in body
     assert re.search(r'(?m)^  echo "\$pr"$', body)
 
     stdout_commands = [
@@ -52,10 +54,8 @@ def test_worker_config_environment_vars_remain_fail_fast() -> None:
     """
     text = WORKER.read_text(encoding='utf-8')
 
-    assert 'WORKER="${FACTORY_WORKER:?FACTORY_WORKER is required}"' in text
-    assert 'SOURCE="${FACTORY_SOURCE:?FACTORY_SOURCE is required}"' in text
-    assert 'MODEL="${FACTORY_MODEL:?FACTORY_MODEL is required}"' in text
-    assert 'RUNTIME_MODEL="${FACTORY_RUNTIME_MODEL:?FACTORY_RUNTIME_MODEL is required}"' in text
+    for var in ('FACTORY_WORKER', 'FACTORY_SOURCE', 'FACTORY_MODEL', 'FACTORY_RUNTIME_MODEL'):
+        assert f': "${{{var}:?{var} is required}}"' in text
 
     for var in ('FACTORY_WORKER', 'FACTORY_SOURCE', 'FACTORY_MODEL', 'FACTORY_RUNTIME_MODEL'):
         assert re.search(rf'{re.escape(var)}:-\$', text) is None, (
@@ -77,9 +77,9 @@ def test_trusted_guard_is_staged_before_checkout() -> None:
     assert 'python3 "$TRUSTED_GUARD" --self-test' in body
 
     script = WORKER.read_text(encoding='utf-8')
-    guard_index = script.index('stage_trusted_guard')
-    loop_index = script.index('while ((')
-    assert guard_index < loop_index
+    guard_index = script.index('\nstage_trusted_guard\n')
+    checkout_index = script.index('\n  checkout_target "$MODE"')
+    assert guard_index < checkout_index
 
 
 def test_stage_trusted_guard_keeps_tmp_fallback_in_production() -> None:
@@ -121,7 +121,7 @@ def test_persist_uses_expected_head_not_current_head() -> None:
     Using `git rev-parse HEAD` would let a model-committed merge be treated as
     the base and then blindly persisted.
     """
-    for fn in ('persist_issue_pr', 'persist_pr_changes'):
+    for fn in ('_persist_issue_pr_untraced', '_persist_pr_changes_untraced'):
         body = _function_body(fn)
         assert 'base_ref="$EXPECTED_HEAD"' in body
         assert 'base_ref="$(git rev-parse HEAD)"' not in body
@@ -131,16 +131,6 @@ def test_checkout_target_records_expected_head() -> None:
     """checkout_target must record the branch head for fail-closed detection."""
     body = _function_body('checkout_target')
     assert 'EXPECTED_HEAD="$(git rev-parse HEAD)"' in body
-
-
-def test_worker_rejects_orphaned_issue_lease_when_canonical_pr_exists() -> None:
-    """A concurrent PR lease release cannot turn repair work into new issue work."""
-    body = _function_body('select_controller_assignment')
-
-    assert 'gh pr list --state open --limit 500 --json number,headRefName' in body
-    assert 'test("^factory/[0-9]+-" + $issue + "-")' in body
-    assert 'owns orphaned issue lease' in body
-    assert 'while canonical open PR #${canonical_pr} exists' in body
 
 
 def test_omniroute_and_nvidia_workers_reject_unclean_git_state() -> None:

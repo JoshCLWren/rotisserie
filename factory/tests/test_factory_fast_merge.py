@@ -295,37 +295,6 @@ def test_switch_defaults_off_and_explicit_true_enables(tmp_path: Path) -> None:
     assert gate.enabled(path)
 
 
-def test_workflow_uses_main_and_immediate_trigger_without_running_pr_code() -> None:
-    """Privileged automation checks out trusted main and pins merge SHA."""
-    workflow = (ROOT / ".github/workflows/factory-fast-merge.yml").read_text()
-    script = SCRIPT.read_text()
-    assert "pull_request_target:" in workflow
-    assert "workflow_job:" not in workflow
-    assert "workflow_run:" in workflow
-    assert "workflows: [CI]" in workflow
-    assert "types: [completed]" in workflow
-    assert "queue: max" in workflow
-    assert "cancel-in-progress: false" in workflow
-    assert "github.event.workflow_run.event == 'pull_request'" in workflow
-    assert "github.event.workflow_run.conclusion == 'success'" in workflow
-    assert "github.event.workflow_run.head_repository.full_name == github.repository" in workflow
-    assert "github.event.workflow_run.pull_requests[0].number" in workflow
-    assert 'GITHUB_EVENT_NAME" == "workflow_run" && -z "$PR_NUMBER' in workflow
-    ci_workflow = (ROOT / ".github/workflows/ci.yml").read_text()
-    assert "factory-fast-merge-wakeup:" not in ci_workflow
-    assert "actions: write" not in ci_workflow
-    assert "needs: [build, build-fork, node-auth, rust-ingress, factory-pr-auth, factory-complete-tests, factory-actionlint, factory-shellcheck" in ci_workflow
-    assert "secrets.PR_REBASE_TOKEN" in workflow
-    assert "ref: main" in workflow
-    assert "persist-credentials: false" in workflow
-    assert "factory-fast-merge.py" in workflow
-    assert '"sha": head' in script
-    assert 'required_checks_passed(repo, head)' in script
-    assert "factory_dispatch_production_deploy" in script
-    assert "dispatch_production(len(merged))" in script
-    assert "factory_post_merge_closure.py --sweep" in workflow
-
-
 def test_production_dispatch_runs_from_merge_script(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

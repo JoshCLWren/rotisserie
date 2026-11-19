@@ -1,4 +1,6 @@
 'use strict';
+
+process.env.GITHUB_REPOSITORY = 'JoshCLWren/comic-pile';
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');

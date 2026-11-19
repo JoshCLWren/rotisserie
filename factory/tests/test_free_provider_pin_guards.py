@@ -53,11 +53,24 @@ def test_zero_paid_and_unpriced_catalog_rows_all_enter_candidate_pool() -> None:
         {"id": "synthetic/paid", "pricing": {"prompt": "5", "completion": "2"}},
         {"id": "synthetic/unpriced"},
     ]})
-    for provider in ("nvidia", "groq-free", "openrouter-free"):
+    for provider in ("nvidia", "groq-free"):
         result = CANDIDATES.discover(provider, raw)
         assert {item.model for item in result.candidates} == {
             "synthetic/zero", "synthetic/paid", "synthetic/unpriced",
         }
+
+
+def test_openrouter_free_keeps_only_free_endpoint_ids_regardless_of_price() -> None:
+    """OpenRouter free accounts call only ``:free`` endpoints; price never decides."""
+    raw = json.dumps({"data": [
+        {"id": "synthetic/zero:free", "pricing": {"prompt": "0", "completion": "0"}},
+        {"id": "synthetic/paid:free", "pricing": {"prompt": "5", "completion": "2"}},
+        {"id": "synthetic/unpriced"},
+    ]})
+    result = CANDIDATES.discover("openrouter-free", raw)
+    assert {item.model for item in result.candidates} == {
+        "synthetic/zero:free", "synthetic/paid:free",
+    }
 
 
 def test_known_missing_tools_is_not_misrepresented_as_executable() -> None:

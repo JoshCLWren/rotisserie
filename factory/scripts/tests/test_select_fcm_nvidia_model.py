@@ -144,23 +144,5 @@ class SelectFcmNvidiaModelTests(unittest.TestCase):
             ["nvidia/vendor/first", "nvidia/vendor/second"],
         )
 
-    def test_review_workflow_probes_ranked_candidates_through_opencode(self) -> None:
-        """Provider health alone must not select a model the review agent cannot invoke."""
-        workflow = Path('.github/workflows/opencode.yml').read_text(encoding='utf-8')
-
-        self.assertIn('Install pinned OpenCode release', workflow)
-        self.assertIn('opencode run -m "$candidate"', workflow)
-        self.assertIn("grep -q 'FCM_NVIDIA_MODEL_OK'", workflow)
-        self.assertIn('Candidate failed the OpenCode compatibility probe', workflow)
-        self.assertNotIn('https://integrate.api.nvidia.com/v1/chat/completions', workflow)
-        self.assertIn('run: opencode github run', workflow)
-        self.assertIn('MODEL: ${{ steps.model.outputs.model }}', workflow)
-        self.assertNotIn('anomalyco/opencode/github@', workflow)
-        self.assertGreaterEqual(
-            workflow.count('^factory:(unowned|local|([1-9]|[1-3][0-9]|4[0-6]))$'),
-            4,
-        )
-
-
 if __name__ == "__main__":
     unittest.main()

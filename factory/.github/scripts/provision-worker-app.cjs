@@ -9,9 +9,12 @@ const http = require('node:http');
 const crypto = require('node:crypto');
 const { spawnSync } = require('node:child_process');
 
-const REPO = process.env.GITHUB_REPOSITORY || '';
-const [REPO_OWNER, REPO_NAME] = REPO.split('/');
-if (!REPO_OWNER || !REPO_NAME) throw new Error('GITHUB_REPOSITORY must name the adopter repository (owner/name)');
+function adopterRepository() {
+  const slug = process.env.GITHUB_REPOSITORY || '';
+  const [owner, name] = slug.split('/');
+  if (!owner || !name) throw new Error('GITHUB_REPOSITORY must name the adopter repository (owner/name)');
+  return { slug, owner, name };
+}
 const ROOT = path.resolve(__dirname, '../..');
 const MAPPING = path.join(ROOT, '.github/factory-worker-github-apps.json');
 const DEFAULT_DIR = path.join(os.homedir(), '.local/state/comic-pile/worker-app-48');
@@ -64,7 +67,7 @@ async function api(endpoint, { token, body, fetcher = fetch } = {}) {
 function validateCredentials(value, expectedName) {
   if (!value || !Number.isSafeInteger(value.id) || value.id < 1 ||
       value.name !== expectedName || !/^[a-z0-9-]+$/.test(value.slug || '') ||
-      value.owner?.login !== REPO_OWNER || typeof value.pem !== 'string' ||
+      value.owner?.login !== adopterRepository().owner || typeof value.pem !== 'string' ||
       !value.pem.includes('PRIVATE KEY')) {
     throw new Error('App response does not match the expected owner and worker identity');
   }
@@ -74,7 +77,7 @@ function validateCredentials(value, expectedName) {
 function manifest(entry, base) {
   return {
     name: entry.display_name,
-    url: `https://github.com/${REPO}`,
+    url: `https://github.com/${adopterRepository().slug}`,
     description: entry.profile,
     public: false,
     redirect_url: `${base}/callback`,
@@ -86,21 +89,21 @@ function manifest(entry, base) {
 
 async function finish(credentials, { runner = spawnSync, request = api, mappingFile = MAPPING } = {}) {
   const jwt = appJwt(credentials);
-  const installation = await request(`/repos/${REPO}/installation`, { token: jwt });
-  if (installation.app_id !== credentials.id || installation.account?.login !== REPO_OWNER ||
+  const installation = await request(`/repos/${adopterRepository().slug}/installation`, { token: jwt });
+  if (installation.app_id !== credentials.id || installation.account?.login !== adopterRepository().owner ||
       installation.repository_selection !== 'selected' || installation.suspended_at ||
       !Number.isSafeInteger(installation.id) || installation.id < 1 ||
       installation.permissions?.contents !== 'write' ||
       installation.permissions?.pull_requests !== 'write' ||
       installation.permissions?.issues !== 'write') {
-    throw new Error(`Install this worker App on only the ${REPO_NAME} repository, then retry`);
+    throw new Error(`Install this worker App on only the ${adopterRepository().name} repository, then retry`);
   }
   const minted = await request(`/app/installations/${installation.id}/access_tokens`, {
     token: jwt, body: {},
   });
   if (typeof minted.token !== 'string' || !minted.token) throw new Error('Installation token missing');
   const repositories = await request('/installation/repositories', { token: minted.token });
-  if (repositories.total_count !== 1 || repositories.repositories?.[0]?.full_name !== REPO) {
+  if (repositories.total_count !== 1 || repositories.repositories?.[0]?.full_name !== adopterRepository().slug) {
     throw new Error('Installation token does not have the expected repository scope');
   }
   const mapping = load(mappingFile);
@@ -118,7 +121,7 @@ async function finish(credentials, { runner = spawnSync, request = api, mappingF
     if (!/^FACTORY_WORKER_48_(APP_PRIVATE_KEY|INSTALLATION_ID|APP_ID)$/.test(name)) {
       throw new Error('Unexpected secret name in worker mapping');
     }
-    const result = runner('gh', ['secret', 'set', name, '--repo', REPO], {
+    const result = runner('gh', ['secret', 'set', name, '--repo', adopterRepository().slug], {
       input, encoding: 'utf8', stdio: ['pipe', 'pipe', 'pipe'], timeout: 30000,
     });
     if (result.error || result.status !== 0) throw new Error(`Secret upload failed for ${name}; run finish again`);
@@ -206,7 +209,7 @@ async function main(argv) {
     return 0;
   }
   const auth = spawnSync('gh', ['api', 'user', '--jq', '.login'], { encoding: 'utf8', timeout: 30000 });
-  if (auth.status !== 0 || auth.stdout.trim() !== REPO_OWNER) throw new Error(`gh must be authenticated as ${REPO_OWNER}`);
+  if (auth.status !== 0 || auth.stdout.trim() !== adopterRepository().owner) throw new Error(`gh must be authenticated as ${adopterRepository().owner}`);
   if (entry.app_id && !credentials) throw new Error('Worker 48 is already mapped; refusing duplicate registration');
   const portIndex = argv.indexOf('--port');
   const port = portIndex < 0 ? 8765 : Number(argv[portIndex + 1]);

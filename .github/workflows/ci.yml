@@ -44,3 +44,39 @@ jobs:
       - name: Build distributions
         if: matrix.python-version == '3.14'
         run: uv build
+
+  factory-runtime:
+    name: Factory runtime
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: factory
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: astral-sh/setup-uv@v7
+        with:
+          enable-cache: true
+
+      - name: Install shell test dependencies
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq ripgrep shellcheck jq
+          git config --global user.name "Rotisserie CI"
+          git config --global user.email "rotisserie-ci@users.noreply.github.com"
+
+      - name: Install locked factory environment
+        run: uv sync --locked --python 3.12
+
+      - name: Factory Python tests
+        run: uv run --locked --python 3.12 pytest -q -n auto
+
+      - name: Factory JavaScript tests
+        run: node --test .github/scripts/*.test.cjs scripts/local-factory-acp-review.test.mjs
+
+      - name: Factory shell scripts
+        run: |
+          find .github/scripts scripts -type f -name '*.sh' -print0 | xargs -0 -r -n 1 bash -n
+          find .github/scripts scripts -type f -name '*.sh' -print0 | xargs -0 -r shellcheck --severity=error

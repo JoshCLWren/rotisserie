@@ -25,7 +25,7 @@ dev = [
     "psycopg[binary]>=3.2",
     # Worker GitHub App display names come from a seeded Faker sequence that
     # changes between releases; persisted App names depend on this exact pin.
-    "faker==40.54.0",
+    "faker==40.40.0",
 ]
 
 [tool.uv]
@@ -35,5 +35,6 @@ package = false
 addopts = "-ra --import-mode=importlib"
 testpaths = ["tests", ".github/scripts", "scripts/tests"]
 python_files = ["test_*.py"]
+pythonpath = ["."]
 asyncio_mode = "auto"
 asyncio_default_fixture_loop_scope = "function"

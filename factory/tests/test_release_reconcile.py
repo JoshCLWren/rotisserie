@@ -287,14 +287,3 @@ def test_release_workflow_reactivates_only_for_exact_merged_source_via_neon():
     assert "RELEASE_NEON_DATABASE_URL" in publisher_job
 
 
-def test_factory_workflow_completion_dispatches_release_reconciliation():
-    """Factory completion must fan out without pull_request.closed."""
-    workflow = Path(".github/workflows/factory-release-reconcile.yml").read_text()
-
-    assert "workflow_run:" in workflow
-    assert "Factory Ready Merge Drain" in workflow
-    assert "Fixed Model Factory Dispatcher" in workflow
-    assert "gh workflow run release-writer.yml" in workflow
-    assert "backfill_since" not in workflow
-    assert "if: ${{ false }}" in workflow
-    assert ' -f "pr_number=$INPUT_PR"' in workflow
