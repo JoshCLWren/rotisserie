@@ -21,6 +21,9 @@ TEMPLATES = FACTORY_ROOT / ".github" / "workflows"
 DEFAULT_SOURCE = "JoshCLWren/rotisserie"
 RUNTIME_DIR = ".rotisserie/runtime"
 INSTALLED_MARKER = "rotisserie-factory-runtime"
+# These templates only run the factory's own test suite, which Rotisserie CI
+# already runs; in an adopter they would fail because tests are not overlaid.
+ROTISSERIE_CI_ONLY = frozenset({"factory-fibonacci-tests.yml", "factory-model-contracts.yml"})
 SHA_RE = re.compile(r"[0-9a-f]{40}\Z")
 STEP_RE = re.compile(r"^(?P<indent>\s*)- (?P<rest>.*)$")
 CHECKOUT_RE = re.compile(r"^\s*(?:- )?uses:\s*actions/checkout@\S+\s*$")
@@ -116,6 +119,8 @@ def install(target: Path, *, source: str, ref: str, names: list[str] | None = No
     if not (target / ".git").exists():
         raise InstallError(f"{target} is not a git checkout")
     templates = sorted(TEMPLATES.glob("*.yml"))
+    if not names:
+        templates = [path for path in templates if path.name not in ROTISSERIE_CI_ONLY]
     if names:
         wanted = set(names)
         unknown = wanted - {path.name for path in templates}

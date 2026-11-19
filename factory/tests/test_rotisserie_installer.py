@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import importlib.util
+import re
 import shutil
 import subprocess
 import sys
@@ -196,3 +197,18 @@ def test_every_factory_script_is_overlaid() -> None:
         if f".github/scripts/{path.name}" not in listed
     )
     assert missing == []
+
+
+def test_templates_that_run_factory_tests_are_not_installed_by_default(tmp_path: Path) -> None:
+    runs_tests = sorted(
+        path.name
+        for path in (FACTORY / ".github" / "workflows").glob("*.yml")
+        if re.search(r"\bpytest\b|node --test", path.read_text(encoding="utf-8"))
+    )
+    assert runs_tests == sorted(install.ROTISSERIE_CI_ONLY)
+    repo = tmp_path / "adopter"
+    repo.mkdir()
+    _git(repo, "init", "-q")
+    installed = {path.name for path in install.install(repo, source="example/rotisserie", ref=REF)}
+    assert not installed & install.ROTISSERIE_CI_ONLY
+    assert "factory-fast-merge.yml" in installed
