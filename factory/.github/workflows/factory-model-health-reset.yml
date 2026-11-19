@@ -1,0 +1,44 @@
+name: Factory Model Health Reset
+on:
+  workflow_dispatch:
+    inputs:
+      include_retired:
+        description: Also clear retired HTTP 410 model records
+        type: boolean
+        default: false
+        required: false
+permissions:
+  contents: read
+concurrency:
+  group: factory-model-health-reset
+  cancel-in-progress: false
+jobs:
+  reset:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout trusted main
+        uses: actions/checkout@v7
+        with:
+          ref: main
+          persist-credentials: false
+      - name: Connect restricted factory state database
+        uses: ./.github/actions/factory-state-cache
+        with:
+          neon-api-key: ${{ secrets.NEON_API_KEY }}
+          neon-project-id: ${{ vars.NEON_PROJECT_ID }}
+      - name: Clear learned model and provider cooldowns
+        shell: bash
+        env:
+          INCLUDE_RETIRED: ${{ inputs.include_retired }}
+        run: |
+          set -Eeuo pipefail
+          if [[ -z "${FACTORY_STATE_DSN_FILE:-}" ]]; then
+            echo "::error::Neon factory state connection is required for reset"
+            exit 1
+          fi
+          args=(reset-model-health --repo "$GITHUB_REPOSITORY")
+          if [[ "$INCLUDE_RETIRED" == "true" ]]; then
+            args+=(--include-retired)
+          fi
+          python3 .github/scripts/factory_state_operations.py "${args[@]}" | tee "$GITHUB_STEP_SUMMARY"

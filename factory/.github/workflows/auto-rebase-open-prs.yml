@@ -1,0 +1,92 @@
+name: Rebase Open Factory PRs
+
+# Keep this workflow manual-only. Rebasing every open factory PR whenever main
+# advances rewrites every exact head, invalidates semantic reviews and CI, and
+# creates O(N) new validation work for each successful merge. Normal conflict
+# detection belongs to the exact-head mechanical merge gate and ready drain.
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: auto-rebase-open-prs-main
+  cancel-in-progress: false
+
+jobs:
+  rebase-open-prs:
+    name: Manually rebase open factory PRs onto main
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      GH_TOKEN: ${{ secrets.PR_REBASE_TOKEN }}
+    steps:
+      - name: Require dedicated rebase credential
+        run: |
+          if [[ -z "${GH_TOKEN:-}" ]]; then
+            echo "::error::PR_REBASE_TOKEN is required so rebases trigger normal PR CI instead of approval-required runs."
+            exit 1
+          fi
+
+      - name: Rebase eligible factory PRs
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          # This is an explicit maintenance operation, not part of the normal
+          # merge loop. Exact-head review and CI must be allowed to converge
+          # without unrelated main merges rewriting every open PR underneath
+          # active factory workers.
+
+          mapfile -t prs < <(
+            gh api --paginate \
+              "repos/${GITHUB_REPOSITORY}/pulls?state=open&base=main&per_page=100" \
+              --jq ".[] | select(.draft == false and .head.repo.full_name == \"${GITHUB_REPOSITORY}\" and (.head.ref | startswith(\"factory/\"))) | .number"
+          )
+
+          if (( ${#prs[@]} == 0 )); then
+            echo "No eligible factory PRs to rebase."
+            exit 0
+          fi
+
+          conflicts=()
+          for pr in "${prs[@]}"; do
+            echo "Rebasing factory PR #${pr} onto current main"
+            if gh pr update-branch "${pr}" --repo "${GITHUB_REPOSITORY}" --rebase; then
+              continue
+            fi
+
+            echo "::warning::PR #${pr} could not be rebased automatically; routing it to factory conflict repair."
+            conflicts+=("${pr}")
+
+            mapfile -t current_labels < <(
+              gh api "repos/${GITHUB_REPOSITORY}/issues/${pr}" --jq '.labels[].name'
+            )
+            next_labels=()
+            for label in "${current_labels[@]}"; do
+              case "${label}" in
+                factory:[0-9]*|factory:unowned|factory:building|factory:review|factory:ci|factory:ready|factory:changes-requested)
+                  ;;
+                *)
+                  next_labels+=("${label}")
+                  ;;
+              esac
+            done
+            next_labels+=("factory" "factory:unowned" "factory:changes-requested")
+
+            labels_json="$(printf '%s\n' "${next_labels[@]}" | jq -R . | jq -s 'unique')"
+            gh api --method PUT \
+              "repos/${GITHUB_REPOSITORY}/issues/${pr}/labels" \
+              --input - <<<"$(jq -n --argjson labels "${labels_json}" '{labels: $labels}')"
+
+            gh pr comment "${pr}" --repo "${GITHUB_REPOSITORY}" --body \
+              "Manual rebase onto current main hit merge conflicts. Routed to \`factory:changes-requested\` and released to \`factory:unowned\` so a factory worker can repair the conflict."
+          done
+
+          if (( ${#conflicts[@]} > 0 )); then
+            joined="$(IFS=,; echo "${conflicts[*]}")"
+            echo "Queued merge-conflict repair for PR(s): ${joined}"
+          fi
+
+          echo "All eligible factory PRs were rebased or queued for factory conflict repair."

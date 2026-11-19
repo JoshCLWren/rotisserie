@@ -1,0 +1,30 @@
+{
+  "schema_version": 1,
+  "notes": "Per-source conservative UTC-day dispatch caps for metered or free-credit providers; Neon owns shared daily usage when available. Inference sessions can require many requests; API limits still win and sessions must honor provider quota errors.",
+  "sources": {
+    "orcarouter": {
+      "max_dispatches_per_utc_day": 1,
+      "account_limits": "50 requests/day, 10 requests/minute per account; unpublished per-request prompt-size cap on free tier"
+    },
+    "gemini-free": {
+      "max_dispatches_per_utc_day": 2,
+      "account_limits": "Model/project-specific free requests/tokens per day; free-tier project required, never assume paid project is free"
+    },
+    "groq-free": {
+      "max_dispatches_per_utc_day": 2,
+      "account_limits": "Selected models: 1000 requests/day and 200000 tokens/day, at organization scope"
+    },
+    "aion-free": {
+      "max_dispatches_per_utc_day": 1,
+      "account_limits": "Free account: 20000 tokens/day total; paid model prices are covered only by daily free allowance"
+    },
+    "cohere-eval": {
+      "max_dispatches_per_utc_day": 1,
+      "account_limits": "Evaluation API keys: 1000 calls/month; evaluation-only, not production SLA"
+    },
+    "typhoon-free": {
+      "max_dispatches_per_utc_day": 1,
+      "account_limits": "Free light-usage API; per-model 200 requests/minute, no published durable daily guarantee"
+    }
+  }
+}

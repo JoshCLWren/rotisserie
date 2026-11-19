@@ -1,0 +1,16 @@
+{
+  "version": 1,
+  "skills": {
+    "install-anti-slop": {
+      "source": "dmmulroy/anti-slop",
+      "sourceType": "github",
+      "skillPath": "skills/install-anti-slop/SKILL.md",
+      "computedHash": "c9e929154f6eb4309dfee64eeab70b90fcc5d62a23c1712d11593577d17d0e8e"
+    },
+    "model-recommendation": {
+      "source": "github/awesome-copilot",
+      "sourceType": "github",
+      "computedHash": "d300d9c634bba27fbaa908c6769a24cc54b8bce09beebd9c8eeb958261d3f338"
+    }
+  }
+}

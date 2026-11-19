@@ -1,0 +1,281 @@
+{
+  "failures": [],
+  "harness": "tests/test_roll_bootstrap_comparison.py",
+  "head_fixture": "production-shaped",
+  "issue": 2718,
+  "notes": [
+    "Latency values are single local-run wall times, not production SLOs.",
+    "Read round trips include SELECT and WITH (CTE) statements; the bounded roll candidate query uses a CTE.",
+    "v1 does not expose thread.last_activity_at; v2 exposes it as enrichment.",
+    "Cover URLs are direct provider URLs per #4177; the retired image optimizer is not expected.",
+    "A v1 pool row with a null issue id is listed with independent proof it has no readable target."
+  ],
+  "parity": [
+    {
+      "scenario": "empty",
+      "v1_pool_rows": 1,
+      "v1_rows_without_next_issue": [
+        {
+          "next_unread_issue_id": null,
+          "pointed_issue_status": null,
+          "thread_id": 8,
+          "title": "Exhausted",
+          "valid_roll_target": false
+        }
+      ],
+      "v2_rollable_rows": 0
+    },
+    {
+      "scenario": "normal",
+      "v1_pool_rows": 9,
+      "v1_rows_without_next_issue": [
+        {
+          "next_unread_issue_id": null,
+          "pointed_issue_status": null,
+          "thread_id": 8,
+          "title": "Exhausted",
+          "valid_roll_target": false
+        }
+      ],
+      "v2_rollable_rows": 8
+    },
+    {
+      "scenario": "d100",
+      "v1_pool_rows": 100,
+      "v1_rows_without_next_issue": [],
+      "v2_rollable_rows": 100
+    },
+    {
+      "scenario": "recovery_fail_open",
+      "v1_pool_rows": 100,
+      "v1_rows_without_next_issue": [],
+      "v2_rollable_rows": 100
+    }
+  ],
+  "passed": true,
+  "payloads": [
+    {
+      "limits": {
+        "bytes_per_item": 8192,
+        "uncompressed_bytes": 524288
+      },
+      "rows": 100,
+      "scenario": "d100",
+      "v1_gzip_bytes": 2036,
+      "v1_uncompressed_bytes": 26937,
+      "v2_bytes_per_item": 491.21,
+      "v2_gzip_bytes": 2395,
+      "v2_uncompressed_bytes": 49121
+    }
+  ],
+  "query_budget": {
+    "count_rule": "SELECT and WITH (CTE) statements both count as read round trips",
+    "limit_after_auth": 3,
+    "measurements": [
+      {
+        "limit": 3,
+        "passed": true,
+        "scenario": "normal",
+        "v1_selects": 16,
+        "v2_projection_selects_after_auth": 3,
+        "v2_projection_statements_after_auth": 3,
+        "v2_selects": 17
+      },
+      {
+        "limit": 3,
+        "passed": true,
+        "scenario": "d100",
+        "v1_selects": 16,
+        "v2_projection_selects_after_auth": 3,
+        "v2_projection_statements_after_auth": 3,
+        "v2_selects": 17
+      },
+      {
+        "scenario": "recovery_fail_open",
+        "v1_selects": 17,
+        "v2_selects": 18
+      }
+    ],
+    "passed": true
+  },
+  "scenarios": [
+    {
+      "name": "empty",
+      "v1_latency_ms": 51.26,
+      "v1_payload": {
+        "gzip_bytes": 1043,
+        "uncompressed_bytes": 11380
+      },
+      "v1_selects": 19,
+      "v2_latency_ms": 23.25,
+      "v2_payload": {
+        "gzip_bytes": 832,
+        "uncompressed_bytes": 4109
+      },
+      "v2_selects": 17
+    },
+    {
+      "name": "normal",
+      "v1_latency_ms": 17.03,
+      "v1_payload": {
+        "gzip_bytes": 1201,
+        "uncompressed_bytes": 12894
+      },
+      "v1_selects": 16,
+      "v2_latency_ms": 19.64,
+      "v2_payload": {
+        "gzip_bytes": 1286,
+        "uncompressed_bytes": 8061
+      },
+      "v2_projection_selects_after_auth": 3,
+      "v2_projection_statements_after_auth": 3,
+      "v2_selects": 17
+    },
+    {
+      "name": "d100",
+      "rows": 100,
+      "v1_latency_ms": 171.27,
+      "v1_payload": {
+        "gzip_bytes": 2036,
+        "uncompressed_bytes": 26937
+      },
+      "v1_selects": 16,
+      "v2_bytes_per_item": 491.21,
+      "v2_latency_ms": 22.52,
+      "v2_payload": {
+        "gzip_bytes": 2395,
+        "uncompressed_bytes": 49121
+      },
+      "v2_projection_selects_after_auth": 3,
+      "v2_projection_statements_after_auth": 3,
+      "v2_selects": 17
+    },
+    {
+      "name": "recovery_fail_open",
+      "v1_latency_ms": 19.15,
+      "v1_selects": 17,
+      "v2_latency_ms": 20.88,
+      "v2_selects": 18
+    }
+  ],
+  "special_fixtures": [
+    "split_canonical_series",
+    "composite_mixed_volume_thread",
+    "unresolved_identity",
+    "missing_cover",
+    "recovery_fail_open",
+    "v1_null_issue_row"
+  ],
+  "v2_only_validation": {
+    "checks": [
+      {
+        "code": "split.fixtures_present",
+        "passed": true
+      },
+      {
+        "code": "split.canonical_series_id",
+        "passed": true
+      },
+      {
+        "code": "split.effective_ratings",
+        "passed": true
+      },
+      {
+        "code": "split.catalog_run_length",
+        "passed": true
+      },
+      {
+        "code": "split.canonical_series_id",
+        "passed": true
+      },
+      {
+        "code": "split.effective_ratings",
+        "passed": true
+      },
+      {
+        "code": "split.catalog_run_length",
+        "passed": true
+      },
+      {
+        "code": "composite.fixture_present",
+        "passed": true
+      },
+      {
+        "code": "composite.next_issue_scope",
+        "passed": true
+      },
+      {
+        "code": "composite.no_volume_flattening",
+        "passed": true
+      },
+      {
+        "code": "unresolved.fixture_present",
+        "passed": true
+      },
+      {
+        "code": "unresolved.identity_truthful",
+        "passed": true
+      },
+      {
+        "code": "unresolved.thread_progress",
+        "passed": true
+      },
+      {
+        "code": "cover.fixtures_present",
+        "passed": true
+      },
+      {
+        "code": "cover.direct_provider_url",
+        "passed": true
+      },
+      {
+        "code": "cover.no_retired_proxy",
+        "passed": true
+      },
+      {
+        "code": "cover.missing_is_null",
+        "passed": true
+      },
+      {
+        "code": "routes.fixture_present",
+        "passed": true
+      },
+      {
+        "code": "active_thread.rolled_state",
+        "passed": true
+      },
+      {
+        "code": "routes.bounded",
+        "passed": true
+      },
+      {
+        "code": "routes.group_kind",
+        "passed": true
+      },
+      {
+        "code": "routes.overflow_count",
+        "passed": true
+      },
+      {
+        "code": "last_read.present",
+        "passed": true
+      },
+      {
+        "code": "last_read.latest_session_rate_event",
+        "passed": true
+      },
+      {
+        "code": "last_read.thread_scope",
+        "passed": true
+      },
+      {
+        "code": "session.id",
+        "passed": true
+      },
+      {
+        "code": "die.manual_and_current",
+        "passed": true
+      }
+    ]
+  }
+}

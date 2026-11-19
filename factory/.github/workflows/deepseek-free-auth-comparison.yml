@@ -1,0 +1,103 @@
+name: DeepSeek OpenCode Free anonymous versus existing-key comparison
+
+on:
+  # Retired free-model experiment: only explicit manual diagnostics remain.
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  compare:
+    name: DeepSeek ${{ matrix.mode }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    strategy:
+      fail-fast: false
+      matrix:
+        mode: [anonymous, authenticated]
+    steps:
+      - uses: actions/checkout@v7
+      - name: Install latest OpenCode 2
+        run: bash .github/scripts/install-opencode-v2.sh
+      - name: Call exact OpenCode Free DeepSeek model and shell tool
+        shell: bash
+        env:
+          # Existing OpenCode factory credential. Never passed to anonymous invocation.
+          EXISTING_OPENCODE_KEY: ${{ matrix.mode == 'authenticated' && (secrets.OPENCODE_API_KEY || secrets.OPENCODE_ZEN_API_KEY) || '' }}
+          MODE: ${{ matrix.mode }}
+        run: |
+          set -Eeuo pipefail
+          model=opencode/deepseek-v4.1-flash-free
+          if [[ "$MODE" == authenticated ]]; then
+            if [[ -z "${EXISTING_OPENCODE_KEY:-}" ]]; then
+              echo "### DeepSeek authenticated: NOT CONFIGURED" >> "$GITHUB_STEP_SUMMARY"
+              echo 'Existing OpenCode credential unavailable in this GitHub Actions context; no authenticated request was made.' >> "$GITHUB_STEP_SUMMARY"
+              echo '::warning::Existing OpenCode credential unavailable; authenticated mode untested'
+              exit 0
+            fi
+            echo "::add-mask::$EXISTING_OPENCODE_KEY"
+            export OPENCODE_API_KEY="$EXISTING_OPENCODE_KEY"
+          else
+            unset OPENCODE_API_KEY OPENCODE_ZEN_API_KEY NVIDIA_API_KEY || true
+          fi
+          catalog="$RUNNER_TEMP/deepseek-models.txt"
+          bash scripts/opencode-model-catalog.sh opencode plain refresh > "$catalog"
+          if ! grep -Fx "$model" "$catalog" >/dev/null; then
+            echo "### DeepSeek $MODE: MODEL ABSENT" >> "$GITHUB_STEP_SUMMARY"
+            echo 'No fallback was invoked.' >> "$GITHUB_STEP_SUMMARY"
+            exit 1
+          fi
+          set +e
+          timeout 180s opencode run --standalone -m "$model" --agent build \
+            'Reply with exactly DEEPSEEK_EXPERIMENT_TEXT_OK. No tools or file modifications.' \
+            > "$RUNNER_TEMP/deepseek-text.log" 2>&1
+          text_status=$?
+          set -e
+          cat "$RUNNER_TEMP/deepseek-text.log"
+          text_result=failed
+          if [[ "$text_status" -eq 0 ]] && grep -Fq DEEPSEEK_EXPERIMENT_TEXT_OK "$RUNNER_TEMP/deepseek-text.log"; then
+            text_result=passed
+          fi
+          tool_result=not_attempted
+          if [[ "$text_result" == passed ]]; then
+            marker="$RUNNER_TEMP/deepseek-proof.txt"
+            rm -f "$marker"
+            set +e
+            timeout 180s opencode run --standalone -m "$model" --agent build \
+              "Use the shell tool to execute: printf DEEPSEEK_EXPERIMENT_TOOL_OK > '$marker'. Do not edit any repository files." \
+              > "$RUNNER_TEMP/deepseek-tool.log" 2>&1
+            tool_status=$?
+            set -e
+            cat "$RUNNER_TEMP/deepseek-tool.log"
+            tool_result=failed
+            if [[ "$tool_status" -eq 0 && "$(cat "$marker" 2>/dev/null)" == DEEPSEEK_EXPERIMENT_TOOL_OK ]]; then
+              tool_result=passed
+            fi
+          fi
+          failure_class=none
+          if [[ "$text_result" != passed ]]; then
+            if grep -Eiq 'FreeTierError|403|401|Forbidden|Unauthorized' "$RUNNER_TEMP/deepseek-text.log"; then
+              failure_class=access_denied
+            elif grep -Eiq '429|FreeUsageLimitError|rate.?limit' "$RUNNER_TEMP/deepseek-text.log"; then
+              failure_class=rate_limited
+            elif [[ "$text_status" -eq 124 ]]; then
+              failure_class=timeout
+            else
+              failure_class=unknown
+            fi
+          fi
+          {
+            echo "### DeepSeek V4.1 | $MODE"
+            echo ""
+            echo "| Check | Result |"
+            echo "|---|---|"
+            echo "| Model | $model |"
+            echo "| Text | $text_result |"
+            echo "| Shell tool | $tool_result |"
+            echo "| Failure | $failure_class |"
+          } >> "$GITHUB_STEP_SUMMARY"
+          [[ -z "$(git status --porcelain)" ]] || echo "::warning::Probe modified repository"
+          if [[ "$text_result" != passed || "$tool_result" != passed ]]; then
+            echo "::warning::DeepSeek $MODE did not pass both checks"
+          fi

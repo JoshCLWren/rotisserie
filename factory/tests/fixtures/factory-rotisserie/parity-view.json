@@ -1,0 +1,29 @@
+{
+  "schema_version": 1,
+  "repository": "JoshCLWren/comic-pile",
+  "revision": "3c37115284352561c8c260f6e0932aa2addb8e12",
+  "captured_at": 1790611200,
+  "issues": [
+    {"number": 3001, "title": "Completed prerequisite", "state": "CLOSED", "body": "", "createdAt": "2026-09-27T00:00:00Z", "labels": []},
+    {"number": 3002, "title": "Executable issue", "state": "OPEN", "body": "Depends on #3001", "createdAt": "2026-09-28T00:00:00Z", "labels": ["factory", "factory:unowned", "ralph-task", "ralph-priority:high"]},
+    {"number": 3003, "title": "Implemented issue", "state": "OPEN", "body": "", "createdAt": "2026-09-28T01:00:00Z", "labels": ["factory", "factory:unowned", "ralph-task", "ralph-priority:medium"]},
+    {"number": 3004, "title": "Leased work", "state": "OPEN", "body": "", "createdAt": "2026-09-28T02:00:00Z", "labels": ["factory", "factory:7", "factory:building", "ralph-task", "ralph-priority:low"], "lease": {"acquired_at": 1790600000, "expires_at": 1790612100}}
+  ],
+  "pull_requests": [
+    {
+      "number": 4001,
+      "title": "Fix #3003",
+      "body": "Closes #3003",
+      "state": "OPEN",
+      "isDraft": false,
+      "createdAt": "2026-09-28T03:00:00Z",
+      "headRefName": "factory/8-3003-parity",
+      "headRefOid": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "labels": ["factory", "factory:ready", "factory:unowned"],
+      "producer_worker": "8",
+      "head_contributors": ["8"],
+      "checks": [{"name": "test", "status": "passed", "required": true}],
+      "reviews": [{"reviewer": "9", "decision": "approved", "required": true}]
+    }
+  ]
+}

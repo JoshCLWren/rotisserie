@@ -1,0 +1,31 @@
+name: Factory Issue Wakeup
+
+on:
+  issues:
+    types: [opened, reopened, edited, labeled, unlabeled]
+
+permissions:
+  actions: write
+  contents: read
+
+concurrency:
+  group: factory-issue-wakeup-${{ github.event.issue.number }}
+  cancel-in-progress: false
+
+jobs:
+  wake:
+    if: >-
+      github.event.issue.state == 'open' &&
+      contains(github.event.issue.labels.*.name, 'factory:unowned')
+    runs-on: ubuntu-latest
+    steps:
+      - name: Offer changed issue to trusted dispatcher
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ISSUE_NUMBER: ${{ github.event.issue.number }}
+        run: |
+          set -Eeuo pipefail
+          [[ "$ISSUE_NUMBER" =~ ^[1-9][0-9]*$ ]] || exit 1
+          gh workflow run fixed-model-factory-dispatch.yml \
+            --repo "$GITHUB_REPOSITORY" --ref main \
+            -f target="issue:$ISSUE_NUMBER" -f action=advance

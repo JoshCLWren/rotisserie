@@ -1,0 +1,33 @@
+name: Attest Actual Local Factory Reviews
+on:
+  workflow_dispatch:
+    inputs:
+      evidence:
+        description: JSON containing exact head, actual local reports, completion metadata and original reviewer acceptance
+        required: true
+        type: string
+permissions:
+  contents: read
+  issues: write
+  pull-requests: write
+  actions: write
+jobs:
+  attest:
+    if: github.actor == github.repository_owner && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: main
+          persist-credentials: false
+      - name: Validate original evidence and attest as trusted controller
+        env:
+          GH_TOKEN: ${{ github.token }}
+          LOCAL_REVIEW_EVIDENCE: ${{ inputs.evidence }}
+        run: python3 .github/scripts/factory_local_review.py
+      - name: Reconcile canonical gates and wake merge drain
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          python3 .github/scripts/factory-review-controller.py reconcile-ci
+          gh workflow run factory-ready-merge-drain.yml --ref main

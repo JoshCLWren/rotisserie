@@ -1,0 +1,73 @@
+name: Factory Dynamic Provider Contract Tests
+
+on:
+  pull_request:
+    paths:
+      - '.github/scripts/factory_provider_registry.py'
+      - '.github/scripts/factory_provider_candidates.py'
+      - '.github/scripts/factory_published_model_catalog.py'
+      - '.github/scripts/factory_live_opencode.py'
+      - '.github/scripts/factory_runtime_model_select.py'
+      - '.github/scripts/factory_model_failover.py'
+      - '.github/scripts/free-model-factory-worker.sh'
+      - '.github/scripts/factory_dynamic_outcome.py'
+      - '.github/scripts/factory_kilo_catalog.py'
+      - '.github/scripts/factory_worker_slots.py'
+      - '.github/scripts/factory_dispatch_credential_filter.py'
+      - '.github/scripts/factory_state_operations.py'
+      - '.github/scripts/validate-free-model-factories.py'
+      - '.github/workflows/free-model-factory-run.yml'
+      - '.github/workflows/fixed-model-factory-dispatch.yml'
+      - '.github/workflows/fixed-model-runtime-observer.yml'
+      - 'tests/test_factory_registry_visibility_optional.py'
+      - '.github/workflows/factory-model-contracts.yml'
+      - 'tests/test_factory_catalog_slot_migration.py'
+      - 'tests/test_factory_published_model_catalog.py'
+      - 'tests/test_factory_provider_candidates.py'
+      - 'tests/test_factory_worker_slots.py'
+      - 'tests/test_factory_runtime_model_select.py'
+      - 'tests/test_factory_model_failover.py'
+      - 'tests/test_factory_kilo_catalog.py'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  contracts:
+    name: Catalog/roster contracts
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.12'
+      - name: Install factory contract test requirements
+        run: python3 -m pip install pytest PyYAML
+      - name: Verify provider-derived identities and catalog contracts
+        run: |
+          python3 -m pytest --noconftest -o addopts='' -q \
+            tests/test_factory_catalog_slot_migration.py \
+            tests/test_factory_published_model_catalog.py \
+            tests/test_factory_provider_candidates.py \
+            tests/test_factory_worker_slots.py \
+            tests/test_factory_runtime_model_select.py \
+            tests/test_factory_model_failover.py \
+            tests/test_factory_kilo_catalog.py \
+            tests/test_factory_neon_operations.py \
+            tests/test_factory_full_completion_controller.py \
+            tests/test_factory_work_controller_runtime.py \
+            tests/test_factory_source_budget.py \
+            tests/test_factory_quota_pause.py \
+            tests/test_factory_fast_merge.py \
+            tests/test_factory_trusted_policy_staging.py \
+            tests/test_factory_work_policy.py \
+            tests/test_factory_heartbeat_health.py \
+            tests/test_generate_factory_status_dashboard.py \
+            tests/test_factory_registry_visibility_optional.py \
+            tests/test_factory_executor_selection_workflow.py
+      - name: Verify worker identities in JavaScript
+        run: node --test .github/scripts/factory-expected-workers.test.cjs
+      - name: Verify dynamic factory wiring and safety contracts
+        run: python3 .github/scripts/validate-free-model-factories.py

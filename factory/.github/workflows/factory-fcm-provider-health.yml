@@ -1,0 +1,68 @@
+name: Factory FCM Provider Credential Health
+
+# Manual-only diagnostic. No worker claims, issue edits, PRs, or provider roster.
+on:
+  workflow_dispatch:
+    inputs:
+      scope:
+        description: Sample up to five upstream models per configured provider, or probe the full upstream catalog
+        required: true
+        default: sample
+        type: choice
+        options:
+          - sample
+          - all
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 50
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '24'
+      - name: Install inspected FCM package
+        shell: bash
+        run: |
+          set -euo pipefail
+          node --check .github/scripts/factory-fcm-provider-health.cjs
+          npm install --prefix "$RUNNER_TEMP/fcm" --no-save --ignore-scripts --no-audit --no-fund free-coding-models@0.6.1
+      - name: Probe configured providers using FCM
+        shell: bash
+        env:
+          FCM_PACKAGE_DIR: ${{ runner.temp }}/fcm/node_modules/free-coding-models
+          FCM_PROBE_SCOPE: ${{ inputs.scope }}
+          FCM_REPORT_PATH: ${{ runner.temp }}/fcm-provider-report.json
+          FREE_CODING_MODELS_TELEMETRY: '0'
+          CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
+          CEREBRAS_API_KEY: ${{ secrets.CEREBRAS_API_KEY }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          GOOGLE_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+          MISTRAL_API_KEY: ${{ secrets.MISTRAL_API_KEY }}
+          NVIDIA_API_KEY: ${{ secrets.NVIDIA_API_KEY }}
+          OLLAMA_API_KEY: ${{ secrets.OLLAMA_API_KEY }}
+          OPENCODE_ZEN_API_KEY: ${{ secrets.OPENCODE_ZEN_API_KEY }}
+          OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+          ORCAROUTER_API_KEY: ${{ secrets.ORCAROUTER_API_KEY }}
+          REQUESTY_API_KEY: ${{ secrets.REQUESTY_API_KEY }}
+          ROUTEWAY_API_KEY: ${{ secrets.ROUTEWAY_API_KEY }}
+          SAMBANOVA_API_KEY: ${{ secrets.SAMBA_NOVA_API_KEY || secrets.SAMBANOVA_API_KEY }}
+          SCALEWAY_API_KEY: ${{ secrets.SCALEWAY_API_KEY }}
+          SILICONFLOW_API_KEY: ${{ secrets.SILICONFLOW_API_KEY }}
+          AI_GATEWAY_API_KEY: ${{ secrets.AI_GATEWAY_API_KEY }}
+        run: node .github/scripts/factory-fcm-provider-health.cjs
+      - name: Upload credential diagnostic report
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: fcm-provider-health
+          path: ${{ runner.temp }}/fcm-provider-report.json
+          if-no-files-found: warn
+          retention-days: 7

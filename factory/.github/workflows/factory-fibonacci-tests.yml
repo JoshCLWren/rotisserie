@@ -1,0 +1,57 @@
+name: Factory Fibonacci Retry Regression
+
+# Fast, focused verification. No secrets, provider requests, or recurring cron.
+on:
+  pull_request:
+    paths:
+      - '.github/scripts/factory_*.py'
+      - '.github/workflows/factory-*.yml'
+      - '.github/workflows/fixed-model-*.yml'
+      - '.github/workflows/free-model-factory-run.yml'
+      - 'tests/test_factory_*.py'
+      - 'tests/test_generate_factory_status_dashboard.py'
+  push:
+    branches: [main]
+    paths:
+      - '.github/scripts/factory_state_operations.py'
+      - '.github/scripts/factory_dispatch_credential_filter.py'
+      - 'tests/test_factory_neon_operations.py'
+      - 'tests/test_factory_dispatch_credential_filter.py'
+      - '.github/workflows/factory-fibonacci-tests.yml'
+      - '.github/scripts/factory_runtime_view.py'
+      - '.github/scripts/factory_completion_controller.py'
+      - '.github/scripts/generate_factory_status_dashboard.py'
+      - 'tests/test_factory_runtime_view.py'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  focused-backoff:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout trusted main
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - name: Set up Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: '3.14'
+      - name: Install focused test runner
+        run: python -m pip install --disable-pip-version-check pytest==8.4.2 pyyaml==6.0.3
+      - name: Verify Neon Fibonacci backoff and credential gate
+        run: |
+          python -m pytest --noconftest -o addopts= -q --no-header \
+            tests/test_factory_neon_operations.py \
+            tests/test_factory_dispatch_credential_filter.py \
+            tests/test_factory_durable_candidate_health.py \
+            tests/test_factory_runtime_view.py \
+            tests/test_factory_revocation_fence_maintenance.py \
+            tests/test_factory_full_completion_controller.py \
+            tests/test_factory_state_cache.py \
+            tests/test_factory_runtime_observer_neon_cache.py \
+            tests/test_factory_work_controller_runtime.py \
+            tests/test_generate_factory_status_dashboard.py
