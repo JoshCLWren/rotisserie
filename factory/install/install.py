@@ -78,12 +78,32 @@ def _checks_out_adopter(block: list[str]) -> bool:
     return repository in (None, "${{ github.repository }}")
 
 
-def _overlay_steps(indent: str, source: str, ref: str, checkout_path: str | None) -> list[str]:
+def _condition(block: list[str], indent: str) -> list[str]:
+    """Return the step-level `if:` lines (with continuations) of a checkout step."""
+    key = indent + "  if:"
+    first = indent + "- if:"
+    for index, line in enumerate(block):
+        if line.startswith(key) or line.startswith(first):
+            text = indent + "  " + line.strip().removeprefix("- ") + "\n"
+            lines = [text]
+            for follow in block[index + 1 :]:
+                if follow.strip() and len(follow) - len(follow.lstrip()) > len(indent) + 2:
+                    lines.append(follow if follow.endswith("\n") else follow + "\n")
+                else:
+                    break
+            return lines
+    return []
+
+
+def _overlay_steps(
+    indent: str, source: str, ref: str, checkout_path: str | None, condition: list[str]
+) -> list[str]:
     target = checkout_path or "."
     runtime = f"{checkout_path}/{RUNTIME_DIR}" if checkout_path else RUNTIME_DIR
     body = indent + "  "
     return [
         f"{indent}- name: Check out Rotisserie factory runtime  # {INSTALLED_MARKER}\n",
+        *condition,
         f"{body}uses: actions/checkout@v7\n",
         f"{body}with:\n",
         f"{body}  repository: {source}\n",
@@ -91,6 +111,7 @@ def _overlay_steps(indent: str, source: str, ref: str, checkout_path: str | None
         f"{body}  path: {runtime}\n",
         f"{body}  persist-credentials: false\n",
         f"{indent}- name: Overlay Rotisserie factory runtime  # {INSTALLED_MARKER}\n",
+        *condition,
         f"{body}run: bash {runtime}/factory/install/overlay.sh {target}\n",
     ]
 
@@ -108,7 +129,10 @@ def render(template: str, *, source: str, ref: str) -> str:
             continue
         path = _value(block, "path")
         checkout_path = None if path in (None, ".", "") else path
-        insertions.append((step.end, _overlay_steps(step.indent, source, ref, checkout_path)))
+        condition = _condition(block, step.indent)
+        insertions.append(
+            (step.end, _overlay_steps(step.indent, source, ref, checkout_path, condition))
+        )
     for position, new_lines in reversed(insertions):
         lines[position:position] = new_lines
     return "".join(lines)
