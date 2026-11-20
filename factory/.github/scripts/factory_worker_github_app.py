@@ -263,16 +263,23 @@ def handoff_decision(
 ) -> dict[str, str]:
     """Choose the author of a human-readable handoff comment.
 
-    Same gate as push and PR creation: only worker 48 with the persisted entry
-    plus App id, installation id, and private key gets ``installation``.
-    Everyone else gets ``default``, which means the caller keeps its current
+    Worker 48 with its own App uses that App. Every other worker uses the
+    shared factory App when ROTISSERIE_FACTORY_APP_ID, _INSTALLATION_ID and
+    _APP_PRIVATE_KEY are all set. Push and PR creation do not use the shared
+    App. Without an App the worker gets ``default``, which means the caller keeps its current
     identity and posts nothing new. A handoff never falls back to
     PR_REBASE_TOKEN, and machine markers never route through this decision.
     """
     decision = credential_decision(worker, env, mapping)
-    if decision["source"] != "installation":
-        return {"source": "default", "worker": str(worker)}
-    return decision
+    if decision["source"] == "installation":
+        return decision
+    shared = {key: _present(env.get(f"ROTISSERIE_FACTORY_{key.upper()}"))
+              for key in ("app_id", "installation_id", "app_private_key")}
+    if all(shared.values()):
+        return {"source": "installation", "worker": str(worker), "app_id": shared["app_id"],
+                "installation_id": shared["installation_id"],
+                "private_key": shared["app_private_key"]}
+    return {"source": "default", "worker": str(worker)}
 
 
 def resolve_handoff_credential(env: Mapping[str, str] | None = None) -> tuple[str, str]:

@@ -294,6 +294,23 @@ class HandoffTest(unittest.TestCase):
                 decision = app.handoff_decision(worker, {**configured, "FACTORY_WORKER": worker})
                 self.assertEqual(decision["source"], "default")
 
+    def test_shared_factory_app_posts_handoffs_for_every_worker_but_never_pushes(self) -> None:
+        shared = self._env(
+            ROTISSERIE_FACTORY_APP_ID="789",
+            ROTISSERIE_FACTORY_INSTALLATION_ID="1011",
+            ROTISSERIE_FACTORY_APP_PRIVATE_KEY=app.TEST_KEY_SENTINEL,
+        )
+        for worker in ("11", "1236998703300", ""):
+            with self.subTest(worker=worker):
+                env = {**shared, "FACTORY_WORKER": worker}
+                decision = app.handoff_decision(worker, env, _unconfigured_mapping())
+                self.assertEqual(decision["source"], "installation")
+                self.assertEqual((decision["app_id"], decision["installation_id"]), ("789", "1011"))
+                self.assertEqual(app.credential_decision(worker, env, _unconfigured_mapping())["source"],
+                                 "pr_rebase")
+        partial = {**shared, "ROTISSERIE_FACTORY_INSTALLATION_ID": ""}
+        self.assertEqual(app.handoff_decision("11", partial, _unconfigured_mapping())["source"], "default")
+
     def test_handoff_body_has_no_machine_marker(self) -> None:
         body = app.render_handoff(
             kind="implementation",

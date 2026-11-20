@@ -710,10 +710,9 @@ stage_trusted_worker_app_helper() {
 }
 
 post_readable_handoff() {
-  # Human-readable implementation/repair/review handoff (#3135). Only worker 48
-  # with its App id, installation id, and private key posts one, through its
-  # installation token. Everyone else, and worker 48 until those secrets exist,
-  # posts nothing new and keeps every existing comment on its current identity.
+  # Human-readable implementation/repair/review handoff (#3135). Worker 48 posts
+  # through its own App; every other worker posts through the shared factory App
+  # when its secrets exist. Without an App the worker posts nothing new.
   # Trusted marker comments never come through here: they keep using the
   # ambient workflow GH_TOKEN (github-actions[bot]). GH_TOKEN is only overridden
   # for this one gh call and the git remote is never touched.
