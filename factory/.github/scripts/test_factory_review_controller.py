@@ -821,9 +821,10 @@ def test_unified_diff_hunk_counts_as_diff_inspection_evidence(monkeypatch):
 
 def test_authoritative_diff_is_read_but_never_dumped_into_review_log():
     worker = Path(__file__).with_name("free-model-factory-worker.sh").read_text(encoding="utf-8")
-    assert 'if ! gh pr diff "$NUMBER" >/dev/null; then' in worker
+    assert 'if gh pr diff "$NUMBER" >/dev/null; then' in worker
     assert 'gh pr diff "$NUMBER" 2>/dev/null | head -n 4000' not in worker
-    assert 'printf \'gh pr diff %s\\n\' "$NUMBER"' in worker
+    assert 'diff_evidence="gh pr diff ${NUMBER}"' in worker
+    assert 'printf \'%s\\n\' "$diff_evidence"' in worker
 
 
 def test_thousands_of_appended_diff_lines_cannot_evict_semantic_repair_finding():

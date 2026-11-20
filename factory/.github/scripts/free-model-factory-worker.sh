@@ -901,7 +901,15 @@ factory_sanitize_review_log "$review_log" "$sanitized_review_log"
 # Appended source previously evicted semantic findings from the controller's
 # bounded excerpt, turning legitimate REPAIR verdicts into useless handoffs.
 # A failed diff read must not masquerade as inspection evidence.
-if ! gh pr diff "$NUMBER" >/dev/null; then
+diff_evidence=''
+if gh pr diff "$NUMBER" >/dev/null; then
+  diff_evidence="gh pr diff ${NUMBER}"
+# GitHub refuses diffs over 300 files (HTTP 406); its file listing covers 3000.
+elif gh api "repos/${GITHUB_REPOSITORY}/pulls/${NUMBER}/files" --paginate --jq '.[].filename' >/dev/null; then
+  diff_evidence="gh api repos/${GITHUB_REPOSITORY}/pulls/${NUMBER}/files"
+  log "PR #${NUMBER} diff is too large for gh pr diff; inspected its file listing instead"
+fi
+if [[ -z "$diff_evidence" ]]; then
   log "control_plane_failure: authoritative diff read failed for PR #${NUMBER}"
   release_pr_and_issue "$NUMBER" "$BRANCH" 'factory:review' 'authoritative-diff-read-failed'
   record_terminal_outcome control_plane_failure "PR #${NUMBER} diff inspection unavailable"
@@ -909,7 +917,7 @@ if ! gh pr diff "$NUMBER" >/dev/null; then
 fi
 {
   printf '\n# comic-pile-factory-authoritative-diff-evidence\n'
-  printf 'gh pr diff %s\n' "$NUMBER"
+  printf '%s\n' "$diff_evidence"
 } >> "$sanitized_review_log"
 # Retain the terminal token for diagnostics; the merge controller remains the
 # only component authorized to decide whether a PR can merge.
