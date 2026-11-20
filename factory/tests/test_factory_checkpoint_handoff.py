@@ -44,16 +44,14 @@ def harness(monkeypatch: pytest.MonkeyPatch) -> dict:
                "head": {"ref": "factory/98-4853-kilo-auto", "sha": HEAD,
                         "repo": {"full_name": REPO}},
                "labels": labels("factory", "factory:46", "factory:building")},
-        "producers": [], "timeline": [], "base_date": "2026-11-18T00:00:00Z",
+        "producers": [],
     }
-    monkeypatch.setattr(handoff, "PUBLISHED_ISSUES", {})
     monkeypatch.setattr(handoff, "verified_run", lambda *_: state["run"])
     monkeypatch.setattr(handoff, "newer_worker_run", lambda *_: False)
     monkeypatch.setattr(handoff, "checkpoint", lambda *_: state["saved"])
     monkeypatch.setattr(handoff, "recovery_prs", lambda *_: state["drafts"])
     monkeypatch.setattr(handoff, "incorporated", lambda *_: state["incorporated"])
-    monkeypatch.setattr(handoff, "pages", lambda endpoint: state["timeline"]
-                        if endpoint.endswith("/timeline") else state["comments"])
+    monkeypatch.setattr(handoff, "pages", lambda *_: state["comments"])
     monkeypatch.setattr(handoff, "record_producer", lambda _, pr, saved:
                         state["producers"].append((pr["number"], saved["worker"], pr["head"]["sha"])))
 
@@ -62,10 +60,6 @@ def harness(monkeypatch: pytest.MonkeyPatch) -> dict:
             return {"status": "ahead"}
         if endpoint.endswith("/4853"):
             return state["issue"]
-        if endpoint.endswith("/branches/main"):
-            return {"commit": {"sha": "d" * 40}}
-        if "/git/commits/" in endpoint:
-            return {"committer": {"date": state["base_date"]}}
         return state["pr"]
 
     def api(endpoint: str, method: str = "GET", **fields: object) -> object:
@@ -228,7 +222,7 @@ def test_named_and_legacy_checkpoint_metadata_remain_recoverable(
     refs = [{"ref": f"refs/heads/{BRANCH}", "object": {"sha": HEAD}}]
     message = (f"checkpoint(factory): worker 46 run {RUN} pr #5152 (unreviewed recovery only)\n\n"
                f"Issue: 4853\nModel: kilo-auto/free\nBase-commit: {BASE}\n")
-    monkeypatch.setattr(handoff, "checkpoint_refs", lambda *_: refs)
+    monkeypatch.setattr(handoff, "pages", lambda *_: refs)
     monkeypatch.setattr(handoff, "obj", lambda path: (
         {"status": "ahead"} if "/compare/" in path else
         {"message": message, "tree": {"sha": "c" * 40}, "parents": [{"sha": BASE}]}
@@ -277,7 +271,7 @@ def test_failed_publication_still_records_saved_code_without_masking_failure(
 def test_empty_sweep_is_a_successful_noop(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str],
 ) -> None:
-    monkeypatch.setattr(handoff, "checkpoint_refs", lambda *_: [])
+    monkeypatch.setattr(handoff, "pages", lambda *_: [])
     monkeypatch.setattr(sys, "argv", ["handoff", "--repo", REPO, "--sweep"])
     assert handoff.main() == 0
     assert json.loads(capsys.readouterr().out) == []
@@ -290,7 +284,7 @@ def test_ordinary_commit_tip_keeps_immutable_origin_and_never_resets(
     origin = (f'checkpoint(factory): worker 46 run {RUN} issue #4853 '
               f'(persisted work; validation pending)\n\nIssue: 4853\n'
               f'Model: kilo-auto/free\nBase-commit: {BASE}\n')
-    monkeypatch.setattr(handoff, 'checkpoint_refs', lambda *_: [
+    monkeypatch.setattr(handoff, 'pages', lambda *_: [
         {'ref': f'refs/heads/{BRANCH}', 'object': {'sha': later}},
     ])
     def read(path: str) -> dict:
@@ -299,8 +293,7 @@ def test_ordinary_commit_tip_keeps_immutable_origin_and_never_resets(
         if path.endswith(later):
             return {'sha': later, 'message': 'Continue implementation normally',
                     'tree': {'sha': later}, 'parents': [{'sha': HEAD}]}
-        return {'sha': HEAD, 'message': origin,
-                'tree': {'sha': 'f' * 40}, 'parents': [{'sha': BASE}]}
+        return {'sha': HEAD, 'message': origin, 'parents': [{'sha': BASE}]}
     monkeypatch.setattr(handoff, 'obj', read)
     saved = handoff.checkpoint(REPO, RUN)
     assert saved is not None
@@ -366,260 +359,3 @@ def test_completed_failed_source_with_missing_stage_becomes_repair_pickup(harnes
     handoff.publish(REPO, RUN)
     assert handoff.labels_of(harness['pr']) == {'factory', 'factory:unowned', 'factory:changes-requested'}
     assert 'factory:unowned' in handoff.labels_of(harness['issue'])
-
-
-def test_checkpoint_cursor_pagination_recovers_101_refs_and_targeted_run(
-    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str],
-) -> None:
-    """101 refs previously repeated REST page 1 until the 100-page limit."""
-    branches = [
-        f"{handoff.PREFIX}issue-4853/generated-{i}/{10000+i}"
-        for i in range(100)
-    ] + [BRANCH]
-    requests: list[tuple[str | None, str | None]] = []
-
-    def graphql(endpoint: str, method: str = "GET", **fields: object) -> dict:
-        assert endpoint == "graphql" and method == "POST"
-        variables = fields["variables"]
-        assert isinstance(variables, dict)
-        search = variables["run"]
-        after = variables["after"]
-        requests.append((search, after))
-        matched = [branch for branch in branches
-                   if search is None or search in branch]
-        start = int(after) if after else 0
-        batch = matched[start:start + 100]
-        end = start + len(batch)
-        return {"data": {"repository": {"refs": {
-            "nodes": [{"name": branch.removeprefix(handoff.PREFIX), "target": {"oid": HEAD}}
-                      for branch in batch],
-            "pageInfo": {"hasNextPage": end < len(matched),
-                         "endCursor": str(end) if end < len(matched) else None},
-        }}}}
-
-    monkeypatch.setattr(handoff, "api", graphql)
-    monkeypatch.setattr(handoff, "verified_run", lambda _repo, _run: {
-        "display_title": "Factory 46 · fixed-model entry",
-    })
-    first = handoff.checkpoint_refs(REPO)
-    assert len(first) == 101 and first[-1]["ref"] == "refs/heads/" + BRANCH
-    assert requests == [(None, None), (None, "100")]
-    assert handoff.checkpoint_refs(REPO) == first
-    assert requests[-2:] == [(None, None), (None, "100")]
-
-    requests.clear()
-    targeted = handoff.checkpoint_refs(REPO, RUN)
-    assert len(targeted) == 1 and targeted[0]["ref"] == "refs/heads/" + BRANCH
-    assert requests == [(RUN, None)]
-
-    published: list[str] = []
-    monkeypatch.setattr(handoff, "publish", lambda _repo, run_id, **_:
-                        published.append(run_id) or {"saved": True, "published": True})
-    monkeypatch.setattr(sys, "argv", ["handoff", "--repo", REPO, "--sweep"])
-    assert handoff.main() == 0
-    assert len(published) == 101 and RUN in published
-    assert len(json.loads(capsys.readouterr().out)) == 101
-
-
-def test_checkpoint_cursor_repetition_fails_closed(monkeypatch: pytest.MonkeyPatch) -> None:
-    calls: list[str | None] = []
-
-    def graphql(_endpoint: str, _method: str = "GET", **fields: object) -> dict:
-        variables = fields["variables"]
-        assert isinstance(variables, dict)
-        calls.append(variables["after"])
-        return {"data": {"repository": {"refs": {
-            "nodes": [{"name": BRANCH.removeprefix(handoff.PREFIX), "target": {"oid": HEAD}}]
-            if len(calls) == 1 else [],
-            "pageInfo": {"hasNextPage": True, "endCursor": "stuck"},
-        }}}}
-
-    monkeypatch.setattr(handoff, "api", graphql)
-    with pytest.raises(RuntimeError, match="cursor did not advance"):
-        handoff.checkpoint_refs(REPO)
-    assert calls == [None, "stuck"]
-
-
-def test_checkpoint_malformed_graphql_result_never_publishes(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    monkeypatch.setattr(handoff, "api", lambda *_args, **_kwargs: {"errors": [
-        {"message": "Resource limit exceeded"},
-    ]})
-    with pytest.raises(RuntimeError, match="GraphQL ref query failed"):
-        handoff.checkpoint_refs(REPO)
-
-
-def test_merged_checkpoint_distinguishes_ancestry_from_unmodified_bytes(
-    harness: dict, monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    harness["pr"]["state"] = "closed"
-    harness["pr"]["merged"] = True
-    harness["pr"]["merge_commit_sha"] = "d" * 40
-    harness["drafts"] = [harness["pr"]]
-    monkeypatch.setattr(handoff, "incorporated", lambda *_: False)
-    result = handoff.publish(REPO, RUN, cleanup=True)
-    assert result["saved"] and result["work_pr"] == 5152
-    assert result["published"] is True and result["merged"] is True
-    assert result["exact_bytes_included"] is False
-    monkeypatch.setattr(handoff, "incorporated", lambda *_: True)
-    # Keep retention safe while checking independently verified merge credit.
-    monkeypatch.setattr(handoff, "retire", lambda *_args, **_kwargs: {"retired": True})
-    result = handoff.publish(REPO, RUN, cleanup=True)
-    assert result["merged"] is True and result["merge_sha"] == "d" * 40
-    assert result["published"] is True and result["exact_bytes_included"] is True
-
-
-
-def test_checkpoint_second_page_missing_connection_fails_closed(monkeypatch: pytest.MonkeyPatch) -> None:
-    """A null cursor continuation cannot silently truncate a 101-ref sweep."""
-    seen: list[str | None] = []
-
-    def graphql(_endpoint: str, _method: str = "GET", **fields: object) -> dict:
-        variables = fields["variables"]
-        assert isinstance(variables, dict)
-        seen.append(variables["after"])
-        if len(seen) == 1:
-            return {"data": {"repository": {"refs": {
-                "nodes": [{"name": BRANCH.removeprefix(handoff.PREFIX), "target": {"oid": HEAD}}],
-                "pageInfo": {"hasNextPage": True, "endCursor": "next"},
-            }}}}
-        return {"data": {"repository": {"refs": None}}}
-
-    monkeypatch.setattr(handoff, "api", graphql)
-    with pytest.raises(RuntimeError, match="Missing checkpoint connection"):
-        handoff.checkpoint_refs(REPO)
-    assert seen == [None, "next"]
-
-
-def test_closed_recovery_requires_main_and_source_run_ancestry(
-    harness: dict, monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """A resumed source is credited for a merged PR, not for unchanged bytes."""
-    saved = harness["saved"]
-    saved["resumed"] = True
-    saved["origin_head"] = "d" * 40
-    saved["origin_tree"] = "e" * 40
-    harness["pr"]["state"] = "closed"
-    harness["pr"]["merged"] = True
-    harness["pr"]["merge_commit_sha"] = "f" * 40
-    harness["drafts"] = [harness["pr"]]
-    observed: list[dict] = []
-
-    def incorporated(_repo: str, snapshot: dict, _merged: str) -> bool:
-        observed.append(snapshot)
-        # Simulate B's tip appearing in main, but A's original work reverted.
-        return snapshot["tree"] == saved["tree"]
-
-    monkeypatch.setattr(handoff, "incorporated", incorporated)
-    result = handoff.publish(REPO, RUN, cleanup=True)
-    assert result["published"] and result.get("merged")
-    assert result["exact_bytes_included"] is False
-    assert observed and observed[-1]["head"] == saved["origin_head"]
-    assert observed[-1]["tree"] == saved["origin_tree"]
-    harness["pr"]["base"] = {"ref": "release"}
-    harness["incorporated"] = True
-    result = handoff.publish(REPO, RUN, cleanup=True)
-    assert not result["published"] and not result.get("merged")
-    assert result["worker"] == "46"
-    assert result["checkpoint_sha"] == saved["origin_head"]
-
-
-def test_worker_evidence_survives_checkpoint_retirement_without_second_run_read(
-    harness: dict, monkeypatch: pytest.MonkeyPatch, tmp_path: Path,
-) -> None:
-    """The receipt carries trusted worker identity from the publication step."""
-    result = handoff.publish(REPO, RUN)
-    assert result["worker"] == "46" and result["checkpoint_sha"] == HEAD
-    def no_second_read(*_args: object) -> None:
-        raise AssertionError("publishing must not re-fetch source-run worker")
-    monkeypatch.setattr(handoff, "verified_run", no_second_read)
-    path = tmp_path / "result.json"
-    path.write_text(json.dumps(result))
-    assert json.loads(path.read_text())["worker"] == "46"
-
-
-def test_graphql_ref_names_are_relative_to_the_ref_prefix(monkeypatch) -> None:
-    """GitHub strips refPrefix from Ref.name; a full-name node is not a real response."""
-    def api(*args, **kwargs):
-        return {"data": {"repository": {"refs": {
-            "nodes": [{"name": "44242119390", "target": {"oid": HEAD}}],
-            "pageInfo": {"hasNextPage": False, "endCursor": None},
-        }}}}
-    monkeypatch.setattr(handoff, "api", api)
-    assert handoff.checkpoint_refs("o/r") == [
-        {"ref": "refs/heads/factory/work-checkpoints/44242119390", "object": {"sha": HEAD}},
-    ]
-
-
-def _reference(number: int, state: str, merged_at: str | None = None) -> dict:
-    return {"event": "cross-referenced", "source": {"issue": {
-        "number": number, "state": state, "repository": {"full_name": REPO},
-        "pull_request": {"merged_at": merged_at}}}}
-
-
-def _created(harness: dict) -> bool:
-    return any(call[0].endswith("/pulls") and call[1] == "POST" for call in harness["calls"])
-
-
-@pytest.mark.parametrize(("timeline", "reason"), [
-    ([_reference(5561, "open")], "open work PR #5561"),
-    ([_reference(5443, "closed", "2026-11-18T15:29:06Z")], "PR #5443 merged after"),
-])
-def test_ended_run_does_not_duplicate_newer_issue_work(
-        harness: dict, timeline: list, reason: str) -> None:
-    harness["timeline"] = timeline
-    result = handoff.publish(REPO, RUN)
-    assert not _created(harness)
-    assert result["saved"] and not result["published"]
-    assert reason in result["detail"] and result["detail"].endswith("checkpoint retained")
-
-
-def test_closed_issue_or_work_already_on_main_is_not_republished(harness: dict) -> None:
-    harness["issue"]["state"] = "closed"
-    assert "issue is closed" in handoff.publish(REPO, RUN)["detail"]
-    harness["issue"]["state"] = "open"
-    harness["incorporated"] = True
-    assert "main already contains" in handoff.publish(REPO, RUN)["detail"]
-    assert not _created(harness)
-
-
-def test_older_merges_unrelated_mentions_and_live_runs_still_publish(
-        harness: dict, monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(handoff, "check_write", lambda *_args, **_kwargs: True)
-    harness["timeline"] = [
-        _reference(4896, "closed", "2026-11-09T02:19:11Z"),
-        _reference(4800, "closed"),
-        {"event": "cross-referenced", "source": {"issue": {"number": 4700, "state": "open"}}},
-        {"event": "labeled"},
-    ]
-    assert handoff.publish(REPO, RUN)["published"] and _created(harness)
-    harness["calls"].clear()
-    harness["drafts"].clear()
-    harness["timeline"] = [_reference(5561, "open")]
-    harness["run"]["status"] = "in_progress"
-    assert handoff.publish(REPO, RUN)["published"] and _created(harness)
-
-
-def test_sweep_limit_takes_the_newest_runs_by_number(
-        monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]) -> None:
-    runs = ["9", "100", "25"]
-    monkeypatch.setattr(handoff, "checkpoint_refs", lambda *_: [
-        {"ref": f"refs/heads/factory/work-checkpoints/issue-1/m/{run}"} for run in runs])
-    published: list[str] = []
-    monkeypatch.setattr(handoff, "publish", lambda _repo, run_id, **_:
-                        published.append(run_id) or {"saved": True, "published": True})
-    monkeypatch.setattr(sys, "argv", ["handoff", "--repo", REPO, "--sweep", "--limit", "2"])
-    assert handoff.main() == 0
-    assert published == ["100", "25"]
-    workflow = (ROOT / ".github/workflows/factory-checkpoint-reconcile.yml").read_text()
-    assert "--sweep --limit 20" in workflow
-
-
-def test_one_sweep_publishes_one_pr_per_issue_before_github_indexes_it(harness: dict) -> None:
-    assert handoff.publish(REPO, RUN)["published"]
-    harness["drafts"].clear()
-    harness["saved"] = {**harness["saved"], "branch": BRANCH.replace(RUN, "12346")}
-    result = handoff.publish(REPO, "12346")
-    assert not result["published"] and "PR #5152" in result["detail"]
-    assert sum(call[1] == "POST" and call[0].endswith("/pulls") for call in harness["calls"]) == 1

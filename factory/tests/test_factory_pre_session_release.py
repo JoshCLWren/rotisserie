@@ -30,7 +30,7 @@ def _stage_release_scripts(tmp_path: Path) -> Path:
     """Copy the real slot resolver and a controller stand-in into a sandbox."""
     scripts = tmp_path / ".github/scripts"
     scripts.mkdir(parents=True)
-    for name in ("factory_worker_slots.py", "factory_provider_registry.py", "factory_config.py"):
+    for name in ("factory_worker_slots.py", "factory_provider_registry.py"):
         (scripts / name).write_text((SCRIPTS / name).read_text())
     controller = scripts / "factory-work-controller.py"
     controller.write_text("import json, sys\nprint(json.dumps(sys.argv[1:]))\n")

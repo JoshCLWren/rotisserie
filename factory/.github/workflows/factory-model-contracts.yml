@@ -60,6 +60,7 @@ jobs:
             tests/test_factory_work_controller_runtime.py \
             tests/test_factory_source_budget.py \
             tests/test_factory_quota_pause.py \
+            tests/test_factory_fast_merge.py \
             tests/test_factory_trusted_policy_staging.py \
             tests/test_factory_work_policy.py \
             tests/test_factory_heartbeat_health.py \

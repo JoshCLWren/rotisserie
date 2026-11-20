@@ -55,7 +55,7 @@ def test_site_embeds_trusted_snapshot_without_another_published_artifact(
     assert "No pinned model roster" in page
     assert page.count('id="fleet-snapshot"') == 1
     assert json.loads(page.split('id="fleet-snapshot" type="application/json">', 1)[1]
-                      .split("</script>", 1)[0]) == {**snapshot, "repository": "JoshCLWren/comic-pile"}
+                      .split("</script>", 1)[0]) == snapshot
 
 
 def test_site_has_no_model_roster_or_mutating_github_api() -> None:

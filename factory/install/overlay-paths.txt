@@ -32,7 +32,6 @@
 .github/scripts/factory_capacity_policy.py
 .github/scripts/factory_checkpoint_handoff.py
 .github/scripts/factory_completion_controller.py
-.github/scripts/factory_config.py
 .github/scripts/factory_delivery_funnel.py
 .github/scripts/factory_deploy_recovery.py
 .github/scripts/factory_discovery.py
@@ -44,7 +43,6 @@
 .github/scripts/factory_full_completion_controller.py
 .github/scripts/factory_gh_usage.py
 .github/scripts/factory_heartbeat_health.py
-.github/scripts/factory_historical_delivery.py
 .github/scripts/factory_implementation_delivery.py
 .github/scripts/factory_issue_acceptance.py
 .github/scripts/factory_issue_pr_state_policy.py

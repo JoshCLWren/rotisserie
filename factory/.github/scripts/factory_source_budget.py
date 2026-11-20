@@ -25,7 +25,7 @@ BUDGETS_PATH = GITHUB_DIR / "factory-source-budgets.json"
 ENTRY_TITLE_RE = re.compile(r"^Factory (?P<worker>\d+) · fixed-model entry$")
 PROTECTED_WORKERS: frozenset[int] = frozenset()
 # Cloudflare Workers Free hard-stops daily neuron usage. Enforce a conservative
-# source cap here.
+# source cap here so this factory-only guard remains on the fast-merge allowlist.
 HARD_FREE_SOURCE_DISPATCH_CAPS = {"cloudflare-workers-ai": 1}
 
 
@@ -82,7 +82,7 @@ def count_dispatches(
 def todays_entry_titles(now: datetime | None = None) -> list[str]:
     """Return Entry run titles created since 00:00 UTC today (via gh api)."""
     now = now or datetime.now(timezone.utc)
-    repo = os.environ.get("GITHUB_REPOSITORY") or __import__("factory_config").repository()
+    repo = os.environ.get("GITHUB_REPOSITORY", "JoshCLWren/comic-pile")
     day = now.strftime("%Y-%m-%d")
     output = subprocess.run(
         [
@@ -119,7 +119,7 @@ def exhausted_sources(
     if titles is None:
         try:
             from factory_state_operations import daily_usage
-            counts = daily_usage(os.environ.get("GITHUB_REPOSITORY") or __import__("factory_config").repository(),list(caps))
+            counts = daily_usage(os.environ.get("GITHUB_REPOSITORY","JoshCLWren/comic-pile"),list(caps))
         except Exception:
             counts = None
     if counts is None:
@@ -171,7 +171,7 @@ def filter_workers(
     if titles is None and any(sources.get(str(w)) in caps for w in workers):
         try:
             from factory_state_operations import daily_usage
-            counts = daily_usage(os.environ.get("GITHUB_REPOSITORY") or __import__("factory_config").repository(),list(caps))
+            counts = daily_usage(os.environ.get("GITHUB_REPOSITORY","JoshCLWren/comic-pile"),list(caps))
         except Exception:
             counts = None
         if counts is None:
@@ -214,7 +214,7 @@ def main(argv: list[str] | None = None) -> int:
         caps = load_budgets()
         try:
             from factory_state_operations import daily_usage
-            counts = daily_usage(os.environ.get("GITHUB_REPOSITORY") or __import__("factory_config").repository(),list(caps))
+            counts = daily_usage(os.environ.get("GITHUB_REPOSITORY","JoshCLWren/comic-pile"),list(caps))
         except Exception:
             counts = None
         if counts is None:

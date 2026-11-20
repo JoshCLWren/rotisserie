@@ -8,8 +8,7 @@
   if (!source) return;
   let data;
   try { data = JSON.parse(source.textContent); } catch { return; }
-  const repo = data.repository;
-  if (typeof repo !== "string" || !/^[\w.-]+\/[\w.-]+$/.test(repo)) return;
+  const repo = "JoshCLWren/comic-pile";
   const gh = "https://github.com/" + repo;
   const api = "https://api.github.com/repos/" + repo;
   const keys = ["provider","model","worker","issue","pr","run","failure"];

@@ -31,8 +31,7 @@ from factory_source_budget import budget_block_reason, worker_sources
 from factory_attempt_history import read_comment_history
 from factory_discovery import canonical_target, discover, update_labels
 from factory_state_ledger import acquire_lease, release_lease, renew_verified_workers, worker_claim
-REPO = os.environ.get("GITHUB_REPOSITORY") or __import__("factory_config").repository()
-REPO_OWNER, REPO_NAME = REPO.split("/", 1)
+REPO = os.environ.get("GITHUB_REPOSITORY", "JoshCLWren/comic-pile")
 GH_TIMEOUT_SECONDS = env_positive_int("FACTORY_GH_TIMEOUT_SECONDS", 120)
 ASSIGNMENT_WRITER_WORKFLOW_PATH = ".github/workflows/fixed-model-factory-dispatch.yml"
 ROTISSERIE_CONTROL_PATH = Path(".github/factory-rotisserie-control.json")
@@ -172,8 +171,8 @@ def rotisserie_issue_intake(issues: list[dict[str, Any]], prs: list[dict[str, An
             snapshot_path.write_text(json.dumps(snapshot), encoding="utf-8")
             config_path.write_text(
                 'schema_version = 1\n[repository]\nhost = "github.com"\n'
-                f'owner = "{REPO_OWNER}"\nname = "{REPO_NAME}"\n[repositories]\n'
-                f'allow = [{{ host = "github.com", owner = "{REPO_OWNER}", name = "{REPO_NAME}" }}]\n'
+                'owner = "JoshCLWren"\nname = "comic-pile"\n[repositories]\n'
+                'allow = [{ host = "github.com", owner = "JoshCLWren", name = "comic-pile" }]\n'
                 '[local]\nsnapshot = "snapshot.json"\nstate_directory = "state"\n'
                 'mutations_enabled = false\n',
                 encoding="utf-8",

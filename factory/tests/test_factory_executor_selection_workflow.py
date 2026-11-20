@@ -72,7 +72,7 @@ def test_openai_compatible_factory_providers_inject_opencode_config() -> None:
 def test_new_free_api_sources_use_real_provider_models_and_credentials() -> None:
     """New source identities and keys live in the registry, not shell cases."""
     workflow = WORKFLOW.read_text(encoding="utf-8")
-    registry = (ROOT / "defaults" / "providers.toml").read_text(encoding="utf-8")
+    registry = (ROOT / ".github" / "scripts" / "factory_provider_registry.py").read_text(encoding="utf-8")
     for source, secret in (
         ("gemini-free", "GEMINI_API_KEY"),
         ("groq-free", "GROQ_API_KEY"),
@@ -80,7 +80,7 @@ def test_new_free_api_sources_use_real_provider_models_and_credentials() -> None
         ("cohere-eval", "COHERE_API_KEY"),
         ("typhoon-free", "TYPHOON_API_KEY"),
     ):
-        assert f'[providers."{source}"]' in registry
+        assert f'"{source}": ProviderSpec(' in registry
         assert f'"{secret}"' in registry
         assert f"{secret}: ${{{{ secrets.{secret} }}}}" in workflow
         assert f'{source})' not in _lane_resolution(workflow)

@@ -261,13 +261,7 @@ def historical_failure_streak(
             if not model_only:
                 break
             continue
-        if row["event_type"] == "worker_completed" or (
-            not model_only and row["event_type"] == "worker_failed"
-            and detail.get("delivery_outcome") == "persisted"
-            and detail.get("persisted_work") is True
-        ):
-            # Delivered code resets a worker retry streak but never rewrites
-            # the underlying failed execution or its model-specific history.
+        if row["event_type"] == "worker_completed":
             break
         if row["event_type"] != "worker_failed" or detail.get("configured") is False:
             continue
@@ -347,10 +341,8 @@ async def project_runtime(conn: Any, repo: str, run_id: int, outcome: dict[str, 
     persisted = outcome.get("persisted_work") is True
     delivered = (persisted and outcome.get("delivery_outcome") == "persisted"
                  and str(outcome.get("delivery_pr") or "").isdecimal())
-    # Terminal worker execution and eventual persisted PR delivery are
-    # independent measurements. A failed attempt remains a failed attempt.
-    completed = classification == "success"
-    failed = classification not in {"success", "no_work", "unconfigured"}
+    completed = classification == "success" or delivered
+    failed = classification not in {"success", "no_work", "unconfigured"} and not delivered
     observed = datetime.now(timezone.utc)
     # A trusted job-log collector can attest multiple attempted free models.
     # This evidence belongs to this same idempotent runtime transaction.
@@ -1201,7 +1193,7 @@ async def _reset_model_health(conn: Any, repo: str, include_retired: bool = Fals
 def main() -> int:
     parser=argparse.ArgumentParser(description=__doc__)
     parser.add_argument("command",choices=("bootstrap","filter","rank","stats","ingest-check","checkpoint","sync-catalog","export-model-exclusions","export-candidate-health","export-fleet-failover-sources","reset-model-health"))
-    parser.add_argument("--repo",default=os.environ.get("GITHUB_REPOSITORY") or __import__("factory_config").repository())
+    parser.add_argument("--repo",default=os.environ.get("GITHUB_REPOSITORY","JoshCLWren/comic-pile"))
     parser.add_argument("--file",type=Path)
     parser.add_argument("--scope")
     parser.add_argument("--worker",default="")
