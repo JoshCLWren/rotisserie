@@ -59,6 +59,79 @@ def pages(endpoint: str) -> list[dict]:
     raise RuntimeError("Checkpoint pagination exceeded bound; no destructive action")
 
 
+def checkpoint_refs(repo: str, run_id: str | None = None) -> list[dict]:
+    """Enumerate refs with GraphQL cursors, never REST's unsupported page=N.
+
+    Searching by source run avoids a repository-wide branch scan for normal
+    publication. A sweep visits every page; malformed/truncated cursors fail
+    closed rather than publishing or retiring the wrong checkpoint.
+    """
+    owner, name = repo.split("/", 1)
+    query = """
+    query($owner: String!, $name: String!, $after: String, $run: String) {
+      repository(owner: $owner, name: $name) {
+        refs(refPrefix: "refs/heads/factory/work-checkpoints/",
+             first: 100, after: $after, query: $run) {
+          nodes { name target { oid } }
+          pageInfo { hasNextPage endCursor }
+        }
+      }
+    }
+    """
+    result: list[dict] = []
+    seen_refs: set[str] = set()
+    seen_cursors: set[str] = set()
+    cursor: str | None = None
+    for _ in range(100):
+        payload = api("graphql", "POST", query=query, variables={
+            "owner": owner, "name": name, "after": cursor, "run": run_id,
+        })
+        if not isinstance(payload, dict) or payload.get("errors"):
+            raise RuntimeError("Checkpoint GraphQL ref query failed; retaining work")
+        repository = (payload.get("data") or {}).get("repository")
+        if not isinstance(repository, dict):
+            raise RuntimeError("Checkpoint repository was not available")
+        connection = repository.get("refs")
+        if connection is None:
+            if cursor is not None:
+                raise RuntimeError("Missing checkpoint connection mid-pagination; retaining work")
+            return result
+        if not isinstance(connection, dict):
+            raise RuntimeError("Malformed checkpoint refs response")
+        nodes = connection.get("nodes")
+        page_info = connection.get("pageInfo")
+        if not isinstance(nodes, list) or not isinstance(page_info, dict):
+            raise RuntimeError("Incomplete checkpoint refs response")
+        for node in nodes:
+            if not isinstance(node, dict):
+                raise RuntimeError("Malformed checkpoint ref node")
+            # GitHub returns Ref.name relative to refPrefix, e.g. "44242119390".
+            relative = node.get("name")
+            target = node.get("target")
+            if (not isinstance(relative, str) or not relative or relative.startswith("/")
+                    or ".." in relative.split("/")
+                    or not isinstance(target, dict) or not SHA.fullmatch(str(target.get("oid", "")))):
+                raise RuntimeError("Invalid checkpoint ref; retaining work")
+            branch = PREFIX + relative
+            full_ref = "refs/heads/" + branch
+            if full_ref in seen_refs:
+                raise RuntimeError("Repeated checkpoint ref across pages; retaining work")
+            seen_refs.add(full_ref)
+            if run_id is None or branch == PREFIX + run_id or branch.endswith("/" + run_id):
+                result.append({"ref": full_ref, "object": {"sha": target["oid"]}})
+        has_next = page_info.get("hasNextPage")
+        next_cursor = page_info.get("endCursor")
+        if not isinstance(has_next, bool):
+            raise RuntimeError("Missing checkpoint pagination state")
+        if not has_next:
+            return result
+        if not isinstance(next_cursor, str) or not next_cursor or next_cursor in seen_cursors:
+            raise RuntimeError("Checkpoint cursor did not advance; retaining work")
+        seen_cursors.add(next_cursor)
+        cursor = next_cursor
+    raise RuntimeError("Checkpoint cursor pagination exceeded bound; retaining work")
+
+
 def verified_run(repo: str, run_id: str) -> dict:
     """Accept only this repository's canonical fixed-model worker runs."""
     if not re.fullmatch(r"[1-9][0-9]*", run_id):
@@ -78,7 +151,7 @@ def verified_run(repo: str, run_id: str) -> dict:
 
 def checkpoint(repo: str, run_id: str) -> dict | None:
     """Read the exact named remote ref and its complete checkpoint ancestry."""
-    refs = pages(f"repos/{repo}/git/matching-refs/heads/{PREFIX}")
+    refs = checkpoint_refs(repo, run_id)
     refs = [ref for ref in refs if ref.get("ref") == f"refs/heads/{PREFIX}{run_id}"
             or ref.get("ref", "").endswith(f"/{run_id}")]
     if len(refs) > 1:
@@ -524,7 +597,7 @@ def main() -> int:
                                    args.work_branch))
     ids = [args.run_id] if args.run_id else []
     if args.sweep:
-        refs = pages(f"repos/{args.repo}/git/matching-refs/heads/{PREFIX}")
+        refs = checkpoint_refs(args.repo)
         ids = sorted({ref["ref"].rsplit("/", 1)[-1] for ref in refs})
     if not ids and not args.sweep:
         parser.error("--run-id or --sweep is required")
