@@ -3,8 +3,9 @@
 
 Each template under factory/.github/workflows is written to the adopter's
 .github/workflows with the same file name. After every step that checks out the
-adopter repository, two steps are inserted: a checkout of Rotisserie at a pinned
-commit, then overlay.sh, which copies the factory runtime into the workspace.
+adopter repository, two steps are inserted: a checkout of Rotisserie at --ref
+(main by default, or a pinned commit), then overlay.sh, which copies the factory
+runtime into the workspace.
 Templates are edited as text so comments and formatting survive.
 """
 
@@ -25,6 +26,8 @@ INSTALLED_MARKER = "rotisserie-factory-runtime"
 # already runs; in an adopter they would fail because tests are not overlaid.
 ROTISSERIE_CI_ONLY = frozenset({"factory-fibonacci-tests.yml", "factory-model-contracts.yml"})
 SHA_RE = re.compile(r"[0-9a-f]{40}\Z")
+BRANCH_RE = re.compile(r"[A-Za-z0-9][A-Za-z0-9._/-]{0,99}\Z")
+DEFAULT_REF = "main"
 STEP_RE = re.compile(r"^(?P<indent>\s*)- (?P<rest>.*)$")
 CHECKOUT_RE = re.compile(r"^\s*(?:- )?uses:\s*actions/checkout@\S+\s*$")
 
@@ -117,8 +120,8 @@ def _overlay_steps(
 
 
 def render(template: str, *, source: str, ref: str) -> str:
-    if not SHA_RE.fullmatch(ref):
-        raise InstallError("ref must be a full 40-character commit SHA")
+    if not (SHA_RE.fullmatch(ref) or (BRANCH_RE.fullmatch(ref) and ".." not in ref)):
+        raise InstallError("ref must be a branch name or a full 40-character commit SHA")
     lines = template.splitlines(keepends=True)
     if lines and not lines[-1].endswith("\n"):
         lines[-1] += "\n"
@@ -165,7 +168,11 @@ def install(target: Path, *, source: str, ref: str, names: list[str] | None = No
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("target", type=Path, help="adopter repository checkout")
-    parser.add_argument("--ref", required=True, help="Rotisserie commit SHA to pin")
+    parser.add_argument(
+        "--ref",
+        default=DEFAULT_REF,
+        help="Rotisserie branch to track (default: main) or a commit SHA to pin",
+    )
     parser.add_argument(
         "--source", default=DEFAULT_SOURCE, help="Rotisserie repository (owner/name)"
     )
