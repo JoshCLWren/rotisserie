@@ -16,6 +16,7 @@ from collections.abc import Mapping
 from typing import Any, Literal, TypedDict, cast
 
 sys.path.insert(0, os.path.dirname(__file__))
+from factory_adopter import repository  # noqa: E402
 issue_acceptance = importlib.import_module("factory_issue_acceptance")
 implementation_delivery = importlib.import_module("factory_implementation_delivery")
 # Reuse the post-merge closure selector so the merge-side dependency check
@@ -48,7 +49,7 @@ review_marker = _review_policy.review_marker
 semantic_repair_heads = _review_policy.semantic_repair_heads
 trusted_comment_bodies = _review_policy.trusted_comment_bodies
 
-REPO = os.environ.get("GITHUB_REPOSITORY", "JoshCLWren/comic-pile")
+REPO = repository()
 OWNER_RE = re.compile(r"^factory:(?:unowned|local|[1-9][0-9]*)$")
 FIXED_WORKER_RE = re.compile(r"^(?:[6-9]|[1-9][0-9]+)$")
 HEAD_RE = re.compile(r"^[0-9a-f]{40}$")

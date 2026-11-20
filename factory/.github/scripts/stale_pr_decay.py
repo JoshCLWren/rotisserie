@@ -28,8 +28,9 @@ from factory_work_policy import is_manual_only
 
 from factory_jev_shadow import MODEL as JEV_MODEL, call_jev
 from factory_review_policy import performed_via_untrusted_app
+from factory_adopter import repository
 
-REPO = os.environ.get("GITHUB_REPOSITORY", "JoshCLWren/comic-pile")
+REPO = repository()
 STALE_PR_GUARD_MARKER_RE = re.compile(
     r"comic-pile-factory-stale-expiration-v1:pr-(?P<pr>\d+):issue-(?P<issue>\d+):"
     r"age-(?P<age>\d+):sample-(?P<sample>\d+):"

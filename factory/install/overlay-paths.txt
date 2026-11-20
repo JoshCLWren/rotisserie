@@ -26,6 +26,7 @@
 .github/scripts/factory-work-checkpoint.sh
 .github/scripts/factory-work-controller.py
 .github/scripts/factory-worker-push-token.sh
+.github/scripts/factory_adopter.py
 .github/scripts/factory_app_client_id.py
 .github/scripts/factory_attempt_history.py
 .github/scripts/factory_candidate_health.py

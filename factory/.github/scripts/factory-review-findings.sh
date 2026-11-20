@@ -181,7 +181,7 @@ FACTORY_UNRESOLVED_THREADS_QUERY='query($owner:String!,$name:String!,$number:Int
 # when the last page still reports hasNextPage. Resolution is per thread, so
 # nested comments are not needed for this count.
 factory_count_unresolved_review_threads() {
-  local pr="$1" repo="${2:-${GITHUB_REPOSITORY:-JoshCLWren/comic-pile}}" pages
+  local pr="$1" repo="${2:-${GITHUB_REPOSITORY:?GITHUB_REPOSITORY is required}}" pages
   pages="$(gh api graphql --paginate -F owner="${repo%%/*}" -F name="${repo##*/}" -F number="$pr" \
     -f query="$FACTORY_UNRESOLVED_THREADS_QUERY" 2>/dev/null)" || return 1
   jq -sr '
@@ -258,7 +258,7 @@ factory_fetch_review_threads() {
 # falls back to inspecting threads directly.
 factory_collect_review_findings() {
   local pr="$1" head="$2" out="$3"
-  local repo="${GITHUB_REPOSITORY:-JoshCLWren/comic-pile}" dir warnings=()
+  local repo="${GITHUB_REPOSITORY:?GITHUB_REPOSITORY is required}" dir warnings=()
   dir="$(mktemp -d)"
   # Sidecars for the wrapper gate: the complete normalized thread document and
   # the open Greptile findings. They are removed first and written only from a
@@ -492,7 +492,7 @@ factory_greptile_reply_body() {
 # threads. Returns non-zero when any post fails.
 factory_post_greptile_outcome_replies() {
   local valid="$1" head="$2" threads_doc="${3:-}" status=0 thread outcome text commit title marker body
-  local repo="${GITHUB_REPOSITORY:-JoshCLWren/comic-pile}"
+  local repo="${GITHUB_REPOSITORY:?GITHUB_REPOSITORY is required}"
   while IFS= read -r entry; do
     [[ -n "$entry" ]] || continue
     thread="$(jq -r '.thread_id' <<< "$entry")"
@@ -558,7 +558,7 @@ ${content}
 # every independent semantic review. The controller independently re-fetches it.
 factory_issue_acceptance_mission() {
   local pr="$1" head="$2" pr_json issue non_closing issue_json repo="$GITHUB_REPOSITORY"
-  [[ -n "$repo" ]] || repo="JoshCLWren/comic-pile"
+  [[ -n "$repo" ]] || repo="${GITHUB_REPOSITORY:?GITHUB_REPOSITORY is required}"
   local acceptance_script=""
   if [[ -n "${TRUSTED_REVIEW_CONTROLLER:-}" ]]; then
     acceptance_script="$(dirname "$TRUSTED_REVIEW_CONTROLLER")/factory_issue_acceptance.py"

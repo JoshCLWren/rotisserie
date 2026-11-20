@@ -167,7 +167,7 @@ jobs:
               <main id="status">Loading the live factory dashboard…</main>
               <script>
                 (() => {
-                  const source = 'https://raw.githubusercontent.com/JoshCLWren/comic-pile/factory-status-live/index.html';
+                  const source = 'https://raw.githubusercontent.com/${{ github.repository }}/factory-status-live/index.html';
                   const status = document.querySelector('#status');
                   const load = async () => {
                     try {

@@ -84,7 +84,7 @@ jobs:
           set -Eeuo pipefail
           trusted="$RUNNER_TEMP/fork-trusted"
           mkdir -p "$trusted"
-          cp .github/scripts/factory_fork_control.py .github/scripts/factory_worker_slots.py \
+          cp .github/scripts/factory_fork_control.py .github/scripts/factory_adopter.py .github/scripts/factory_worker_slots.py \
             .github/scripts/factory_provider_registry.py .github/scripts/kilo-auto-factory-run.sh \
             .github/scripts/factory-fast-checks.sh \
             .github/scripts/factory-fork-execute.sh "$trusted/"

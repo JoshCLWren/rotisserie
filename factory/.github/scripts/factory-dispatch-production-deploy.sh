@@ -39,7 +39,7 @@ factory_pending_manual_deploy_count() {
 
 factory_dispatch_production_deploy() {
   local reason="${1:-factory bot merge}"
-  local repo="${GITHUB_REPOSITORY:-JoshCLWren/comic-pile}"
+  local repo="${GITHUB_REPOSITORY:?GITHUB_REPOSITORY is required}"
   local backoff="${FACTORY_DEPLOY_DISPATCH_RETRY_SLEEP:-3}"
   local attempt=1 pending_manual
   if [[ "${FACTORY_DEPLOY_DISPATCH:-on}" == 'off' ]]; then

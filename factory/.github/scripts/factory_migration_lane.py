@@ -11,15 +11,15 @@ from __future__ import annotations
 
 import argparse
 import json
-import os
 import re
 import subprocess
 import sys
 from collections.abc import Iterable
 from dataclasses import dataclass
 from typing import Any
+from factory_adopter import repository
 
-REPO = os.environ.get("GITHUB_REPOSITORY", "JoshCLWren/comic-pile")
+REPO = repository()
 GH_TIMEOUT_SECONDS = 120
 WAIT_LABEL = "factory:migration-wait"
 MIGRATION_PREFIX = "alembic/versions/"

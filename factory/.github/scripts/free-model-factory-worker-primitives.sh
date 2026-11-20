@@ -361,6 +361,7 @@ stage_trusted_review_controller() {
     local trusted_dir
     trusted_dir="$(mktemp -d "${RUNNER_TEMP:-/tmp}/comic-pile-review-controller.XXXXXX")"
     cp .github/scripts/factory-review-controller.py "$trusted_dir/factory-review-controller.py"
+    cp .github/scripts/factory_adopter.py "$trusted_dir/factory_adopter.py"
     cp .github/scripts/factory_review_policy.py "$trusted_dir/factory_review_policy.py"
   cp .github/scripts/factory_issue_acceptance.py "$trusted_dir/factory_issue_acceptance.py"
   cp .github/scripts/factory_implementation_delivery.py "$trusted_dir/factory_implementation_delivery.py"

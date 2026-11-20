@@ -28,7 +28,7 @@ def test_scheduled_refreshes_do_not_redeploy_pages_for_the_same_commit() -> None
     assert "Publish live dashboard snapshot" in workflow
     assert 'if: github.event_name == \'push\'' in workflow
     assert "repos/${GITHUB_REPOSITORY}/contents/index.html" in workflow
-    assert "raw.githubusercontent.com/JoshCLWren/comic-pile/factory-status-live/index.html" in workflow
+    assert "raw.githubusercontent.com/${{ github.repository }}/factory-status-live/index.html" in workflow
     assert "cache: 'no-store'" in workflow
     assert 'http-equiv="refresh" content="60"' in workflow
 
