@@ -273,25 +273,6 @@ def parse_declared_dependencies(body: str | None) -> set[int]:
     return parse_inline_depends_on_numbers(text) | parse_heading_dependency_numbers(text)
 
 
-RUST_CUTOVER_EPIC = 4335
-
-
-def rust_cutover_work_allowed(
-    labels: Iterable[str], body: str | None, *, cutover_open: bool
-) -> bool:
-    """Honor explicit cutover dependencies without the retired global intake freeze.
-
-    The owner lifted Rust-exclusive scheduling on 2026-11-20. Ordinary issues
-    can enter factory selection while #4335 remains open for integrated
-    acceptance; only tickets explicitly depending on that open epic must wait.
-    All other manual-only, dependency, ownership, and blocked-label gates still
-    apply in the shared eligibility policy.
-    """
-    return not (
-        cutover_open and RUST_CUTOVER_EPIC in parse_declared_dependencies(body)
-    )
-
-
 def owner_of(labels: Iterable[str]) -> str | None:
     """Return the active factory owner represented by a label set."""
     owners = [label for label in labels if FACTORY_OWNER_RE.fullmatch(label)]

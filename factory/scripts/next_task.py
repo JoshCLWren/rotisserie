@@ -114,14 +114,9 @@ def _is_acceptance_parent(issue: IssuePayload) -> bool:
 
 def select_next(issues: list[IssuePayload], closed_numbers: set[int]) -> Candidate | None:
     """Select the highest-priority executable pending issue."""
-    cutover_open = any(issue["number"] == eligibility.RUST_CUTOVER_EPIC for issue in issues)
     candidates: list[Candidate] = []
     for issue in issues:
         labels = _labels(issue)
-        if not eligibility.rust_cutover_work_allowed(
-            labels, issue.get("body"), cutover_open=cutover_open
-        ):
-            continue
         if "ralph-status:pending" not in labels or labels & EXCLUDED_LABELS:
             continue
         if labels & EPIC_ACCEPTANCE_LABELS or _is_manual_only(issue):
@@ -245,14 +240,6 @@ def _start_task(issue_number: int) -> int:
     }
     if _has_unresolved_dependency(issue, closed_numbers):
         raise RuntimeError(f"#{issue_number} has an unresolved dependency; no status change made")
-    cutover_open = any(
-        row["number"] == eligibility.RUST_CUTOVER_EPIC
-        for row in _gh_issue_list("open")
-    )
-    if not eligibility.rust_cutover_work_allowed(
-        labels, issue.get("body"), cutover_open=cutover_open
-    ):
-        raise RuntimeError(f"#{issue_number} must wait for Rust cutover #4335")
 
     _run_gh(
         [
@@ -315,17 +302,11 @@ def explain_issue(
         open_numbers=open_numbers,
         require_ralph_labels=True,
     )
-    cutover_allowed = eligibility.rust_cutover_work_allowed(
-        _labels(issue), issue.get("body"),
-        cutover_open=eligibility.RUST_CUTOVER_EPIC in open_numbers,
-    )
     return {
         "issue": number,
         "selector": "next_task",
-        "eligible": verdict.eligible and cutover_allowed,
-        "reasons": list(verdict.reasons) + (
-            [] if cutover_allowed else ["Rust cutover #4335 is still open"]
-        ),
+        "eligible": verdict.eligible,
+        "reasons": list(verdict.reasons),
         "labels": sorted(_labels(issue)),
         "not_evaluated": [
             "canonical open-PR suppression (controller-only gate)",
