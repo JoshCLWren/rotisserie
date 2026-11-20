@@ -83,6 +83,11 @@ factory_gh_resolve_real() {
   return 1
 }
 
+# Budget gates ask about the shared workflow-token bucket, not the reader App's.
+factory_gh_reads_workflow_budget() {
+  [[ "${1:-}" == api && "${2:-}" =~ ^/?rate_limit([?]|$) ]]
+}
+
 # Run the real gh, using the read-only token for pure reads when configured.
 factory_gh_real() {
   local real depth="${FACTORY_GH_SHIM_DEPTH:-0}"
@@ -98,6 +103,7 @@ factory_gh_real() {
   # Installation tokens expire after an hour; long sessions fall back.
   if [[ -n "${FACTORY_READ_TOKEN:-}" ]] \
     && (( $(date +%s) < ${FACTORY_READ_TOKEN_EXPIRES:-0} )) \
+    && ! factory_gh_reads_workflow_budget "$@" \
     && factory_gh_is_read "$@"; then
     FACTORY_GH_SHIM_DEPTH=$((depth + 1)) GH_TOKEN="$FACTORY_READ_TOKEN" "$real" "$@"
   else
