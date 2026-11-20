@@ -249,7 +249,7 @@ run_agent() {
     mission+=" This is a same-lease fast-check repair, not a fresh review. The prior unpushed edits are still in this worktree. Read the local trusted fast-check log at ${FACTORY_FAST_CHECK_FEEDBACK_FILE}, correct the concrete failures while retaining valid changes, and run focused validation. The wrapper will independently rerun scope and pre-push checks. Do not commit or push."
   fi
 
-  prompt="Read AGENTS.md first, then whichever of these exist in this repository: docs/ISSUE_EXECUTION_PROTOCOL.md, docs/AUTONOMOUS_FACTORY_POLICY.md, docs/CHATGPT_FACTORY_PROMPT.md, docs/FACTORY_GITHUB_VISIBILITY.md. Follow this repository's factory policy.  Edit only the assigned target, run focused validation, and use GitHub for review context. Do not commit or push; the wrapper persists changes. Do not merge or close the assigned pull request; the trusted wrapper and review controller own the final lifecycle transition after your terminal verdict. Do not switch models, providers, or routes. A provider failure is a result for this lane, not permission to fall back to another paid or unrequested route. Do not enable auto-merge, push main, touch production databases, or alter automation schedules. Run context: Worker: ${WORKER_ID}; source: ${SOURCE}; model: ${MODEL}; runtime: ${RUNTIME_MODEL}; target: ${target}. ${mission}"
+  prompt="Read AGENTS.md first and follow its instructions, including any policy documents it names. Follow this repository's factory policy.  Edit only the assigned target, run focused validation, and use GitHub for review context. Do not commit or push; the wrapper persists changes. Do not merge or close the assigned pull request; the trusted wrapper and review controller own the final lifecycle transition after your terminal verdict. Do not switch models, providers, or routes. A provider failure is a result for this lane, not permission to fall back to another paid or unrequested route. Do not enable auto-merge, push main, touch production databases, or alter automation schedules. Run context: Worker: ${WORKER_ID}; source: ${SOURCE}; model: ${MODEL}; runtime: ${RUNTIME_MODEL}; target: ${target}. ${mission}"
 
   bash "$TRUSTED_KILO_HELPER" \
     "$timeout_seconds" \
@@ -259,8 +259,7 @@ run_agent() {
   return "$status"
 }
 
-# Trusted Greptile outcome gate (docs/FACTORY_GITHUB_VISIBILITY.md,
-# "Greptile outcome gate"). Runs after the agent, right before any ready or
+# Trusted Greptile outcome gate. Runs after the agent, right before any ready or
 # review handoff:
 #   1. rebuilds the findings file and the open Greptile findings from a fresh,
 #      complete fetch (fail closed when the fetch is incomplete);

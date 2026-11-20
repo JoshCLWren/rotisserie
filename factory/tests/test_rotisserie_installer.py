@@ -254,7 +254,8 @@ def test_overlay_never_ships_an_adopters_product_policy() -> None:
         assert not (FACTORY / doc).exists()
 
 
-def test_worker_prompt_reads_policy_docs_only_when_the_adopter_has_them() -> None:
+def test_worker_prompt_names_no_adopter_files() -> None:
     worker = (FACTORY / ".github/scripts/free-model-factory-worker-primitives.sh").read_text()
-    assert "Read AGENTS.md first, then whichever of these exist in this repository" in worker
-    assert "canonical product-first factory policy" not in worker
+    assert "Read AGENTS.md first and follow its instructions" in worker
+    for doc in ADOPTER_OWNED_DOCS:
+        assert doc not in worker
