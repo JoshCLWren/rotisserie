@@ -744,7 +744,6 @@ post_readable_handoff() {
   # for this one gh call and the git remote is never touched.
   local kind="$1" number="$2" head="${3:-}" detail="${4:-}"
   local helper="${TRUSTED_WORKER_APP_HELPER:-.github/scripts/factory_worker_github_app.py}"
-  mark_worker_via "$number"
   local mapping="${TRUSTED_WORKER_APP_MAPPING:-${FACTORY_WORKER_APP_MAPPING:-}}"
   local resolved source token body_file had_xtrace=0
   # The minted installation token is not a repository secret, so Actions will

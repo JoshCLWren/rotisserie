@@ -775,6 +775,7 @@ if [[ "$MODE" == 'issue' ]]; then
     release_target "$pr" 'factory:review' 'pr-opened-handoff' 'pr'
     # Trusted markers above stay on github-actions[bot]. Worker 48 may add a
     # separate plain-prose handoff as its App (#3135); others post nothing.
+    mark_worker_via "$pr"
     post_readable_handoff implementation "$pr" "$(git rev-parse HEAD)" "Opened from issue #${NUMBER}."
     record_terminal_outcome success "issue #${NUMBER} produced PR #${pr} and handed it to review"
     discard_delivered_checkpoint "$pr"
@@ -813,6 +814,7 @@ if persist_pr_changes "$NUMBER" "$BRANCH"; then
   fi
   log "pushed repairs to PR #${NUMBER}; handing it to the merge controller as ${pushed_stage}"
   release_pr_and_issue "$NUMBER" "$BRANCH" "$pushed_stage" "$pushed_reason"
+  mark_worker_via "$NUMBER"
   post_readable_handoff repair "$NUMBER" "$(git rev-parse HEAD)" "Repairs were pushed and the lease was released for independent review."
   record_terminal_outcome success "PR #${NUMBER} repairs were persisted and handed to review"
   discard_delivered_checkpoint "$NUMBER"
@@ -1069,6 +1071,7 @@ fi
 # Trusted review marker/comment stayed on github-actions[bot] above. Worker 48
 # may additionally post a plain-prose review handoff as its App. Never widen
 # TRUSTED_FACTORY_APP_SLUGS and never pass the App token into the controller.
+mark_worker_via "$NUMBER"
 post_readable_handoff review "$NUMBER" "$EXPECTED_HEAD" "Semantic verdict: ${verdict}."
 record_terminal_outcome success "PR #${NUMBER} semantic verdict completed through the trusted review controller"
 
