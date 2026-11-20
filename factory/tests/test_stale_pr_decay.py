@@ -559,96 +559,6 @@ def test_process_stale_prs_skips_reopened_pr_with_trusted_marker(monkeypatch) ->
     assert closed == []
 
 
-def test_stale_pr_cutover_deferral_preserves_open_pr(monkeypatch) -> None:
-    """A deferred issue's existing PR must survive long waits until #4335 closes."""
-    now = 1_800_000_000
-    created = datetime.fromtimestamp(now - 700_000, tz=UTC).strftime(
-        "%Y-%m-%dT%H:%M:%SZ"
-    )
-    pr = make_pr(
-        4704, created=created, state="OPEN",
-        branch="factory/45-3507-opencode-free",
-    )
-    baseline = {"sample_size": 50, "threshold_seconds": 90_000}
-    monkeypatch.setattr(module, "get_staleness_baseline", lambda *_a, **_kw: baseline)
-    monkeypatch.setattr(module, "get_pr_comments", lambda _n: [])
-    monkeypatch.setattr(
-        module, "gh_json",
-        lambda args: (
-            {"state": "open"} if args[1].endswith("/4335")
-            else {
-                "state": "open", "labels": [],
-                "body": "Depends on #4335",
-            }
-        ),
-    )
-    closed: list[int] = []
-    monkeypatch.setattr(
-        module, "record_stale_expiration",
-        lambda pr_number, *_args: closed.append(pr_number) or "marker",
-    )
-    result = module.process_stale_prs(prs=[pr], now_epoch=now)
-    assert result[0]["status"] == "cutover-deferred"
-    assert closed == []
-
-
-def test_stale_pr_cutover_issue_is_reported_without_closing(monkeypatch) -> None:
-    """Even active Rust attempts keep their exact-head code when old."""
-    now = 1_800_000_000
-    created = datetime.fromtimestamp(now - 700_000, tz=UTC).strftime(
-        "%Y-%m-%dT%H:%M:%SZ"
-    )
-    pr = make_pr(
-        4703, created=created, state="OPEN",
-        branch="factory/46-4589-kilo-auto",
-    )
-    baseline = {"sample_size": 50, "threshold_seconds": 90_000}
-    monkeypatch.setattr(module, "get_staleness_baseline", lambda *_a, **_kw: baseline)
-    monkeypatch.setattr(module, "get_pr_comments", lambda _n: [])
-    monkeypatch.setattr(
-        module, "gh_json",
-        lambda args: (
-            {"state": "open"} if args[1].endswith("/4335")
-            else {"state": "open", "labels": [{"name": "rust"}], "body": ""}
-        ),
-    )
-    closed: list[int] = []
-    monkeypatch.setattr(
-        module, "record_stale_expiration",
-        lambda pr_number, *_args: closed.append(pr_number) or "marker",
-    )
-    result = module.process_stale_prs(prs=[pr], now_epoch=now)
-    assert result[0]["status"] == "stale-preserved"
-    assert result[0]["issue"] == 4589
-    assert closed == []
-
-
-def test_stale_pr_cutover_state_lookup_failure_cannot_close_pr(monkeypatch) -> None:
-    """Transient GitHub failures must never delete potentially deferred work."""
-    now = 1_800_000_000
-    created = datetime.fromtimestamp(now - 700_000, tz=UTC).strftime(
-        "%Y-%m-%dT%H:%M:%SZ"
-    )
-    pr = make_pr(4704, created=created, state="OPEN")
-    monkeypatch.setattr(
-        module, "get_staleness_baseline",
-        lambda *_a, **_kw: {"sample_size": 50, "threshold_seconds": 90_000},
-    )
-    monkeypatch.setattr(module, "get_pr_comments", lambda _n: [])
-    def no_api(_args: list[str]) -> None:
-        raise RuntimeError("GitHub unavailable")
-
-    monkeypatch.setattr(module, "gh_json", no_api)
-    closed: list[int] = []
-    monkeypatch.setattr(
-        module, "record_stale_expiration",
-        lambda pr_number, *_args: closed.append(pr_number) or "marker",
-    )
-    result = module.process_stale_prs(prs=[pr], now_epoch=now)
-    assert result[0]["status"] == "cutover-check-unavailable"
-    assert closed == []
-
-
 def test_process_stale_prs_does_not_close_manual_only_pr(monkeypatch) -> None:
     """A factory PR with the shared manual-only marker must stay open.
 
@@ -691,7 +601,6 @@ def test_process_stale_prs_does_not_close_manual_only_pr(monkeypatch) -> None:
         ),
     )
 
-    monkeypatch.setattr(module, "stale_pr_is_cutover_deferred", lambda _pr: False)
     results = module.process_stale_prs(prs=[hold, ordinary], now_epoch=now)
     by_pr = {int(result["pr"]): result for result in results}
 
@@ -721,7 +630,6 @@ def test_age_only_preserves_review_claim_commit_and_issue_even_in_normal_mode(mo
     baseline = {"sample_size": 50, "threshold_seconds": 90_000}
     monkeypatch.setattr(module, "get_staleness_baseline", lambda *_a, **_kw: baseline)
     monkeypatch.setattr(module, "get_pr_comments", lambda _n: [])
-    monkeypatch.setattr(module, "stale_pr_is_cutover_deferred", lambda _pr: False)
 
     def forbid_destructive_call(*_args, **_kwargs) -> None:
         raise AssertionError("age-only stale evaluation must never write or close")
@@ -765,7 +673,6 @@ def test_stale_report_preserves_branch_without_linked_issue(monkeypatch) -> None
         lambda *_a, **_kw: {"sample_size": 20, "threshold_seconds": 90_000},
     )
     monkeypatch.setattr(module, "get_pr_comments", lambda _n: [])
-    monkeypatch.setattr(module, "stale_pr_is_cutover_deferred", lambda _pr: False)
     monkeypatch.setattr(
         module,
         "record_stale_expiration",
