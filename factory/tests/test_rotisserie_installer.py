@@ -235,3 +235,26 @@ def test_conditional_checkout_conditions_the_runtime_steps() -> None:
     assert steps[1]["if"] == condition and steps[1]["with"]["repository"] == "example/rotisserie"
     assert steps[2]["if"] == condition and "overlay.sh" in steps[2]["run"]
     assert steps[3] == {"run": "echo done"}
+
+
+ADOPTER_OWNED_DOCS = (
+    "docs/AUTONOMOUS_FACTORY_POLICY.md",
+    "docs/CHATGPT_FACTORY_PROMPT.md",
+    "docs/FACTORY_GITHUB_VISIBILITY.md",
+    "docs/RUST_FACTORY_ENDPOINT_PATTERN.md",
+    "prompts/agent-next-task.md",
+    "scripts/check-autonomous-factory-policy.py",
+)
+
+
+def test_overlay_never_ships_an_adopters_product_policy() -> None:
+    paths = (FACTORY / "install" / "overlay-paths.txt").read_text(encoding="utf-8").split()
+    for doc in ADOPTER_OWNED_DOCS:
+        assert doc not in paths
+        assert not (FACTORY / doc).exists()
+
+
+def test_worker_prompt_reads_policy_docs_only_when_the_adopter_has_them() -> None:
+    worker = (FACTORY / ".github/scripts/free-model-factory-worker-primitives.sh").read_text()
+    assert "Read AGENTS.md first, then whichever of these exist in this repository" in worker
+    assert "canonical product-first factory policy" not in worker
