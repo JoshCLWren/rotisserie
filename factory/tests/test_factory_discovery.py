@@ -72,7 +72,7 @@ def test_pr_event_reads_only_pr_linked_issue_and_cutover_gate(controller, monkey
     assert calls == [('pr', 42), ('issue', 41), ('issue', epic)]
 
 
-def test_targeted_issue_snapshot_retains_rust_freeze(controller, monkeypatch):
+def test_targeted_issue_snapshot_respects_owner_released_rust_freeze(controller, monkeypatch):
     epic = controller.eligibility.RUST_CUTOVER_EPIC
     issue_number = epic + 1
     monkeypatch.setenv('FACTORY_DISCOVERY_TARGET', f'issue:{issue_number}')
@@ -86,7 +86,7 @@ def test_targeted_issue_snapshot_retains_rust_freeze(controller, monkeypatch):
     monkeypatch.setattr(controller, 'gh_json', lambda *_: pytest.fail('global inventory discovery'))
     selected = controller.list_issues()
     assert [row['number'] for row in selected] == [issue_number, epic]
-    assert controller.build_candidates(selected, []) == []
+    assert [(candidate.kind, candidate.number) for candidate in controller.build_candidates(selected, [])] == [('issue', issue_number)]
     labels = rows[issue_number]['labels']
     assert isinstance(labels, list)
     labels.append({'name': 'rust'})

@@ -3077,10 +3077,10 @@ def _wire_dependency_gate(
     return fetched, native_paths
 
 
-def test_rust_cutover_merge_gate_blocks_unmarked_new_issue(
+def test_rust_cutover_merge_gate_allows_unmarked_new_issue_after_owner_release(
     monkeypatch: MonkeyPatch,
 ) -> None:
-    """An issue created after the backlog sweep must not merge during cutover."""
+    """The lifted scheduling gate must not reject an independent new issue."""
     module = load_review_controller()
     _wire_dependency_gate(
         monkeypatch,
@@ -3091,8 +3091,7 @@ def test_rust_cutover_merge_gate_blocks_unmarked_new_issue(
         cutover_state="open",
     )
     result = module.declared_dependency_gate(4708)
-    assert result["decision"] == "retry"
-    assert "#4335" in result["reason"]
+    assert result["decision"] == "pass"
 
 
 def test_rust_cutover_merge_gate_allows_labeled_cutover_issue(

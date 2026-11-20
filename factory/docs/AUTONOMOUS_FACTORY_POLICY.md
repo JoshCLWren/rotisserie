@@ -14,6 +14,8 @@ For original owner-requested engineering objectives, follow [`docs/OBJECTIVE_FIR
 
 ## Owner-directed Rust cutover backlog freeze (2026-11-15)
 
+**2026-11-20 owner scheduling update:** The exclusive Rust-first issue-intake gate is retired. Independently executable product issues are selectable even while #4335 remains open for its separate production acceptance and cleanup. Explicit `Depends on #4335` declarations, ordinary dependencies, `manual-only` directives, blocked labels, and live claims still gate their respective work. Do not claim or close the epic by inference, and never reintroduce Python/v1 runtime behavior. The following **new issue-creation restriction remains** until the owner separately lifts it:
+
 Scheduled factories, local coding agents, reviewers and automated controllers **must not open new GitHub issues or sub-issues, split existing issues, or convert CI/test findings into new backlog tickets without an explicit owner instruction for that exact creation**. Continue repairing problems within the approved issue/PR/objective when safe. When genuine out-of-scope work is encountered, attach compact evidence to the existing canonical issue or PR comment and leave ownership and acceptance truthful; do not manufacture a second executable parent or a swarm of children. Keep existing issues and PRs moving and close completed work normally. An owner-directed interactive change may explicitly authorize a bounded split with a parent checklist and a clearly designated execution owner. This freeze does not change the existing single-incident production deployment recovery mechanism; main CI failures must remain check/run failures, never new main-breakage issues.
 
 ## Continuous delivery cycle

@@ -274,25 +274,22 @@ def parse_declared_dependencies(body: str | None) -> set[int]:
 
 
 RUST_CUTOVER_EPIC = 4335
-RUST_CUTOVER_EXECUTION_LABELS = frozenset({"rust", "main-breakage"})
 
 
 def rust_cutover_work_allowed(
     labels: Iterable[str], body: str | None, *, cutover_open: bool
 ) -> bool:
-    """Admit only explicit Rust-cutover work while the cutover epic is open.
+    """Honor explicit cutover dependencies without the retired global intake freeze.
 
-    Issue bodies declaring a prerequisite on the epic always wait, even if a
-    stale Rust label remains. New unrelated tickets without an explicit
-    dependency also wait by default; an allowed Rust ticket must carry the
-    existing ``rust`` label. A main-breakage incident may unblock production.
-    After the epic closes, normal factory eligibility applies unchanged.
+    The owner lifted Rust-exclusive scheduling on 2026-11-20. Ordinary issues
+    can enter factory selection while #4335 remains open for integrated
+    acceptance; only tickets explicitly depending on that open epic must wait.
+    All other manual-only, dependency, ownership, and blocked-label gates still
+    apply in the shared eligibility policy.
     """
-    if not cutover_open:
-        return True
-    if RUST_CUTOVER_EPIC in parse_declared_dependencies(body):
-        return False
-    return bool(set(labels) & RUST_CUTOVER_EXECUTION_LABELS)
+    return not (
+        cutover_open and RUST_CUTOVER_EPIC in parse_declared_dependencies(body)
+    )
 
 
 def owner_of(labels: Iterable[str]) -> str | None:
