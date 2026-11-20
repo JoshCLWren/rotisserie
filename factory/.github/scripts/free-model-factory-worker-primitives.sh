@@ -709,6 +709,32 @@ stage_trusted_worker_app_helper() {
   export TRUSTED_WORKER_APP_HELPER
 }
 
+worker_via_label() {
+  local model="${MODEL##*/}"
+  model="${model%:free}"
+  local name="via:${SOURCE}/${model}"
+  printf '%s' "${name:0:50}"
+}
+
+mark_worker_via() {
+  # Readable "last worked by" label: provider and model. The numeric owner
+  # label stays the lease key. Best effort with the workflow token.
+  local number="$1" name current old
+  local -a args
+  name="$(LC_ALL=C worker_via_label)"
+  current="$(gh issue view "$number" --json labels \
+    --jq '.labels[].name | select(startswith("via:"))' 2>/dev/null)" || return 0
+  [[ "$current" == "$name" ]] && return 0
+  gh label create "$name" --color c5def5 \
+    --description 'Factory provider and model that last worked on this' --force >/dev/null 2>&1 || return 0
+  args=(--add-label "$name")
+  while IFS= read -r old; do
+    [[ -n "$old" && "$old" != "$name" ]] && args+=(--remove-label "$old")
+  done <<< "$current"
+  gh issue edit "$number" "${args[@]}" >/dev/null 2>&1 || true
+  return 0
+}
+
 post_readable_handoff() {
   # Human-readable implementation/repair/review handoff (#3135). Worker 48 posts
   # through its own App; every other worker posts through the shared factory App
