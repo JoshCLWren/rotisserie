@@ -46,6 +46,7 @@ def harness(monkeypatch: pytest.MonkeyPatch) -> dict:
                "labels": labels("factory", "factory:46", "factory:building")},
         "producers": [], "timeline": [], "base_date": "2026-11-18T00:00:00Z",
     }
+    monkeypatch.setattr(handoff, "PUBLISHED_ISSUES", {})
     monkeypatch.setattr(handoff, "verified_run", lambda *_: state["run"])
     monkeypatch.setattr(handoff, "newer_worker_run", lambda *_: False)
     monkeypatch.setattr(handoff, "checkpoint", lambda *_: state["saved"])
@@ -613,3 +614,12 @@ def test_sweep_limit_takes_the_newest_runs_by_number(
     assert published == ["100", "25"]
     workflow = (ROOT / ".github/workflows/factory-checkpoint-reconcile.yml").read_text()
     assert "--sweep --limit 20" in workflow
+
+
+def test_one_sweep_publishes_one_pr_per_issue_before_github_indexes_it(harness: dict) -> None:
+    assert handoff.publish(REPO, RUN)["published"]
+    harness["drafts"].clear()
+    harness["saved"] = {**harness["saved"], "branch": BRANCH.replace(RUN, "12346")}
+    result = handoff.publish(REPO, "12346")
+    assert not result["published"] and "PR #5152" in result["detail"]
+    assert sum(call[1] == "POST" and call[0].endswith("/pulls") for call in harness["calls"]) == 1

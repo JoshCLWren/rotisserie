@@ -492,10 +492,16 @@ def saved_receipt(saved: dict, result: dict) -> dict:
             "checkpoint_sha": saved.get("origin_head") or saved["head"]}
 
 
+PUBLISHED_ISSUES: dict[int, int] = {}
+
+
 def superseded(repo: str, saved: dict, issue: dict) -> str:
     """Name newer issue work that makes publishing an ended run's checkpoint a duplicate."""
     if issue.get("state") != "open":
         return "issue is closed"
+    if issue["number"] in PUBLISHED_ISSUES:
+        # GitHub adds the cross-reference event a few seconds after the PR exists.
+        return f"open work PR #{PUBLISHED_ISSUES[issue['number']]} already carries the issue"
     base_date = ""
     for event in pages(f"repos/{repo}/issues/{issue['number']}/timeline"):
         source = (event.get("source") or {}).get("issue") or {}
@@ -565,6 +571,7 @@ def publish(repo: str, run_id: str, *, cleanup: bool = False, source_ended: bool
                      draft=False)
             if not isinstance(pr, dict):
                 raise RuntimeError("GitHub did not return the normal issue PR")
+            PUBLISHED_ISSUES[issue["number"]] = pr["number"]
     if pr.get("state") != "open":
         merge = merged_checkpoint_receipt(repo, saved, pr)
         if cleanup and original and merge:
