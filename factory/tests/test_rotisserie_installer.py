@@ -95,9 +95,16 @@ def test_other_repository_checkouts_are_not_overlaid() -> None:
     assert install.render(template, source="example/rotisserie", ref=REF) == template
 
 
-def test_ref_must_be_an_exact_commit() -> None:
-    with pytest.raises(install.InstallError):
-        install.render("jobs: {}\n", source="example/rotisserie", ref="main")
+def test_ref_tracks_a_branch_or_pins_an_exact_commit() -> None:
+    for ref in ("main", "a" * 40):
+        assert install.render("jobs: {}\n", source="example/rotisserie", ref=ref) == "jobs: {}\n"
+    for bad in ("", "-main", "main branch", "main..evil", "abc123"[:0] + "ref;rm"):
+        with pytest.raises(install.InstallError):
+            install.render("jobs: {}\n", source="example/rotisserie", ref=bad)
+
+
+def test_installer_tracks_main_by_default() -> None:
+    assert install.DEFAULT_REF == "main"
 
 
 def test_overlay_never_ships_adopter_state_or_adopter_docs() -> None:

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Copy the pinned Rotisserie factory runtime into an adopter checkout.
+# Copy the checked-out Rotisserie factory runtime into an adopter checkout.
 #
 # Usage: overlay.sh [adopter-dir]
 #
