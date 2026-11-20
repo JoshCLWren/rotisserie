@@ -1,4 +1,4 @@
-"""End-to-end queue-selection regression for Rust-cutover-first factory work."""
+"""End-to-end queue-selection regression for owner-released factory work."""
 
 from __future__ import annotations
 
@@ -49,9 +49,9 @@ def numbers(issues: list[dict], prs: list[dict]) -> set[tuple[str, int]]:
     return {(item.kind, item.number) for item in policy.build_candidates(issues, prs)}
 
 
-def test_new_unrelated_issue_waits_without_needing_body_rewrite() -> None:
+def test_new_unrelated_issue_is_eligible_while_epic_remains_open() -> None:
     epic = issue(4335, "epic")
-    assert numbers([epic, issue(4707)], []) == set()
+    assert numbers([epic, issue(4707)], []) == {("issue", 4707)}
     assert numbers([issue(4707)], []) == {("issue", 4707)}
 
 
@@ -107,8 +107,8 @@ def test_only_an_explicit_epic_dependency_defers_an_open_pr() -> None:
     assert numbers([epic], [orphan]) == set()
 
 
-def test_local_selector_honors_cutover_gate_and_releases_when_epic_closes() -> None:
-    """Local issue sweeps cannot pick new unrelated work during the cutover."""
+def test_local_selector_allows_unrelated_work_without_closing_epic() -> None:
+    """Local issue sweeps must honor the owner's lifted scheduling freeze."""
     from scripts import next_task
 
     def local_issue(number: int, *labels: str) -> dict:
@@ -123,38 +123,41 @@ def test_local_selector_honors_cutover_gate_and_releases_when_epic_closes() -> N
     epic = local_issue(4335, "epic")
     unrelated = local_issue(4707, "ralph-task", "ralph-status:pending")
     rust = local_issue(4346, "rust", "ralph-task", "ralph-status:pending")
-    assert next_task.select_next([epic, unrelated], set()) is None
+    selected_unrelated = next_task.select_next([epic, unrelated], set())
+    assert selected_unrelated is not None
+    assert selected_unrelated.issue["number"] == 4707
     selected_rust = next_task.select_next([epic, unrelated, rust], set())
     assert selected_rust is not None
-    assert selected_rust.issue["number"] == 4346
+    assert selected_rust.issue["number"] in {4346, 4707}
     selected_after = next_task.select_next([unrelated], {4335})
     assert selected_after is not None
     assert selected_after.issue["number"] == 4707
 
 
-def test_local_explicit_start_rejects_unmarked_issue_during_cutover(monkeypatch) -> None:
-    """Direct start-task cannot sidestep the same issue-intake policy."""
-    import pytest
+def test_local_explicit_start_allows_unmarked_issue_after_owner_release(monkeypatch) -> None:
+    """Direct start-task agrees with the reopened issue selector."""
     from scripts import next_task
 
-    issue = {
+    selected = {
         "number": 4707, "title": "New non-Rust work",
         "body": "", "labels": [
             {"name": "ralph-task"},
             {"name": "ralph-status:pending"},
         ],
     }
-    monkeypatch.setattr(next_task, "_gh_issue", lambda _n: issue)
+    calls = []
+    monkeypatch.setattr(next_task, "_gh_issue", lambda _n: selected)
     monkeypatch.setattr(
         next_task, "_gh_issue_list",
         lambda state: ([{"number": 4335}] if state == "open" else []),
     )
-    with pytest.raises(RuntimeError, match="wait for Rust cutover"):
-        next_task._start_task(4707)
+    monkeypatch.setattr(next_task, "_run_gh", lambda *args: calls.append(args))
+    assert next_task._start_task(4707) == 0
+    assert len(calls) == 2
 
 
-def test_controller_explanation_reports_rust_cutover_deferral(monkeypatch) -> None:
-    """The operator eligibility report must agree with actual queue selection."""
+def test_controller_explanation_reports_released_work_as_eligible(monkeypatch) -> None:
+    """Operator eligibility agrees with actual reopened queue selection."""
     spec = importlib.util.spec_from_file_location(
         "factory_work_controller_rust_gate",
         SCRIPTS / "factory-work-controller.py",
@@ -174,9 +177,9 @@ def test_controller_explanation_reports_rust_cutover_deferral(monkeypatch) -> No
         no_diff_attempts_by_issue={},
         include_dynamic_gates=False,
     )
-    assert report["eligible"] is False
-    assert report["dynamic_gates"]["rust_cutover_allowed"] is False
-    assert any("Rust cutover #4335" in text for text in report["reasons"])
+    assert report["eligible"] is True
+    assert report["dynamic_gates"]["rust_cutover_allowed"] is True
+    assert not any("Rust cutover #4335" in reason for reason in report["reasons"])
 
 
 def test_deferred_pr_backlog_does_not_saturate_rust_issue_intake(monkeypatch) -> None:
