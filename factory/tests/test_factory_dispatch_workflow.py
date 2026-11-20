@@ -558,3 +558,44 @@ def test_workers_without_work_never_end_the_batch() -> None:
         ["6", "7", "8", "9"],
     )
     assert dispatched == ["9"]
+
+
+def _run_chain_step(tmp_path: Path, **outputs: str) -> tuple[str, str]:
+    import os
+    import subprocess
+
+    import yaml
+
+    workflow = yaml.safe_load(WORKFLOW.read_text(encoding="utf-8"))
+    step = next(
+        step
+        for step in workflow["jobs"]["dispatch"]["steps"]
+        if step.get("name") == "Queue roster successor outside assignment lease lock"
+    )
+    log = tmp_path / "gh.log"
+    gh = tmp_path / "gh"
+    gh.write_text(f'#!/usr/bin/env bash\nprintf "%s\\n" "$*" >> "{log}"\n')
+    gh.chmod(0o755)
+    env = {**os.environ, "PATH": f"{tmp_path}:{os.environ['PATH']}", "GITHUB_REPOSITORY": "acme/widgets",
+           "DISPATCHED_COUNT": "", "DISPATCH_FAILED": "", "UNAVAILABLE_COUNT": "",
+           "BUDGET_DEFERRED": "false", "BUDGET_UNREADABLE": "false", "QUOTA_DEFERRED": "", **outputs}
+    result = subprocess.run(["bash", "-c", step["run"]], env=env, text=True, capture_output=True, check=True)
+    return result.stdout, log.read_text() if log.exists() else ""
+
+
+def test_unavailable_workers_keep_the_roster_chain(tmp_path: Path) -> None:
+    out, calls = _run_chain_step(tmp_path, DISPATCHED_COUNT="0", DISPATCH_FAILED="false", UNAVAILABLE_COUNT="6")
+    assert "worker(s) were unavailable; chaining roster successor" in out
+    assert "fixed-model-factory-roster-successor.yml" in calls
+
+
+def test_a_tick_with_no_unavailable_worker_and_no_work_ends_the_chain(tmp_path: Path) -> None:
+    out, calls = _run_chain_step(tmp_path, DISPATCHED_COUNT="0", DISPATCH_FAILED="false", UNAVAILABLE_COUNT="0")
+    assert "Trustworthy zero-work tick" in out
+    assert calls == ""
+
+
+def test_dispatch_loop_counts_unavailable_workers() -> None:
+    workflow = WORKFLOW.read_text(encoding="utf-8")
+    assert "unavailable_count=$(( ${unavailable_count:-0} + 1 ))" in workflow
+    assert 'echo "unavailable_count=${unavailable_count}" >> "$GITHUB_OUTPUT"' in workflow

@@ -627,6 +627,7 @@ jobs:
               none)
                 reason="$(jq -r '.reason // "no_work"' <<< "$assignment" 2>/dev/null || echo no_work)"
                 if [[ "$reason" == "worker_unavailable" ]]; then
+                  unavailable_count=$(( ${unavailable_count:-0} + 1 ))
                   echo "Factory ${worker}: unavailable this tick; trying next worker"
                 else
                   echo "Factory ${worker}: no executable control-plane assignment"
@@ -771,6 +772,7 @@ jobs:
 
           echo "Dispatching workers through centralized assignment: $workers"
           dispatched_count=0
+          unavailable_count=0
           dispatch_failures=0
           budget_deferred=false
           budget_unreadable=false
@@ -799,6 +801,7 @@ jobs:
           echo "budget_unreadable=${budget_unreadable}" >> "$GITHUB_OUTPUT"
           echo "Dispatched ${dispatched_count} worker entry workflow(s)"
           echo "dispatched_count=${dispatched_count}" >> "$GITHUB_OUTPUT"
+          echo "unavailable_count=${unavailable_count}" >> "$GITHUB_OUTPUT"
           if (( dispatch_failures > 0 )); then
             echo "dispatch_failed=true" >> "$GITHUB_OUTPUT"
             echo "${dispatch_failures} worker dispatch(es) failed after retries; later workers were still attempted" >&2
@@ -889,6 +892,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           DISPATCHED_COUNT: ${{ steps.dispatch_workers.outputs.dispatched_count }}
+          UNAVAILABLE_COUNT: ${{ steps.dispatch_workers.outputs.unavailable_count }}
           DISPATCH_FAILED: ${{ steps.dispatch_workers.outputs.dispatch_failed }}
           API_RESET_EPOCH: ${{ steps.api_budget.outputs.reset_epoch }}
           QUOTA_DEFERRED: ${{ steps.api_budget.outputs.quota_deferred }}
@@ -946,6 +950,10 @@ jobs:
 
           if [[ "$dispatch_failed" == "true" || ( "$dispatched_count" =~ ^[0-9]+$ && "$dispatched_count" -gt 0 ) ]]; then
             echo "Chaining roster successor (dispatched_count=${dispatched_count}, dispatch_failed=${dispatch_failed})"
+            chain_roster_successor
+          elif [[ "$dispatched_count" == "0" && "${UNAVAILABLE_COUNT:-0}" =~ ^[1-9][0-9]*$ ]]; then
+            # Unavailable workers say nothing about the queue; keep the chain.
+            echo "No dispatch, but ${UNAVAILABLE_COUNT} worker(s) were unavailable; chaining roster successor"
             chain_roster_successor
           elif [[ "$dispatched_count" == "0" && "$dispatch_failed" == "false" ]]; then
             echo 'Trustworthy zero-work tick: ending bounded roster session; hourly watchdog cron remains armed'
