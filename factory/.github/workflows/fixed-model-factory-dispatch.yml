@@ -918,6 +918,16 @@ jobs:
           # A valid low REST budget must not kill the roster chain until GitHub's
           # next hourly watchdog. Delegate the quota-reset delay without polling
           # or holding either concurrency lock.
+          # This job holds the assignment lock, so retry without sleeping.
+          dispatch_with_retry() {
+            local attempt
+            for attempt in 1 2 3; do
+              "$@" && return 0
+              echo "::warning::workflow dispatch failed (attempt ${attempt}/3)"
+            done
+            return 1
+          }
+
           defer_until_reset() {
             local reset_epoch="${API_RESET_EPOCH:-}" now_epoch delay_seconds
             if ! [[ "$reset_epoch" =~ ^[0-9]+$ && ${#reset_epoch} -le 11 ]]; then
@@ -932,7 +942,7 @@ jobs:
               return 1
             fi
             echo "REST reserve reached; queueing roster for quota reset in ${delay_seconds}s"
-            gh workflow run fixed-model-factory-roster-successor.yml \
+            dispatch_with_retry gh workflow run fixed-model-factory-roster-successor.yml \
               --repo "$GITHUB_REPOSITORY" --ref main -f "delay_seconds=$delay_seconds"
           }
 
@@ -944,7 +954,7 @@ jobs:
           chain_roster_successor() {
             # Never sleep while holding fixed-model-factory-dispatch's shared
             # assignment lock or its workflow-level ingress lock.
-            gh workflow run fixed-model-factory-roster-successor.yml \
+            dispatch_with_retry gh workflow run fixed-model-factory-roster-successor.yml \
               --repo "$GITHUB_REPOSITORY" --ref main -f delay_seconds=240
           }
 

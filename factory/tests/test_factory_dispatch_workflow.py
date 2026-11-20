@@ -560,7 +560,7 @@ def test_workers_without_work_never_end_the_batch() -> None:
     assert dispatched == ["9"]
 
 
-def _run_chain_step(tmp_path: Path, **outputs: str) -> tuple[str, str]:
+def _run_chain_step(tmp_path: Path, gh_body: str = "", **outputs: str) -> tuple[str, str]:
     import os
     import subprocess
 
@@ -574,7 +574,7 @@ def _run_chain_step(tmp_path: Path, **outputs: str) -> tuple[str, str]:
     )
     log = tmp_path / "gh.log"
     gh = tmp_path / "gh"
-    gh.write_text(f'#!/usr/bin/env bash\nprintf "%s\\n" "$*" >> "{log}"\n')
+    gh.write_text(f'#!/usr/bin/env bash\nprintf "%s\\n" "$*" >> "{log}"\n{gh_body}')
     gh.chmod(0o755)
     env = {**os.environ, "PATH": f"{tmp_path}:{os.environ['PATH']}", "GITHUB_REPOSITORY": "acme/widgets",
            "DISPATCHED_COUNT": "", "DISPATCH_FAILED": "", "UNAVAILABLE_COUNT": "",
@@ -599,3 +599,58 @@ def test_dispatch_loop_counts_unavailable_workers() -> None:
     workflow = WORKFLOW.read_text(encoding="utf-8")
     assert "unavailable_count=$(( ${unavailable_count:-0} + 1 ))" in workflow
     assert 'echo "unavailable_count=${unavailable_count}" >> "$GITHUB_OUTPUT"' in workflow
+
+
+def _run_successor_step(tmp_path: Path, failures: int) -> tuple[int, str, str]:
+    import os
+    import subprocess
+
+    import yaml
+
+    workflow = yaml.safe_load(SUCCESSOR.read_text(encoding="utf-8"))
+    script = workflow["jobs"]["wait_and_wake"]["steps"][0]["run"]
+    log, count = tmp_path / "gh.log", tmp_path / "count"
+    gh = tmp_path / "gh"
+    gh.write_text(
+        "#!/usr/bin/env bash\n"
+        f'n=$(( $(cat "{count}" 2>/dev/null || echo 0) + 1 )); echo "$n" > "{count}"\n'
+        f'printf "%s\\n" "$*" >> "{log}"\n'
+        f'(( n > {failures} )) || {{ echo "HTTP 500" >&2; exit 1; }}\n'
+    )
+    sleep = tmp_path / "sleep"
+    sleep.write_text(f'#!/usr/bin/env bash\nprintf "sleep %s\\n" "$*" >> "{tmp_path / "sleep.log"}"\n')
+    for tool in (gh, sleep):
+        tool.chmod(0o755)
+    env = {**os.environ, "PATH": f"{tmp_path}:{os.environ['PATH']}",
+           "GITHUB_REPOSITORY": "acme/widgets", "DELAY_SECONDS": "240"}
+    result = subprocess.run(["bash", "-c", script], env=env, text=True, capture_output=True)
+    sleeps = (tmp_path / "sleep.log").read_text() if (tmp_path / "sleep.log").exists() else ""
+    return result.returncode, log.read_text(), sleeps
+
+
+def test_roster_successor_retries_a_transient_dispatch_failure(tmp_path: Path) -> None:
+    code, calls, sleeps = _run_successor_step(tmp_path, failures=2)
+    assert code == 0
+    assert calls.count("workflow run fixed-model-factory-dispatch.yml") == 3
+    assert sleeps.split() == ["sleep", "240", "sleep", "15", "sleep", "30"]
+
+
+def test_roster_successor_fails_after_four_dispatch_attempts(tmp_path: Path) -> None:
+    code, calls, _ = _run_successor_step(tmp_path, failures=9)
+    assert code != 0
+    assert calls.count("workflow run fixed-model-factory-dispatch.yml") == 4
+
+
+def test_chain_and_review_wakeup_dispatches_retry() -> None:
+    dispatch = WORKFLOW.read_text(encoding="utf-8")
+    wakeup = WORKFLOW.with_name("factory-pr-review-wakeup.yml").read_text(encoding="utf-8")
+    assert dispatch.count("dispatch_with_retry gh workflow run fixed-model-factory-roster-successor.yml") == 2
+    assert "dispatch_with_retry gh workflow run fixed-model-factory-dispatch.yml" in wakeup
+
+
+def test_dispatcher_chain_retries_successor_dispatch_without_sleeping(tmp_path: Path) -> None:
+    count = tmp_path / "count"
+    fail_twice = f'n=$(( $(cat "{count}" 2>/dev/null || echo 0) + 1 )); echo "$n" > "{count}"; (( n > 2 ))\n'
+    out, calls = _run_chain_step(tmp_path, fail_twice, DISPATCHED_COUNT="1", DISPATCH_FAILED="false")
+    assert calls.count("workflow run fixed-model-factory-roster-successor.yml") == 3
+    assert "attempt 2/3" in out

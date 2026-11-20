@@ -50,7 +50,19 @@ jobs:
             exit 1
           fi
 
+          dispatch_with_retry() {
+            local attempt wait
+            for attempt in 1 2 3 4; do
+              "$@" && return 0
+              (( attempt < 4 )) || break
+              wait=$(( 15 * (1 << (attempt - 1)) ))
+              echo "::warning::workflow dispatch failed (attempt ${attempt}/4); retrying in ${wait}s"
+              sleep "$wait"
+            done
+            return 1
+          }
+
           echo "Roster successor sleeping ${DELAY_SECONDS}s outside assignment serialization"
           sleep "$DELAY_SECONDS"
-          gh workflow run fixed-model-factory-dispatch.yml \
+          dispatch_with_retry gh workflow run fixed-model-factory-dispatch.yml \
             --repo "$GITHUB_REPOSITORY" --ref main -f mode=roster
