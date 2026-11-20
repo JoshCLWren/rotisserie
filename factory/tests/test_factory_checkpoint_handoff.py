@@ -475,3 +475,15 @@ def test_graphql_ref_names_are_relative_to_the_ref_prefix(monkeypatch) -> None:
     assert handoff.checkpoint_refs("o/r") == [
         {"ref": "refs/heads/factory/work-checkpoints/44242119390", "object": {"sha": HEAD}},
     ]
+
+
+def test_repair_of_a_pr_without_a_linked_issue_publishes_to_that_pr(harness: dict) -> None:
+    harness["saved"].update({"mode": "pr", "number": 5152, "issue": ""})
+    harness["pr"]["head"]["ref"] = "local-factory/comicvine-c-identity-writes"
+    harness["pr"]["body"] = "Local factory work without an issue."
+    harness["pr"]["labels"] = labels("factory", "factory:unowned", "factory:review")
+    before = handoff.labels_of(harness["issue"])
+    result = handoff.publish(REPO, RUN)
+    assert result["saved"] and result["work_pr"] == 5152
+    assert not any(call[0].endswith("/pulls") and call[1] == "POST" for call in harness["calls"])
+    assert handoff.labels_of(harness["issue"]) == before

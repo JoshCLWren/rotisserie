@@ -359,7 +359,7 @@ def newer_worker_run(repo: str, run: dict, worker: str) -> bool:
     return min(int(item["id"]) for item in runs) > source_id
 
 
-def set_work_labels(repo: str, pr: dict, issue: dict, saved: dict, run: dict,
+def set_work_labels(repo: str, pr: dict, issue: dict | None, saved: dict, run: dict,
                     *, validated: bool, source_ended: bool = False) -> str:
     """Maintain one truthful owner/stage without stealing a newer live lease."""
     owner = f"factory:{saved['worker']}"
@@ -386,6 +386,8 @@ def set_work_labels(repo: str, pr: dict, issue: dict, saved: dict, run: dict,
     stage = "factory:review" if validated else (
         "factory:building" if active else "factory:changes-requested")
     for target, is_issue in ((pr, False), (issue, True)):
+        if target is None:
+            continue
         current = obj(f"repos/{repo}/issues/{target['number']}")
         current_labels = labels_of(current)
         owners = {label for label in current_labels if OWNER_RE.fullmatch(label)}
@@ -456,7 +458,13 @@ def publish(repo: str, run_id: str, *, cleanup: bool = False, source_ended: bool
     if source_worker(run) != saved["worker"]:
         raise ValueError("Snapshot producer does not match trusted source dispatch")
     original = obj(f"repos/{repo}/pulls/{saved['number']}") if saved["mode"] == "pr" else None
-    issue = issue_for(repo, saved, original)
+    try:
+        issue = issue_for(repo, saved, original)
+    except ValueError:
+        # An existing PR without a linked issue still takes repairs on its own branch.
+        if original is None:
+            raise
+        issue = None
     branches = recovery_prs(repo, saved["branch"])
     if original:
         if (original.get("head", {}).get("repo", {}).get("full_name") != repo
@@ -494,8 +502,9 @@ def publish(repo: str, run_id: str, *, cleanup: bool = False, source_ended: bool
                 "work_pr": pr["number"], "detail": "closed work retained"}
     generated = pr.get("title", "").startswith("Recovery:") or pr.get("draft")
     if generated:
-        api(f"repos/{repo}/pulls/{pr['number']}", "PATCH", title=issue["title"],
-            body=work_body(issue, saved, run, run_id), base="main")
+        if issue is not None:
+            api(f"repos/{repo}/pulls/{pr['number']}", "PATCH", title=issue["title"],
+                body=work_body(issue, saved, run, run_id), base="main")
         ready(repo, pr)
     complete = validated_head(repo, pr, run_id)
     stage = set_work_labels(repo, pr, issue, saved, run, validated=complete,
