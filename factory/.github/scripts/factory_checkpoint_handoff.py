@@ -492,6 +492,32 @@ def saved_receipt(saved: dict, result: dict) -> dict:
             "checkpoint_sha": saved.get("origin_head") or saved["head"]}
 
 
+def superseded(repo: str, saved: dict, issue: dict) -> str:
+    """Name newer issue work that makes publishing an ended run's checkpoint a duplicate."""
+    if issue.get("state") != "open":
+        return "issue is closed"
+    base_date = ""
+    for event in pages(f"repos/{repo}/issues/{issue['number']}/timeline"):
+        source = (event.get("source") or {}).get("issue") or {}
+        work = source.get("pull_request")
+        if event.get("event") != "cross-referenced" or not work:
+            continue
+        if (source.get("repository") or {}).get("full_name", repo) != repo:
+            continue
+        if source.get("state") == "open":
+            return f"open work PR #{source['number']} already carries the issue"
+        merged = work.get("merged_at") or ""
+        if merged:
+            if not base_date:
+                base_date = obj(f"repos/{repo}/git/commits/{saved['base']}")["committer"]["date"]
+            if merged > base_date:
+                return f"work PR #{source['number']} merged after the checkpoint base"
+    main_sha = obj(f"repos/{repo}/branches/main")["commit"]["sha"]
+    if incorporated(repo, saved, main_sha):
+        return "main already contains the checkpoint changes"
+    return ""
+
+
 def publish(repo: str, run_id: str, *, cleanup: bool = False, source_ended: bool = False) -> dict:
     """Persist ordinary issue work, preserving live ownership and real merge gates."""
     run = verified_run(repo, run_id)
@@ -527,6 +553,10 @@ def publish(repo: str, run_id: str, *, cleanup: bool = False, source_ended: bool
                     "checkpoint_sha": saved.get("origin_head") or saved["head"], "work_pr": pr["number"],
                     **merge, "detail": "closed issue work retained"})
         else:
+            reason = superseded(repo, saved, issue) if run.get("status") == "completed" else ""
+            if reason:
+                return saved_receipt(saved, {"saved": True, "published": False, "validated": False,
+                        "detail": f"{reason}; checkpoint retained"})
             if run.get("status") != "completed" and not check_write(
                     repo, run_id, saved["mode"], saved["number"], saved["worker"]):
                 raise RuntimeError("Source assignment no longer owns this persisted work")
@@ -629,6 +659,8 @@ def main() -> int:
     parser.add_argument("--repo", required=True)
     parser.add_argument("--run-id")
     parser.add_argument("--sweep", action="store_true")
+    parser.add_argument("--limit", type=int, default=0,
+                        help="Sweep only the newest N checkpoint runs")
     parser.add_argument("--cleanup", action="store_true")
     parser.add_argument("--outcome", type=Path)
     parser.add_argument("--state-file", type=Path)
@@ -650,7 +682,9 @@ def main() -> int:
     ids = [args.run_id] if args.run_id else []
     if args.sweep:
         refs = checkpoint_refs(args.repo)
-        ids = sorted({ref["ref"].rsplit("/", 1)[-1] for ref in refs})
+        ids = sorted({ref["ref"].rsplit("/", 1)[-1] for ref in refs}, key=int, reverse=True)
+        if args.limit > 0:
+            ids = ids[:args.limit]
     if not ids and not args.sweep:
         parser.error("--run-id or --sweep is required")
     results = []

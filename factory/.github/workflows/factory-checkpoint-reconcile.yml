@@ -52,7 +52,8 @@ jobs:
             [[ "$TARGET_RUN" =~ ^[1-9][0-9]*$ ]] || exit 1
             args+=(--run-id "$TARGET_RUN")
           else
-            args+=(--sweep)
+            # The Actions token allows 1,000 API calls an hour; each run costs about ten.
+            args+=(--sweep --limit 20)
           fi
           # Publish first, without deleting any tracking refs. Even a partial
           # sweep emits a JSON array containing successes and failures.
