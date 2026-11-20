@@ -158,6 +158,14 @@ def test_writes_and_graphql_keep_the_workflow_token(tmp_path: Path) -> None:
     assert _route(tmp_path, "issue", "comment", "1") == "workflow-token"
 
 
+def test_budget_gates_read_the_workflow_token_bucket(tmp_path: Path) -> None:
+    """Writes spend the workflow token, so its quota is the one the gates must see."""
+    assert _route(tmp_path, "api", "rate_limit") == "workflow-token"
+    assert _route(tmp_path, "api", "/rate_limit") == "workflow-token"
+    assert _route(tmp_path, "api", "rate_limit", "--jq", ".resources.core.remaining") == "workflow-token"
+    assert _route(tmp_path, "api", "repos/o/r/rate_limits") == "reader-token"
+
+
 def test_expired_read_token_falls_back_to_the_workflow_token(tmp_path: Path) -> None:
     assert _route(tmp_path, "api", "repos/o/r/pulls/1", expires_in=-5) == "workflow-token"
 
