@@ -91,12 +91,12 @@ def test_deferred_dependency_overrides_rust_label_for_issues_and_prs() -> None:
     assert numbers([epic, deferred], [pr(4700, 4516)]) == set()
 
 
-def test_closing_reference_cannot_smuggle_unrelated_issue_through_rust_branch() -> None:
+def test_unrelated_issue_remains_available_during_cutover_with_separate_pr() -> None:
     epic = issue(4335, "epic")
     rust = issue(4346, "rust")
     unrelated = issue(4707)
     linked_pr = pr(4708, 4346, body="Closes #4707.")
-    assert numbers([epic, rust, unrelated], [linked_pr]) == {("pr", 4708)}
+    assert numbers([epic, rust, unrelated], [linked_pr]) == {("issue", 4707), ("pr", 4708)}
 
 
 def test_only_an_explicit_epic_dependency_defers_an_open_pr() -> None:
