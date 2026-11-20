@@ -653,6 +653,30 @@ def pr_cutover_allowed(
     )
 
 
+def pr_work_allowed(
+    pr: dict[str, Any],
+    issue_map: Mapping[int, dict[str, Any]],
+    *,
+    cutover_open: bool,
+) -> bool:
+    """Keep open PRs repairable and reviewable while the cutover epic is open.
+
+    The cutover limits new issue intake. Finishing an open PR is not new work,
+    so only an explicit ``Depends on`` the epic defers it. Capacity counts keep
+    using ``pr_cutover_allowed`` so this backlog cannot starve Rust intake.
+    """
+    if not cutover_open:
+        return True
+    bodies = [str(pr.get('body') or '')]
+    for number in (linked_issue_from_pr(pr), issue_explicitly_closed_by_pr(pr)):
+        if number is not None and number in issue_map:
+            bodies.append(str(issue_map[number].get('body') or ''))
+    return all(
+        eligibility.RUST_CUTOVER_EPIC not in eligibility.parse_declared_dependencies(body)
+        for body in bodies
+    )
+
+
 def build_candidates(
     issues: list[dict[str, Any]],
     prs: list[dict[str, Any]],
@@ -736,7 +760,11 @@ def build_candidates(
                 stage=stage_of(labels),
             )
         )
-    for pr in allowed_prs:
+    workable_prs = [
+        pr for pr in prs
+        if pr_work_allowed(pr, issue_map, cutover_open=cutover_open)
+    ]
+    for pr in workable_prs:
         pr_number = int(pr['number'])
         pr_labels = labels_of(pr)
         if attempt_records is not None:
