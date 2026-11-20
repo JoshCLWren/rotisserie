@@ -44,14 +44,16 @@ def harness(monkeypatch: pytest.MonkeyPatch) -> dict:
                "head": {"ref": "factory/98-4853-kilo-auto", "sha": HEAD,
                         "repo": {"full_name": REPO}},
                "labels": labels("factory", "factory:46", "factory:building")},
-        "producers": [],
+        "producers": [], "timeline": [], "base_date": "2026-11-18T00:00:00Z",
     }
+    monkeypatch.setattr(handoff, "PUBLISHED_ISSUES", {})
     monkeypatch.setattr(handoff, "verified_run", lambda *_: state["run"])
     monkeypatch.setattr(handoff, "newer_worker_run", lambda *_: False)
     monkeypatch.setattr(handoff, "checkpoint", lambda *_: state["saved"])
     monkeypatch.setattr(handoff, "recovery_prs", lambda *_: state["drafts"])
     monkeypatch.setattr(handoff, "incorporated", lambda *_: state["incorporated"])
-    monkeypatch.setattr(handoff, "pages", lambda *_: state["comments"])
+    monkeypatch.setattr(handoff, "pages", lambda endpoint: state["timeline"]
+                        if endpoint.endswith("/timeline") else state["comments"])
     monkeypatch.setattr(handoff, "record_producer", lambda _, pr, saved:
                         state["producers"].append((pr["number"], saved["worker"], pr["head"]["sha"])))
 
@@ -60,6 +62,10 @@ def harness(monkeypatch: pytest.MonkeyPatch) -> dict:
             return {"status": "ahead"}
         if endpoint.endswith("/4853"):
             return state["issue"]
+        if endpoint.endswith("/branches/main"):
+            return {"commit": {"sha": "d" * 40}}
+        if "/git/commits/" in endpoint:
+            return {"committer": {"date": state["base_date"]}}
         return state["pr"]
 
     def api(endpoint: str, method: str = "GET", **fields: object) -> object:
@@ -544,3 +550,76 @@ def test_graphql_ref_names_are_relative_to_the_ref_prefix(monkeypatch) -> None:
     assert handoff.checkpoint_refs("o/r") == [
         {"ref": "refs/heads/factory/work-checkpoints/44242119390", "object": {"sha": HEAD}},
     ]
+
+
+def _reference(number: int, state: str, merged_at: str | None = None) -> dict:
+    return {"event": "cross-referenced", "source": {"issue": {
+        "number": number, "state": state, "repository": {"full_name": REPO},
+        "pull_request": {"merged_at": merged_at}}}}
+
+
+def _created(harness: dict) -> bool:
+    return any(call[0].endswith("/pulls") and call[1] == "POST" for call in harness["calls"])
+
+
+@pytest.mark.parametrize(("timeline", "reason"), [
+    ([_reference(5561, "open")], "open work PR #5561"),
+    ([_reference(5443, "closed", "2026-11-18T15:29:06Z")], "PR #5443 merged after"),
+])
+def test_ended_run_does_not_duplicate_newer_issue_work(
+        harness: dict, timeline: list, reason: str) -> None:
+    harness["timeline"] = timeline
+    result = handoff.publish(REPO, RUN)
+    assert not _created(harness)
+    assert result["saved"] and not result["published"]
+    assert reason in result["detail"] and result["detail"].endswith("checkpoint retained")
+
+
+def test_closed_issue_or_work_already_on_main_is_not_republished(harness: dict) -> None:
+    harness["issue"]["state"] = "closed"
+    assert "issue is closed" in handoff.publish(REPO, RUN)["detail"]
+    harness["issue"]["state"] = "open"
+    harness["incorporated"] = True
+    assert "main already contains" in handoff.publish(REPO, RUN)["detail"]
+    assert not _created(harness)
+
+
+def test_older_merges_unrelated_mentions_and_live_runs_still_publish(
+        harness: dict, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(handoff, "check_write", lambda *_args, **_kwargs: True)
+    harness["timeline"] = [
+        _reference(4896, "closed", "2026-11-09T02:19:11Z"),
+        _reference(4800, "closed"),
+        {"event": "cross-referenced", "source": {"issue": {"number": 4700, "state": "open"}}},
+        {"event": "labeled"},
+    ]
+    assert handoff.publish(REPO, RUN)["published"] and _created(harness)
+    harness["calls"].clear()
+    harness["drafts"].clear()
+    harness["timeline"] = [_reference(5561, "open")]
+    harness["run"]["status"] = "in_progress"
+    assert handoff.publish(REPO, RUN)["published"] and _created(harness)
+
+
+def test_sweep_limit_takes_the_newest_runs_by_number(
+        monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]) -> None:
+    runs = ["9", "100", "25"]
+    monkeypatch.setattr(handoff, "checkpoint_refs", lambda *_: [
+        {"ref": f"refs/heads/factory/work-checkpoints/issue-1/m/{run}"} for run in runs])
+    published: list[str] = []
+    monkeypatch.setattr(handoff, "publish", lambda _repo, run_id, **_:
+                        published.append(run_id) or {"saved": True, "published": True})
+    monkeypatch.setattr(sys, "argv", ["handoff", "--repo", REPO, "--sweep", "--limit", "2"])
+    assert handoff.main() == 0
+    assert published == ["100", "25"]
+    workflow = (ROOT / ".github/workflows/factory-checkpoint-reconcile.yml").read_text()
+    assert "--sweep --limit 20" in workflow
+
+
+def test_one_sweep_publishes_one_pr_per_issue_before_github_indexes_it(harness: dict) -> None:
+    assert handoff.publish(REPO, RUN)["published"]
+    harness["drafts"].clear()
+    harness["saved"] = {**harness["saved"], "branch": BRANCH.replace(RUN, "12346")}
+    result = handoff.publish(REPO, "12346")
+    assert not result["published"] and "PR #5152" in result["detail"]
+    assert sum(call[1] == "POST" and call[0].endswith("/pulls") for call in harness["calls"]) == 1
