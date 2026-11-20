@@ -233,9 +233,8 @@ def test_explain_names_each_static_exclusion() -> None:
     suppressed = _verdict(set(), suppressing_issue_numbers={10})
     assert not suppressed.eligible
     assert any("canonical PR" in reason for reason in suppressed.reasons)
-    exhausted = _verdict(set(), no_diff_attempts=3, no_diff_limit=3)
-    assert not exhausted.eligible
-    assert any("retry budget" in reason for reason in exhausted.reasons)
+    retried = _verdict(set(), no_diff_attempts=30, no_diff_limit=3)
+    assert retried.eligible
 
 
 def test_explain_dependency_reason_names_open_prerequisites() -> None:

@@ -397,12 +397,6 @@ def explain_issue_eligibility(
         )
     if suppressing_issue_numbers and number in suppressing_issue_numbers:
         block("an open canonical PR already owns this issue")
-    if no_diff_attempts >= no_diff_limit:
-        block(
-            f"no-diff retry budget exhausted "
-            f"({no_diff_attempts}/{no_diff_limit}); waits for a new head, "
-            "stage, or conflict instead of a hand-authored release"
-        )
     if require_ralph_labels:
         if "ralph-task" not in labels:
             block("missing Ralph-selector metadata: ralph-task")

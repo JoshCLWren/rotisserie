@@ -270,17 +270,17 @@ def _dispatch_batch(tmp_path: Path, assignments: list[str]) -> tuple[int, str]:
     return calls, result.stdout
 
 
-def test_idle_roster_tick_stops_after_three_empty_assignments(tmp_path: Path) -> None:
+def test_idle_roster_tick_asks_every_worker(tmp_path: Path) -> None:
     calls, out = _dispatch_batch(tmp_path, ['{"kind":"none"}'] * 8)
-    assert calls == 3
-    assert "3 consecutive workers found no executable work" in out
+    assert calls == 8
+    assert "consecutive workers found no executable work" not in out
 
 
-def test_an_assignment_resets_the_idle_streak(tmp_path: Path) -> None:
+def test_empty_assignments_never_stop_later_workers(tmp_path: Path) -> None:
     none = '{"kind":"none"}'
     work = '{"kind":"issue","number":1}'
-    calls, _ = _dispatch_batch(tmp_path, [none, none, work, none, none, none, none, none])
-    assert calls == 6
+    calls, _ = _dispatch_batch(tmp_path, [none, none, none, none, none, none, none, work])
+    assert calls == 8
 
 
 def test_usage_report_separates_cache_hits_from_github_requests() -> None:

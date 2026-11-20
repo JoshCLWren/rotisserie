@@ -99,28 +99,6 @@ def test_rejects_an_unscoped_repository_capture() -> None:
         raise AssertionError("unscoped repository capture was accepted")
 
 
-def test_retry_suppression_is_visible() -> None:
-    adapter = load_adapter()
-    view = json.loads(FIXTURE.read_text(encoding="utf-8"))
-    
-    # Add scripts directory to path to import factory_work_policy
-    scripts_dir = Path(__file__).resolve().parents[1] / ".github" / "scripts"
-    if str(scripts_dir) not in sys.path:
-        sys.path.insert(0, str(scripts_dir))
-    factory_work_policy = importlib.import_module("factory_work_policy")
-
-    view["no_diff_attempts_by_issue"] = {"3002": factory_work_policy.FACTORY_NO_DIFF_RETRY_LIMIT}
-
-    legacy = adapter.legacy_decisions(view)
-    observations = {
-        (item["dimension"], item["subject"]): item for item in legacy["observations"]
-    }
-
-    assert observations[("eligibility", "work:3002")]["outcome"] == "blocked"
-    assert observations[("eligibility", "work:3002")]["reasons"] == ["adopter_policy"]
-    assert ("ranking", "work:3002") not in observations
-
-
 def test_recorded_repairer_cannot_authorize_a_head_it_repaired() -> None:
     adapter = load_adapter()
     view = json.loads(FIXTURE.read_text(encoding="utf-8"))

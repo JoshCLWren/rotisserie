@@ -499,7 +499,7 @@ def _run_dispatch_batch(responses: dict[str, str], workers: list[str]) -> list[s
     function = "dispatch_assigned_worker() {" + script.split("dispatch_assigned_worker() {", 1)[1].split(
         "\n}\n", 1
     )[0] + "\n}\n"
-    loop = "consecutive_idle=0\nidle_stop=" + script.split("consecutive_idle=0\nidle_stop=", 1)[1].split(
+    loop = "while IFS= read -r worker; do" + script.split("while IFS= read -r worker; do", 1)[1].split(
         "done < <(jq -r '.[]' <<< \"$workers\")", 1
     )[0] + "done < <(jq -r '.[]' <<< \"$workers\")\n"
     cases = "\n".join(f"    {w}) printf '%s\\n' '{r}' ;;" for w, r in responses.items())
@@ -548,8 +548,8 @@ def test_busy_workers_do_not_end_batch_before_free_workers() -> None:
     assert dispatched == ["10"]
 
 
-def test_empty_pool_still_ends_batch_after_idle_stop() -> None:
-    """Three workers that each saw an empty pool stop the tick (legacy reply included)."""
+def test_workers_without_work_never_end_the_batch() -> None:
+    """Workers that find nothing never stop a later worker from claiming work."""
     empty = '{"kind": "none", "reason": "no_work"}'
     legacy = '{"kind": "none"}'
     work = '{"kind": "pr", "number": 5340}'
@@ -557,4 +557,4 @@ def test_empty_pool_still_ends_batch_after_idle_stop() -> None:
         {"6": empty, "7": legacy, "8": empty, "9": work},
         ["6", "7", "8", "9"],
     )
-    assert dispatched == []
+    assert dispatched == ["9"]

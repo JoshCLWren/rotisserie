@@ -335,17 +335,18 @@ def test_actionable_pr_stage_is_live_executable(
     ("attempts", "expect_assigned"),
     [
         (-1, True),
-        (0, False),
+        (0, True),
+        (20, True),
     ],
 )
-def test_assign_respects_pr_no_diff_retry_budget(
+def test_assign_never_caps_pr_retries_after_failed_models(
     controller: types.ModuleType,
     monkeypatch: pytest.MonkeyPatch,
     stage: str,
     attempts: int,
     expect_assigned: bool,
 ) -> None:
-    """PR retry exhaustion suppresses assignment without rewriting truthful stages."""
+    """Failed tries never stop another model from taking the PR."""
     # Exercise the selected PR/lease branch, not the Actions identity gate.
     monkeypatch.delenv("GITHUB_ACTIONS", raising=False)
     attempts += controller.FACTORY_NO_DIFF_RETRY_LIMIT

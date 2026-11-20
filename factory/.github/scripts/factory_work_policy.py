@@ -4,7 +4,6 @@ import importlib
 import os
 import re
 import sys
-from collections import Counter
 from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
 from datetime import datetime
@@ -518,8 +517,6 @@ def issue_is_static_candidate(
         return False
     if labels & BLOCKED_LABELS:
         return False
-    if no_diff_attempts >= FACTORY_NO_DIFF_RETRY_LIMIT:
-        return False
     if 'ralph-status:done' in labels or 'factory:ready' in labels:
         return False
     return item_is_unowned(labels)
@@ -544,8 +541,6 @@ def pr_is_static_candidate(
     if not is_factory_managed_pr(pr):
         return False
     if labels & BLOCKED_LABELS or 'factory:ready' in labels:
-        return False
-    if no_diff_attempts >= FACTORY_NO_DIFF_RETRY_LIMIT:
         return False
     if not item_is_unowned(labels):
         return False
@@ -782,21 +777,6 @@ def build_candidates(
             issue_map,
             no_diff_attempts=pr_attempts,
         ):
-            if pr_attempts >= FACTORY_NO_DIFF_RETRY_LIMIT:
-                reasons = Counter(
-                    attempt.reason for attempt in attempt_records or []
-                    if matching_pr_no_diff_attempts(
-                        (attempt,), pr_number=pr_number, head_sha=pr_head_sha(pr),
-                        stage=stage_of(pr_labels), conflicted=pr_is_conflicted(pr),
-                    )
-                )
-                print(
-                    f'[factory-controller] retry cooldown: PR #{pr_number} '
-                    f'head={pr_head_sha(pr)} stage={stage_of(pr_labels)} '
-                    f'recent_failures={pr_attempts} reasons={dict(sorted(reasons.items()))}; '
-                    f'new head/stage or expiry restores eligibility',
-                    file=sys.stderr,
-                )
             continue
         # Recent no-diff retries suppress only the unchanged execution
         # generation. A new head, newly actionable review stage, or newly
