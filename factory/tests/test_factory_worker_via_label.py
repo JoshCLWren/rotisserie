@@ -45,3 +45,51 @@ def test_replaces_the_previous_via_label_and_skips_when_current(tmp_path: Path) 
     assert "--remove-label via:nvidia/old" in edit and "--remove-label via:z-ai/older" in edit
     _, calls = _run(tmp_path, "groq-free", "llama-3.3", "via:groq-free/llama-3.3")
     assert not any(call.startswith(("label create", "issue edit")) for call in calls)
+
+
+WORKER = ROOT / ".github/scripts/free-model-factory-worker.sh"
+
+
+def test_every_model_attempt_labels_its_task_before_running() -> None:
+    text = WORKER.read_text()
+    marker = 'log "FACTORY_EXECUTION_CANDIDATE: source=$SOURCE model=$MODEL runtime=$RUNTIME_MODEL"\n  mark_worker_via_task\n'
+    assert marker in text
+    assert text.index(marker) < text.index('run_agent "$MODE" "$NUMBER" "$agent_timeout"')
+    assert 'FACTORY_CHECKPOINT_SOURCE="$SOURCE"' in text
+
+
+def _task(tmp_path: Path, mode: str, fail: bool = False) -> tuple[str, list[str]]:
+    log = tmp_path / "gh.log"
+    log.unlink(missing_ok=True)
+    gh = tmp_path / "gh"
+    gh.write_text(
+        "#!/usr/bin/env bash\n"
+        f'printf "%s\\n" "$*" >> "{log}"\n'
+        + ('exit 1\n' if fail else '')
+    )
+    gh.chmod(0o755)
+    script = (
+        f'eval "$(sed -n "/^worker_via_label() {{/,/^}}/p;/^mark_worker_via() {{/,/^}}/p;/^mark_worker_via_task() {{/,/^}}/p" "{PRIMITIVES}")"\n'
+        'linked_issue_from_pr() { echo 4853; }\nsleep() { :; }\n'
+        f'SOURCE=nvidia MODEL=meta/muse-glimmer-30b MODE={mode} NUMBER=5152\n'
+        'mark_worker_via_task\n'
+    )
+    env = {**os.environ, "PATH": f"{tmp_path}:{os.environ['PATH']}"}
+    out = subprocess.run(["bash", "-c", script], env=env, check=True, text=True,
+                         capture_output=True).stdout
+    return out, log.read_text().splitlines() if log.exists() else []
+
+
+def test_pr_work_labels_the_pr_and_its_issue(tmp_path: Path) -> None:
+    _, calls = _task(tmp_path, "pr")
+    edits = [call for call in calls if call.startswith("issue edit")]
+    assert [call.split()[2] for call in edits] == ["5152", "4853"]
+    assert all("--add-label via:nvidia/muse-glimmer-30b" in call for call in edits)
+    _, calls = _task(tmp_path, "issue")
+    assert [call.split()[2] for call in calls if call.startswith("issue edit")] == ["5152"]
+
+
+def test_label_failures_retry_and_warn(tmp_path: Path) -> None:
+    out, calls = _task(tmp_path, "issue", fail=True)
+    assert sum(call.startswith("issue view 5152") for call in calls) == 3
+    assert "::warning::Could not set via:nvidia/muse-glimmer-30b on #5152" in out

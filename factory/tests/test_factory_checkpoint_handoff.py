@@ -487,3 +487,32 @@ def test_repair_of_a_pr_without_a_linked_issue_publishes_to_that_pr(harness: dic
     assert result["saved"] and result["work_pr"] == 5152
     assert not any(call[0].endswith("/pulls") and call[1] == "POST" for call in harness["calls"])
     assert handoff.labels_of(harness["issue"]) == before
+
+
+def _via_calls(harness: dict) -> list[tuple[str, str]]:
+    return [(call[0], call[1]) for call in harness["calls"]
+            if "/labels" in call[0] and call[1] in {"POST", "DELETE"}
+            and (call[1] == "DELETE" or "via:" in json.dumps(call[2]))]
+
+
+def test_published_work_shows_the_model_that_saved_it(harness: dict) -> None:
+    harness["saved"].update({"source": "openrouter-free", "model": "meta-llama/llama-4-scout:free"})
+    harness["issue"]["labels"] = labels("factory", "factory:46", "factory:building", "via:nvidia/old")
+    handoff.publish(REPO, RUN)
+    calls = _via_calls(harness)
+    assert (f"repos/{REPO}/labels", "POST") in calls
+    assert (f"repos/{REPO}/issues/5152/labels", "POST") in calls
+    assert (f"repos/{REPO}/issues/4853/labels", "POST") in calls
+    assert (f"repos/{REPO}/issues/4853/labels/via%3Anvidia%2Fold", "DELETE") in calls
+    assert handoff.via_label("openrouter-free", "meta-llama/llama-4-scout:free") == "via:openrouter-free/llama-4-scout"
+
+
+def test_resumed_or_superseded_work_keeps_the_newer_model_label(harness: dict) -> None:
+    harness["saved"].update({"source": "openrouter-free", "model": "x/y", "resumed": True})
+    handoff.publish(REPO, RUN)
+    assert _via_calls(harness) == []
+    harness["saved"].update({"resumed": False})
+    harness["pr"]["head"]["sha"] = "d" * 40
+    harness["calls"].clear()
+    handoff.publish(REPO, RUN)
+    assert _via_calls(harness) == []

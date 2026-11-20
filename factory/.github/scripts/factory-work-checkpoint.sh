@@ -19,6 +19,7 @@ issue="${FACTORY_CHECKPOINT_ISSUE:-}"
 [[ -z "$issue" || "$issue" =~ ^[1-9][0-9]*$ ]] || exit 2
 model="${FACTORY_CHECKPOINT_MODEL:-${FACTORY_MODEL:-unknown-model}}"
 runtime_model="${FACTORY_CHECKPOINT_RUNTIME_MODEL:-${FACTORY_RUNTIME_MODEL:-$model}}"
+model_source="${FACTORY_CHECKPOINT_SOURCE:-${SOURCE:-}}"
 [[ "$model" != *$'\n'* && "$model" != *$'\r'* && "$runtime_model" != *$'\n'* && "$runtime_model" != *$'\r'* ]] || exit 2
 model_slug="$(printf '%s' "$model" | LC_ALL=C tr '[:upper:]' '[:lower:]' | LC_ALL=C sed -E 's/[^a-z0-9]+/-/g; s/^-+//; s/-+$//' | cut -c1-80)"
 [[ -n "$model_slug" ]] || model_slug=unknown-model
@@ -78,8 +79,8 @@ checkpoint_once() {
     echo '::warning::Diverged local ancestry; retaining persisted work' >&2
     return 1
   fi
-  commit="$(printf 'checkpoint(factory): worker %s run %s %s #%s (persisted work; validation pending)\n\nIssue: %s\nModel: %s\nRuntime-model: %s\nSource-branch: %s\nBase-commit: %s\n' \
-    "$worker" "$run_id" "$mode" "$number" "${issue:-unknown}" "$model" "$runtime_model" "$source_branch" "$base_sha" | git commit-tree "$current_tree" -p "$parent")" || return 1
+  commit="$(printf 'checkpoint(factory): worker %s run %s %s #%s (persisted work; validation pending)\n\nIssue: %s\nModel: %s\nModel-source: %s\nRuntime-model: %s\nSource-branch: %s\nBase-commit: %s\n' \
+    "$worker" "$run_id" "$mode" "$number" "${issue:-unknown}" "$model" "${model_source:-unknown}" "$runtime_model" "$source_branch" "$base_sha" | git commit-tree "$current_tree" -p "$parent")" || return 1
   # Fast-forward only; never force. The assigned PR branch is not touched.
   if GIT_TERMINAL_PROMPT=0 git push --quiet origin "$commit:$ref"; then
     last_tree="$current_tree"
