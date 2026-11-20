@@ -2,7 +2,6 @@
 """Capture a read-only ComicPile host view for Rotisserie decision shadowing."""
 from __future__ import annotations
 
-import os
 import argparse
 import json
 import re
@@ -21,7 +20,7 @@ from factory_review_policy import (
 )
 from factory_work_policy import FIXED_LEASE_TTL_SECONDS, LOCAL_LEASE_TTL_SECONDS, owner_of
 
-REPOSITORY = os.environ.get("GITHUB_REPOSITORY") or __import__("factory_config").repository()
+REPOSITORY = "JoshCLWren/comic-pile"
 FACTORY_OWNER_RE = re.compile(r"^factory:(?P<worker>local|[1-9]|[1-9][0-9])$")
 JsonCommand = Callable[[list[str]], object]
 

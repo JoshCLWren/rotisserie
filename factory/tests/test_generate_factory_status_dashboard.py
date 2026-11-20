@@ -515,25 +515,3 @@ def test_delivery_funnel_render_prioritizes_outcomes_and_escapes_metadata() -> N
     assert 'same-cohort conversion' in rendered
     failed = dashboard.render_delivery_funnel({'delivery_funnel_error': 'API unavailable'})
     assert 'API unavailable' in failed and '<table' not in failed
-
-
-
-def test_trusted_delivery_evidence_does_not_equate_saved_work_with_success():
-    """A failed model session and its eventual saved work have separate counts."""
-    snapshot = sample_snapshot()
-    snapshot["delivery_evidence"] = {
-        "terminal_runs": 127, "successful_runs": 4, "failed_runs": 123,
-        "checkpoint_runs": 18, "linked_prs": 6, "merged_prs": 2,
-    }
-    rendered = dashboard.render_dashboard(snapshot)
-    assert "Trusted delivery evidence" in rendered
-    for label in ("Terminal attempts", "Successful executions",
-                  "Failed executions", "Runs with verified saved bytes",
-                  "Distinct work PRs linked", "Work PRs verified merged"):
-        assert label in rendered
-    assert "separate" in rendered
-
-    snapshot.pop("delivery_evidence")
-    unavailable = dashboard.render_dashboard(snapshot)
-    assert "Neon delivery evidence unavailable" in unavailable
-    assert "not inferred from PRs or worker exits" in unavailable

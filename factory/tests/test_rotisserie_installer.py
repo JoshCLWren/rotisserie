@@ -143,7 +143,7 @@ def test_overlay_is_invisible_to_git_and_exports_runtime_paths(tmp_path: Path) -
         check=True,
         env={"PATH": "/usr/bin:/bin", "GITHUB_ENV": str(env_file)},
     )
-    assert (repo / ".github" / "scripts" / "factory_config.py").is_file()
+    assert (repo / ".github" / "scripts" / "factory_checkpoint_handoff.py").is_file()
     assert _git(repo, "status", "--porcelain", "--untracked-files=all") == ""
     _git(repo, "add", "-A")
     assert _git(repo, "diff", "--cached", "--name-only") == ""
@@ -154,7 +154,7 @@ def test_overlay_is_invisible_to_git_and_exports_runtime_paths(tmp_path: Path) -
 
 def test_overlay_refuses_an_adopter_that_still_tracks_factory_code(tmp_path: Path) -> None:
     repo = _adopter(tmp_path)
-    tracked = repo / ".github" / "scripts" / "factory_config.py"
+    tracked = repo / ".github" / "scripts" / "factory_checkpoint_handoff.py"
     tracked.parent.mkdir(parents=True)
     tracked.write_text("adopter copy\n")
     _git(repo, "add", ".github")
@@ -169,7 +169,7 @@ def test_overlay_refuses_an_adopter_that_still_tracks_factory_code(tmp_path: Pat
         env={"PATH": "/usr/bin:/bin"},
     )
     assert result.returncode == 1
-    assert ".github/scripts/factory_config.py" in result.stderr
+    assert ".github/scripts/factory_checkpoint_handoff.py" in result.stderr
     assert tracked.read_text() == "adopter copy\n"
 
 

@@ -3,7 +3,6 @@
 
 from __future__ import annotations
 
-import os
 import argparse
 import json
 import re
@@ -16,7 +15,7 @@ from typing import Any
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
-DEFAULT_REPO = os.environ.get("GITHUB_REPOSITORY", "")
+DEFAULT_REPO = "JoshCLWren/comic-pile"
 ACTIVE = frozenset({"in_progress", "queued", "pending", "waiting", "requested"})
 REPO_RE = re.compile(r"^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$")
 SNAPSHOT_MARKER = '<script id="fleet-snapshot" type="application/json">'

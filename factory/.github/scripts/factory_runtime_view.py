@@ -67,53 +67,6 @@ def project_events(rows: list[Mapping[str, Any]]) -> dict[str, dict[str, dict[st
             target[worker] = record
     return {"attempts": attempts, "heartbeats": heartbeats}
 
-async def _delivery_evidence(conn: Any, repo: str) -> dict[str, int]:
-    """Count distinct trusted source runs and work PRs, not model exits.
-
-    This seven-day snapshot never conflates a failed terminal attempt with
-    separately verified persisted bytes or eventual GitHub merge.
-    """
-    row = await conn.fetchrow(
-        """SELECT
-              COUNT(DISTINCT detail->>'run_id') FILTER (
-                WHERE event_type IN ('worker_completed','worker_failed','worker_idle')
-              ) AS terminal_runs,
-              COUNT(DISTINCT detail->>'run_id') FILTER (
-                WHERE detail->>'outcome_class'='success'
-                   OR (COALESCE(detail->>'outcome_class','')=''
-                       AND event_type='worker_completed')
-              ) AS successful_runs,
-              COUNT(DISTINCT detail->>'run_id') FILTER (
-                WHERE (COALESCE(detail->>'outcome_class','') NOT IN
-                       ('','success','no_work','unconfigured'))
-                   OR (COALESCE(detail->>'outcome_class','')=''
-                       AND event_type='worker_failed')
-              ) AS failed_runs,
-              COUNT(DISTINCT detail->>'run_id') FILTER (
-                WHERE event_type='checkpoint_saved'
-              ) AS checkpoint_runs,
-              COUNT(DISTINCT detail->>'work_pr') FILTER (
-                WHERE event_type='checkpoint_pr_linked'
-              ) AS linked_prs,
-              COUNT(DISTINCT detail->>'work_pr') FILTER (
-                WHERE event_type='checkpoint_pr_merged'
-              ) AS merged_prs
-           FROM public.factory_state_events
-           WHERE source='github-actions' AND subject_type='worker'
-             AND detail->>'repo'=$1
-             AND event_type=ANY($2::text[])
-             AND created_at>now()-interval '7 days'""",
-        repo, [*TERMINAL, "checkpoint_saved", "checkpoint_pr_linked",
-               "checkpoint_pr_merged"],
-    )
-    if row is None:
-        raise RuntimeError("Trusted delivery evidence unavailable")
-    return {field: int(row[field]) for field in (
-        "terminal_runs", "successful_runs", "failed_runs", "checkpoint_runs",
-        "linked_prs", "merged_prs",
-    )}
-
-
 async def _export_view(conn: Any, repo: str) -> dict[str, Any]:
     # Fixed-size projection: one event per worker/type, no historical snapshots.
     rows = await conn.fetch(
@@ -154,12 +107,6 @@ async def _export_view(conn: Any, repo: str) -> dict[str, Any]:
         if updated > target.get(worker, {}).get("updated", ""):
             target[worker] = {str(k): str(v) for k, v in record.items()}
     view["health"] = await _export_candidate_health(conn, repo)
-    try:
-        view["delivery_evidence"] = await _delivery_evidence(conn, repo)
-    except (OSError, RuntimeError, ValueError):
-        # A telemetry read cannot prevent the dashboard from showing other
-        # authoritative worker state. The page displays "unavailable".
-        view["delivery_evidence"] = None
     return view
 
 def export_view(repo: str) -> dict[str, Any]:

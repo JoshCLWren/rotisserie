@@ -8,7 +8,6 @@ same bytes, preventing a race between independently acquired views.
 """
 from __future__ import annotations
 
-import os
 import argparse
 import hashlib
 import json
@@ -39,12 +38,7 @@ from factory_work_policy import (
 )
 
 DIMENSIONS = ["completion", "eligibility", "ownership", "ranking", "recovery", "review"]
-REPOSITORY_SLUG = os.environ.get("GITHUB_REPOSITORY") or __import__("factory_config").repository()
-REPOSITORY = {
-    "host": "github.com",
-    "owner": REPOSITORY_SLUG.split("/", 1)[0],
-    "name": REPOSITORY_SLUG.split("/", 1)[1],
-}
+REPOSITORY = {"host": "github.com", "owner": "JoshCLWren", "name": "comic-pile"}
 
 
 class AdopterInputError(ValueError):
@@ -74,8 +68,8 @@ def _worker_id(value: str) -> dict[str, str]:
 def _validate(view: dict[str, Any]) -> None:
     if view.get("schema_version") != 1:
         raise AdopterInputError("unsupported captured-view schema version")
-    if view.get("repository") != REPOSITORY_SLUG:
-        raise AdopterInputError(f"captured view is outside {REPOSITORY_SLUG}")
+    if view.get("repository") != "JoshCLWren/comic-pile":
+        raise AdopterInputError("captured view is outside JoshCLWren/comic-pile")
     revision = view.get("revision")
     if not isinstance(revision, str) or len(revision) != 40:
         raise AdopterInputError("revision must be an exact 40-character commit SHA")

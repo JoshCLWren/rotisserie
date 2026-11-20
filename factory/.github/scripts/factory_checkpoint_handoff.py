@@ -59,79 +59,6 @@ def pages(endpoint: str) -> list[dict]:
     raise RuntimeError("Checkpoint pagination exceeded bound; no destructive action")
 
 
-def checkpoint_refs(repo: str, run_id: str | None = None) -> list[dict]:
-    """Enumerate refs with GraphQL cursors, never REST's unsupported page=N.
-
-    Searching by source run avoids a repository-wide branch scan for normal
-    publication. A sweep visits every page; malformed/truncated cursors fail
-    closed rather than publishing or retiring the wrong checkpoint.
-    """
-    owner, name = repo.split("/", 1)
-    query = """
-    query($owner: String!, $name: String!, $after: String, $run: String) {
-      repository(owner: $owner, name: $name) {
-        refs(refPrefix: "refs/heads/factory/work-checkpoints/",
-             first: 100, after: $after, query: $run) {
-          nodes { name target { oid } }
-          pageInfo { hasNextPage endCursor }
-        }
-      }
-    }
-    """
-    result: list[dict] = []
-    seen_refs: set[str] = set()
-    seen_cursors: set[str] = set()
-    cursor: str | None = None
-    for _ in range(100):
-        payload = api("graphql", "POST", query=query, variables={
-            "owner": owner, "name": name, "after": cursor, "run": run_id,
-        })
-        if not isinstance(payload, dict) or payload.get("errors"):
-            raise RuntimeError("Checkpoint GraphQL ref query failed; retaining work")
-        repository = (payload.get("data") or {}).get("repository")
-        if not isinstance(repository, dict):
-            raise RuntimeError("Checkpoint repository was not available")
-        connection = repository.get("refs")
-        if connection is None:
-            if cursor is not None:
-                raise RuntimeError("Missing checkpoint connection mid-pagination; retaining work")
-            return result
-        if not isinstance(connection, dict):
-            raise RuntimeError("Malformed checkpoint refs response")
-        nodes = connection.get("nodes")
-        page_info = connection.get("pageInfo")
-        if not isinstance(nodes, list) or not isinstance(page_info, dict):
-            raise RuntimeError("Incomplete checkpoint refs response")
-        for node in nodes:
-            if not isinstance(node, dict):
-                raise RuntimeError("Malformed checkpoint ref node")
-            # GitHub returns Ref.name relative to refPrefix, e.g. "44242119390".
-            relative = node.get("name")
-            target = node.get("target")
-            if (not isinstance(relative, str) or not relative or relative.startswith("/")
-                    or ".." in relative.split("/")
-                    or not isinstance(target, dict) or not SHA.fullmatch(str(target.get("oid", "")))):
-                raise RuntimeError("Invalid checkpoint ref; retaining work")
-            branch = PREFIX + relative
-            full_ref = "refs/heads/" + branch
-            if full_ref in seen_refs:
-                raise RuntimeError("Repeated checkpoint ref across pages; retaining work")
-            seen_refs.add(full_ref)
-            if run_id is None or branch == PREFIX + run_id or branch.endswith("/" + run_id):
-                result.append({"ref": full_ref, "object": {"sha": target["oid"]}})
-        has_next = page_info.get("hasNextPage")
-        next_cursor = page_info.get("endCursor")
-        if not isinstance(has_next, bool):
-            raise RuntimeError("Missing checkpoint pagination state")
-        if not has_next:
-            return result
-        if not isinstance(next_cursor, str) or not next_cursor or next_cursor in seen_cursors:
-            raise RuntimeError("Checkpoint cursor did not advance; retaining work")
-        seen_cursors.add(next_cursor)
-        cursor = next_cursor
-    raise RuntimeError("Checkpoint cursor pagination exceeded bound; retaining work")
-
-
 def verified_run(repo: str, run_id: str) -> dict:
     """Accept only this repository's canonical fixed-model worker runs."""
     if not re.fullmatch(r"[1-9][0-9]*", run_id):
@@ -151,7 +78,7 @@ def verified_run(repo: str, run_id: str) -> dict:
 
 def checkpoint(repo: str, run_id: str) -> dict | None:
     """Read the exact named remote ref and its complete checkpoint ancestry."""
-    refs = checkpoint_refs(repo, run_id)
+    refs = pages(f"repos/{repo}/git/matching-refs/heads/{PREFIX}")
     refs = [ref for ref in refs if ref.get("ref") == f"refs/heads/{PREFIX}{run_id}"
             or ref.get("ref", "").endswith(f"/{run_id}")]
     if len(refs) > 1:
@@ -178,7 +105,6 @@ def checkpoint(repo: str, run_id: str) -> dict | None:
         raise RuntimeError("Origin metadata search exceeded bound; retaining work")
     metadata = dict(re.findall(r"(?m)^([A-Za-z-]+): (.+)$", cursor.get("message", "")))
     common = {"head": head, "tree": tip["tree"]["sha"],
-              "origin_tree": cursor["tree"]["sha"],
               "branch": refs[0]["ref"].removeprefix("refs/heads/"),
               "mode": match[3], "number": int(match[4]), "worker": match[1],
               "issue": metadata.get("Issue", ""), "model": metadata.get("Model", ""),
@@ -448,82 +374,6 @@ def handoff_comment(repo: str, pr: dict, saved: dict, run: dict, run_id: str) ->
     ))
 
 
-def merged_checkpoint_receipt(repo: str, saved: dict, pr: dict) -> dict:
-    """Prove a source snapshot belonged to a PR GitHub merged into main.
-
-    The original snapshot may be revised by a later factory/human repair. A
-    verified GitHub merge + exact source-commit ancestry credits the *linked
-    PR merge*, while the stricter byte comparison records separately whether
-    the original snapshot survived verbatim. Neither fact rewrites execution.
-    """
-    if pr.get("state") != "closed":
-        return {}
-    canonical = obj(f"repos/{repo}/pulls/{pr['number']}")
-    merge_sha = str(canonical.get("merge_commit_sha") or "")
-    if (canonical.get("base", {}).get("ref") != "main"
-            or canonical.get("head", {}).get("repo", {}).get("full_name") != repo
-            or canonical.get("merged") is not True or not SHA.fullmatch(merge_sha)):
-        return {}
-    source_head = saved.get("origin_head", saved["head"])
-    source_tree = saved.get("origin_tree")
-    if not SHA.fullmatch(source_head) or (saved.get("resumed") and not source_tree):
-        raise ValueError("Resumed checkpoint lacks immutable source snapshot")
-    current_head = str(canonical.get("head", {}).get("sha") or "")
-    if not SHA.fullmatch(current_head):
-        return {}
-    ancestry = obj(f"repos/{repo}/compare/{source_head}...{current_head}")
-    if ancestry.get("status") not in {"ahead", "identical"}:
-        return {}
-    source = {**saved, "head": source_head, "tree": source_tree or saved["tree"]}
-    try:
-        exact = incorporated(repo, source, merge_sha)
-    except RuntimeError:
-        exact = None  # An unavailable tree read cannot prove unchanged bytes.
-    return {
-        "merged": True, "merge_sha": merge_sha, "merge_basis": "pr_ancestry",
-        "exact_bytes_included": exact,
-    }
-
-
-
-def saved_receipt(saved: dict, result: dict) -> dict:
-    """Attach verified source-run identity without a second Actions API read."""
-    return {**result, "worker": saved["worker"],
-            "checkpoint_sha": saved.get("origin_head") or saved["head"]}
-
-
-PUBLISHED_ISSUES: dict[int, int] = {}
-
-
-def superseded(repo: str, saved: dict, issue: dict) -> str:
-    """Name newer issue work that makes publishing an ended run's checkpoint a duplicate."""
-    if issue.get("state") != "open":
-        return "issue is closed"
-    if issue["number"] in PUBLISHED_ISSUES:
-        # GitHub adds the cross-reference event a few seconds after the PR exists.
-        return f"open work PR #{PUBLISHED_ISSUES[issue['number']]} already carries the issue"
-    base_date = ""
-    for event in pages(f"repos/{repo}/issues/{issue['number']}/timeline"):
-        source = (event.get("source") or {}).get("issue") or {}
-        work = source.get("pull_request")
-        if event.get("event") != "cross-referenced" or not work:
-            continue
-        if (source.get("repository") or {}).get("full_name", repo) != repo:
-            continue
-        if source.get("state") == "open":
-            return f"open work PR #{source['number']} already carries the issue"
-        merged = work.get("merged_at") or ""
-        if merged:
-            if not base_date:
-                base_date = obj(f"repos/{repo}/git/commits/{saved['base']}")["committer"]["date"]
-            if merged > base_date:
-                return f"work PR #{source['number']} merged after the checkpoint base"
-    main_sha = obj(f"repos/{repo}/branches/main")["commit"]["sha"]
-    if incorporated(repo, saved, main_sha):
-        return "main already contains the checkpoint changes"
-    return ""
-
-
 def publish(repo: str, run_id: str, *, cleanup: bool = False, source_ended: bool = False) -> dict:
     """Persist ordinary issue work, preserving live ownership and real merge gates."""
     run = verified_run(repo, run_id)
@@ -550,19 +400,11 @@ def publish(repo: str, run_id: str, *, cleanup: bool = False, source_ended: bool
             pr = obj(f"repos/{repo}/pulls/{open_prs[0]['number']}")
         elif branches:
             pr = obj(f"repos/{repo}/pulls/{branches[0]['number']}")
-            merge = merged_checkpoint_receipt(repo, saved, pr)
-            if cleanup and merge:
-                retired = retire(repo, run_id, saved, [pr], merge["merge_sha"])
-                return saved_receipt(saved, {**retired, **merge, "saved": True, "published": True,
-                        "checkpoint_sha": saved.get("origin_head") or saved["head"], "work_pr": pr["number"]})
-            return saved_receipt(saved, {"saved": True, "published": bool(merge), "validated": False,
-                    "checkpoint_sha": saved.get("origin_head") or saved["head"], "work_pr": pr["number"],
-                    **merge, "detail": "closed issue work retained"})
+            if cleanup and pr.get("merged"):
+                return retire(repo, run_id, saved, [pr], pr["merge_commit_sha"])
+            return {"saved": True, "published": False, "validated": False,
+                    "work_pr": pr["number"], "detail": "closed issue work retained"}
         else:
-            reason = superseded(repo, saved, issue) if run.get("status") == "completed" else ""
-            if reason:
-                return saved_receipt(saved, {"saved": True, "published": False, "validated": False,
-                        "detail": f"{reason}; checkpoint retained"})
             if run.get("status") != "completed" and not check_write(
                     repo, run_id, saved["mode"], saved["number"], saved["worker"]):
                 raise RuntimeError("Source assignment no longer owns this persisted work")
@@ -571,16 +413,12 @@ def publish(repo: str, run_id: str, *, cleanup: bool = False, source_ended: bool
                      draft=False)
             if not isinstance(pr, dict):
                 raise RuntimeError("GitHub did not return the normal issue PR")
-            PUBLISHED_ISSUES[issue["number"]] = pr["number"]
     if pr.get("state") != "open":
-        merge = merged_checkpoint_receipt(repo, saved, pr)
-        if cleanup and original and merge:
-            retired = retire(repo, run_id, saved, branches, merge["merge_sha"])
-            return saved_receipt(saved, {**retired, **merge, "saved": True, "published": True,
-                    "checkpoint_sha": saved.get("origin_head") or saved["head"], "work_pr": pr["number"]})
-        return saved_receipt(saved, {"saved": True, "published": bool(merge), "validated": False,
-                "checkpoint_sha": saved.get("origin_head") or saved["head"], "work_pr": pr["number"],
-                **merge, "detail": "closed work retained"})
+        if cleanup and original and incorporated(repo, saved, pr.get("merge_commit_sha") or
+                                                pr["head"]["sha"]):
+            return retire(repo, run_id, saved, branches, pr["head"]["sha"])
+        return {"saved": True, "published": False, "validated": False,
+                "work_pr": pr["number"], "detail": "closed work retained"}
     generated = pr.get("title", "").startswith("Recovery:") or pr.get("draft")
     if generated:
         api(f"repos/{repo}/pulls/{pr['number']}", "PATCH", title=issue["title"],
@@ -595,14 +433,14 @@ def publish(repo: str, run_id: str, *, cleanup: bool = False, source_ended: bool
     record_producer(repo, pr, saved)
     handoff_comment(repo, pr, saved, run, run_id)
     result = {"saved": True, "published": True, "validated": complete,
-              "checkpoint_sha": saved.get("origin_head") or saved["head"], "work_pr": pr["number"],
+              "checkpoint_sha": saved["head"], "work_pr": pr["number"],
               "recovery_pr": pr["number"], "work_branch": pr["head"]["ref"],
               "checkpoint_branch": saved["branch"], "stage": stage}
     if cleanup and original and saved["branch"] != pr["head"]["ref"]:
         if incorporated(repo, saved, pr["head"]["sha"]):
             retired = retire(repo, run_id, saved, branches, pr["head"]["sha"])
             result["tracking_retired"] = retired.get("retired", False)
-    return saved_receipt(saved, result)
+    return result
 
 
 def retire(repo: str, run_id: str, saved: dict, prs: list[dict], destination: str) -> dict:
@@ -642,10 +480,10 @@ def record_delivery(repo: str, run_id: str, saved: dict, delivered_pr: int) -> d
     tag = validation_marker(run_id, pr["head"]["sha"])
     if not validated_head(repo, pr, run_id):
         api(f"repos/{repo}/issues/{pr['number']}/comments", "POST", body=tag)
-    return saved_receipt(saved, {"saved": True, "published": True, "validated": True,
+    return {"saved": True, "published": True, "validated": True,
             "work_pr": pr["number"], "recovery_pr": pr["number"],
-            "work_branch": pr["head"]["ref"],
-            "checkpoint_branch": saved["branch"]})
+            "work_branch": pr["head"]["ref"], "checkpoint_sha": saved["head"],
+            "checkpoint_branch": saved["branch"]}
 
 
 def enrich_outcome(path: Path, result: dict) -> None:
@@ -666,8 +504,6 @@ def main() -> int:
     parser.add_argument("--repo", required=True)
     parser.add_argument("--run-id")
     parser.add_argument("--sweep", action="store_true")
-    parser.add_argument("--limit", type=int, default=0,
-                        help="Sweep only the newest N checkpoint runs")
     parser.add_argument("--cleanup", action="store_true")
     parser.add_argument("--outcome", type=Path)
     parser.add_argument("--state-file", type=Path)
@@ -688,10 +524,8 @@ def main() -> int:
                                    args.work_branch))
     ids = [args.run_id] if args.run_id else []
     if args.sweep:
-        refs = checkpoint_refs(args.repo)
-        ids = sorted({ref["ref"].rsplit("/", 1)[-1] for ref in refs}, key=int, reverse=True)
-        if args.limit > 0:
-            ids = ids[:args.limit]
+        refs = pages(f"repos/{args.repo}/git/matching-refs/heads/{PREFIX}")
+        ids = sorted({ref["ref"].rsplit("/", 1)[-1] for ref in refs})
     if not ids and not args.sweep:
         parser.error("--run-id or --sweep is required")
     results = []

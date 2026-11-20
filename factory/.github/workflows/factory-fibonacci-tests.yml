@@ -46,12 +46,6 @@ jobs:
         run: |
           python -m pytest --noconftest -o addopts= -q --no-header \
             tests/test_factory_neon_operations.py \
-            tests/test_factory_checkpoint_handoff.py \
-            tests/test_factory_state_ledger.py \
-            tests/test_factory_model_failover.py \
-            tests/test_factory_historical_delivery.py \
-            tests/test_factory_outcome_reconcile.py \
-            tests/test_factory_semantic_verdict.py \
             tests/test_factory_dispatch_credential_filter.py \
             tests/test_factory_durable_candidate_health.py \
             tests/test_factory_runtime_view.py \

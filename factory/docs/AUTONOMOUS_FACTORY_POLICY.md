@@ -315,11 +315,20 @@ while inspecting PR content, and a missing parser fails closed with an actionabl
 
 ## Gated autonomous merges
 
-### Factory-only fast lane (removed)
+### Owner-enabled factory-only immediate merge exception
 
-The factory-only fast merge lane was removed on 2026-11-19. Every factory PR,
-including documentation-only changes, goes through the ordinary gated review
-and CI process.
+The [Factory-only Fast Merge](FACTORY_FAST_MERGE.md) lane is an explicit
+owner-authorized exception to the ordinary gated review and CI-wait process.
+For trusted, unowned, non-draft PRs changing **only** the controller's
+factory infrastructure allowlist, immediately attempt a SHA-pinned squash
+merge through the dedicated workflow on PR/label events. **Do not wait for
+CI, semantic review, `factory:ready`, or repeatedly poll check runs.**
+The exceptional lane does not remove trusted-author, path, ownership,
+hold, mergeability, SHA-pinning, or repository branch-permission controls.
+A GitHub branch-rule refusal is a failed immediate merge attempt requiring
+a narrowly scoped permission/bypass configuration fix, not authorization
+to forge checks or remove product PR protections. Changes to the fast-lane
+controller, workflow, config and tests are excluded from its own allowlist.
 
 ### Ordinary gated autonomous merges
 
@@ -845,6 +854,6 @@ released to `factory:changes-requested` + `factory:unowned` for repair pickup.
 Old-run reconciliation preserves resumed owners, stages and ordinary commits.
 Publication never certifies checks, approval or successful delivery. Failed
 checks preserve code and remain failed. Normal product CI/review/merge gates
-remain intact. See
+remain intact; the existing factory-only fast lane is unchanged. See
 [persisted work handoff](FACTORY_CHECKPOINTS.md) for trusted execution, branch
 identity, cancellation reconciliation and retention.

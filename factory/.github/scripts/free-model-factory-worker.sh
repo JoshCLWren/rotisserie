@@ -194,7 +194,6 @@ stage_trusted_review_controller() {
   # Bind model provenance to a trusted main checkout snapshot, not PR data.
   cp .github/scripts/factory_worker_slots.py "$trusted_dir/factory_worker_slots.py"
   cp .github/scripts/factory_provider_registry.py "$trusted_dir/factory_provider_registry.py"
-  cp .github/scripts/factory_config.py "$trusted_dir/factory_config.py"
   cp .github/scripts/factory_work_policy.py "$trusted_dir/factory_work_policy.py"
   cp .github/scripts/factory_fork_control.py "$trusted_dir/factory_fork_control.py"
   # factory-fork-worker.sh reads this from the environment.
@@ -549,45 +548,9 @@ fi
 ORIGINAL_SOURCE="$SOURCE"
 attempted_pairs=()
 blocked_providers=()
-# Do not infer a credential-wide outage from ordinary model output or issue
-# text containing "payment required". Only the provider-branded error envelope
-# immediately following OpenCode's direct build header qualifies. A generic
-# quota classification remains model-local.
+ACCOUNT_REFUSAL_RE='insufficient balance or no resource package|please recharge|add usage credits or subscribe|api key budget (limit )?exceeded|account (credits|balance) (depleted|exhausted)|billing_api_budget_exhausted|payment required|no resource package|(does|do)(n.t| not) have enough credits'
 account_wide_failure() {
-  python3 - "/tmp/opencode-factory-$WORKER.log" "$MODEL" <<'PY'
-import re
-import sys
-from pathlib import Path
-
-log = Path(sys.argv[1])
-model = sys.argv[2]
-if not log.is_file():
-    raise SystemExit(1)
-clean = re.sub(r"\x1b\[[0-?]*[ -/]*[@-~]", "", log.read_text(errors="replace"))
-header = f"> build · {model}"
-lines = clean.splitlines()
-for index, line in enumerate(lines):
-    if line.strip() != header:
-        continue
-    # Only the first nonempty output after the direct runtime build header.
-    # This envelope is emitted before any model turn or repository content.
-    for next_line in lines[index + 1:index + 5]:
-        message = next_line.strip()
-        if not message:
-            continue
-        if (message.startswith("The account behind this API key doesn't have enough credits. Please [top up](<https://enter.pollinations.ai/top-up?")
-                and "agent_low_balance_topup" in message):
-            raise SystemExit(0)
-        if re.fullmatch(
-            r"(?:Error: )?(?:Insufficient balance or no resource package|"
-            r"Your API key budget limit exceeded|Account balance exhausted|"
-            r"Billing API budget exhausted)(?:[.!].*)?",
-            message, re.IGNORECASE,
-        ):
-            raise SystemExit(0)
-        break
-raise SystemExit(1)
-PY
+  grep -Eqi "$ACCOUNT_REFUSAL_RE" "/tmp/opencode-factory-$WORKER.log"
 }
 # OpenCode prints some provider account refusals (Pollinations "doesn't have
 # enough credits") and still exits 0. A fast, edit-free zero exit whose log
@@ -707,14 +670,8 @@ while :; do
       provider_quota|provider_throttle|provider_failure|model_unavailable|model_retired_410|model_policy_violation)
         if [[ -z "$(git status --porcelain)" ]] && (( $(remaining) > 540 )); then
           attempted_pairs+=("$(jq -nc --arg source "$SOURCE" --arg model "$MODEL" '[$source,$model]')")
-          # A directly observed credential/account refusal cannot recover by
-          # trying another model with the same credential in this assignment.
-          # Keep durable health model-scoped: only this lease skips the source.
+          # A paid-model credit refusal backs off only the attempted model.
           failure_scope=model
-          if [[ "$failure_class" == provider_quota ]] && account_wide_failure; then
-            failure_scope=account
-            blocked_providers+=("$SOURCE")
-          fi
           if ! record_model_failover_failure "$SOURCE" "$MODEL" "$failure_class" "$failure_scope"; then
             record_terminal_outcome control_plane_failure "failed to persist exact attempt before failover"
             break
@@ -957,20 +914,9 @@ acceptance_policy="$(dirname "$TRUSTED_REVIEW_CONTROLLER")/factory_issue_accepta
 acceptance_mission="$(factory_issue_acceptance_mission "$NUMBER" "$EXPECTED_HEAD")"
 if [[ "$verdict" == 'approve' ]] \
   && ! factory_has_acceptance_report "$sanitized_review_log" "$acceptance_policy" "$acceptance_mission"; then
-  # PR #5385 reproduced a full 16-item report with "met"/"partial" evidence
-  # and a contradictory READY. That is an actionable review rejection, not
-  # missing output: route it to repair instead of burning another review lane.
-  incomplete_acceptance="$(factory_incomplete_acceptance_report \
-    "$sanitized_review_log" "$acceptance_policy" "$acceptance_mission" || true)"
-  if [[ -n "$incomplete_acceptance" ]]; then
-    log "semantic_review_blocked: $incomplete_acceptance"
-    append_wrapper_gate_reason "$incomplete_acceptance"
-    verdict='repair'
-  else
-    log "review returned READY without a parseable acceptance report; requesting bounded evidence recovery"
-    # A bare READY cannot be submitted to the controller if recovery times out.
-    verdict=''
-  fi
+  log "review returned READY without a parseable acceptance report; requesting bounded evidence recovery"
+  # A bare READY cannot be submitted to the controller if recovery times out.
+  verdict=''
 fi
 recovery_attempted=0
 recovery_status=0

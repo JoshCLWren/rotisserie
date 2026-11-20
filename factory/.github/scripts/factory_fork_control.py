@@ -24,8 +24,7 @@ import zipfile
 
 from factory_worker_slots import resolve
 
-REPO = os.environ.get("GITHUB_REPOSITORY") or __import__("factory_config").repository()
-REPO_OWNER, REPO_NAME = REPO.split("/", 1)
+REPO = "JoshCLWren/comic-pile"
 EXECUTION_PATH = ".github/workflows/factory-fork-execution.yml"
 EXECUTION_WORKFLOW = "Factory Fork Execution"
 SHA_RE = re.compile(r"[a-f0-9]{40}\Z")
@@ -261,7 +260,7 @@ def _context(pr: int, head: str, output: Path) -> None:
         sections.append("Linked issue:\n" + json.dumps(
             _gh(["api", f"repos/{REPO}/issues/{int(closing[1])}"]), ensure_ascii=False,
         ))
-    query = """query($owner:String!,$name:String!,$number:Int!,$after:String){repository(owner:$owner,name:$name){
+    query = """query($number:Int!,$after:String){repository(owner:"JoshCLWren",name:"comic-pile"){
       pullRequest(number:$number){reviewThreads(first:100,after:$after){
         nodes{id isResolved isOutdated path line
           firstComment:comments(first:1){nodes{body author{login}}}
@@ -270,8 +269,7 @@ def _context(pr: int, head: str, output: Path) -> None:
     after: object = None
     while True:
         data = _object(_gh(["api", "--method", "POST", "graphql"], {
-            "query": query,
-            "variables": {"owner": REPO_OWNER, "name": REPO_NAME, "number": pr, "after": after},
+            "query": query, "variables": {"number": pr, "after": after},
         }))
         repository_data = _object(_object(data.get("data")).get("repository"))
         pull = _object(repository_data.get("pullRequest"))

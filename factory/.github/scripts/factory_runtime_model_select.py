@@ -27,7 +27,21 @@ class CandidateUnavailableError(RuntimeError):
 
 def catalog_url(source: str, spec: Any, env: Mapping[str, str]) -> str:
     """Resolve the provider's published catalog endpoint, never a model ID."""
-    return spec.resolved_catalog_url(env)
+    endpoint = spec.endpoint
+    if spec.additional_credentials:
+        endpoint = endpoint.replace("{account_id}", env["CLOUDFLARE_ACCOUNT_ID"])
+    if source == "pollinations":
+        # Provider-side filters guarantee that discovery contains only usable
+        # text/chat models with tool calling, excluding managed agents.
+        return endpoint.rstrip("/") + "/models?category=text&capabilities=tool_calling&agent=false"
+    if source == "cloudflare-workers-ai":
+        # Cloudflare publishes Workers AI models at models/search, not at
+        # its OpenAI-compatible inference /ai/v1/models path.
+        return (
+            endpoint.removesuffix("/ai/v1")
+            + "/ai/models/search?format=openrouter&per_page=100"
+        )
+    return endpoint.rstrip("/") + "/models"
 
 
 def provider_catalog(

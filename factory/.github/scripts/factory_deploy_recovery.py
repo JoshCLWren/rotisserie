@@ -371,7 +371,7 @@ def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.parse_args()
     try:
-        reconcile(os.environ.get("GITHUB_REPOSITORY") or __import__("factory_config").repository())
+        reconcile(os.environ["GITHUB_REPOSITORY"])
     except GitHubQuotaDeferredError:
         # No issue mutation or deployment-success assertion without evidence.
         # The 15-minute scheduled recovery will retry after quota reset.

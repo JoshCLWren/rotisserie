@@ -1,8 +1,8 @@
 # Rotisserie factory runtime
 
 This directory is the factory runtime that adopter repositories install. It
-came from JoshCLWren/comic-pile at `7ba8423` (see `docs/migration/`), keeps that
-repository's layout so relative paths still work, and is configured per adopter.
+is a copy of JoshCLWren/comic-pile's factory and keeps that repository's layout
+so relative paths still work.
 
 The workflow files under `.github/workflows/` here are templates. GitHub does
 not run them in Rotisserie. They run in each adopter repository, on that
@@ -32,38 +32,11 @@ python3 factory/install/install.py /path/to/adopter --ref <sha> --workflow facto
 `--ref` must be a full commit SHA. Installed files keep the template names, so a
 workflow disabled in the adopter stays disabled when its file is updated.
 
-## Configuration
+## Scope
 
-`.rotisserie/config.toml` in the adopter:
-
-```toml
-schema_version = 1
-
-[repository]
-owner = "your-org"
-name = "your-repo"
-
-[production]
-url = "https://your-app.example"
-
-[markers]
-namespace = "rotisserie-factory"
-
-# Bring your own models. Entries merge over defaults/providers.toml.
-[providers.my-gateway]
-provider = "my-gateway"
-credential = "MY_GATEWAY_API_KEY"
-endpoint = "https://gateway.example/v1"
-name = "My OpenAI-compatible gateway"
-
-[providers]
-disabled = ["pollinations"]
-# mode = "replace"   # use only the providers declared here
-```
-
-Endpoints and `catalog_url` can name extra credentials as placeholders, for
-example `{CLOUDFLARE_ACCOUNT_ID}`. In Actions, `GITHUB_REPOSITORY` wins over
-`[repository]`; local runs read the file.
+The runtime files are a verbatim copy of Comic Pile's factory at
+`29fd7ce`, the commit before the cutover. They still name
+`JoshCLWren/comic-pile`. Adopter configuration is tracked in issue #78.
 
 ## Tests
 
