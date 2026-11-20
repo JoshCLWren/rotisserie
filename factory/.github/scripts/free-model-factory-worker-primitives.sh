@@ -574,6 +574,19 @@ branch_folded_main_commits() {
   [[ -n "$shared" ]]
 }
 
+# Adopted checkpoint snapshots move HEAD by design; only the model's own
+# commits, merges or rewrites count as a changed head.
+head_moved_by_model() {
+  local head saved
+  head="$(git rev-parse HEAD)"
+  [[ "$head" != "$EXPECTED_HEAD" ]] || return 1
+  saved="$(sed -n '1p' "${CHECKPOINT_REF_FILE:-/dev/null}" 2>/dev/null)"
+  [[ -n "$saved" && "$head" == "$saved" ]] || return 0
+  git merge-base --is-ancestor "$EXPECTED_HEAD" "$head" || return 0
+  [[ -z "$(git rev-list --merges "$EXPECTED_HEAD..$head")" ]] || return 0
+  git log --format=%s "$EXPECTED_HEAD..$head" | grep -qv '^checkpoint(factory): '
+}
+
 unclean_git_state_json() {
   local merge_head cherry_pick_head revert_head
   local merge_in_progress=false cherry_pick_in_progress=false revert_in_progress=false
@@ -586,7 +599,7 @@ unclean_git_state_json() {
   [[ -z "$revert_head" ]] || revert_in_progress=true
   [[ -z "$(git ls-files -u)" ]] || unmerged_entries=true
   if conflict_markers_present; then conflict_markers=true; fi
-  [[ "$(git rev-parse HEAD)" == "$EXPECTED_HEAD" ]] || head_changed=true
+  if head_moved_by_model; then head_changed=true; fi
   if branch_folded_main_commits; then foreign_main_commits=true; fi
   jq -nc \
     --argjson merge_in_progress "$merge_in_progress" \
