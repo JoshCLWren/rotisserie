@@ -46,7 +46,7 @@ def raw_work_demand(policy, issues, prs) -> tuple[int, int]:
         if str(issue.get("state") or "OPEN").upper() == "OPEN"
     }
     allowed_prs = (
-        [pr for pr in prs if policy.pr_cutover_allowed(
+        [pr for pr in prs if policy.pr_work_allowed(
             pr, issue_map, cutover_open=True
         )]
         if cutover_open else prs

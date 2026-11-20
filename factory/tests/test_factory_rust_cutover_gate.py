@@ -65,12 +65,17 @@ def test_rust_cutover_issue_and_main_breakage_remain_executable() -> None:
     }
 
 
-def test_unrelated_open_pr_waits_even_if_it_predates_the_issue_dependency() -> None:
+def test_unrelated_open_pr_stays_repairable_during_the_cutover() -> None:
     epic = issue(4335, "epic")
     old_issue = issue(3507, body="Fix unrelated E2E inventory")
     candidate = pr(4704, 3507)
-    assert numbers([epic, old_issue], [candidate]) == set()
+    assert numbers([epic, old_issue], [candidate]) == {("pr", 4704)}
     assert numbers([old_issue], [candidate]) == {("pr", 4704)}
+
+
+def test_open_pr_for_a_closed_issue_stays_repairable_during_the_cutover() -> None:
+    epic = issue(4335, "epic")
+    assert numbers([epic], [pr(4704, 3507)]) == {("pr", 4704)}
 
 
 def test_rust_pr_can_continue_review_and_repairs() -> None:
@@ -91,17 +96,15 @@ def test_closing_reference_cannot_smuggle_unrelated_issue_through_rust_branch() 
     rust = issue(4346, "rust")
     unrelated = issue(4707)
     linked_pr = pr(4708, 4346, body="Closes #4707.")
-    assert numbers([epic, rust, unrelated], [linked_pr]) == set()
+    assert numbers([epic, rust, unrelated], [linked_pr]) == {("pr", 4708)}
 
 
-def test_unlinked_pr_requires_explicit_rust_label_during_cutover() -> None:
+def test_only_an_explicit_epic_dependency_defers_an_open_pr() -> None:
     epic = issue(4335, "epic")
     orphan = pr(4708, 4707)
-    assert numbers([epic], [orphan]) == set()
-    orphan["labels"].append({"name": "rust"})
-    assert numbers([epic], [orphan]) == set()  # branch still claims missing issue
-    orphan["headRefName"] = "maintenance/rust-cutover"
     assert numbers([epic], [orphan]) == {("pr", 4708)}
+    orphan["body"] = "Depends on #4335"
+    assert numbers([epic], [orphan]) == set()
 
 
 def test_local_selector_honors_cutover_gate_and_releases_when_epic_closes() -> None:
@@ -183,7 +186,7 @@ def test_deferred_pr_backlog_does_not_saturate_rust_issue_intake(monkeypatch) ->
     rust = issue(4346, "rust")
     deferred = [issue(3507, body="Depends on #4335"), issue(4516)]
     prs = [pr(4704, 3507), pr(4700, 4516)]
-    assert numbers([epic, rust, *deferred], prs) == {("issue", 4346)}
+    assert numbers([epic, rust, *deferred], prs) == {("issue", 4346), ("pr", 4700)}
     # Normal backpressure still applies once the epic has closed.
     assert numbers([rust, *deferred], prs) == {("pr", 4700), ("pr", 4704)}
 
