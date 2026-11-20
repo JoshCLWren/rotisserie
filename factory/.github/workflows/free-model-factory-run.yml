@@ -68,6 +68,13 @@ on:
         required: false
       FACTORY_WORKER_48_APP_PRIVATE_KEY:
         required: false
+      # Shared factory App. Every other worker posts readable handoffs through it.
+      ROTISSERIE_FACTORY_APP_ID:
+        required: false
+      ROTISSERIE_FACTORY_INSTALLATION_ID:
+        required: false
+      ROTISSERIE_FACTORY_APP_PRIVATE_KEY:
+        required: false
 
 permissions:
   contents: write
@@ -159,6 +166,9 @@ jobs:
       FACTORY_WORKER_48_APP_ID: ${{ secrets.FACTORY_WORKER_48_APP_ID }}
       FACTORY_WORKER_48_INSTALLATION_ID: ${{ secrets.FACTORY_WORKER_48_INSTALLATION_ID }}
       FACTORY_WORKER_48_APP_PRIVATE_KEY: ${{ secrets.FACTORY_WORKER_48_APP_PRIVATE_KEY }}
+      ROTISSERIE_FACTORY_APP_ID: ${{ secrets.ROTISSERIE_FACTORY_APP_ID }}
+      ROTISSERIE_FACTORY_INSTALLATION_ID: ${{ secrets.ROTISSERIE_FACTORY_INSTALLATION_ID }}
+      ROTISSERIE_FACTORY_APP_PRIVATE_KEY: ${{ secrets.ROTISSERIE_FACTORY_APP_PRIVATE_KEY }}
       FACTORY_READER_APP_ID: ${{ secrets.FACTORY_READER_APP_ID }}
       NVIDIA_API_KEY: ${{ secrets.NVIDIA_API_KEY }}
       OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
