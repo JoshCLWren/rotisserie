@@ -95,7 +95,7 @@ do not steal it back.
 
 1. Claim with an atomic full label-set replacement (`gh api -X PUT .../issues/N/labels` with
    the complete set — never sequential add/remove): issue gets `ralph-status:in-progress`,
-   `factory`, `factory:building`, one owner. Follow the `github-issue-kanban` skill and
+   `factory`, `factory:building`, one owner, and `via:local/<model>`. Follow the `github-issue-kanban` skill and
    `docs/AUTONOMOUS_FACTORY_POLICY.md`.
 2. Commit (imperative, component-scoped), push the branch, open a **ready-for-review** PR
    (never draft unless Josh asks). PR body states the verification evidence run.
@@ -105,8 +105,13 @@ do not steal it back.
 
    | Target | Labels |
    |---|---|
-   | Issue | `ralph-status:in-review`, `factory`, `factory:review`, `factory:unowned` (+ priority/task/quality labels) |
-   | PR | `factory`, `factory:review`, `factory:unowned` |
+   | Issue | `ralph-status:in-review`, `factory`, `factory:review`, `factory:unowned`, `via:local/<model>` (+ priority/task/quality labels) |
+   | PR | `factory`, `factory:review`, `factory:unowned`, `via:local/<model>` |
+
+   `via:local/<model>` is required on every issue and PR this session works on. `<model>` is
+   the short name of the model running this session (for example `via:local/claude-opus-5-5`),
+   cut to 50 characters. Keep exactly one `via:` label: drop the previous one in the same PUT.
+   Create a missing label first with `gh label create <name> --color c5def5 --force`.
 
    Replace each set atomically via `gh api -X PUT repos/JoshCLWren/comic-pile/issues/N/labels`
    with every label in one call. POST only adds labels, leaving old owners and stages in place.
@@ -152,5 +157,5 @@ not grant merge authorization or replace exact-head review requirements.
 
 - Never edit `docs/changelog.md` / `docs/changelog.d/` for implementation PRs.
 - Never enable auto-merge; never merge without every exact-head gate verified.
-- Never leave an open factory PR without `factory`, one workflow-state label, and one owner
-  label.
+- Never leave an open factory PR without `factory`, one workflow-state label, one owner
+  label, and one `via:` label that names the model that last worked on it.

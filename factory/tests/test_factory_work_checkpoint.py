@@ -40,6 +40,7 @@ def start(
         **os.environ, 'FACTORY_CHECKPOINT_INTERVAL_SECONDS': '1',
         'FACTORY_CHECKPOINT_MODEL': 'provider/Exact.Model:free',
         'FACTORY_CHECKPOINT_RUNTIME_MODEL': 'runtime/Exact.Model:free',
+        'FACTORY_CHECKPOINT_SOURCE': 'openrouter-free',
         'FACTORY_CHECKPOINT_ISSUE': issue,
         'TRUSTED_CHECKPOINT_HANDOFF': str(handoff) if handoff else '',
         'GITHUB_REPOSITORY': 'test/checkpoint',
@@ -85,6 +86,7 @@ def test_checkpoint_saves_new_and_tracked_code_without_touching_agent_index(tmp_
         metadata = git(work, 'show', '-s', '--format=%B', sha)
         assert 'Issue: 123' in metadata
         assert 'Model: provider/Exact.Model:free' in metadata
+        assert 'Model-source: openrouter-free' in metadata
         assert 'Runtime-model: runtime/Exact.Model:free' in metadata
         assert f'Base-commit: {base}' in metadata
         assert git(work, 'status', '--porcelain') == 'M tracked.rs\n?? new.rs'

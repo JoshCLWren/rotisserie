@@ -446,7 +446,7 @@ start_work_checkpoint() {
   export FACTORY_CHECKPOINT_REF_FILE="$CHECKPOINT_REF_FILE"
   CHECKPOINT_LOG="${RUNNER_TEMP:-/tmp}/factory-work-checkpoint-${GITHUB_RUN_ID}.log"
   FACTORY_CHECKPOINT_ISSUE="$checkpoint_issue" FACTORY_CHECKPOINT_MODEL="$MODEL" \
-    FACTORY_CHECKPOINT_RUNTIME_MODEL="$RUNTIME_MODEL" \
+    FACTORY_CHECKPOINT_SOURCE="$SOURCE" FACTORY_CHECKPOINT_RUNTIME_MODEL="$RUNTIME_MODEL" \
     bash "$TRUSTED_WORK_CHECKPOINT" "$MODE" "$NUMBER" "$WORKER" "$GITHUB_RUN_ID" >"$CHECKPOINT_LOG" 2>&1 &
   CHECKPOINT_PID="$!"
   log "automatic persisted work enabled for run $GITHUB_RUN_ID (every 45s)"
@@ -632,6 +632,7 @@ transient_failure=0
 FAST_FAILOVER_SECONDS="${FACTORY_FAST_FAILOVER_SECONDS:-180}"
 while :; do
   log "FACTORY_EXECUTION_CANDIDATE: source=$SOURCE model=$MODEL runtime=$RUNTIME_MODEL"
+  mark_worker_via_task
   : > "/tmp/opencode-factory-${WORKER}.log"
   attempt_started_at="$SECONDS"
   set +e

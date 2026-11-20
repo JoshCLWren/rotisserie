@@ -717,21 +717,39 @@ worker_via_label() {
 }
 
 mark_worker_via() {
-  # Readable "last worked by" label: provider and model. The numeric owner
-  # label stays the lease key. Best effort with the workflow token.
-  local number="$1" name current old
+  # Required "current model" label: provider and model now working on the
+  # target. The numeric owner label stays the lease key.
+  local number="$1" name current old attempt
   local -a args
+  [[ "$number" =~ ^[1-9][0-9]*$ ]] || return 0
   name="$(LC_ALL=C worker_via_label)"
-  current="$(gh issue view "$number" --json labels \
-    --jq '.labels[].name | select(startswith("via:"))' 2>/dev/null)" || return 0
-  [[ "$current" == "$name" ]] && return 0
-  gh label create "$name" --color c5def5 \
-    --description 'Factory provider and model that last worked on this' --force >/dev/null 2>&1 || return 0
-  args=(--add-label "$name")
-  while IFS= read -r old; do
-    [[ -n "$old" && "$old" != "$name" ]] && args+=(--remove-label "$old")
-  done <<< "$current"
-  gh issue edit "$number" "${args[@]}" >/dev/null 2>&1 || true
+  for attempt in 1 2 3; do
+    if current="$(gh issue view "$number" --json labels \
+        --jq '.labels[].name | select(startswith("via:"))' 2>/dev/null)"; then
+      [[ "$current" == "$name" ]] && return 0
+      if gh label create "$name" --color c5def5 \
+          --description 'Factory provider and model currently working on this' --force >/dev/null 2>&1; then
+        args=(--add-label "$name")
+        while IFS= read -r old; do
+          [[ -n "$old" && "$old" != "$name" ]] && args+=(--remove-label "$old")
+        done <<< "$current"
+        gh issue edit "$number" "${args[@]}" >/dev/null 2>&1 && return 0
+      fi
+    fi
+    sleep $(( attempt * 2 ))
+  done
+  echo "::warning::Could not set ${name} on #${number}"
+  return 0
+}
+
+mark_worker_via_task() {
+  # Label the assigned target and, for a PR, the issue it delivers.
+  local linked=''
+  mark_worker_via "$NUMBER"
+  if [[ "$MODE" == pr ]]; then
+    linked="$(linked_issue_from_pr "$NUMBER" 2>/dev/null)" || linked=''
+    [[ -z "$linked" || "$linked" == "$NUMBER" ]] || mark_worker_via "$linked"
+  fi
   return 0
 }
 

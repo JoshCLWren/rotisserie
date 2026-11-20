@@ -181,6 +181,7 @@ def checkpoint(repo: str, run_id: str) -> dict | None:
               "branch": refs[0]["ref"].removeprefix("refs/heads/"),
               "mode": match[3], "number": int(match[4]), "worker": match[1],
               "issue": metadata.get("Issue", ""), "model": metadata.get("Model", ""),
+              "source": metadata.get("Model-source", ""),
               "origin_head": cursor.get("sha", head), "resumed": cursor.get("sha", head) != head}
     base = metadata.get("Base-commit", "")
     if SHA.fullmatch(base):
@@ -449,6 +450,37 @@ def handoff_comment(repo: str, pr: dict, saved: dict, run: dict, run_id: str) ->
     ))
 
 
+def via_label(source: str, model: str) -> str:
+    """Match worker_via_label in free-model-factory-worker-primitives.sh."""
+    short = model.rsplit("/", 1)[-1].removesuffix(":free")
+    return f"via:{source}/{short}"[:50]
+
+
+def mark_via(repo: str, targets: list[dict | None], saved: dict) -> None:
+    """Show the model whose saved bytes are the current tip of the work."""
+    source, model = saved.get("source", ""), saved.get("model", "")
+    if not source or source == "unknown" or not model or model == "unknown-model":
+        return
+    name = via_label(source, model)
+    try:
+        api(f"repos/{repo}/labels", "POST", name=name, color="c5def5",
+            description="Factory provider and model currently working on this")
+    except RuntimeError:
+        pass
+    for target in targets:
+        if target is None:
+            continue
+        number = target["number"]
+        try:
+            current = labels_of(obj(f"repos/{repo}/issues/{number}"))
+            if name not in current:
+                api(f"repos/{repo}/issues/{number}/labels", "POST", labels=[name])
+            for old in sorted(label for label in current if label.startswith("via:") and label != name):
+                api(f"repos/{repo}/issues/{number}/labels/{quote(old, safe='')}", "DELETE")
+        except RuntimeError as exc:
+            print(f"::warning::Could not set {name} on #{number}: {exc}", file=sys.stderr)
+
+
 def publish(repo: str, run_id: str, *, cleanup: bool = False, source_ended: bool = False) -> dict:
     """Persist ordinary issue work, preserving live ownership and real merge gates."""
     run = verified_run(repo, run_id)
@@ -512,6 +544,8 @@ def publish(repo: str, run_id: str, *, cleanup: bool = False, source_ended: bool
     # Original repair bytes are already pushed atomically by the live writer.
     # Legacy saved refs not yet incorporated remain linked and never overwrite
     # a newer worker's assigned branch during background reconciliation.
+    if not saved.get("resumed") and pr["head"]["sha"] == saved["head"]:
+        mark_via(repo, [pr, issue], saved)
     record_producer(repo, pr, saved)
     handoff_comment(repo, pr, saved, run, run_id)
     result = {"saved": True, "published": True, "validated": complete,
