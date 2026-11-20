@@ -816,7 +816,10 @@ def semantic_review_excerpt(text: str) -> str:
     semantic = re.split(r"(?m)^diff --git ", semantic, maxsplit=1)[0]
     excerpt = redact_review_text(semantic[-7000:])
     if marker:
-        command = re.search(r"(?m)^gh pr diff [0-9]+\s*$", evidence)
+        command = re.search(
+            r"(?m)^(?:gh pr diff [0-9]+|gh api repos/[^/\s]+/[^/\s]+/pulls/[0-9]+/files)\s*$",
+            evidence,
+        )
         if command:
             excerpt += f"\n{AUTHORITATIVE_DIFF_EVIDENCE}\n{command.group(0).strip()}"
     return excerpt
