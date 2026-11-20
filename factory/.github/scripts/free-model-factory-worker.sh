@@ -626,6 +626,21 @@ select_next_eligible_model() {
   done
 }
 
+# A model that exits cleanly without touching the work gets replaced in this
+# run, so each next model costs no new dispatch or worker setup. A PR repair
+# that reports ready, any review, and any edit or commit keep the normal path.
+no_change_failover_eligible() {
+  [[ "$SOURCE" != omniroute-free && "${FACTORY_FORK_STATIC_REVIEW:-0}" != 1 ]] || return 1
+  [[ -z "${FACTORY_PUSH_BLOCKED_REASON:-}" ]] || return 1
+  [[ "$MODE" == issue || "${ASSIGNED_PR_STAGE:-}" != 'factory:review' ]] || return 1
+  [[ -z "$(git status --porcelain)" && "$(git rev-parse HEAD)" == "$EXPECTED_HEAD" ]] || return 1
+  if [[ "$MODE" == pr ]] \
+    && [[ "$(factory_extract_semantic_verdict "/tmp/opencode-factory-${WORKER}.log" || true)" == approve ]]; then
+    return 1
+  fi
+  (( $(remaining) > 540 ))
+}
+
 agent_attempt=1
 agent_status=0
 transient_failure=0
@@ -650,6 +665,16 @@ while :; do
     # Earlier failed candidates must never poison the terminal outcome.
     rm -f "$TERMINAL_OUTCOME_FILE"
     transient_failure=0
+    if no_change_failover_eligible; then
+      log "FACTORY_NO_CHANGE_FAILOVER: source=$SOURCE model=$MODEL made no change to ${MODE} #${NUMBER}; trying the next model in this run"
+      attempted_pairs+=("$(jq -nc --arg source "$SOURCE" --arg model "$MODEL" '[$source,$model]')")
+      if select_next_eligible_model; then
+        agent_attempt=1
+        available="$(remaining)"
+        agent_timeout=$((available - 240 - FAST_CHECK_RESERVE_SECONDS))
+        (( agent_timeout >= 300 )) && continue
+      fi
+    fi
     break
   fi
   # The actual inference failed. For model-scoped provider failures, advance
