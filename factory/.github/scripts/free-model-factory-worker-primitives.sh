@@ -627,9 +627,9 @@ reject_out_of_scope_diff() {
 }
 
 factory_push_credential() {
-  # Print "<source>\t<token>" for push and PR creation. Worker 48 gets its
-  # installation token when the mapping and secrets exist; every other worker
-  # keeps PR_REBASE_TOKEN. The shared producer is not removed.
+  # Print "<source>\t<token>" for push and PR creation. Worker 48 uses its own
+  # App, every other worker the shared factory App, and PR_REBASE_TOKEN only
+  # when neither App is configured.
   # The minted installation token is not a repository secret, so Actions will
   # not mask it on its own: register ::add-mask:: before any other use. Xtrace
   # is suspended so `set -x` can never echo it, and nothing here writes it to
@@ -899,9 +899,8 @@ _persist_issue_pr_untraced() {
     title="$(gh issue view "$number" --json title --jq .title)"
     body="$(printf 'Closes #%s.\n\nModel: %s\nSource: %s\nWorker: %s\n\nProduced by fixed-model Factory %s (%s). Normal ComicPile exact-head factory merge gates apply.\n' \
       "$number" "$MODEL" "$SOURCE" "$WORKER_ID" "$WORKER" "$DISPLAY")"
-    # PR creation must use the same actor as the push. Worker 48 uses its
-    # installation token when configured; every other worker uses
-    # PR_REBASE_TOKEN. The workflow token stays github-actions[bot] for
+    # PR creation must use the same actor as the push: the worker's App
+    # installation token when configured, else PR_REBASE_TOKEN. The workflow token stays github-actions[bot] for
     # controller calls and is not a worker App.
     GH_TOKEN="$push_token" \
       gh pr create --base main --head "$branch" --title "$title" --body "$body" >/tmp/factory-pr-url

@@ -70,6 +70,16 @@ def worker_entry(mapping: Mapping[str, Any], worker: str) -> dict[str, Any] | No
     return entry if isinstance(entry, dict) else None
 
 
+def shared_app_decision(worker: str, env: Mapping[str, str]) -> dict[str, str] | None:
+    """Use the shared factory App when all three of its secrets are present."""
+    shared = {key: _present(env.get(f"ROTISSERIE_FACTORY_{key.upper()}"))
+              for key in ("app_id", "installation_id", "app_private_key")}
+    if not all(shared.values()):
+        return None
+    return {"source": "installation", "worker": worker, "app_id": shared["app_id"],
+            "installation_id": shared["installation_id"], "private_key": shared["app_private_key"]}
+
+
 def credential_decision(
     worker: str,
     env: Mapping[str, str],
@@ -77,16 +87,15 @@ def credential_decision(
 ) -> dict[str, str]:
     """Choose installation vs PR_REBASE_TOKEN without minting or renaming.
 
-    Only worker 48 can select an installation token, and only when the
-    persisted entry plus App id, installation id, and private key are present.
-    Everyone else, including a fully configured non-48 row, stays on the
-    shared producer.
+    Worker 48 uses its own App when its entry and secrets are present. Every
+    other worker uses the shared factory App when its secrets are present.
+    Without either App the worker stays on PR_REBASE_TOKEN.
     """
     loaded = load_mapping() if mapping is None else mapping
     decision = {"source": "pr_rebase", "worker": str(worker)}
     entry = worker_entry(loaded, str(worker))
     if entry is None:
-        return decision
+        return shared_app_decision(str(worker), env) or decision
     app_id_secret = _present(entry.get("app_id_secret")) or "FACTORY_WORKER_48_APP_ID"
     installation_secret = (
         _present(entry.get("installation_id_secret")) or "FACTORY_WORKER_48_INSTALLATION_ID"
@@ -96,7 +105,7 @@ def credential_decision(
     installation_id = _present(entry.get("installation_id")) or _present(env.get(installation_secret))
     private_key = _present(env.get(key_secret))
     if not app_id or not installation_id or not private_key:
-        return decision
+        return shared_app_decision(str(worker), env) or decision
     decision["source"] = "installation"
     decision["app_id"] = app_id
     decision["installation_id"] = installation_id
@@ -263,23 +272,15 @@ def handoff_decision(
 ) -> dict[str, str]:
     """Choose the author of a human-readable handoff comment.
 
-    Worker 48 with its own App uses that App. Every other worker uses the
-    shared factory App when ROTISSERIE_FACTORY_APP_ID, _INSTALLATION_ID and
-    _APP_PRIVATE_KEY are all set. Push and PR creation do not use the shared
-    App. Without an App the worker gets ``default``, which means the caller keeps its current
+    Same gate as push and PR creation: worker 48's own App, else the shared
+    factory App. Without an App the worker gets ``default``, which means the caller keeps its current
     identity and posts nothing new. A handoff never falls back to
     PR_REBASE_TOKEN, and machine markers never route through this decision.
     """
     decision = credential_decision(worker, env, mapping)
-    if decision["source"] == "installation":
-        return decision
-    shared = {key: _present(env.get(f"ROTISSERIE_FACTORY_{key.upper()}"))
-              for key in ("app_id", "installation_id", "app_private_key")}
-    if all(shared.values()):
-        return {"source": "installation", "worker": str(worker), "app_id": shared["app_id"],
-                "installation_id": shared["installation_id"],
-                "private_key": shared["app_private_key"]}
-    return {"source": "default", "worker": str(worker)}
+    if decision["source"] != "installation":
+        return {"source": "default", "worker": str(worker)}
+    return decision
 
 
 def resolve_handoff_credential(env: Mapping[str, str] | None = None) -> tuple[str, str]:
