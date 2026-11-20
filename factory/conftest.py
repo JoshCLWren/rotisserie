@@ -1,8 +1,12 @@
 import os
+import sys
 import tempfile
 from pathlib import Path
 
 FACTORY_ROOT = Path(__file__).resolve().parent
+# Runtime scripts import their siblings (such as factory_adopter); tests load
+# some of them by file path, outside their own directory.
+sys.path.insert(0, str(FACTORY_ROOT / ".github" / "scripts"))
 REFERENCE_ADOPTER = FACTORY_ROOT / "tests" / "fixtures" / "adopter" / "config.toml"
 
 # The suite always runs as the reference adopter, including inside Rotisserie's

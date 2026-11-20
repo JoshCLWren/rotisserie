@@ -21,6 +21,7 @@ from typing import Any
 from factory_state_metrics import connect as measured_connect
 
 from factory_state_cache import _dsn
+from factory_adopter import repository
 
 SCHEMA = [
   "CREATE TABLE IF NOT EXISTS public.factory_model_health (\n repo text NOT NULL, source text NOT NULL, model text NOT NULL,\n status text NOT NULL DEFAULT 'unknown', last_outcome text,\n cooldown_until timestamptz, last_verified_at timestamptz,\n last_run_id bigint NOT NULL DEFAULT 0, updated_at timestamptz NOT NULL DEFAULT now(),\n PRIMARY KEY (repo,source,model))",
@@ -1193,13 +1194,14 @@ async def _reset_model_health(conn: Any, repo: str, include_retired: bool = Fals
 def main() -> int:
     parser=argparse.ArgumentParser(description=__doc__)
     parser.add_argument("command",choices=("bootstrap","filter","rank","stats","ingest-check","checkpoint","sync-catalog","export-model-exclusions","export-candidate-health","export-fleet-failover-sources","reset-model-health"))
-    parser.add_argument("--repo",default=os.environ.get("GITHUB_REPOSITORY","JoshCLWren/comic-pile"))
+    parser.add_argument("--repo",default=None)
     parser.add_argument("--file",type=Path)
     parser.add_argument("--scope")
     parser.add_argument("--worker",default="")
     parser.add_argument("--cursor",default="")
     parser.add_argument("--include-retired",action="store_true")
     args=parser.parse_args()
+    args.repo=args.repo or repository()
     if not REPO_RE.fullmatch(args.repo):
         parser.error("invalid repo")
     if args.command=="reset-model-health":

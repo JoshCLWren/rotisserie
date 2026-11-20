@@ -9,7 +9,10 @@ const http = require('node:http');
 const crypto = require('node:crypto');
 const { spawnSync } = require('node:child_process');
 
-const REPO = 'JoshCLWren/comic-pile';
+const REPO = process.env.GITHUB_REPOSITORY || '';
+if (!/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(REPO)) {
+  throw new Error('Set GITHUB_REPOSITORY=OWNER/NAME for the adopter repository');
+}
 const ROOT = path.resolve(__dirname, '../..');
 const MAPPING = path.join(ROOT, '.github/factory-worker-github-apps.json');
 const DEFAULT_DIR = path.join(os.homedir(), '.local/state/comic-pile/worker-app-48');

@@ -23,8 +23,9 @@ from urllib.parse import quote
 import zipfile
 
 from factory_worker_slots import resolve
+from factory_adopter import repository
 
-REPO = "JoshCLWren/comic-pile"
+REPO = repository()
 EXECUTION_PATH = ".github/workflows/factory-fork-execution.yml"
 EXECUTION_WORKFLOW = "Factory Fork Execution"
 SHA_RE = re.compile(r"[a-f0-9]{40}\Z")

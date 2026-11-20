@@ -10,7 +10,6 @@ Only the existing serialized dispatcher calls this controller.
 from __future__ import annotations
 
 import json
-import os
 import re
 import subprocess
 import time
@@ -26,8 +25,9 @@ from factory_work_policy import (
     matching_pr_no_diff_attempts,
     parse_no_diff_attempts_from_comments,
 )
+from factory_adopter import repository
 
-REPO = os.environ.get("GITHUB_REPOSITORY", "JoshCLWren/comic-pile")
+REPO = repository()
 SHA_RE = re.compile(r"^[0-9a-f]{40}$")
 RETIRE_MARKER = "comic-pile-factory-no-progress-retired-v1"
 STAGES = {"factory:review", "factory:changes-requested"}

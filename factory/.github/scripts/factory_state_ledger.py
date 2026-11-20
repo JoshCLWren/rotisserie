@@ -18,6 +18,7 @@ from factory_state_metrics import connect as measured_connect
 
 from factory_state_cache import _dsn
 from factory_work_policy import FIXED_LEASE_TTL_SECONDS
+from factory_adopter import repository
 
 WORKER_RE = re.compile(r"^[0-9]+$")
 LIFECYCLE_STATUSES = {"started": "worker_started", "finished": "worker_outcome_signal",
@@ -646,8 +647,9 @@ def main() -> int:
     parser.add_argument("--status", choices=sorted(LIFECYCLE_STATUSES))
     parser.add_argument("--log", help="Trusted completed factory job log, for exact smoke timeout attribution")
     parser.add_argument("--run-id", required=True)
-    parser.add_argument("--repo", default=os.environ.get("GITHUB_REPOSITORY", "JoshCLWren/comic-pile"))
+    parser.add_argument("--repo", default=None)
     args = parser.parse_args()
+    args.repo = args.repo or repository()
     if args.command == "lifecycle":
         if not args.worker or not args.status:
             parser.error("lifecycle requires --worker and --status")

@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import re
 import subprocess
 import sys
@@ -15,7 +16,6 @@ from typing import Any
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
-DEFAULT_REPO = "JoshCLWren/comic-pile"
 ACTIVE = frozenset({"in_progress", "queued", "pending", "waiting", "requested"})
 REPO_RE = re.compile(r"^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$")
 SNAPSHOT_MARKER = '<script id="fleet-snapshot" type="application/json">'
@@ -295,12 +295,12 @@ def render(data: dict[str, Any]) -> str:
 def main() -> int:
     """Run a bounded, read-only status probe or interval watch."""
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--repo", default=DEFAULT_REPO)
+    parser.add_argument("--repo", default=os.environ.get("GITHUB_REPOSITORY") or None)
     parser.add_argument("--minutes", type=int, default=60)
     parser.add_argument("--watch", type=int, metavar="SECONDS", help="Refresh periodically (120s minimum)")
     parser.add_argument("--no-dashboard", action="store_true", help="Skip public dashboard freshness probe")
     args = parser.parse_args()
-    if not REPO_RE.fullmatch(args.repo) or not 1 <= args.minutes <= 1440:
+    if not args.repo or not REPO_RE.fullmatch(args.repo) or not 1 <= args.minutes <= 1440:
         parser.error("valid owner/repository and a window of 1-1440 minutes required")
     if args.watch is not None and args.watch < 120:
         parser.error("--watch must be at least 120 seconds to protect API budget")

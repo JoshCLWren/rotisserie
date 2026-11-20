@@ -14,8 +14,9 @@ from collections.abc import Callable, Iterable, Mapping
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
+from factory_adopter import repository
 
-REPO = os.environ.get("GITHUB_REPOSITORY", "JoshCLWren/comic-pile")
+REPO = repository()
 REPO_URL = f"https://github.com/{REPO}"
 OUTPUT = Path(os.environ.get("FACTORY_DASHBOARD_OUTPUT", "site/index.html"))
 SCRIPTS = Path(__file__).resolve().parent
@@ -870,6 +871,7 @@ def main() -> int:
     OUTPUT.parent.mkdir(parents=True, exist_ok=True)
     # Embed the existing trusted snapshot and UI in the same published HTML.
     # No new per-refresh GitHub commits, static roster, or API credentials.
+    snapshot = {**snapshot, "repo": REPO}
     payload = json.dumps(snapshot, ensure_ascii=True, separators=(",", ":"))
     payload = payload.replace("<", r"\u003c").replace(">", r"\u003e").replace("&", r"\u0026")
     css = load_module("factory_fleet_style", SCRIPTS / "factory_fleet_style.py").STYLESHEET

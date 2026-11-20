@@ -12,13 +12,13 @@ from __future__ import annotations
 
 import argparse
 import json
-import os
 import re
 import subprocess
 import sys
 from collections.abc import Iterable, Mapping
 from datetime import datetime, timezone
 from pathlib import Path
+from factory_adopter import repository
 
 GITHUB_DIR = Path(__file__).resolve().parents[1]
 BUDGETS_PATH = GITHUB_DIR / "factory-source-budgets.json"
@@ -82,7 +82,7 @@ def count_dispatches(
 def todays_entry_titles(now: datetime | None = None) -> list[str]:
     """Return Entry run titles created since 00:00 UTC today (via gh api)."""
     now = now or datetime.now(timezone.utc)
-    repo = os.environ.get("GITHUB_REPOSITORY", "JoshCLWren/comic-pile")
+    repo = repository()
     day = now.strftime("%Y-%m-%d")
     output = subprocess.run(
         [
@@ -119,7 +119,7 @@ def exhausted_sources(
     if titles is None:
         try:
             from factory_state_operations import daily_usage
-            counts = daily_usage(os.environ.get("GITHUB_REPOSITORY","JoshCLWren/comic-pile"),list(caps))
+            counts = daily_usage(repository(),list(caps))
         except Exception:
             counts = None
     if counts is None:
@@ -171,7 +171,7 @@ def filter_workers(
     if titles is None and any(sources.get(str(w)) in caps for w in workers):
         try:
             from factory_state_operations import daily_usage
-            counts = daily_usage(os.environ.get("GITHUB_REPOSITORY","JoshCLWren/comic-pile"),list(caps))
+            counts = daily_usage(repository(),list(caps))
         except Exception:
             counts = None
         if counts is None:
@@ -214,7 +214,7 @@ def main(argv: list[str] | None = None) -> int:
         caps = load_budgets()
         try:
             from factory_state_operations import daily_usage
-            counts = daily_usage(os.environ.get("GITHUB_REPOSITORY","JoshCLWren/comic-pile"),list(caps))
+            counts = daily_usage(repository(),list(caps))
         except Exception:
             counts = None
         if counts is None:

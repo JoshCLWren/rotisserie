@@ -19,8 +19,9 @@ from factory_review_policy import (
     trusted_comment_bodies,
 )
 from factory_work_policy import FIXED_LEASE_TTL_SECONDS, LOCAL_LEASE_TTL_SECONDS, owner_of
+from factory_adopter import repository
 
-REPOSITORY = "JoshCLWren/comic-pile"
+REPOSITORY = repository()
 FACTORY_OWNER_RE = re.compile(r"^factory:(?P<worker>local|[1-9]|[1-9][0-9])$")
 JsonCommand = Callable[[list[str]], object]
 

@@ -2932,7 +2932,6 @@ def main() -> int:
         # Keep the self-test hermetic: the tests stub the gh call sites, and a
         # deterministic slug prevents a fallback ``gh repo view`` on machines
         # without GITHUB_REPOSITORY (GitHub Actions always sets it).
-        os.environ.setdefault("GITHUB_REPOSITORY", "JoshCLWren/comic-pile")
         suite = unittest.defaultTestLoader.loadTestsFromTestCase(FactoryPostMergeClosureTests)
         return 0 if unittest.TextTestRunner(verbosity=2).run(suite).wasSuccessful() else 1
 
