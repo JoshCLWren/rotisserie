@@ -367,15 +367,6 @@ jobs:
           set -Eeuo pipefail
           python3 .github/scripts/factory_migration_lane.py reconcile
 
-      - name: Retire exact-head PR attempts with exhausted no-progress repairs
-        if: steps.api_budget.outputs.allow == 'true' && !inputs.target
-        shell: bash
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          set -Eeuo pipefail
-          python3 .github/scripts/factory_no_progress_retirement.py
-
       - name: Check main health (block merges onto red main)
         if: steps.api_budget.outputs.allow == 'true' && !inputs.target
         id: main_health
@@ -634,16 +625,11 @@ jobs:
             kind="$(jq -r '.kind // empty' <<< "$assignment" 2>/dev/null || true)"
             case "$kind" in
               none)
-                # Only an empty shared pool counts toward the early stop. A
-                # busy (leased), paused or budget-capped worker says nothing
-                # about the pool; counting it starved free workers later in
-                # the roster.
                 reason="$(jq -r '.reason // "no_work"' <<< "$assignment" 2>/dev/null || echo no_work)"
                 if [[ "$reason" == "worker_unavailable" ]]; then
                   echo "Factory ${worker}: unavailable this tick; trying next worker"
                 else
                   echo "Factory ${worker}: no executable control-plane assignment"
-                  consecutive_idle=$((consecutive_idle + 1))
                 fi
                 return 0
                 ;;
@@ -655,7 +641,6 @@ jobs:
                 ;;
             esac
 
-            consecutive_idle=0
             echo "Factory ${worker} assignment: ${assignment}"
             while (( attempt <= 3 )); do
               echo "Starting Factory ${worker} (dispatch attempt ${attempt}/3)"
@@ -787,12 +772,6 @@ jobs:
           echo "Dispatching workers through centralized assignment: $workers"
           dispatched_count=0
           dispatch_failures=0
-          # Each `assign` re-evaluates the whole executable pool (~20 GitHub
-          # reads). Once several differently-sourced workers in a row find
-          # nothing, the shared pool is empty for this tick; stop instead of
-          # repeating the same reads for every remaining slot.
-          consecutive_idle=0
-          idle_stop="${FACTORY_IDLE_ASSIGN_STOP:-3}"
           budget_deferred=false
           budget_unreadable=false
           while IFS= read -r worker; do
@@ -811,10 +790,6 @@ jobs:
             if (( remaining_core < 450 )); then
               echo "::warning::REST quota reached worker reserve; deferring remaining workers"
               budget_deferred=true
-              break
-            fi
-            if (( consecutive_idle >= idle_stop )); then
-              echo "${consecutive_idle} consecutive workers found no executable work; ending this tick's batch"
               break
             fi
             dispatch_assigned_worker "$worker" || dispatch_failures=$((dispatch_failures + 1))

@@ -102,7 +102,7 @@ def test_multiple_assignments_read_fifteen_history_pages_once_and_honor_new_atte
     monkeypatch.setattr(CONTROLLER.time, "time", lambda: NOW)
     assert CONTROLLER.assign("46").number == 2264
     monkeypatch.setattr(CONTROLLER.time, "time", lambda: NOW + 10)
-    assert CONTROLLER.assign("48") is None
+    assert CONTROLLER.assign("48").number == 2264
     # A changed comment must replace its cached body, not duplicate an old attempt.
     monkeypatch.setattr(CONTROLLER.time, "time", lambda: NOW + 20)
     assert CONTROLLER.assign("53").number == 2264

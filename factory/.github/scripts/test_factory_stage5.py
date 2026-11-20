@@ -77,22 +77,6 @@ def test_three_digit_workers_require_canonical_roster_membership(
         assert not controller.is_authorized_fixed_worker(worker)
 
 
-def test_retry_budget_exhausts_at_limit() -> None:
-    target = issue(31)
-    below = build_candidates(
-        [target],
-        [],
-        no_diff_attempts_by_issue={31: FACTORY_NO_DIFF_RETRY_LIMIT - 1},
-    )
-    exhausted = build_candidates(
-        [target],
-        [],
-        no_diff_attempts_by_issue={31: FACTORY_NO_DIFF_RETRY_LIMIT},
-    )
-    assert any(candidate.number == 31 for candidate in below)
-    assert not any(candidate.number == 31 for candidate in exhausted)
-
-
 def test_retry_counter_is_rolling_and_ages_out() -> None:
     now = 2_000_000_000
     recent = now - 60
