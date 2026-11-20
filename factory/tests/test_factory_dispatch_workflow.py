@@ -403,9 +403,12 @@ def test_non_quota_roster_keeps_normal_cadence_and_stops_on_no_work() -> None:
     import subprocess
     import textwrap
 
-    workflow = WORKFLOW.read_text(encoding="utf-8")
-    script = textwrap.dedent(
-        workflow.split("- name: Queue roster successor outside assignment lease lock", 1)[1].split("run: |", 1)[1]
+    import yaml
+
+    steps = yaml.safe_load(WORKFLOW.read_text(encoding="utf-8"))["jobs"]["dispatch"]["steps"]
+    script = next(
+        step["run"] for step in steps
+        if step.get("name") == "Queue roster successor outside assignment lease lock"
     )
     stub = """
 sleep() { printf 'sleep:%s\\n' "$1"; }
@@ -560,7 +563,9 @@ def test_workers_without_work_never_end_the_batch() -> None:
     assert dispatched == ["9"]
 
 
-def _run_chain_step(tmp_path: Path, gh_body: str = "", **outputs: str) -> tuple[str, str]:
+def _run_chain_step(
+    tmp_path: Path, gh_body: str = "", check: bool = True, **outputs: str
+) -> tuple[str, str]:
     import os
     import subprocess
 
@@ -578,8 +583,9 @@ def _run_chain_step(tmp_path: Path, gh_body: str = "", **outputs: str) -> tuple[
     gh.chmod(0o755)
     env = {**os.environ, "PATH": f"{tmp_path}:{os.environ['PATH']}", "GITHUB_REPOSITORY": "acme/widgets",
            "DISPATCHED_COUNT": "", "DISPATCH_FAILED": "", "UNAVAILABLE_COUNT": "",
-           "BUDGET_DEFERRED": "false", "BUDGET_UNREADABLE": "false", "QUOTA_DEFERRED": "", **outputs}
-    result = subprocess.run(["bash", "-c", step["run"]], env=env, text=True, capture_output=True, check=True)
+           "BUDGET_DEFERRED": "false", "BUDGET_UNREADABLE": "false", "QUOTA_DEFERRED": "",
+           "GITHUB_OUTPUT": str(tmp_path / "output"), **outputs}
+    result = subprocess.run(["bash", "-c", step["run"]], env=env, text=True, capture_output=True, check=check)
     return result.stdout, log.read_text() if log.exists() else ""
 
 
@@ -654,3 +660,61 @@ def test_dispatcher_chain_retries_successor_dispatch_without_sleeping(tmp_path: 
     out, calls = _run_chain_step(tmp_path, fail_twice, DISPATCHED_COUNT="1", DISPATCH_FAILED="false")
     assert calls.count("workflow run fixed-model-factory-roster-successor.yml") == 3
     assert "attempt 2/3" in out
+
+
+def test_failed_successor_dispatch_hands_its_delay_to_the_rescue_job(tmp_path: Path) -> None:
+    _run_chain_step(tmp_path, "exit 1\n", check=False, DISPATCHED_COUNT="1", DISPATCH_FAILED="false")
+    assert (tmp_path / "output").read_text() == "rescue_delay=240\n"
+
+
+def test_queued_successor_needs_no_rescue(tmp_path: Path) -> None:
+    _run_chain_step(tmp_path, DISPATCHED_COUNT="1", DISPATCH_FAILED="false")
+    assert not (tmp_path / "output").exists()
+
+
+def _run_rescue_job(tmp_path: Path, failures: int, delay: str = "240") -> tuple[int, str, str]:
+    import os
+    import subprocess
+
+    import yaml
+
+    workflow = yaml.safe_load(WORKFLOW.read_text(encoding="utf-8"))
+    job = workflow["jobs"]["chain_rescue"]
+    assert job["needs"] == "dispatch"
+    assert "concurrency" not in job
+    script = job["steps"][0]["run"]
+    count, log = tmp_path / "count", tmp_path / "gh.log"
+    gh, sleep = tmp_path / "gh", tmp_path / "sleep"
+    gh.write_text(
+        "#!/usr/bin/env bash\n"
+        f'n=$(( $(cat "{count}" 2>/dev/null || echo 0) + 1 )); echo "$n" > "{count}"\n'
+        f'printf "%s\\n" "$*" >> "{log}"\n(( n > {failures} ))\n'
+    )
+    sleep.write_text(f'#!/usr/bin/env bash\nprintf "%s " "$*" >> "{tmp_path / "sleeps"}"\n')
+    for tool in (gh, sleep):
+        tool.chmod(0o755)
+    env = {**os.environ, "PATH": f"{tmp_path}:{os.environ['PATH']}",
+           "GITHUB_REPOSITORY": "acme/widgets", "RESCUE_DELAY": delay}
+    result = subprocess.run(["bash", "-c", script], env=env, text=True, capture_output=True)
+    sleeps = (tmp_path / "sleeps").read_text() if (tmp_path / "sleeps").exists() else ""
+    return result.returncode, log.read_text() if log.exists() else "", sleeps
+
+
+def test_rescue_job_backs_off_until_the_successor_is_queued(tmp_path: Path) -> None:
+    code, calls, sleeps = _run_rescue_job(tmp_path, failures=2)
+    assert code == 0
+    assert calls.count("workflow run fixed-model-factory-roster-successor.yml") == 3
+    assert "-f delay_seconds=240" in calls
+    assert sleeps.split() == ["15", "30", "60"]
+
+
+def test_rescue_job_gives_up_after_four_attempts(tmp_path: Path) -> None:
+    code, calls, _ = _run_rescue_job(tmp_path, failures=9)
+    assert code != 0
+    assert calls.count("workflow run") == 4
+
+
+def test_rescue_job_rejects_an_out_of_range_delay(tmp_path: Path) -> None:
+    code, calls, _ = _run_rescue_job(tmp_path, failures=0, delay="9999")
+    assert code != 0
+    assert calls == ""

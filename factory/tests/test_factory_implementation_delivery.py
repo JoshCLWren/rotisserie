@@ -1303,6 +1303,8 @@ def test_factory_control_plane_installs_parser_runtime(workflow: str) -> None:
     gated = 0
     for name, job in config['jobs'].items():
         steps = job.get('steps', [])
+        if not any(str(step.get('uses', '')).startswith('actions/checkout') for step in steps):
+            continue
         body = name + '\n' + '\n'.join(
             str(step.get('run', '')) + str(step.get('name', '')) for step in steps
         )
