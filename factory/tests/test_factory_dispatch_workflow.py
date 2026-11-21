@@ -232,7 +232,7 @@ def test_targeted_dispatch_defers_without_fake_worker_failure_when_rest_quota_is
     deferred = workflow.split(
         "- name: Report quota-deferred targeted dispatch", 1
     )[1].split("- name: Reconcile serialized migration finalization lane", 1)[0]
-    assert "if: inputs.target && steps.api_budget.outputs.allow != 'true'" in deferred
+    assert "if: (inputs.target || inputs.provider) && steps.api_budget.outputs.allow != 'true'" in deferred
     assert "was NOT executed" in deferred
     assert "GITHUB_STEP_SUMMARY" in deferred
     assert "without a claim, work attempt, or lease mutation" in deferred
