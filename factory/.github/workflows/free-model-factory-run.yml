@@ -15,9 +15,7 @@ on:
       NEON_API_KEY:
         description: Restricted connection resolution in trusted cleanup jobs only
         required: false
-      OPENCODE_API_KEY:
-        required: false
-      OPENCODE_ZEN_API_KEY:
+      OPENCODE_GO_API_KEY:
         required: false
       NVIDIA_API_KEY:
         required: false
@@ -175,7 +173,8 @@ jobs:
       FACTORY_READER_APP_ID: ${{ secrets.FACTORY_READER_APP_ID }}
       NVIDIA_API_KEY: ${{ secrets.NVIDIA_API_KEY }}
       OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
-      OPENCODE_API_KEY: ${{ secrets.OPENCODE_API_KEY || secrets.OPENCODE_ZEN_API_KEY }}
+      # The OpenCode CLI uses this env name; only the Go-account secret supplies it.
+      OPENCODE_API_KEY: ${{ secrets.OPENCODE_GO_API_KEY }}
       Z_AI_API_KEY: ${{ secrets.Z_AI_API_KEY }}
       OLLAMA_API_KEY: ${{ secrets.OLLAMA_API_KEY }}
       MISTRAL_API_KEY: ${{ secrets.MISTRAL_API_KEY }}
@@ -244,7 +243,16 @@ jobs:
           branch_suffix="$source"
           configure_adapter=false
           case "$source" in
-            opencode-free|openrouter-free|kilo-auto)
+            opencode-free)
+              if [[ -n "${OPENCODE_API_KEY:-}" ]]; then
+                configured=true
+                reason='Go-account-key-configured'
+              else
+                configured=false
+                reason='Go-account-key-missing'
+              fi
+              ;;
+            openrouter-free|kilo-auto)
               configured=true
               reason='catalog-discovery-at-execution'
               ;;
@@ -397,17 +405,11 @@ jobs:
               fi
               ;;
             opencode-free)
-              catalog="$RUNNER_TEMP/factory-opencode-free-catalog"
-              if bash scripts/opencode-model-catalog.sh opencode verbose refresh > "$catalog"; then
-                comments_file="$RUNNER_TEMP/factory-opencode-attempt-comments.json"
-                printf '[]\n' > "$comments_file"
-                selection="$(python3 .github/scripts/factory_live_opencode.py \
-                  --catalog "$catalog" --worker "$WORKER" --comments "$comments_file" \
-                  --exclusions-file "$exclusions_file" --rotation "${GITHUB_RUN_NUMBER:-0}")" \
-                  || fleet_fallback 'OpenCode catalog has no eligible candidate'
-              else
-                fleet_fallback 'OpenCode live catalog unavailable'
-              fi
+              catalog="$RUNNER_TEMP/factory-go-catalog.json"
+              selection="$(python3 .github/scripts/factory_opencode_go.py \
+                --worker "$WORKER" --rotation "${GITHUB_RUN_NUMBER:-0}" \
+                --exclusions-file "$exclusions_file" --catalog-output "$catalog")" \
+                || fleet_fallback 'Go key or free catalog unavailable'
               ;;
             openrouter-free|vercel-ai-gateway)
               selection="$(python3 .github/scripts/factory_published_model_catalog.py \
@@ -445,12 +447,27 @@ jobs:
             proven_args=(--source "$SOURCE" --worker "$WORKER" --proven-only
               --rotation "${GITHUB_RUN_NUMBER:-0}" --exclusions-file "$exclusions_file")
             case "$SOURCE" in
-              opencode-free|kilo-auto) proven_args+=(--catalog-file "${catalog:-/nonexistent}") ;;
+              opencode-free) proven_args+=(--catalog-json "${catalog:-/nonexistent}") ;;
+              kilo-auto) proven_args+=(--catalog-file "${catalog:-/nonexistent}") ;;
               *) proven_args+=(--catalog-cache "$RUNNER_TEMP/factory-proven-catalog.json") ;;
             esac
             if proven="$(python3 .github/scripts/factory_model_failover.py "${proven_args[@]}" 2>/dev/null)"; then
               selection="$proven"
               echo "Factory $WORKER prefers proven $(jq -r '.model' <<< "$selection") on $SOURCE"
+            fi
+          fi
+          # Prefer authenticated Go free models across the existing fleet.
+          # No extra OpenCode route, worker identity, or provider-wide ban.
+          if [[ -n "${OPENCODE_API_KEY:-}" ]] &&
+             jq -e 'index("opencode-free") != null' "$RUNNER_TEMP/factory-fleet-sources.json" >/dev/null; then
+            go_args=(--worker "$WORKER" --rotation "${GITHUB_RUN_NUMBER:-0}"
+              --exclusions-file "$exclusions_file")
+            if [[ -f "$RUNNER_TEMP/factory-go-catalog.json" ]]; then
+              go_args+=(--catalog-json "$RUNNER_TEMP/factory-go-catalog.json")
+            fi
+            if go_pick="$(python3 .github/scripts/factory_opencode_go.py "${go_args[@]}" 2>/dev/null)"; then
+              selection="$go_pick"
+              selected_source=opencode-free
             fi
           fi
           model="$(jq -er '.model' <<< "$selection")"
