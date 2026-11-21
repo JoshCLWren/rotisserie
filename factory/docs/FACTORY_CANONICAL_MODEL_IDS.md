@@ -20,12 +20,21 @@ provider identifiers. It does not contain an allowed-model list.
 candidates at runtime. A slash in an upstream ID belongs to that upstream
 ID; no code should split it into an unapproved second provider.
 
-Pricing is metadata for observability only, never a filter. A catalog entry
-does not guarantee chat compatibility, tools, working authentication or useful
-code delivery. Incompatible advertised capabilities may be excluded, while
-uncertain capabilities require actual execution evidence. Failed executions
-use bounded retries/backoffs; neither an old failure nor a price label
-permanently removes a model.
+Pricing is generally metadata for observability, not an automatic eligibility
+filter. The **existing** `opencode-free` lane is the deliberate exception:
+it authenticates only with ComicPile's `OPENCODE_GO_API_KEY` secret (passed to
+the CLI as `OPENCODE_API_KEY`), verifies that the associated workspace
+exposes `opencode-go`, and selects only published zero-price, tool-capable
+chat models. It prefers `opencode-go/hy4-flash-free` while that exact model
+is eligible, then rotates through the remaining free Go models. The Zen
+provider `opencode` is explicitly denied by the worker policy. **There is
+no second OpenCode lane**. The old source name is retained solely for stable
+lease identities and Neon events.
+
+A catalog entry still does not guarantee useful execution. Other provider
+candidate policies remain dynamic. Failed executions retain exact-model
+backoff; a free-model quota failure never implies a paid sibling or another
+provider is exhausted.
 
 No committed TSV, model pin list, expected-worker JSON, or roster snapshot
 should exist. Tests use synthetic models and verify the behavioral contract.
