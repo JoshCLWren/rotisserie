@@ -26,7 +26,7 @@ def source_requirements(source: str) -> tuple[str, ...] | None:
     if source == "omniroute-free":
         return ("FACTORY_HAS_OMNIROUTE_API_KEY", "FACTORY_OMNIROUTE_ENABLED")
     if source == "opencode-free":
-        return ("FACTORY_HAS_OPENCODE_GO_API_KEY",)
+        return ("FACTORY_HAS_OPENCODE_GO_CLIENT_ID",)
     if source == "openrouter-free":
         return ("FACTORY_HAS_OPENROUTER_API_KEY",)
     return None
