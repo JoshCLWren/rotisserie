@@ -110,3 +110,23 @@ def test_adopter_fast_check_command_replaces_builtin_checks(tmp_path, monkeypatc
         )
         assert result.returncode == expected
         assert "adopter fast checks" in (tmp_path / "log").read_text()
+
+
+def test_acceptance_report_identity_and_pass_synonyms_are_normalized() -> None:
+    import importlib.util
+    from pathlib import Path
+
+    path = Path(__file__).resolve().parents[1] / ".github" / "scripts" / "factory_issue_acceptance.py"
+    spec = importlib.util.spec_from_file_location("factory_issue_acceptance_norm", path)
+    acc = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(acc)
+    head, digest = "a" * 40, "b" * 64
+    mission = f"ISSUE ACCEPTANCE: #7, head {head}, issue digest {digest}.\nACCEPTANCE_CRITERIA_COUNT=2\n"
+    report = {"issue": 7, "head": head, "issue_digest": "c" * 64,
+              "items": [{"id": "A1", "status": "Verified"}, {"id": "A2", "status": "blocked"}]}
+    fixed = acc.normalize_report(report, mission)
+    assert fixed["issue_digest"] == digest
+    assert [item["status"] for item in fixed["items"]] == ["pass", "blocked"]
+    assert acc.normalize_report(None, mission) is None
+    text = "review\n" + acc.PREFIX + "{}\nFACTORY_GATE_READY"
+    assert acc.report_from_text(acc.replace_report_line(text, fixed)) == fixed
