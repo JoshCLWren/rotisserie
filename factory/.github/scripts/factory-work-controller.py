@@ -109,8 +109,14 @@ def list_prs() -> list[dict[str, Any]]:
     ])))
 
 
-def rotisserie_issue_intake(issues: list[dict[str, Any]], prs: list[dict[str, Any]]) -> set[int] | None:
-    """Return authorized issue numbers, or None while the lane is legacy."""
+def rotisserie_issue_intake(issues: list[dict[str, Any]], prs: list[dict[str, Any]], *, operator_force: bool = False) -> set[int] | None:
+    """Return authorized issue numbers, or None while the lane is legacy.
+
+    A deliberate operator-forced worker can bypass *soft* WIP/review-backlog
+    pressure in the portable Rotisserie decision, but the same snapshot still
+    enforces human boundaries, incomplete dependencies and existing changes.
+    This does not bypass live GitHub or Neon claim checks.
+    """
     try:
         control = json.loads(ROTISSERIE_CONTROL_PATH.read_text(encoding="utf-8"))
         stage = control.get("stage")
@@ -167,9 +173,9 @@ def rotisserie_issue_intake(issues: list[dict[str, Any]], prs: list[dict[str, An
                     os.environ.get("FACTORY_ROTISSERIE_COMMAND", "rotisserie"),
                     "--config", str(config_path), "decide", "--snapshot", str(snapshot_path),
                     "--revision", revision, "--at", str(now),
-                    "--completion-backlog", str(factory_review_backlog_count(prs)),
+                    "--completion-backlog", str(0 if operator_force else factory_review_backlog_count(prs)),
                     "--backlog-limit", str(FACTORY_REVIEW_BACKLOG_LIMIT),
-                    "--active-changes", str(factory_pr_wip_count(prs)),
+                    "--active-changes", str(0 if operator_force else factory_pr_wip_count(prs)),
                     "--wip-limit", str(FACTORY_PR_WIP_LIMIT),
                 ],
                 check=True,
@@ -1448,6 +1454,7 @@ def assign(worker: str, kinds: tuple[str, ...] | None = None,
     target: tuple[str, int] | None = None,
     requested_action: str = 'advance',
     batch_reconciled: bool = False,
+    operator_force: bool = False,
 ) -> Candidate | None:
     """Assign the highest-ranked executable work to one fixed-model worker.
 
@@ -1465,7 +1472,7 @@ def assign(worker: str, kinds: tuple[str, ...] | None = None,
         print(f'[factory-controller] {skip_reason}; skipping dispatch', file=sys.stderr)
         return None
     return assign_from_pool(worker, kinds, target=target, requested_action=requested_action,
-                            batch_reconciled=batch_reconciled)
+                            batch_reconciled=batch_reconciled, operator_force=operator_force)
 
 
 def assign_from_pool(worker: str, kinds: tuple[str, ...] | None = None,
@@ -1473,6 +1480,7 @@ def assign_from_pool(worker: str, kinds: tuple[str, ...] | None = None,
     target: tuple[str, int] | None = None,
     requested_action: str = 'advance',
     batch_reconciled: bool = False,
+    operator_force: bool = False,
 ) -> Candidate | None:
     """Rank the shared pool for a worker already proven eligible."""
     # Trusted dispatcher batches run these two full-repository reconciliations
@@ -1520,12 +1528,16 @@ def assign_from_pool(worker: str, kinds: tuple[str, ...] | None = None,
         prs,
         no_diff_attempts_by_issue=issue_retry_counts,
         no_diff_attempt_records=attempt_records,
+        include_backpressured_issues=operator_force,
     )
     # A PR-only target never leases new issue work; issue-intake authorization
     # is unnecessary and can fail closed or consume remote calls on every
     # targeted repair/review wakeup.
     if target is None or target[0] == 'issue':
-        authorized_issues = rotisserie_issue_intake(issues, prs)
+        authorized_issues = (
+            rotisserie_issue_intake(issues, prs, operator_force=True)
+            if operator_force else rotisserie_issue_intake(issues, prs)
+        )
         if authorized_issues is not None:
             candidates = [
                 candidate
@@ -1559,9 +1571,14 @@ def assign_from_pool(worker: str, kinds: tuple[str, ...] | None = None,
             raise RuntimeError(f'Requested action is unavailable. Current action: {eligible_action or "none"}.')
         if not candidate_is_live_executable(selected):
             raise RuntimeError('The selected target is blocked or still waiting on checks.')
+    # Operator-forced work is an explicit owner request, so advisory retry
+    # cooldown and soft queue backpressure may not suppress all available work.
+    # Hard candidate, dependency, ownership and live-claim checks remain active.
+    if operator_force and target is None:
+        print('[factory-controller] operator force: bypassing advisory retry cooldown and soft backlog pressure', file=sys.stderr)
     # Advisory retry cooldown is scoped to exact PR head AND stage.
     # Manual targets can override retry scheduling, never live merge/CI gates.
-    if target is None:
+    if target is None and not operator_force:
         try:
             from factory_state_operations import cooling_prs
             pr_heads = {int(pr["number"]): str(pr.get("headRefOid") or "") for pr in prs}
@@ -2461,7 +2478,11 @@ def dispatch_next(
         # A manual target skips unrelated tasks, but never the target's live
         # eligibility and lease checks.
         try:
-            candidate = assign(worker, target=target_spec) if target_spec else assign(worker)
+            candidate = (
+                assign(worker, target=target_spec) if target_spec
+                else assign(worker, operator_force=True) if force_slot
+                else assign(worker)
+            )
         except RuntimeError as exc:
             if target_spec and (
                 'No eligible work on this target' in str(exc)
