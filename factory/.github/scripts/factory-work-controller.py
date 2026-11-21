@@ -2339,17 +2339,24 @@ def check_stale_prs(dry_run: bool = False) -> dict[str, Any]:
     }
 
 
-def dispatch_next(provider: str, model: str = 'auto') -> dict[str, object]:
-    """Assign the next eligible real task to an available existing provider slot.
+def dispatch_next(
+    provider: str,
+    model: str = 'auto',
+    *,
+    force_slot: bool = False,
+    slot_index: int | None = None,
+    target: str = '',
+) -> dict[str, object]:
+    """Assign an existing provider slot to real executable work.
 
-    Selection and leasing remain entirely with the regular controller. A model
-    request is a routing constraint, never an authorization to bypass backlog,
-    issue blockers, active ownership, or review/merge policy.
+    Operator force mode bypasses *advisory historical worker health* only.
+    It never bypasses credential checks, current quotas, worker/target leases,
+    task blockers, CI, live authorization or merge policy.
     """
     from factory_completion_controller import (
         capacity_report, durable_factory_state, load_manifest_candidates,
     )
-    from factory_worker_slots import sources
+    from factory_worker_slots import slots as registered_slots, sources
 
     source = 'opencode-free' if provider == 'opencode-go' else provider
     if source not in sources():
@@ -2357,16 +2364,56 @@ def dispatch_next(provider: str, model: str = 'auto') -> dict[str, object]:
     if model != 'auto':
         from factory_manual_model import validate_model_syntax
         validate_model_syntax(source, model)
-    _view, health = durable_factory_state()
-    capacity = capacity_report(load_manifest_candidates(), health, now_epoch=int(time.time()))
-    slots = cast(list[dict[str, str]], capacity['executable_candidates'])
-    eligible = sorted(
-        {row['worker'] for row in slots if worker_sources().get(row['worker']) == source},
-        key=int,
-    )
+    if slot_index is not None and not force_slot:
+        raise ValueError('An explicit slot requires --force-slot')
+    if slot_index is not None and slot_index < 1:
+        raise ValueError('Slot index must be positive')
+    target_spec: tuple[str, int] | None = None
+    if target:
+        match = re.fullmatch(r'(issue|pr):([1-9][0-9]*)', target)
+        if match is None:
+            raise ValueError('Target must be issue:NUMBER or pr:NUMBER')
+        target_spec = (match.group(1), int(match.group(2)))
+
+    provider_slots = [
+        entry for entry in registered_slots() if entry.source == source
+        and (slot_index is None or entry.index + 1 == slot_index)
+    ]
+    if not provider_slots:
+        raise ValueError('Requested slot does not exist for this provider')
+
+    if force_slot:
+        # Historical model/worker health is advisory in owner-forced mode.
+        # Only real registered slots may be requested, and assign() still
+        # validates current capacity, credentials, budgets and Neon leases.
+        eligible = [entry.worker for entry in provider_slots]
+    else:
+        _view, health = durable_factory_state()
+        capacity = capacity_report(load_manifest_candidates(), health, now_epoch=int(time.time()))
+        allowed = {str(row['worker']) for row in
+                   cast(list[dict[str, str]], capacity['executable_candidates'])}
+        eligible = [entry.worker for entry in provider_slots if entry.worker in allowed]
+
+    skipped: list[str] = []
     for worker in eligible:
-        candidate = assign(worker)
+        # A manual target skips unrelated tasks, but never the target's live
+        # eligibility and lease checks.
+        try:
+            candidate = assign(worker, target=target_spec) if target_spec else assign(worker)
+        except RuntimeError as exc:
+            if target_spec and (
+                'No eligible work on this target' in str(exc)
+                or 'blocked or still waiting on checks' in str(exc)
+                or 'not currently executable' in str(exc).lower()
+            ):
+                skipped.append(str(exc))
+                break
+            raise
         if candidate is None:
+            # Only for operator commands, provide a useful reason when a
+            # registered slot cannot start. Do not mutate it or steal a lease.
+            if force_slot:
+                skipped.append(worker_skip_reason(worker) or 'No executable unowned work')
             continue
         try:
             run_gh([
@@ -2386,11 +2433,18 @@ def dispatch_next(provider: str, model: str = 'auto') -> dict[str, object]:
         return {
             'status': 'dispatched', 'kind': candidate.kind, 'number': candidate.number,
             'action': action, 'worker': worker, 'provider': source, 'model': model,
+            'forced': force_slot, 'slot_index': slot_index,
         }
     return {
         'status': 'deferred', 'provider': source, 'model': model,
-        'reason': ('No eligible provider slot currently has executable work. '
-                   'Review stage, leases, source budgets, and capacity.'),
+        'forced': force_slot, 'slot_index': slot_index,
+        'eligible_slots': len(eligible),
+        'reason': (
+            'No registered slot passed historical health screening'
+            if not eligible else
+            'All checked slots are currently busy, blocked or have no executable work'
+        ),
+        'details': list(dict.fromkeys(skipped))[:5],
     }
 
 
@@ -2511,6 +2565,9 @@ def main() -> int:
     next_parser = subparsers.add_parser('dispatch-next')
     next_parser.add_argument('--provider', required=True)
     next_parser.add_argument('--model', default='auto')
+    next_parser.add_argument('--force-slot', action='store_true')
+    next_parser.add_argument('--slot-index', type=int)
+    next_parser.add_argument('--target', default='')
     target_parser = subparsers.add_parser('dispatch-target')
     target_parser.add_argument('--kind', required=True, choices=('issue', 'pr'))
     target_parser.add_argument('--number', required=True, type=int)
@@ -2570,7 +2627,10 @@ def main() -> int:
         print(json.dumps(assignment_context(candidate, args.worker)))
         return 0
     if args.command == 'dispatch-next':
-        print(json.dumps(dispatch_next(args.provider, args.model)))
+        print(json.dumps(dispatch_next(
+            args.provider, args.model, force_slot=args.force_slot,
+            slot_index=args.slot_index, target=args.target,
+        )))
         return 0
     if args.command == 'dispatch-target':
         print(json.dumps(dispatch_target(args.kind, args.number, args.action, args.model)))
