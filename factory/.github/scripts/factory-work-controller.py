@@ -31,6 +31,7 @@ from factory_source_budget import budget_block_reason, worker_sources
 from factory_attempt_history import read_comment_history
 from factory_discovery import canonical_target, discover, update_labels
 from factory_state_ledger import acquire_lease, release_lease, renew_verified_workers, worker_claim
+from factory_state_ledger import enabled as ledger_enabled
 from factory_adopter import repository
 REPO = repository()
 GH_TIMEOUT_SECONDS = env_positive_int("FACTORY_GH_TIMEOUT_SECONDS", 120)
@@ -1042,6 +1043,18 @@ def paired_owned_targets(
     return pairs
 
 
+def _label_outlived_claim(worker: str, number: int) -> bool:
+    """Return True only when Neon proves the worker holds no claim on the target."""
+    if not ledger_enabled():
+        return False
+    try:
+        claim = worker_claim(REPO, worker)
+    except Exception as exc:
+        print(f'[factory-controller] claim check unavailable ({type(exc).__name__})', file=sys.stderr)
+        return False
+    return claim is None or number not in claim[1]
+
+
 def reconcile_stale_leases(now_epoch: int | None = None) -> list[int]:
     """Expire inactive leases even when trusted progress markers are absent.
 
@@ -1084,6 +1097,23 @@ def reconcile_stale_leases(now_epoch: int | None = None) -> list[int]:
         fixed_owner = FIXED_OWNER_RE.fullmatch(owner)
         if fixed_owner and (unresolved_runs or int(fixed_owner.group("worker")) in active):
             continue
+        paired_number = pairs.get(number)
+        if fixed_owner and _label_outlived_claim(fixed_owner.group('worker'), number):
+            # Assignment claims Neon before labelling and every release clears
+            # labels first, so a label with no claim is a failed release.
+            if replace_factory_labels(
+                number,
+                'factory:unowned',
+                expected_owner=owner,
+                observed_at_epoch=now_epoch,
+                related_owner_target=paired_number,
+            ):
+                released.append(number)
+                print(
+                    f'[factory-controller] released {owner} label on #{number}: no Neon claim',
+                    file=sys.stderr,
+                )
+            continue
         marker_epoch = latest_lease_activity_epoch(number)
         # A malformed future timestamp cannot extend ownership indefinitely.
         if marker_epoch is not None and marker_epoch > now_epoch:
@@ -1098,7 +1128,6 @@ def reconcile_stale_leases(now_epoch: int | None = None) -> list[int]:
                 )
             except RuntimeError:
                 updated_epoch = None
-        paired_number = pairs.get(number)
         paired_update = (
             last_github_update_epoch(targets[paired_number], now_epoch=now_epoch)
             if paired_number is not None

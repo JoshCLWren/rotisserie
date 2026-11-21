@@ -2205,3 +2205,62 @@ def test_worker_ordering_is_role_neutral_with_protected_lanes(
     assert controller.order_candidates_for_worker(
         [*candidates, protected_review], worker,
     )[0] == protected_review
+
+
+def _fixed_lease_item(number: int, updated: int, worker: str) -> dict[str, Any]:
+    return {
+        **_local_lease_item(number, updated, "factory:changes-requested"),
+        "labels": [
+            {"name": "factory"},
+            {"name": f"factory:{worker}"},
+            {"name": "factory:changes-requested"},
+        ],
+    }
+
+
+def _claims(controller: types.ModuleType, monkeypatch: pytest.MonkeyPatch, claim: Any) -> None:
+    monkeypatch.setattr(controller, "ledger_enabled", lambda: True)
+
+    def read(repo: str, worker: str, **_: Any) -> Any:
+        if isinstance(claim, Exception):
+            raise claim
+        return claim
+
+    monkeypatch.setattr(controller, "worker_claim", read)
+
+
+def test_reconcile_releases_a_fresh_owner_label_whose_neon_claim_is_gone(
+    controller: types.ModuleType, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A release that freed Neon but failed on labels must not wait out the TTL."""
+    now = 2_000_000_000
+    writes = _lease_reconcile_setup(controller, monkeypatch, [_fixed_lease_item(5633, now - 60, "62")])
+    _claims(controller, monkeypatch, None)
+    assert controller.reconcile_stale_leases(now_epoch=now) == [5633]
+    assert "factory:unowned" in writes[0]["labels"]
+    assert "factory:62" not in writes[0]["labels"]
+
+
+@pytest.mark.parametrize(
+    "claim", [("claim-1", [5633]), RuntimeError("neon down")], ids=["claimed", "unreadable"]
+)
+def test_reconcile_keeps_a_fresh_owner_label_unless_neon_proves_no_claim(
+    controller: types.ModuleType, monkeypatch: pytest.MonkeyPatch, claim: Any
+) -> None:
+    now = 2_000_000_000
+    writes = _lease_reconcile_setup(controller, monkeypatch, [_fixed_lease_item(5633, now - 60, "62")])
+    _claims(controller, monkeypatch, claim)
+    assert controller.reconcile_stale_leases(now_epoch=now) == []
+    assert writes == []
+
+
+def test_reconcile_never_strips_a_running_worker_without_a_claim(
+    controller: types.ModuleType, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    now = 2_000_000_000
+    writes = _lease_reconcile_setup(
+        controller, monkeypatch, [_fixed_lease_item(5633, now - 60, "62")], workers={62}
+    )
+    _claims(controller, monkeypatch, None)
+    assert controller.reconcile_stale_leases(now_epoch=now) == []
+    assert writes == []
