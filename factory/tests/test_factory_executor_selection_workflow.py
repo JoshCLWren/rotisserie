@@ -29,7 +29,7 @@ def test_multi_provider_entry_is_restored_while_omniroute_stays_dark() -> None:
 
     assert "factory_provider_registry.py credentials --source" in lane
     assert "opencode-free|openrouter-free|kilo-auto)" in lane
-    assert "factory_live_opencode.py" in selector
+    assert "factory_opencode_go.py" in selector
     assert "kilo-auto)" in selector
     assert "factory_runtime_model_select.py" in selector
     assert "factory_published_model_catalog.py" in selector
