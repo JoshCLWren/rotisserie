@@ -81,5 +81,5 @@ def test_model_choice_is_end_to_end_and_never_falls_back():
     assert "--required-model" in runner
     assert "Exact requested model could not be selected; no provider fallback" in runner
     assert 'FACTORY_EXACT_MODEL: ${{ inputs.model ||' in runner
-    assert "Explicit exact model" in worker
+    assert "Explicit operator provider/model selection" in worker
     assert "factory-work-controller.py validate-assignment" in runner
