@@ -28,8 +28,10 @@ def test_multi_provider_entry_is_restored_while_omniroute_stays_dark() -> None:
     lane = _lane_resolution(workflow)
 
     assert "factory_provider_registry.py credentials --source" in lane
-    assert "opencode-free|openrouter-free|kilo-auto)" in lane
-    assert "factory_live_opencode.py" in selector
+    assert "opencode-free)" in lane
+    assert "Go-account-key-missing" in lane
+    assert "openrouter-free|kilo-auto)" in lane
+    assert "factory_opencode_go.py" in selector
     assert "kilo-auto)" in selector
     assert "factory_runtime_model_select.py" in selector
     assert "factory_published_model_catalog.py" in selector
@@ -150,7 +152,8 @@ def test_live_selector_uses_trusted_neon_exclusions_without_registry_scan() -> N
     live = selector.split("opencode-free)", 1)[1].split("openrouter-free|vercel-ai-gateway)", 1)[0]
     assert "/issues/1093/comments?per_page=100" not in live
     assert '--exclusions-file "$exclusions_file"' in live
-    assert 'printf \'[]\\n\' > "$comments_file"' in live
+    assert "factory_opencode_go.py" in live
+    assert '--catalog-output "$catalog"' in live
     assert 'FACTORY_MODEL_EXCLUSIONS: ${{ needs.validate_assignment.outputs.exclusions }}' in workflow
     assert 'jq -e \'type == "object" and all(.[]; type == "array")\'' in selector
 

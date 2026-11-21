@@ -49,7 +49,7 @@ cat > "$HOME/.config/opencode/opencode.json" <<'JSON'
 {
   "$schema": "https://opencode.ai/config.json",
   "providers": {
-    "opencode": {
+    "opencode-go": {
       "models": {
         "crouton-alpha-free": {
           "body": {"safety_identifier": "comic-pile-factory"}
@@ -67,6 +67,7 @@ cat > "$HOME/.config/opencode/opencode.json" <<'JSON'
     {"action": "subagent", "resource": "*", "effect": "allow"}
   ],
   "policies": [
+    {"action": "provider.use", "resource": "opencode", "effect": "deny"},
     {"action": "tool.use", "resource": "shell:git push *", "effect": "deny"},
     {"action": "tool.use", "resource": "shell:git commit *", "effect": "deny"},
     {"action": "tool.use", "resource": "shell:git reset --hard *", "effect": "deny"}

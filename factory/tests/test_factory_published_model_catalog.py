@@ -99,7 +99,7 @@ def test_execution_workflow_has_no_published_price_gate() -> None:
     selection = workflow.split("      - name: Select execution candidate at dispatch time", 1)[1]
     assert selection.count("factory_published_model_catalog.py") == 1
     assert "factory_runtime_model_select.py" in selection
-    assert "factory_live_opencode.py" in selection
+    assert "factory_opencode_go.py" in selection
     assert "selected-from-live-runtime-catalog" in selection
     assert "Require Vercel model to remain zero-price" not in workflow
 

@@ -27,7 +27,8 @@ def test_runner_discovers_catalogs_at_execution_time() -> None:
     runner = FACTORY_RUN.read_text(encoding="utf-8")
     selector = runner.split("- name: Select execution candidate at dispatch time", 1)[1]
     selector = selector.split("- name:", 1)[0]
-    assert "bash scripts/opencode-model-catalog.sh opencode verbose refresh" in selector
+    assert "factory_opencode_go.py" in selector
+    assert '--catalog-output "$catalog"' in selector
     assert "kilo models kilo --refresh" in selector
     assert "factory_runtime_model_select.py" in selector
     assert "Nothing\n          # uses a checked-in model ID" in selector

@@ -9,6 +9,8 @@ on:
       - '.github/scripts/factory_live_opencode.py'
       - '.github/scripts/factory_runtime_model_select.py'
       - '.github/scripts/factory_model_failover.py'
+      - '.github/scripts/factory_opencode_go.py'
+      - 'tests/test_factory_opencode_go.py'
       - '.github/scripts/free-model-factory-worker.sh'
       - '.github/scripts/factory_dynamic_outcome.py'
       - '.github/scripts/factory_kilo_catalog.py'
@@ -54,6 +56,7 @@ jobs:
             tests/test_factory_worker_slots.py \
             tests/test_factory_runtime_model_select.py \
             tests/test_factory_model_failover.py \
+            tests/test_factory_opencode_go.py \
             tests/test_factory_kilo_catalog.py \
             tests/test_factory_neon_operations.py \
             tests/test_factory_full_completion_controller.py \

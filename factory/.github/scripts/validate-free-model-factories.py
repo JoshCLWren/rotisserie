@@ -78,7 +78,8 @@ def validate() -> None:
     assert 'factory_worker_slots.py resolve' in runner
     assert "factory_runtime_model_select.py" in runner
     assert "factory_published_model_catalog.py" in runner
-    assert "factory_live_opencode.py" in runner
+    assert "factory_opencode_go.py" in runner
+    assert "OPENCODE_API_KEY: ${{ secrets.OPENCODE_GO_API_KEY }}" in runner
     assert "factory_kilo_catalog.py" in runner
     assert runner.count('factory_worker_slots.py resolve --worker "$FACTORY_WORKER"') == 2
     assert "[0-9]{0,2}" not in runner

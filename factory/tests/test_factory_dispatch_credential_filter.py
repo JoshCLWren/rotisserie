@@ -24,10 +24,17 @@ def test_unconfigured_provider_defers_only_its_workers():
     assert gateway_workers and native_workers
     picked = [*gateway_workers[:2], native_workers[0]]
     kept, deferred = gate.filter_workers(picked, sources, {})
-    assert kept == [native_workers[0]]
-    assert len(deferred) == 2
+    assert kept == []
+    assert len(deferred) == 3
+    kept, deferred = gate.filter_workers(
+        picked, sources, {"FACTORY_HAS_AI_GATEWAY_API_KEY": "true"})
+    assert kept == gateway_workers[:2]
+    assert len(deferred) == 1
     assert gate.filter_workers(
-        picked, sources, {"FACTORY_HAS_AI_GATEWAY_API_KEY": "true"}
+        picked, sources, {
+            "FACTORY_HAS_AI_GATEWAY_API_KEY": "true",
+            "FACTORY_HAS_OPENCODE_GO_API_KEY": "true",
+        },
     ) == (picked, [])
 
 
@@ -53,6 +60,8 @@ def test_openrouter_free_needs_its_api_key() -> None:
     module = importlib.import_module("factory_dispatch_credential_filter")
     sources = {"1": "openrouter-free", "2": "opencode-free"}
     kept, _ = module.filter_workers(["1", "2"], sources, {})
+    assert kept == []
+    kept, _ = module.filter_workers(["2"], sources, {"FACTORY_HAS_OPENCODE_GO_API_KEY": "true"})
     assert kept == ["2"]
     kept, _ = module.filter_workers(["1"], sources, {"FACTORY_HAS_OPENROUTER_API_KEY": "true"})
     assert kept == ["1"]

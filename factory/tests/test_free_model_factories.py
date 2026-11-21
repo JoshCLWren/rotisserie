@@ -33,7 +33,7 @@ def test_dispatch_and_execution_share_dynamic_slot_registry() -> None:
     assert 'python3 "$slots" offer' in dispatcher
     assert "factory_worker_slots.py resolve" in runner
     assert "factory_runtime_model_select.py" in runner
-    assert "factory_live_opencode.py" in runner
+    assert "factory_opencode_go.py" in runner
     assert "factory_kilo_catalog.py" in runner
     assert "Run continuous fixed-model factory session" in runner
 

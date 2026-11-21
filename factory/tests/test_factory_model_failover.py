@@ -53,16 +53,20 @@ def test_cooldown_is_exact_model_and_provider() -> None:
 
 def test_opencode_free_iterates_live_catalog_without_roster() -> None:
     names = [f"test-generated-{i}" for i in range(4)]
-    catalog = json.dumps({"models": [{"id": name, "cost": {"input": 0, "output": 0}}
-                                      for name in names]})
+    catalog = {"opencode-go": {"models": {
+        name: {"type": "chat", "capabilities": {"tools": {"supported": True}},
+               "cost": {"text": {"input": {"price": 0}, "output": {"price": 0}}}}
+        for name in names
+    }}}
     attempted: set[str] = set()
     for _ in names:
-        selected = select_next("opencode-free", "41", attempted, {}, catalog_text=catalog)
+        selected = select_next("opencode-free", "41", attempted, {}, catalog_json=catalog)
         assert selected["model"] in names
+        assert selected["runtime_model"] == f"opencode-go/{selected['model']}"
         assert selected["model"] not in attempted
         attempted.add(selected["model"])
     with pytest.raises(ExhaustedCandidatesError):
-        select_next("opencode-free", "41", attempted, {}, catalog_text=catalog)
+        select_next("opencode-free", "41", attempted, {}, catalog_json=catalog)
 
 
 def test_kilo_tries_all_published_cli_selectors() -> None:
@@ -307,16 +311,22 @@ def test_fleet_prefers_proven_model_on_another_provider() -> None:
 
 
 def test_failover_into_opencode_reports_source() -> None:
-    """Regression: OpenCode selections lacked .source, crashing in-lease failover."""
+    """One existing source identity routes exclusively to the Go account."""
     from factory_model_failover import select_next_fleet
 
-    catalog = json.dumps({"models": [{"id": "generated-free"}]})
+    catalog = {"opencode-go": {"models": {
+        "generated-free": {
+            "type": "chat", "capabilities": {"tools": {"supported": True}},
+            "cost": {"text": {"input": {"price": 0}, "output": {"price": 0}}},
+        },
+    }}}
     picked = select_next_fleet(
         "9", "nvidia", set(), set(), {}, {"opencode-free": catalog}, {"opencode-free"},
         proven=set(),
     )
     assert picked["source"] == "opencode-free"
     assert picked["model"] == "generated-free"
+    assert picked["runtime_model"] == "opencode-go/generated-free"
 
 
 def test_proven_models_reads_only_real_work_outcomes() -> None:
@@ -336,23 +346,26 @@ def test_proven_models_reads_only_real_work_outcomes() -> None:
 
 def test_opencode_v2_fleet_discovery_and_selection(tmp_path, monkeypatch):
     from factory_model_failover import discover_fleet_catalogs, select_next_fleet
-    import subprocess
-    import shutil
+    import factory_opencode_go
 
     called = []
-    catalog = "opencode/generated-free\nother-provider/unrelated\n"
-    def fake_run(args, **kwargs):
-        called.append(list(args))
-        return subprocess.CompletedProcess(args, 0, stdout=catalog)
-    monkeypatch.setattr(shutil, "which", lambda _: "/tmp/opencode")
-    monkeypatch.setattr(subprocess, "run", fake_run)
+    def fake_go_catalog(env):
+        called.append(env["OPENCODE_API_KEY"])
+        return {"opencode-go": {"models": {
+            "generated-free": {
+                "type": "chat", "capabilities": {"tools": {"supported": True}},
+                "cost": {"text": {"input": {"price": 0}, "output": {"price": 0}}},
+            },
+        }}}
+    monkeypatch.setattr(factory_opencode_go, "catalog", fake_go_catalog)
     catalogs = discover_fleet_catalogs(
-        {"opencode-free"}, cache=tmp_path / "catalog.json", env={})
-    assert called == [["opencode", "models", "--standalone"]]
+        {"opencode-free"}, cache=tmp_path / "catalog.json",
+        env={"OPENCODE_API_KEY": "dummy-go-credential"})
+    assert called == ["dummy-go-credential"]
     picked = select_next_fleet(
         "77", "opencode-free", set(), set(), {}, catalogs, {"opencode-free"},
         proven=set())
-    assert picked["runtime_model"] == "opencode/generated-free"
+    assert picked["runtime_model"] == "opencode-go/generated-free"
 
 
 def test_worker_never_blocks_provider_for_model_credit_error():
