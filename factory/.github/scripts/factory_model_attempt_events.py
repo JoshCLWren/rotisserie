@@ -33,6 +33,72 @@ FAILOVER = re.compile(
 )
 NO_CHANGE = re.compile(r"^FACTORY_NO_CHANGE_FAILOVER\b")
 MAX_ATTEMPTS_PER_RUN = 2000
+# Capture only diagnostic-shaped lines, never an arbitrary tail of agent output.
+# Raw model output may contain credentials, prompts, user data or tool results.
+MAX_FAILURE_TAIL_LINES = 8
+MAX_FAILURE_TAIL_CHARS = 1600
+MAX_FAILURE_LINE_CHARS = 240
+LOG_PREFIX = re.compile(
+    r"^\\[factory:(?P<worker>\\d+)\\]"
+    r"\\[source:(?P<source>[^\\]\\r\\n]+)\\]"
+    r"\\[model:(?P<model>[^\\]\\r\\n]+)\\] (?P<message>.*)$"
+)
+LOG_STAMP = re.compile(r"^\\d{4}-\\d\\d-\\d\\dT\\d\\d:\\d\\d:\\d\\d(?:\\.\\d+)?Z\\s+")
+DIAGNOSTIC = re.compile(
+    r"(?i)^(?:"
+    r"(?:error|fatal|exception|warning|traceback|failure|failed|timeout|timed out)\\s*:"
+    r"|(?:[!>]\\s*)?retrying\\s*\\(attempt\\s+\\d+\\)\\s*:"
+    r"|(?:\\S+(?:Error|Exception))\\s*:"
+    r"|FACTORY_TRUSTED_FAILOVER:"
+    r"|FACTORY_NO_CHANGE_FAILOVER:"
+    r"|agent exit status\\s+-?\\d+\\s+for\\s+(?:pr|issue)\\s+#\\d+"
+    r"|semantic_review_recovery_failed:"
+    r"|\\[?error\\]?:"
+    r")"
+)
+# Avoid persisting an error message if it mentions secret-bearing parameters.
+# This intentionally drops some potentially useful diagnostics rather than
+# duplicating credentials or user-supplied content in the durable event ledger.
+SECRET_CONTEXT = re.compile(
+    r"(?i)(?:authorization|bearer|api[_-]?key|password|passwd|secret|"
+    r"access[_-]?token|refresh[_-]?token|client[_-]?secret|"
+    r"private[_-]?key|database[_-]?url|connection[_-]?uri|"
+    r"cookie|set-cookie|credential|\\bdsn\\b|"
+    r"gh[pousr]_|github_pat_|sk-[a-z0-9]|xox[baprs]-)"
+)
+URL_OR_CONTACT = re.compile(r"(?i)(?:\\b(?:https?|postgres(?:ql)?)://\\S+|\\b\\S+@\\S+\\.\\w+)")
+OPAQUE_VALUE = re.compile(r"(?<![A-Za-z0-9_])[A-Za-z0-9_-]{36,}(?![A-Za-z0-9_])")
+
+
+def _sanitized_failure_tail(segment: str, worker: str, source: str, model: str) -> str | None:
+    """Bounded, privacy-conscious diagnostics from *this* candidate only.
+
+    Agent text is untrusted even inside a completed GitHub Actions log. Do not
+    use this field for health decisions or save raw prompts, environment values,
+    URLs or commands.
+    """
+    selected: list[str] = []
+    for raw in segment.splitlines():
+        line = LOG_STAMP.sub("", raw).strip()
+        wrapper = LOG_PREFIX.match(line)
+        if wrapper:
+            if (wrapper.group("worker"), wrapper.group("source"), wrapper.group("model")) != (
+                worker, source, model,
+            ):
+                continue
+            line = wrapper.group("message").strip()
+        if not DIAGNOSTIC.match(line) or SECRET_CONTEXT.search(line):
+            continue
+        # Keep recognizable error classes/status codes, but not arbitrary URLs
+        # or long opaque values that could contain private credentials.
+        line = URL_OR_CONTACT.sub("[redacted]", line)
+        line = OPAQUE_VALUE.sub("[redacted]", line)
+        line = line[:MAX_FAILURE_LINE_CHARS]
+        if line and (not selected or selected[-1] != line):
+            selected.append(line)
+            if len(selected) > MAX_FAILURE_TAIL_LINES:
+                selected.pop(0)
+    return "\\n".join(selected)[-MAX_FAILURE_TAIL_CHARS:] or None
 
 
 def _time(value: str) -> datetime | None:
@@ -115,6 +181,11 @@ def model_attempt_events(
                 delta = int((finish_time - start_time).total_seconds() * 1000)
                 if delta >= 0:
                     elapsed_ms = delta
+        failure_log_tail = None
+        if attempt_outcome not in {"success", "no_work"}:
+            failure_log_tail = _sanitized_failure_tail(
+                clean[start.end():stop], worker, source, model,
+            )
         events.append({
             "event_type": "model_attempt",
             "event_id": f"model-attempt:{run_id}:{index}",
@@ -130,6 +201,7 @@ def model_attempt_events(
             "agent_exit_code": agent_exit_code,
             "outcome_class": attempt_outcome,
             "evidence": evidence,
+            "failure_log_tail": failure_log_tail,
             "selected_kind": outcome.get("selected_kind"),
             "selected_number": outcome.get("selected_number"),
             "observed_at": finished_at or started_at,
