@@ -143,7 +143,7 @@ def _record(repo: str, run_id: str, outcome: dict[str, Any], log: str) -> int:
     outcome = refine_trusted_dynamic_models(outcome, log)
     outcome = refine_trusted_failover_models(outcome, log)
     outcome = refine_trusted_smoke_timeout(outcome, log)
-    return record_runtime_outcome(repo, run_id, outcome)
+    return record_runtime_outcome(repo, run_id, outcome, job_log=log)
 
 
 def main() -> int:

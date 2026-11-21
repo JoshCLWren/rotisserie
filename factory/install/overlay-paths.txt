@@ -54,6 +54,7 @@
 .github/scripts/factory_main_health.py
 .github/scripts/factory_migration_lane.py
 .github/scripts/factory_model_catalog.py
+.github/scripts/factory_model_attempt_events.py
 .github/scripts/factory_model_failover.py
 .github/scripts/factory_no_progress_retirement.py
 .github/scripts/factory_omniroute_route.py

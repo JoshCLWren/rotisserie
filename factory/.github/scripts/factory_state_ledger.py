@@ -178,10 +178,14 @@ async def _events(repo: str, entries: list[dict[str, Any]]) -> int:
 
     conn = await measured_connect(dsn=_dsn(), timeout=8, command_timeout=8)
     inserted = 0
+    # Large failover sessions can contain hundreds of attempts. Batch their
+    # immutable observations instead of making two Neon round trips per model.
+    model_attempts = [entry for entry in entries if entry["event_type"] == "model_attempt"]
+    lifecycle = [entry for entry in entries if entry["event_type"] != "model_attempt"]
     try:
         async with conn.transaction():
             await conn.execute("SELECT pg_advisory_xact_lock(hashtextextended($1, 0))", LEASE_PREFIX + repo)
-            for entry in entries:
+            for entry in lifecycle:
                 existing = await conn.fetchval(
                     """SELECT 1 FROM public.factory_state_events
                        WHERE source='github-actions'
@@ -231,6 +235,31 @@ async def _events(repo: str, entries: list[dict[str, Any]]) -> int:
                                  AND payload->0->>'claim_id'=$2""",
                             f"{LEASE_PREFIX}{repo}:target:%", token, FIXED_LEASE_TTL_SECONDS,
                         )
+            if model_attempts:
+                records = [{**entry, "repo": repo} for entry in model_attempts]
+                event_ids = [entry["event_id"] for entry in records]
+                added = await conn.fetch(
+                    """WITH incoming AS (
+                           SELECT value AS detail FROM jsonb_array_elements($1::jsonb)
+                       ), already AS (
+                           SELECT detail->>'event_id' AS event_id
+                             FROM public.factory_state_events
+                            WHERE source='github-actions'
+                              AND detail->>'event_id' = ANY($2::text[])
+                       )
+                       INSERT INTO public.factory_state_events
+                           (source,event_type,subject_type,subject_number,detail)
+                       SELECT 'github-actions','model_attempt','worker',
+                              (incoming.detail->>'worker')::bigint, incoming.detail
+                         FROM incoming
+                        WHERE NOT EXISTS (
+                            SELECT 1 FROM already
+                             WHERE already.event_id=incoming.detail->>'event_id'
+                        )
+                       RETURNING id""",
+                    json.dumps(records), event_ids,
+                )
+                inserted += len(added)
         return inserted
     finally:
         await conn.close()
@@ -602,7 +631,9 @@ def refine_trusted_smoke_timeout(outcome: dict[str, Any], job_log: str) -> dict[
     return outcome
 
 
-def record_runtime_outcome(repo: str, run_id: str, outcome: dict[str, Any]) -> int:
+def record_runtime_outcome(
+    repo: str, run_id: str, outcome: dict[str, Any], job_log: str | None = None,
+) -> int:
     worker = str(outcome.get("worker") or "")
     if not WORKER_RE.fullmatch(worker) or not run_id.isdecimal():
         raise ValueError("invalid trusted runtime outcome identity")
@@ -613,7 +644,7 @@ def record_runtime_outcome(repo: str, run_id: str, outcome: dict[str, Any]) -> i
                  and str(outcome.get("delivery_pr") or "").isdecimal())
     event_type = ("worker_completed" if status == "success" or delivered
                   else "worker_idle" if status == "no_work" else "worker_failed")
-    inserted = record_events(repo, [{
+    entries = [{
         "event_type": event_type,
         "event_id": f"runtime:{run_id}",
         "worker": worker,
@@ -630,7 +661,13 @@ def record_runtime_outcome(repo: str, run_id: str, outcome: dict[str, Any]) -> i
         "model_failures": outcome.get("model_failures") or [],
         "trusted_source_switch": outcome.get("trusted_source_switch") is True,
         "observed_at": datetime.now(timezone.utc).isoformat(),
-    }])
+    }]
+    # The log is fetched by the trusted completed-job collector. Per-candidate
+    # observations share the terminal event transaction and retain distinct IDs.
+    if job_log is not None:
+        from factory_model_attempt_events import model_attempt_events
+        entries.extend(model_attempt_events(run_id, outcome, job_log))
+    inserted = record_events(repo, entries)
     # Separate projection key is idempotent across both trusted outcome writers.
     from factory_state_operations import enabled as health_enabled, record_runtime
     if health_enabled():
@@ -667,7 +704,10 @@ def main() -> int:
                 outcome = refine_trusted_dynamic_models(outcome, job_log)
                 outcome = refine_trusted_failover_models(outcome, job_log)
                 outcome = refine_trusted_smoke_timeout(outcome, job_log)
-        result = record_runtime_outcome(args.repo, args.run_id, outcome)
+        result = record_runtime_outcome(
+            args.repo, args.run_id, outcome,
+            job_log=job_log if args.log else None,
+        )
         print(f"[factory-ledger] recorded {result} terminal worker event(s)")
     return 0
 
