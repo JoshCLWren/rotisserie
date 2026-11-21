@@ -229,6 +229,10 @@ run_agent() {
     return $?
   fi
   if [[ "$SOURCE" != 'kilo-auto' ]]; then
+    if [[ "$SOURCE" == opencode-free ]] && ! factory_opencode_go_refresh; then
+      log 'OpenCode Go OIDC renewal failed before real work; no Zen fallback' >&2
+      return 75
+    fi
     legacy_run_agent "$@"
     return $?
   fi
@@ -418,12 +422,23 @@ stage_trusted_model_failover() {
   done
   cp scripts/factory_eligibility.py "$FACTORY_TRUSTED_FAILOVER_DIR/factory_eligibility.py"
   cp .github/scripts/wait-opencode-model.sh "$FACTORY_TRUSTED_FAILOVER_DIR/wait-opencode-model.sh"
+  cp .github/scripts/factory_opencode_go_oidc.sh "$FACTORY_TRUSTED_FAILOVER_DIR/factory_opencode_go_oidc.sh"
   export FACTORY_TRUSTED_FAILOVER_DIR
 }
 
 stage_trusted_review_controller
 stage_trusted_worker_app_helper
 stage_trusted_model_failover
+
+factory_opencode_go_refresh() {
+  [[ -n "${OPENCODE_GO_CLIENT_ID:-}" ]] || return 1
+  local helper="${FACTORY_TRUSTED_FAILOVER_DIR:-}/factory_opencode_go_oidc.sh"
+  [[ -f "$helper" ]] || return 1
+  # This helper was staged from trusted main before any PR checkout.
+  # shellcheck source=/dev/null
+  source "$helper"
+  factory_opencode_go_oidc
+}
 
 # Issue snapshots are the normal work PR; repairs advance the assigned PR atomically.
 # A separate Git index avoids interfering with an agent editing files.
@@ -580,6 +595,16 @@ select_next_eligible_model() {
   for provider in "${blocked_providers[@]}"; do select_args+=(--blocked-provider "$provider"); done
   while :; do
     (( $(remaining) > 540 )) || return 1
+    if [[ -n "${OPENCODE_GO_CLIENT_ID:-}" ]]; then
+      if ! factory_opencode_go_refresh; then
+        # Scoped to this one lease. An identity-exchange outage is not
+        # evidence that free models or the provider's paid pool are exhausted.
+        unset OPENCODE_API_KEY
+        blocked_providers+=(opencode-free)
+        select_args+=(--blocked-provider opencode-free)
+        log 'Go OIDC refresh unavailable; trying other admitted sources' >&2
+      fi
+    fi
     if ! next_json="$(python3 "$FACTORY_TRUSTED_FAILOVER_DIR/factory_model_failover.py" "${select_args[@]}")"; then
       log "No further currently eligible fleet provider/model candidates"
       return 1
