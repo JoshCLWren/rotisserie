@@ -353,7 +353,7 @@ REQUIRED_CHECK_PASSING_STATES = frozenset({'SUCCESS', 'NEUTRAL', 'SKIPPED'})
 def required_checks_outcome(pr_number: int) -> str:
     """Classify required checks on the current PR head: waiting, failed, passed.
 
-    Treat missing, unparseable, and unknown evidence as waiting. Never turn a
+    Treat missing, unparseable and unknown evidence as waiting. Never turn a
     partial failure into a model assignment while another required check runs.
     The trusted CI reconciler handles green/failed transitions without models.
     """
@@ -385,12 +385,61 @@ def required_checks_failed(pr_number: int) -> bool:
     return required_checks_outcome(pr_number) == 'failed'
 
 
+def conflicted_head_without_published_ci(pr_number: int) -> bool:
+    """Verify a conflict head is missing CI, rather than hiding running checks.
+
+    GitHub CLI can emit a non-JSON 'no checks reported' error on a conflicted
+    PR, so gh pr checks alone cannot distinguish absent CI from unknown API
+    evidence. Only the authoritative check-runs endpoint for the current head
+    can make this narrow exception safe. This does not authorize merging.
+    """
+    try:
+        live = live_pr_state(pr_number)
+        head = str((live.get('head') or {}).get('sha') or '')
+        if (
+            str(live.get('state') or '').lower() != 'open'
+            or not re.fullmatch(r'[0-9a-f]{40}', head)
+            or not (
+                live.get('mergeable') is False
+                or str(live.get('mergeable_state') or '').upper() == 'DIRTY'
+            )
+        ):
+            return False
+        response = gh_json([
+            'api', f'repos/{REPO}/commits/{head}/check-runs?per_page=100',
+        ])
+    except (RuntimeError, ValueError, TypeError, KeyError):
+        return False
+    if not isinstance(response, dict):
+        return False
+    runs = response.get('check_runs')
+    total = response.get('total_count')
+    if (
+        not isinstance(runs, list)
+        or not isinstance(total, int)
+        or total != len(runs)
+        or any(not isinstance(run, dict) for run in runs)
+    ):
+        # Pagination, malformed data or an unavailable read is not evidence
+        # that required CI is absent.
+        return False
+    if any(
+        str(run.get('name') or '') == 'CI Summary'
+        or str(run.get('status') or '').lower() != 'completed'
+        for run in runs
+    ):
+        # A published CI Summary, or any still-running head check, must finish
+        # through the normal required-check policy rather than this exception.
+        return False
+    return True
+
+
 def candidate_is_live_executable(candidate: Candidate) -> bool:
     """Return whether a ranked candidate can use a model *now*.
 
-    CI-in-progress suppresses every PR stage, including review, repair and
-    conflict work. CI-stage success is reconciled by the trusted controller
-    instead of assigning a model just to notice that CI finished.
+    CI-in-progress suppresses every PR stage, including repair and conflict
+    work. A verified merge conflict *without published required CI* must be
+    repairable before CI can run. Review, lease and merge gates stay intact.
     """
     if candidate.kind == 'issue':
         return not issue_has_open_blocker(candidate.number)
@@ -400,7 +449,9 @@ def candidate_is_live_executable(candidate: Candidate) -> bool:
         return False
     outcome = required_checks_outcome(candidate.number)
     if outcome == 'waiting':
-        return False
+        if not candidate.conflicted or 'factory:ci' in labels:
+            return False
+        return conflicted_head_without_published_ci(candidate.number)
     if 'factory:ci' in labels:
         return outcome == 'failed'
     return True

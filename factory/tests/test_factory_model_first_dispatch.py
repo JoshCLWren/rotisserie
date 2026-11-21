@@ -170,3 +170,92 @@ def test_force_slot_deferred_does_not_create_or_steal_a_claim(monkeypatch):
         controller.dispatch_next('opencode-go', force_slot=True, slot_index=99)
     with pytest.raises(ValueError, match='requires --force-slot'):
         controller.dispatch_next('opencode-go', slot_index=1)
+
+
+def test_conflicted_pr_without_published_required_checks_can_enter_repair(monkeypatch):
+    """GitHub missing-CI deadlock must not block a real conflict repair."""
+    spec = importlib.util.spec_from_file_location(
+        'factory_work_controller_conflict_check',
+        ROOT / '.github/scripts/factory-work-controller.py',
+    )
+    assert spec and spec.loader
+    controller = importlib.util.module_from_spec(spec)
+    monkeypatch.setitem(sys.modules, spec.name, controller)
+    spec.loader.exec_module(controller)
+    candidate = SimpleNamespace(
+        kind='pr', number=5575, stage='factory:changes-requested', conflicted=True,
+    )
+    monkeypatch.setattr(controller, 'target_json', lambda _: {
+        'labels': [{'name': 'factory:changes-requested'}, {'name': 'factory:merge-conflict'}],
+    })
+    live = {
+        'state': 'open', 'mergeable': False, 'mergeable_state': 'dirty',
+        'head': {'sha': 'a' * 40},
+    }
+    monkeypatch.setattr(controller, 'live_pr_state', lambda _: live)
+    required = {'output': ''}  # gh pr checks can emit an error/no stdout for no CI.
+    monkeypatch.setattr(controller, 'run_gh', lambda *args, **kwargs: required['output'])
+    check_runs = {'total_count': 2, 'check_runs': [
+        {'name': 'Greptile Review', 'status': 'completed'},
+        {'name': 'CodeRabbit', 'status': 'completed'},
+    ]}
+    check_calls = []
+
+    def fake_check_runs(args):
+        check_calls.append(args)
+        return check_runs
+    monkeypatch.setattr(controller, 'gh_json', fake_check_runs)
+
+    assert controller.required_checks_outcome(5575) == 'waiting'
+    assert controller.candidate_is_live_executable(candidate) is True
+    assert check_calls[-1][-1].endswith('/commits/' + 'a' * 40 + '/check-runs?per_page=100')
+
+    # Neither pending checks, an already-published CI Summary, nor missing API
+    # evidence can be used to bypass the check gate.
+    check_runs['check_runs'][0]['status'] = 'in_progress'
+    assert controller.candidate_is_live_executable(candidate) is False
+    check_runs['check_runs'][0]['status'] = 'completed'
+    check_runs['check_runs'].append({'name': 'CI Summary', 'status': 'completed'})
+    check_runs['total_count'] = 3
+    assert controller.candidate_is_live_executable(candidate) is False
+    check_runs['check_runs'].pop()
+    check_runs['total_count'] = 3  # pagination or partial API response
+    assert controller.candidate_is_live_executable(candidate) is False
+    check_runs['total_count'] = 2
+
+    live['mergeable'] = True
+    live['mergeable_state'] = 'clean'
+    assert controller.candidate_is_live_executable(candidate) is False
+    live['mergeable'] = False
+    live['mergeable_state'] = 'dirty'
+    candidate.conflicted = False
+    assert controller.candidate_is_live_executable(candidate) is False
+    candidate.conflicted = True
+
+    candidate.stage = 'factory:ci'
+    monkeypatch.setattr(controller, 'target_json', lambda _: {
+        'labels': [{'name': 'factory:ci'}, {'name': 'factory:merge-conflict'}],
+    })
+    assert controller.candidate_is_live_executable(candidate) is False
+    candidate.stage = 'factory:changes-requested'
+    monkeypatch.setattr(controller, 'target_json', lambda _: {
+        'labels': [{'name': 'factory:ready'}],
+    })
+    assert controller.candidate_is_live_executable(candidate) is False
+
+
+def test_conflict_repair_unknown_check_snapshot_fails_closed(monkeypatch):
+    spec = importlib.util.spec_from_file_location(
+        'factory_work_controller_conflict_missing',
+        ROOT / '.github/scripts/factory-work-controller.py',
+    )
+    assert spec and spec.loader
+    controller = importlib.util.module_from_spec(spec)
+    monkeypatch.setitem(sys.modules, spec.name, controller)
+    spec.loader.exec_module(controller)
+    monkeypatch.setattr(controller, 'live_pr_state', lambda _: {
+        'state': 'open', 'mergeable': False, 'mergeable_state': 'dirty',
+        'head': {'sha': 'a' * 40},
+    })
+    monkeypatch.setattr(controller, 'gh_json', lambda _: (_ for _ in ()).throw(RuntimeError('API down')))
+    assert controller.conflicted_head_without_published_ci(5575) is False
