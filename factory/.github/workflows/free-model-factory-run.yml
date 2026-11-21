@@ -54,7 +54,7 @@ on:
       OMNIROUTE_MANAGEMENT_API_KEY:
         required: false
       PR_REBASE_TOKEN:
-        required: true
+        required: false
       FACTORY_READER_APP_ID:
         description: Optional read-only factory App (separate API quota bucket)
         required: false

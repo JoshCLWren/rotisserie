@@ -760,3 +760,5 @@ def test_adopters_without_neon_or_push_token_can_run() -> None:
     run = WORKFLOW.with_name("free-model-factory-run.yml").read_text(encoding="utf-8")
     assert "PR_REBASE_TOKEN: ${{ secrets.PR_REBASE_TOKEN || github.token }}" in run
     assert "token: ${{ secrets.PR_REBASE_TOKEN || github.token }}" in run
+    on = yaml.safe_load(run).get(True) or yaml.safe_load(run)["on"]
+    assert on["workflow_call"]["secrets"]["PR_REBASE_TOKEN"]["required"] is False
