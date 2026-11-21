@@ -2430,10 +2430,18 @@ def dispatch_next(
         action = 'implement' if candidate.kind == 'issue' else completion_action_for(
             candidate.stage, candidate.conflicted
         )
-        return {
+        result: dict[str, object] = {
             'status': 'dispatched', 'kind': candidate.kind, 'number': candidate.number,
             'action': action, 'worker': worker, 'provider': source, 'model': model,
-            'forced': force_slot, 'slot_index': slot_index,
+        }
+        if force_slot:
+            result.update(forced=True, slot_index=slot_index)
+        return result
+    if not force_slot and not target_spec:
+        return {
+            'status': 'deferred', 'provider': source, 'model': model,
+            'reason': ('No eligible provider slot currently has executable work. '
+                       'Review stage, leases, source budgets, and capacity.'),
         }
     return {
         'status': 'deferred', 'provider': source, 'model': model,
