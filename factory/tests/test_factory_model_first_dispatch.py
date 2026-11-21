@@ -22,6 +22,12 @@ def test_model_first_chooses_canonical_provider_worker_and_real_pr(monkeypatch):
     controller = importlib.util.module_from_spec(spec)
     monkeypatch.setitem(sys.modules, 'factory_work_controller', controller)
     spec.loader.exec_module(controller)
+    import factory_worker_slots as worker_slots
+    monkeypatch.setattr(worker_slots, 'slots', lambda: [
+        SimpleNamespace(source='nvidia', index=0, worker='1004230852000'),
+        SimpleNamespace(source='opencode-free', index=0, worker='1327811785100'),
+        SimpleNamespace(source='opencode-free', index=1, worker='1327811785101'),
+    ])
     monkeypatch.setattr(completion, 'durable_factory_state', lambda: ({}, {}))
     monkeypatch.setattr(completion, 'load_manifest_candidates', lambda: [])
     monkeypatch.setattr(completion, 'capacity_report', lambda *_a, **_kw: {
@@ -98,3 +104,69 @@ def test_fast_runner_contract_and_no_model_or_provider_fallback():
     assert 'No eligible provider slot currently has executable work' in (
         ROOT / '.github/scripts/factory-work-controller.py'
     ).read_text()
+
+
+def test_force_slot_bypasses_advisory_health_but_keeps_existing_slot_and_target(monkeypatch):
+    """Owner can direct a registered slot to a chosen task without fake work."""
+    import factory_completion_controller as completion
+    import factory_worker_slots as worker_slots
+    spec = importlib.util.spec_from_file_location(
+        'factory_work_controller_forced', ROOT / '.github/scripts/factory-work-controller.py'
+    )
+    assert spec and spec.loader
+    controller = importlib.util.module_from_spec(spec)
+    monkeypatch.setitem(sys.modules, spec.name, controller)
+    spec.loader.exec_module(controller)
+    monkeypatch.setattr(worker_slots, 'slots', lambda: [
+        SimpleNamespace(source='opencode-free', index=0, worker='1000000000001'),
+        SimpleNamespace(source='opencode-free', index=1, worker='1000000000002'),
+        SimpleNamespace(source='nvidia', index=0, worker='1000000000101'),
+    ])
+    monkeypatch.setattr(completion, 'durable_factory_state',
+                        lambda: pytest.fail('force-slot must not read historical health'))
+    monkeypatch.setattr(controller, 'assign', lambda worker, **kwargs: (
+        calls.append((worker, kwargs)) or SimpleNamespace(
+            kind='issue', number=5123, stage='', conflicted=False
+        )
+    ))
+    monkeypatch.setattr(controller, 'assignment_context', lambda candidate, worker: {
+        'worker': worker, 'kind': candidate.kind, 'number': candidate.number,
+    })
+    launched = []
+    calls = []
+    monkeypatch.setattr(controller, 'run_gh', lambda argv: launched.append(argv))
+    outcome = controller.dispatch_next(
+        'opencode-go', 'opencode-go/hy4-flash-free',
+        force_slot=True, slot_index=2, target='issue:5123',
+    )
+    assert outcome['status'] == 'dispatched'
+    assert outcome['worker'] == '1000000000002'
+    assert outcome['forced'] is True
+    assert calls == [('1000000000002', {'target': ('issue', 5123)})]
+    assert 'model=opencode-go/hy4-flash-free' in launched[0]
+    assert 'provider=opencode-free' in launched[0]
+
+
+def test_force_slot_deferred_does_not_create_or_steal_a_claim(monkeypatch):
+    import factory_worker_slots as worker_slots
+    spec = importlib.util.spec_from_file_location(
+        'factory_work_controller_force_deferral', ROOT / '.github/scripts/factory-work-controller.py'
+    )
+    assert spec and spec.loader
+    controller = importlib.util.module_from_spec(spec)
+    monkeypatch.setitem(sys.modules, spec.name, controller)
+    spec.loader.exec_module(controller)
+    monkeypatch.setattr(worker_slots, 'slots', lambda: [
+        SimpleNamespace(source='opencode-free', index=0, worker='1000000000001'),
+    ])
+    monkeypatch.setattr(controller, 'assign', lambda *args, **kwargs: None)
+    monkeypatch.setattr(controller, 'worker_skip_reason', lambda worker: 'active Neon lease')
+    monkeypatch.setattr(controller, 'run_gh',
+                        lambda argv: pytest.fail('no worker should be started'))
+    outcome = controller.dispatch_next('opencode-go', force_slot=True, slot_index=1)
+    assert outcome['status'] == 'deferred'
+    assert 'active Neon lease' in outcome['details']
+    with pytest.raises(ValueError, match='does not exist'):
+        controller.dispatch_next('opencode-go', force_slot=True, slot_index=99)
+    with pytest.raises(ValueError, match='requires --force-slot'):
+        controller.dispatch_next('opencode-go', slot_index=1)
