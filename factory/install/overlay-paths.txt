@@ -58,6 +58,7 @@
 .github/scripts/factory_model_failover.py
 .github/scripts/factory_no_progress_retirement.py
 .github/scripts/factory_opencode_go.py
+.github/scripts/factory_opencode_go_oidc.sh
 .github/scripts/factory_omniroute_route.py
 .github/scripts/factory_outcome_reconcile.py
 .github/scripts/factory_post_merge_closure.py

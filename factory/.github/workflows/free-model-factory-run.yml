@@ -15,7 +15,7 @@ on:
       NEON_API_KEY:
         description: Restricted connection resolution in trusted cleanup jobs only
         required: false
-      OPENCODE_GO_API_KEY:
+      OPENCODE_GO_CLIENT_ID:
         required: false
       NVIDIA_API_KEY:
         required: false
@@ -148,6 +148,13 @@ jobs:
   factory:
     needs: validate_assignment
     runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+      contents: write
+      issues: write
+      pull-requests: write
+      actions: write
+      checks: read
     # Allow the agent a full budget plus setup and handoff time.
     timeout-minutes: 120
     outputs:
@@ -173,8 +180,8 @@ jobs:
       FACTORY_READER_APP_ID: ${{ secrets.FACTORY_READER_APP_ID }}
       NVIDIA_API_KEY: ${{ secrets.NVIDIA_API_KEY }}
       OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
-      # The OpenCode CLI uses this env name; only the Go-account secret supplies it.
-      OPENCODE_API_KEY: ${{ secrets.OPENCODE_GO_API_KEY }}
+      # GitHub OIDC is exchanged inside this job, never a static API key.
+      OPENCODE_GO_CLIENT_ID: ${{ secrets.OPENCODE_GO_CLIENT_ID }}
       Z_AI_API_KEY: ${{ secrets.Z_AI_API_KEY }}
       OLLAMA_API_KEY: ${{ secrets.OLLAMA_API_KEY }}
       MISTRAL_API_KEY: ${{ secrets.MISTRAL_API_KEY }}
@@ -224,6 +231,21 @@ jobs:
           # installation token is configured. Other workers never do.
           git remote set-url origin "https://x-access-token:${PR_REBASE_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
 
+      - name: Exchange GitHub OIDC for OpenCode Go service-account access
+        if: env.OPENCODE_GO_CLIENT_ID != ''
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          source .github/scripts/factory_opencode_go_oidc.sh
+          if factory_opencode_go_oidc; then
+            printf 'OPENCODE_API_KEY=%s\n' "$OPENCODE_API_KEY" >> "$GITHUB_ENV"
+            echo 'FACTORY_GO_TOKEN_READY=true' >> "$GITHUB_ENV"
+            echo 'OpenCode Go service-account token exchange succeeded'
+          else
+            echo 'FACTORY_GO_TOKEN_READY=false' >> "$GITHUB_ENV"
+            echo '::warning::OpenCode Go OIDC exchange unavailable; other providers remain eligible'
+          fi
+
       - name: Resolve executor slot policy
         id: lane
         shell: bash
@@ -244,12 +266,12 @@ jobs:
           configure_adapter=false
           case "$source" in
             opencode-free)
-              if [[ -n "${OPENCODE_API_KEY:-}" ]]; then
+              if [[ "${FACTORY_GO_TOKEN_READY:-}" == true ]]; then
                 configured=true
-                reason='Go-account-key-configured'
+                reason='Go-service-account-authenticated'
               else
                 configured=false
-                reason='Go-account-key-missing'
+                reason='Go-service-account-oidc-unavailable'
               fi
               ;;
             openrouter-free|kilo-auto)

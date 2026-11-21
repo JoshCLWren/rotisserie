@@ -33,7 +33,7 @@ def test_unconfigured_provider_defers_only_its_workers():
     assert gate.filter_workers(
         picked, sources, {
             "FACTORY_HAS_AI_GATEWAY_API_KEY": "true",
-            "FACTORY_HAS_OPENCODE_GO_API_KEY": "true",
+            "FACTORY_HAS_OPENCODE_GO_CLIENT_ID": "true",
         },
     ) == (picked, [])
 
@@ -61,7 +61,7 @@ def test_openrouter_free_needs_its_api_key() -> None:
     sources = {"1": "openrouter-free", "2": "opencode-free"}
     kept, _ = module.filter_workers(["1", "2"], sources, {})
     assert kept == []
-    kept, _ = module.filter_workers(["2"], sources, {"FACTORY_HAS_OPENCODE_GO_API_KEY": "true"})
+    kept, _ = module.filter_workers(["2"], sources, {"FACTORY_HAS_OPENCODE_GO_CLIENT_ID": "true"})
     assert kept == ["2"]
     kept, _ = module.filter_workers(["1"], sources, {"FACTORY_HAS_OPENROUTER_API_KEY": "true"})
     assert kept == ["1"]
