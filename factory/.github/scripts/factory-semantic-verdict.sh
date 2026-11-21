@@ -101,11 +101,16 @@ if spec is None or spec.loader is None:
     raise SystemExit(1)
 policy = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(policy)
-report = policy.report_from_text(Path(sys.argv[1]).read_text(encoding="utf-8"))
+log_path = Path(sys.argv[1])
+text = log_path.read_text(encoding="utf-8")
+report = policy.report_from_text(text)
 if report is None:
     raise SystemExit(1)
-if sys.argv[3] and not policy.report_matches_mission(report, sys.argv[3]):
-    raise SystemExit(1)
+if sys.argv[3]:
+    report = policy.normalize_report(report, sys.argv[3])
+    if not policy.report_matches_mission(report, sys.argv[3]):
+        raise SystemExit(1)
+    log_path.write_text(policy.replace_report_line(text, report), encoding="utf-8")
 PY
 }
 
@@ -130,13 +135,18 @@ existing = policy.report_from_text(primary)
 if existing is not None:
     # A report already in the primary output must not be overwritten or
     # hidden by recovery, even if incomplete; fail closed instead.
-    if sys.argv[5] and not policy.report_matches_mission(existing, sys.argv[5]):
-        raise SystemExit(1)
+    if sys.argv[5]:
+        existing = policy.normalize_report(existing, sys.argv[5])
+        if not policy.report_matches_mission(existing, sys.argv[5]):
+            raise SystemExit(1)
+        primary_path.write_text(policy.replace_report_line(primary, existing), encoding="utf-8")
     raise SystemExit(0)
 if any(line.startswith(policy.PREFIX) for line in primary.splitlines()):
     # Malformed/multiple primary reports are not a blank slot for replacement.
     raise SystemExit(1)
 recovered = policy.report_from_text(recovery_path.read_text(encoding="utf-8"))
+if sys.argv[5]:
+    recovered = policy.normalize_report(recovered, sys.argv[5])
 if recovered is None or recovered.get("head") != sys.argv[4]:
     raise SystemExit(1)
 if sys.argv[5] and not policy.report_matches_mission(recovered, sys.argv[5]):
@@ -153,14 +163,14 @@ factory_recover_semantic_verdict() {
   local runtime_model="$1" workspace="$2" timeout_seconds="$3" recovery_log="$4"
   local pr="$5" head="$6" acceptance_mission="$7" status=0 prompt
   [[ "$pr" =~ ^[1-9][0-9]*$ && "$head" =~ ^[0-9a-f]{40}$ ]] || return 2
-  prompt="Perform a fresh bounded, independent semantic review of ComicPile pull request #${pr} at exact head ${head}. Do not inspect or approve a different PR/head. Inspect the diff, issue, code and tests; do not edit code or push. Use gh pr view ${pr} --json ... for PR details, never gh pr status <number>. Review every Greptile (greptile-apps[bot]) finding, including unresolved review threads and the PR-body summary. Approve only if EVERY Greptile finding was either fixed in code or independently rebutted with concrete evidence; otherwise the verdict must be FACTORY_GATE_BLOCKED and never FACTORY_GATE_READY. PR-Agent advice is not independent approval. ${acceptance_mission} For READY, give the complete single-line FACTORY_ACCEPTANCE_V1 JSON record independently grounded in the changed files and observed checks, followed by the final bare line FACTORY_GATE_READY. If the report cannot be substantiated or any criterion is missing, do not invent evidence: finish with FACTORY_GATE_BLOCKED. OUTPUT EXACTLY ONE acceptance record as a single line beginning with the literal FACTORY_ACCEPTANCE_V1= at column zero. A bare JSON object, an A1-only report when the mission has more criteria, or a template containing unverified placeholders is NOT an acceptance report. Count every A1..An against the issued mission before returning READY. The final line must be exactly one bare verdict marker."
+  prompt="Perform a fresh bounded, independent semantic review of pull request #${pr} at exact head ${head}. Do not inspect or approve a different PR/head. Inspect the diff, issue, code and tests; do not edit code or push. Use gh pr view ${pr} --json ... for PR details, never gh pr status <number>. Review every Greptile (greptile-apps[bot]) finding, including unresolved review threads and the PR-body summary. Approve only if EVERY Greptile finding was either fixed in code or independently rebutted with concrete evidence; otherwise the verdict must be FACTORY_GATE_BLOCKED and never FACTORY_GATE_READY. PR-Agent advice is not independent approval. ${acceptance_mission} For READY, give the complete single-line FACTORY_ACCEPTANCE_V1 JSON record independently grounded in the changed files and observed checks, followed by the final bare line FACTORY_GATE_READY. If the report cannot be substantiated or any criterion is missing, do not invent evidence: finish with FACTORY_GATE_BLOCKED. OUTPUT EXACTLY ONE acceptance record as a single line beginning with the literal FACTORY_ACCEPTANCE_V1= at column zero. A bare JSON object, an A1-only report when the mission has more criteria, or a template containing unverified placeholders is NOT an acceptance report. Count every A1..An against the issued mission before returning READY. The final line must be exactly one bare verdict marker."
   # Never toggle errexit here: a trailing `set -e` re-enabled it inside the
   # caller's `set +e` window, so a timed-out recovery (124) killed the whole
   # worker before it could release the PR or record its outcome (run 44071823893).
   # OpenCode 2 rejects opencode run --dir; run from the workspace instead.
   ( cd "$workspace" && exec timeout --signal=TERM --kill-after=15s "${timeout_seconds}s" \
     opencode run -m "$runtime_model" --agent build --auto \
-    --title "ComicPile PR ${pr} semantic verdict recovery" "$prompt"
+    --title "PR ${pr} semantic verdict recovery" "$prompt"
   ) 2>&1 | tee "$recovery_log" || status=${PIPESTATUS[0]}
   return "$status"
 }

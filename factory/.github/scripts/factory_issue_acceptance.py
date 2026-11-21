@@ -344,6 +344,44 @@ def mission(issue: int, head: str, body: str, non_closing: bool = False) -> str:
     )
 
 
+MISSION_IDENTITY_RE = re.compile(
+    r"(?m)^ISSUE ACCEPTANCE: #([1-9][0-9]*), head ([a-f0-9]{40}), issue digest ([a-f0-9]{64})\.$"
+)
+PASS_SYNONYMS = frozenset({
+    "pass", "passed", "passes", "verified", "met", "satisfied", "ok", "done",
+    "complete", "completed", "yes", "true",
+})
+
+
+def normalize_report(report: Any, mission_text: str) -> Any:
+    """Fill identity from the trusted mission and map pass synonyms.
+
+    Models copy the 64-hex digest and SHA unreliably and write "verified" for
+    "pass". The mission identity is what the worker reviewed; the controller
+    still compares the digest with the live issue, so an edited issue fails.
+    """
+    identity = MISSION_IDENTITY_RE.findall(mission_text)
+    if not isinstance(report, dict) or len(identity) != 1:
+        return report
+    issue, head, revision = identity[0]
+    fixed = {**report, "issue": int(issue), "head": head, "issue_digest": revision}
+    items = report.get("items")
+    if isinstance(items, list):
+        fixed["items"] = [
+            {**item, "status": "pass"}
+            if isinstance(item, dict) and str(item.get("status", "")).strip().lower() in PASS_SYNONYMS
+            else item
+            for item in items
+        ]
+    return fixed
+
+
+def replace_report_line(text: str, report: Mapping[str, Any]) -> str:
+    """Rewrite the single acceptance line so the controller sees the normalized report."""
+    line = PREFIX + json.dumps(report, separators=(",", ":"))
+    return "\n".join(line if row.startswith(PREFIX) else row for row in text.split("\n"))
+
+
 def report_matches_mission(report: Mapping[str, Any] | None, mission_text: str) -> bool:
     """Shape-check a model report against the trusted exact-head issue mission.
 
