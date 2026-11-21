@@ -59,11 +59,9 @@ def _catalog_ids(
 ) -> tuple[set[str], Mapping[str, Any] | None]:
     """Return every published model id for one provider snapshot."""
     if source == "opencode-free":
-        from factory_live_opencode import catalog_models
-
-        if catalog_text is None:
-            raise ValueError("trusted OpenCode catalog snapshot missing")
-        return set(catalog_models(catalog_text, provider=source)), catalog_json
+        from factory_opencode_go import catalog as go_catalog, free_models
+        snapshot = catalog_json if catalog_json is not None else go_catalog()
+        return set(free_models(snapshot)), snapshot
     if source == "kilo-auto":
         from factory_kilo_catalog import discover_models
 
@@ -115,12 +113,8 @@ def select_next(
         # Narrow the existing selector's choice to proven models only.
         excluded |= available - preferred
     if source == "opencode-free":
-        from factory_live_opencode import select_model
-
-        selected = select_model(
-            catalog_text or "", int(worker), rotation,
-            attempted=excluded, provider=source,
-        )
+        from factory_opencode_go import choose
+        selected = choose(catalog_json or {}, worker, rotation, excluded)
     elif source == "kilo-auto":
         from factory_kilo_catalog import choose
 
@@ -162,6 +156,18 @@ def select_next_fleet(
         sources.remove(original_source)
         sources.insert(0, original_source)
     proven_pairs = proven_models() if proven is None else proven
+    # Go is the first choice when admitted and independently eligible.
+    # This does not change any worker lease or model-scoped cooldown.
+    if "opencode-free" in sources and isinstance(catalogs["opencode-free"], Mapping):
+        attempted_go = {model for src, model in attempted if src == "opencode-free"}
+        try:
+            return select_next(
+                "opencode-free", worker, attempted_go, exclusions,
+                catalog_json=catalogs["opencode-free"], rotation=rotation,
+                proven=proven_pairs,
+            )
+        except ExhaustedCandidatesError:
+            sources.remove("opencode-free")
     # First pass: a proven model on any eligible provider beats an unproven
     # model on the original provider. Second pass: today's order.
     for proven_only in (True, False):
@@ -211,13 +217,10 @@ def discover_fleet_catalogs(
         if source in files and files[source].is_file():
             return source, files[source].read_text(encoding="utf-8")
         if source == "opencode-free":
-            if not shutil.which("opencode"):
-                raise ValueError("OpenCode CLI missing")
-            run = subprocess.run(
-                ["opencode", "models", "--standalone"],
-                check=True, capture_output=True, text=True, timeout=35,
-            )
-            return source, run.stdout
+            from factory_opencode_go import catalog as go_catalog
+            if not env.get("OPENCODE_API_KEY"):
+                raise ValueError("Go key missing")
+            return source, go_catalog(env)
         if source == "kilo-auto":
             if not shutil.which("kilo"):
                 raise ValueError("Kilo CLI missing")
