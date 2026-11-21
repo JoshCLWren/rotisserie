@@ -39,7 +39,11 @@ from factory_work_policy import (
 from factory_adopter import repository
 
 DIMENSIONS = ["completion", "eligibility", "ownership", "ranking", "recovery", "review"]
-REPOSITORY = {"host": "github.com", "owner": "JoshCLWren", "name": "comic-pile"}
+
+
+def _repository() -> dict[str, str]:
+    owner, name = repository().split("/", 1)
+    return {"host": "github.com", "owner": owner, "name": name}
 
 
 class AdopterInputError(ValueError):
@@ -51,15 +55,15 @@ def _labels(item: dict[str, Any]) -> list[str]:
 
 
 def _work_id(number: int) -> dict[str, object]:
-    return {"repository": REPOSITORY, "key": str(number)}
+    return {"repository": _repository(), "key": str(number)}
 
 
 def _change_id(number: int) -> dict[str, object]:
-    return {"repository": REPOSITORY, "key": str(number)}
+    return {"repository": _repository(), "key": str(number)}
 
 
 def _revision_id(sha: str) -> dict[str, object]:
-    return {"repository": REPOSITORY, "value": sha}
+    return {"repository": _repository(), "value": sha}
 
 
 def _worker_id(value: str) -> dict[str, str]:
