@@ -19,13 +19,14 @@ def test_crouton_installer_sets_valid_model_scoped_safety_identifier() -> None:
     config_text = installer.split("<<'JSON'\n", 1)[1].split("\nJSON\n", 1)[0]
     config = json.loads(config_text)
 
-    assert config["providers"]["opencode"]["models"] == {
+    assert config["providers"]["opencode-go"]["models"] == {
         "crouton-alpha-free": {
             "body": {"safety_identifier": "comic-pile-factory"},
         },
     }
     assert config["permissions"]
-    assert config["policies"]
+    assert {"action": "provider.use", "resource": "opencode", "effect": "deny"} in config["policies"]
+    assert "opencode" not in config["providers"]
 
 
 def test_crouton_quota_smoke_is_classified_without_permanent_retirement(tmp_path: Path) -> None:
