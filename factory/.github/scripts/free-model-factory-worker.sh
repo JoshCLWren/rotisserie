@@ -585,6 +585,10 @@ record_model_failover_failure() {
   log "FACTORY_TRUSTED_FAILOVER: source=$failed_source model=$failed_model outcome=$classification scope=$scope"
 }
 select_next_eligible_model() {
+  if [[ "${FACTORY_EXACT_MODEL:-auto}" != auto ]]; then
+    log "Explicit exact model ${FACTORY_EXACT_MODEL}; no cross-model or cross-provider failover"
+    return 1
+  fi
   local next_json next_source next_model next_runtime candidate_status pair provider
   local -a select_args=(--source "$ORIGINAL_SOURCE" --worker "$WORKER" \
     --rotation "$GITHUB_RUN_NUMBER" \
