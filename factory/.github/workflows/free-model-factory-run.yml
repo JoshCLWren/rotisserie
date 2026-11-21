@@ -437,7 +437,7 @@ jobs:
           fleet_fallback() {
             local reason="$1" fallback
             if [[ "$REQUESTED_MODEL" != auto || "$REQUESTED_PROVIDER" != auto ]]; then
-              printf 'model_unavailable\tExact operator-selected Go model: %s\n' "$reason" > "$discovery_outcome"
+              printf 'model_unavailable\tOperator-pinned provider/model unavailable: %s\n' "$reason" > "$discovery_outcome"
               echo "::error::Exact requested model could not be selected; no provider fallback"
               exit 1
             fi
