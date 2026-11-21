@@ -26,7 +26,7 @@ concurrency:
 jobs:
   wait_and_wake:
     runs-on: ubuntu-latest
-    timeout-minutes: 70
+    timeout-minutes: 135
     permissions:
       actions: write
       contents: read
@@ -44,25 +44,31 @@ jobs:
           fi
           # Caller sends 240s for productive/error recovery and 15..3700s
           # for the observed installation quota reset. Never accept a longer
-          # or speculative wait. The hourly watchdog is the fallback.
+          # or speculative wait. Dispatch retries below add at most 65 minutes.
           if (( DELAY_SECONDS < 15 || DELAY_SECONDS > 3700 )); then
             echo '::error::Roster delay must be between 15 and 3700 seconds' >&2
             exit 1
           fi
 
-          dispatch_with_retry() {
-            local attempt wait
-            for attempt in 1 2 3 4; do
-              "$@" && return 0
-              (( attempt < 4 )) || break
-              wait=$(( 15 * (1 << (attempt - 1)) ))
-              echo "::warning::workflow dispatch failed (attempt ${attempt}/4); retrying in ${wait}s"
-              sleep "$wait"
-            done
-            return 1
+          dispatch_roster() {
+            gh workflow run fixed-model-factory-dispatch.yml \
+              --repo "$GITHUB_REPOSITORY" --ref main -f mode=roster
           }
 
           echo "Roster successor sleeping ${DELAY_SECONDS}s outside assignment serialization"
           sleep "$DELAY_SECONDS"
-          dispatch_with_retry gh workflow run fixed-model-factory-dispatch.yml \
-            --repo "$GITHUB_REPOSITORY" --ref main -f mode=roster
+          # GitHub 5xx bursts and an exhausted hourly quota both end the chain
+          # if this dispatch gives up. Back off fast, then retry every 5 minutes
+          # for up to 65 minutes, which spans one quota reset.
+          attempt=1 waited=0
+          until dispatch_roster; do
+            wait=300
+            (( attempt > 3 )) || wait=$(( 15 * (1 << (attempt - 1)) ))
+            if (( waited + wait > 3900 )); then
+              echo "::error::Roster chain ended: dispatch failed for ${waited}s" >&2
+              exit 1
+            fi
+            echo "::warning::roster dispatch failed (attempt ${attempt}); retrying in ${wait}s"
+            sleep "$wait"
+            waited=$(( waited + wait )) attempt=$(( attempt + 1 ))
+          done

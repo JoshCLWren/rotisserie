@@ -74,6 +74,18 @@ jobs:
           "$gh_dir/gh" pr checks --help | grep -- '--json' >/dev/null
           echo "$gh_dir" >> "$GITHUB_PATH"
 
+      - name: Meter GitHub CLI requests
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          meter_dir="$RUNNER_TEMP/factory-gh-meter"
+          mkdir -p "$meter_dir"
+          echo "FACTORY_REAL_GH=$(command -v gh)" >> "$GITHUB_ENV"
+          cp .github/scripts/factory-gh-meter.sh "$meter_dir/gh"
+          chmod +x "$meter_dir/gh"
+          echo "FACTORY_GH_CALL_LOG=$RUNNER_TEMP/factory-gh-calls.log" >> "$GITHUB_ENV"
+          echo "$meter_dir" >> "$GITHUB_PATH"
+
       - name: Self-test post-merge closure logic
         shell: bash
         run: |
@@ -348,3 +360,11 @@ jobs:
             fi
             echo "Unable to merge ready PR #${pr}; it will retry on the next drain" >&2
           done
+
+      - name: Report GitHub CLI request usage
+        if: ${{ always() }}
+        continue-on-error: true
+        shell: bash
+        run: |
+          python3 .github/scripts/factory_gh_usage.py "${FACTORY_GH_CALL_LOG:-/dev/null}" \
+            --label "merge drain" --summary "$GITHUB_STEP_SUMMARY"
