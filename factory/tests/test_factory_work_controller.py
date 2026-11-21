@@ -2264,3 +2264,14 @@ def test_reconcile_never_strips_a_running_worker_without_a_claim(
     _claims(controller, monkeypatch, None)
     assert controller.reconcile_stale_leases(now_epoch=now) == []
     assert writes == []
+
+
+def test_assignment_handoff_uses_the_owner_label_without_neon(
+    controller: types.ModuleType, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(controller, "ledger_enabled", lambda: False)
+    monkeypatch.delenv("FACTORY_NEON_LEASE_REQUIRED", raising=False)
+    assert controller._active_claim("62", 10) == ("", [10])
+    monkeypatch.setenv("FACTORY_NEON_LEASE_REQUIRED", "true")
+    monkeypatch.setattr(controller, "worker_claim", lambda *a, **k: None)
+    assert controller._active_claim("62", 10) is None
