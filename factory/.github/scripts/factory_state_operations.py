@@ -1102,6 +1102,8 @@ def export_dashboard_retry(repo: str) -> dict[str, Any]:
 
 def export_candidate_health(repo: str) -> dict[str, Any]:
     if not enabled():
+        if not _neon_required():
+            return {"models": []}
         raise RuntimeError("Neon health unavailable; cannot prove executable candidates")
     return _run(_export_candidate_health, repo)
 
@@ -1142,8 +1144,15 @@ async def _export_fleet_failover_sources(conn: Any, repo: str, worker: str) -> l
     return sorted(selected)
 
 
+def _neon_required() -> bool:
+    """Adopters without Neon run with empty health and failover snapshots."""
+    return os.environ.get("FACTORY_NEON_LEASE_REQUIRED") == "true"
+
+
 def export_fleet_failover_sources(repo: str, worker: str) -> list[str]:
     if not enabled():
+        if not _neon_required():
+            return []
         raise RuntimeError("Neon capacity read required for fleet failover")
     return _run(_export_fleet_failover_sources, repo, worker)
 
@@ -1151,6 +1160,8 @@ def export_fleet_failover_sources(repo: str, worker: str) -> list[str]:
 
 def export_model_exclusions(repo: str, worker: str = "") -> dict[str, list[str]]:
     if not enabled():
+        if not _neon_required():
+            return {}
         raise RuntimeError("Neon is required for model health snapshot")
     return _run(_export_model_exclusions, repo, worker)
 

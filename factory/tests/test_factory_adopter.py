@@ -71,3 +71,22 @@ def test_runtime_scripts_never_name_a_fixed_adopter_repository() -> None:
         if not path.name.startswith("test_") and pattern.search(path.read_text(encoding="utf-8"))
     ]
     assert offenders == []
+
+
+def test_worker_exports_are_empty_without_neon_unless_required(monkeypatch) -> None:
+    import importlib
+    import sys
+    from pathlib import Path
+
+    import pytest
+
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1] / ".github" / "scripts"))
+    ops = importlib.import_module("factory_state_operations")
+    monkeypatch.setattr(ops, "enabled", lambda: False)
+    monkeypatch.delenv("FACTORY_NEON_LEASE_REQUIRED", raising=False)
+    assert ops.export_model_exclusions("o/r", "1") == {}
+    assert ops.export_candidate_health("o/r") == {"models": []}
+    assert ops.export_fleet_failover_sources("o/r", "1") == []
+    monkeypatch.setenv("FACTORY_NEON_LEASE_REQUIRED", "true")
+    with pytest.raises(RuntimeError):
+        ops.export_model_exclusions("o/r", "1")
