@@ -1714,9 +1714,17 @@ def log_completion_result(
     )
 
 
-def _active_claim(worker: str, number: int) -> tuple[str, list[int]] | None:
-    """Without Neon the GitHub owner label is the lease; the caller checks it."""
-    if not ledger_enabled() and os.environ.get('FACTORY_NEON_LEASE_REQUIRED') != 'true':
+def _active_claim(worker: str, number: int, claim_id: object = '') -> tuple[str, list[int]] | None:
+    """Without Neon the GitHub owner label is the lease; the caller checks it.
+
+    A handoff that carries a claim ID was issued through Neon and is always
+    checked against Neon.
+    """
+    if (
+        not claim_id
+        and not ledger_enabled()
+        and os.environ.get('FACTORY_NEON_LEASE_REQUIRED') != 'true'
+    ):
         return '', [number]
     return worker_claim(REPO, worker, active_only=True)
 
@@ -1751,7 +1759,7 @@ def validate_assignment(worker: str, raw: str) -> dict[str, object]:
     kind, number = context.get('kind'), context.get('number')
     if kind not in ('issue', 'pr') or type(number) is not int or number <= 0:
         raise ValueError('Invalid assignment target')
-    claim = _active_claim(worker, number)
+    claim = _active_claim(worker, number, context.get('claim_id'))
     if claim is None or claim[0] != context.get('claim_id') or number not in claim[1]:
         raise ValueError('Assignment claim expired or was replaced')
     target = target_json(number)
