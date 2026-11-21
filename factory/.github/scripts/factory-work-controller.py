@@ -2339,7 +2339,7 @@ def check_stale_prs(dry_run: bool = False) -> dict[str, Any]:
     }
 
 
-def dispatch_target(kind: str, number: int, action: str) -> dict[str, object]:
+def dispatch_target(kind: str, number: int, action: str, model: str = 'auto') -> dict[str, object]:
     """Allocate one worker to the selected target through the normal lease policy.
 
     Targets that are currently ineligible or waiting on checks are deferred, not
@@ -2354,9 +2354,19 @@ def dispatch_target(kind: str, number: int, action: str) -> dict[str, object]:
 
     if number <= 0:
         raise ValueError('Select a positive issue or PR number.')
+    if model not in ('auto', 'opencode-go/hy4-flash-free'):
+        raise ValueError('Unsupported manual model choice')
     _view, health = durable_factory_state()
     capacity = capacity_report(load_manifest_candidates(), health, now_epoch=int(time.time()))
     workers = cast(list[dict[str, str]], capacity['executable_candidates'])
+    if model != 'auto':
+        # Operator pin selects the existing Go lane, not a second source or
+        # a guessed model from an unrelated provider's worker. Capacity and
+        # assignment still use the same authoritative lease policy.
+        workers = [
+            row for row in workers
+            if worker_sources().get(row['worker']) == 'opencode-free'
+        ]
     preferred_role = 'starter' if kind == 'issue' else (
         'finisher' if action in {'review-findings', 'ci-repair'} else ''
     )
@@ -2387,9 +2397,14 @@ def dispatch_target(kind: str, number: int, action: str) -> dict[str, object]:
             else completion_action_for(candidate.stage, candidate.conflicted)
         )
         try:
-            run_gh(['workflow', 'run', 'free-model-factory-entry.yml', '--repo', REPO,
-                    '--ref', 'main', '-f', f'worker={worker}',
-                    '-f', 'assignment=' + json.dumps(assignment_context(candidate, worker))])
+            dispatch_args = [
+                'workflow', 'run', 'free-model-factory-entry.yml', '--repo', REPO,
+                '--ref', 'main', '-f', f'worker={worker}',
+                '-f', 'assignment=' + json.dumps(assignment_context(candidate, worker)),
+            ]
+            if model != 'auto':
+                dispatch_args += ['-f', f'model={model}']
+            run_gh(dispatch_args)
         except RuntimeError:
             # A timed-out POST can already have queued the worker. Keep its lease
             # so another manual request cannot start duplicate work.
@@ -2400,6 +2415,7 @@ def dispatch_target(kind: str, number: int, action: str) -> dict[str, object]:
             'action': selected if action == 'advance' else action,
             'status': 'dispatched',
             'worker': worker,
+            'model': model,
         }
     if last_defer_reason is not None:
         print(f'[factory-controller] deferring {kind}:{number}: {last_defer_reason}', file=sys.stderr)
@@ -2443,6 +2459,8 @@ def main() -> int:
     target_parser.add_argument('--action', required=True, choices=(
         'advance', 'implement', 'merge-conflict', 'ci-repair', 'review-findings', 'review',
     ))
+    target_parser.add_argument('--model', choices=('auto', 'opencode-go/hy4-flash-free'),
+                               default='auto')
     validate_parser = subparsers.add_parser('validate-assignment')
     validate_parser.add_argument('--worker', required=True)
     inspect_parser = subparsers.add_parser('inspect')
@@ -2494,7 +2512,7 @@ def main() -> int:
         print(json.dumps(assignment_context(candidate, args.worker)))
         return 0
     if args.command == 'dispatch-target':
-        print(json.dumps(dispatch_target(args.kind, args.number, args.action)))
+        print(json.dumps(dispatch_target(args.kind, args.number, args.action, args.model)))
         return 0
     if args.command == 'validate-assignment':
         print(json.dumps(validate_assignment(args.worker, sys.stdin.read())))

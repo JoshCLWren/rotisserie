@@ -29,6 +29,14 @@ on:
         description: Optional active external Factory; blank runs the strategy smoke set
         required: false
         type: string
+      model:
+        description: Exact model for a manually targeted issue (auto keeps normal selection)
+        required: false
+        default: auto
+        type: choice
+        options:
+          - auto
+          - opencode-go/hy4-flash-free
       target:
         description: Optional issue or PR to advance, in the form issue:123 or pr:123
         required: false
@@ -321,6 +329,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           TARGET: ${{ inputs.target }}
           ACTION: ${{ inputs.action }}
+          REQUESTED_MODEL: ${{ inputs.model || 'auto' }}
           # Keep targeted issue/PR handoffs on the same credential-availability
           # contract as roster dispatch. These booleans prove configuration;
           # no provider secret is ever passed to the controller.
@@ -350,7 +359,8 @@ jobs:
             exit 1
           fi
           python3 .github/scripts/factory-work-controller.py dispatch-target \
-            --kind "${BASH_REMATCH[1]}" --number "${BASH_REMATCH[2]}" --action "$ACTION"
+            --kind "${BASH_REMATCH[1]}" --number "${BASH_REMATCH[2]}" \
+            --action "$ACTION" --model "$REQUESTED_MODEL"
 
       - name: Report quota-deferred targeted dispatch without failing a worker
         if: inputs.target && steps.api_budget.outputs.allow != 'true'

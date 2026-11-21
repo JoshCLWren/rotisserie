@@ -13,6 +13,7 @@ on:
       - '.github/scripts/factory_opencode_go_oidc.sh'
       - 'tests/test_factory_opencode_go_oidc.py'
       - 'tests/test_factory_opencode_go.py'
+      - 'tests/test_factory_manual_model_dispatch.py'
       - '.github/scripts/free-model-factory-worker.sh'
       - '.github/scripts/factory_dynamic_outcome.py'
       - '.github/scripts/factory_kilo_catalog.py'
@@ -59,6 +60,7 @@ jobs:
             tests/test_factory_runtime_model_select.py \
             tests/test_factory_model_failover.py \
             tests/test_factory_opencode_go.py \
+            tests/test_factory_manual_model_dispatch.py \
             tests/test_factory_opencode_go_oidc.py \
             tests/test_factory_kilo_catalog.py \
             tests/test_factory_neon_operations.py \
