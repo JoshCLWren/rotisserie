@@ -90,7 +90,8 @@ jobs:
   dispatch:
     if: "!inputs.target || github.ref == 'refs/heads/main'"
     env:
-      FACTORY_NEON_LEASE_REQUIRED: 'true'
+      # Adopters without Neon run on the ledger's no-database mode.
+      FACTORY_NEON_LEASE_REQUIRED: ${{ secrets.NEON_API_KEY != '' }}
       FACTORY_DISCOVERY_TARGET: ${{ inputs.target }}
       FACTORY_READER_APP_ID: ${{ secrets.FACTORY_READER_APP_ID }}
     outputs:
@@ -301,6 +302,10 @@ jobs:
         shell: bash
         run: |
           set -Eeuo pipefail
+          if [[ -z "${FACTORY_STATE_DSN_FILE:-}" && "$FACTORY_NEON_LEASE_REQUIRED" != true ]]; then
+            echo "Neon is not configured for this adopter; skipping operational state bootstrap"
+            exit 0
+          fi
           python3 .github/scripts/factory_state_operations.py bootstrap --repo "$GITHUB_REPOSITORY"
 
       - name: Capture scheduling inventory once

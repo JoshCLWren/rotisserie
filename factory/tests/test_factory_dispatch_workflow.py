@@ -748,3 +748,15 @@ def test_rescue_job_rejects_an_out_of_range_delay(tmp_path: Path) -> None:
     code, calls, _ = _run_rescue_job(tmp_path, failures=0, delay="9999")
     assert code != 0
     assert calls == ""
+
+
+def test_adopters_without_neon_or_push_token_can_run() -> None:
+    import yaml
+
+    dispatch = yaml.safe_load(WORKFLOW.read_text(encoding="utf-8"))["jobs"]["dispatch"]
+    assert dispatch["env"]["FACTORY_NEON_LEASE_REQUIRED"] == "${{ secrets.NEON_API_KEY != '' }}"
+    init = next(s for s in dispatch["steps"] if s.get("name") == "Initialize Neon operational state")
+    assert init["run"].index("skipping operational state bootstrap") < init["run"].index("bootstrap --repo")
+    run = WORKFLOW.with_name("free-model-factory-run.yml").read_text(encoding="utf-8")
+    assert "PR_REBASE_TOKEN: ${{ secrets.PR_REBASE_TOKEN || github.token }}" in run
+    assert "token: ${{ secrets.PR_REBASE_TOKEN || github.token }}" in run
