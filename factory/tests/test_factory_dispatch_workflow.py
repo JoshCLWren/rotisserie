@@ -641,10 +641,40 @@ def test_roster_successor_retries_a_transient_dispatch_failure(tmp_path: Path) -
     assert sleeps.split() == ["sleep", "240", "sleep", "15", "sleep", "30"]
 
 
-def test_roster_successor_fails_after_four_dispatch_attempts(tmp_path: Path) -> None:
-    code, calls, _ = _run_successor_step(tmp_path, failures=9)
+def test_roster_successor_keeps_retrying_through_one_quota_reset(tmp_path: Path) -> None:
+    code, calls, sleeps = _run_successor_step(tmp_path, failures=10)
+    assert code == 0
+    assert calls.count("workflow run fixed-model-factory-dispatch.yml") == 11
+    assert sleeps.split()[:5] == ["sleep", "240", "sleep", "15", "sleep"]
+    assert sleeps.split().count("300") == 7
+
+
+def test_roster_successor_gives_up_after_sixty_five_minutes(tmp_path: Path) -> None:
+    code, calls, sleeps = _run_successor_step(tmp_path, failures=99)
+    waits = [int(n) for n in sleeps.split() if n != "sleep"][1:]
     assert code != 0
-    assert calls.count("workflow run fixed-model-factory-dispatch.yml") == 4
+    assert sum(waits) <= 3900
+    assert calls.count("workflow run fixed-model-factory-dispatch.yml") == len(waits) + 1 == 16
+
+
+def test_successor_timeout_covers_the_longest_delay_and_retry_window() -> None:
+    import yaml
+
+    job = yaml.safe_load(SUCCESSOR.read_text(encoding="utf-8"))["jobs"]["wait_and_wake"]
+    assert job["timeout-minutes"] * 60 > 3700 + 3900
+
+
+def test_merge_drain_meters_its_github_calls() -> None:
+    import yaml
+
+    steps = yaml.safe_load(
+        WORKFLOW.with_name("factory-ready-merge-drain.yml").read_text(encoding="utf-8")
+    )["jobs"]["merge-ready"]["steps"]
+    names = [step.get("name") for step in steps]
+    meter = names.index("Meter GitHub CLI requests")
+    assert meter > names.index("Ensure GitHub CLI supports JSON PR checks")
+    assert names[-1] == "Report GitHub CLI request usage"
+    assert "factory-gh-meter.sh" in steps[meter]["run"]
 
 
 def test_chain_and_review_wakeup_dispatches_retry() -> None:
