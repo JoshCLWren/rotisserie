@@ -178,10 +178,14 @@ async def _events(repo: str, entries: list[dict[str, Any]]) -> int:
 
     conn = await measured_connect(dsn=_dsn(), timeout=8, command_timeout=8)
     inserted = 0
+    # Large failover sessions can contain hundreds of attempts. Batch their
+    # immutable observations instead of making two Neon round trips per model.
+    model_attempts = [entry for entry in entries if entry["event_type"] == "model_attempt"]
+    lifecycle = [entry for entry in entries if entry["event_type"] != "model_attempt"]
     try:
         async with conn.transaction():
             await conn.execute("SELECT pg_advisory_xact_lock(hashtextextended($1, 0))", LEASE_PREFIX + repo)
-            for entry in entries:
+            for entry in lifecycle:
                 existing = await conn.fetchval(
                     """SELECT 1 FROM public.factory_state_events
                        WHERE source='github-actions'
@@ -231,6 +235,31 @@ async def _events(repo: str, entries: list[dict[str, Any]]) -> int:
                                  AND payload->0->>'claim_id'=$2""",
                             f"{LEASE_PREFIX}{repo}:target:%", token, FIXED_LEASE_TTL_SECONDS,
                         )
+            if model_attempts:
+                records = [{**entry, "repo": repo} for entry in model_attempts]
+                event_ids = [entry["event_id"] for entry in records]
+                added = await conn.fetch(
+                    """WITH incoming AS (
+                           SELECT value AS detail FROM jsonb_array_elements($1::jsonb)
+                       ), already AS (
+                           SELECT detail->>'event_id' AS event_id
+                             FROM public.factory_state_events
+                            WHERE source='github-actions'
+                              AND detail->>'event_id' = ANY($2::text[])
+                       )
+                       INSERT INTO public.factory_state_events
+                           (source,event_type,subject_type,subject_number,detail)
+                       SELECT 'github-actions','model_attempt','worker',
+                              (incoming.detail->>'worker')::bigint, incoming.detail
+                         FROM incoming
+                        WHERE NOT EXISTS (
+                            SELECT 1 FROM already
+                             WHERE already.event_id=incoming.detail->>'event_id'
+                        )
+                       RETURNING id""",
+                    json.dumps(records), event_ids,
+                )
+                inserted += len(added)
         return inserted
     finally:
         await conn.close()
