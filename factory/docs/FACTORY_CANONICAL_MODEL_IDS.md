@@ -22,14 +22,20 @@ ID; no code should split it into an unapproved second provider.
 
 Pricing is generally metadata for observability, not an automatic eligibility
 filter. The **existing** `opencode-free` lane is the deliberate exception:
-it authenticates only with ComicPile's `OPENCODE_GO_API_KEY` secret (passed to
-the CLI as `OPENCODE_API_KEY`), verifies that the associated workspace
+it authenticates with GitHub Actions OIDC, exchanging GitHub's signed job
+identity for a short-lived `OPENCODE_API_KEY` using the service account's
+`OPENCODE_GO_CLIENT_ID` GitHub Actions secret. No long-lived Go API key is
+required. It verifies that the associated workspace
 exposes `opencode-go`, and selects only published zero-price, tool-capable
 chat models. It prefers `opencode-go/hy4-flash-free` while that exact model
 is eligible, then rotates through the remaining free Go models. The Zen
 provider `opencode` is explicitly denied by the worker policy. **There is
 no second OpenCode lane**. The old source name is retained solely for stable
 lease identities and Neon events.
+
+The exchange requires `id-token: write` on the calling Entry and reusable
+worker jobs; trusted worker code renews identity before each model attempt.
+Only GitHub Actions with an authorized OpenCode service account may sign in.
 
 A catalog entry still does not guarantee useful execution. Other provider
 candidate policies remain dynamic. Failed executions retain exact-model
