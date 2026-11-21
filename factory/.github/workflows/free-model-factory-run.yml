@@ -12,7 +12,12 @@ on:
         required: true
         type: string
       model:
-        description: Optional exact Go model on a manually targeted assignment
+        description: Optional exact operator-selected runtime provider/model
+        required: false
+        default: auto
+        type: string
+      provider:
+        description: Optional operator-pinned canonical provider source
         required: false
         default: auto
         type: string
@@ -124,20 +129,26 @@ jobs:
           FACTORY_ASSIGNMENT: ${{ inputs.assignment }}
           FACTORY_WORKER: ${{ inputs.worker }}
           REQUESTED_MODEL: ${{ inputs.model || 'auto' }}
+          REQUESTED_PROVIDER: ${{ inputs.provider || 'auto' }}
           FACTORY_NEON_LEASE_REQUIRED: ${{ secrets.NEON_API_KEY != '' }}
         run: |
           set -Eeuo pipefail
           printf '%s' "$FACTORY_ASSIGNMENT" | python3 .github/scripts/factory-work-controller.py validate-assignment --worker "$FACTORY_WORKER" >/dev/null
-          if [[ "$REQUESTED_MODEL" != auto ]]; then
-            [[ "$REQUESTED_MODEL" == opencode-go/hy4-flash-free ]] || {
-              echo '::error::Unsupported exact-model request' >&2
-              exit 1
-            }
+          if [[ "$REQUESTED_MODEL" != auto || "$REQUESTED_PROVIDER" != auto ]]; then
             slot="$(python3 .github/scripts/factory_worker_slots.py resolve --worker "$FACTORY_WORKER")"
-            [[ "$(jq -er '.source' <<< "$slot")" == opencode-free ]] || {
-              echo '::error::Exact Go model requires an existing Go worker lease' >&2
+            worker_source="$(jq -er '.source' <<< "$slot")"
+            if [[ "$REQUESTED_PROVIDER" != auto && "$worker_source" != "$REQUESTED_PROVIDER" ]]; then
+              echo '::error::Operator-pinned provider differs from leased worker' >&2
               exit 1
-            }
+            fi
+            if [[ "$REQUESTED_MODEL" != auto ]]; then
+              python3 - "$worker_source" "$REQUESTED_MODEL" <<'PY'
+          import sys
+          sys.path.insert(0, '.github/scripts')
+          from factory_manual_model import validate_model_syntax
+          validate_model_syntax(sys.argv[1], sys.argv[2])
+          PY
+            fi
           fi
           snapshot="$(python3 .github/scripts/factory_state_operations.py export-model-exclusions --repo "$GITHUB_REPOSITORY" --worker "$FACTORY_WORKER")"
           jq -e 'type == "object"' <<< "$snapshot" >/dev/null
@@ -269,6 +280,7 @@ jobs:
         env:
           REQUESTED_WORKER: ${{ inputs.worker }}
           REQUESTED_MODEL: ${{ inputs.model || 'auto' }}
+          REQUESTED_PROVIDER: ${{ inputs.provider || 'auto' }}
         run: |
           set -Eeuo pipefail
           slot="$(python3 .github/scripts/factory_worker_slots.py resolve --worker "$REQUESTED_WORKER")"
@@ -329,7 +341,7 @@ jobs:
             echo "configured=$configured"
             echo "reason=$reason"
           } >> "$GITHUB_OUTPUT"
-          if [[ "$REQUESTED_MODEL" != auto && "${FACTORY_GO_TOKEN_READY:-}" != true ]]; then
+          if [[ "$REQUESTED_MODEL" != auto && "$source" == opencode-free && "${FACTORY_GO_TOKEN_READY:-}" != true ]]; then
             configured=false
             reason='exact-Go-request-requires-valid-OIDC'
             echo "configured=false" >> "$GITHUB_OUTPUT"
@@ -407,6 +419,7 @@ jobs:
           LANE_DISPLAY: ${{ steps.lane.outputs.display }}
           LANE_BRANCH_SUFFIX: ${{ steps.lane.outputs.branch_suffix }}
           REQUESTED_MODEL: ${{ inputs.model || 'auto' }}
+          REQUESTED_PROVIDER: ${{ inputs.provider || 'auto' }}
         run: |
           set -Eeuo pipefail
           discovery_outcome="$RUNNER_TEMP/factory-discovery-outcome"
@@ -423,7 +436,7 @@ jobs:
           # does after a failed attempt, and log the trusted transition.
           fleet_fallback() {
             local reason="$1" fallback
-            if [[ "$REQUESTED_MODEL" != auto ]]; then
+            if [[ "$REQUESTED_MODEL" != auto || "$REQUESTED_PROVIDER" != auto ]]; then
               printf 'model_unavailable\tExact operator-selected Go model: %s\n' "$reason" > "$discovery_outcome"
               echo "::error::Exact requested model could not be selected; no provider fallback"
               exit 1
@@ -443,6 +456,12 @@ jobs:
             exit 1
           }
           selection=''
+          if [[ "$REQUESTED_MODEL" != auto ]]; then
+            selection="$(python3 .github/scripts/factory_manual_model.py \
+              --source "$SOURCE" --model "$REQUESTED_MODEL" \
+              --exclusions-file "$exclusions_file")" \
+              || fleet_fallback 'Exact requested model is unavailable in trusted provider catalog'
+          else
           # Selection happens after the relevant CLI is installed. Nothing
           # uses a checked-in model ID, cost limit, or worker/model mapping.
           case "$SOURCE" in
@@ -496,6 +515,7 @@ jobs:
               ;;
           esac
 
+          fi
           selected_source="$(jq -r '.source // empty' <<< "$selection")"
           selected_source="${selected_source:-$SOURCE}"
           # Prefer an eligible model whose last real outcome proved coding
@@ -516,7 +536,7 @@ jobs:
           fi
           # Prefer authenticated Go free models across the existing fleet.
           # No extra OpenCode route, worker identity, or provider-wide ban.
-          if [[ "$REQUESTED_MODEL" == auto && -n "${OPENCODE_API_KEY:-}" ]] &&
+          if [[ "$REQUESTED_MODEL" == auto && "$REQUESTED_PROVIDER" == auto && -n "${OPENCODE_API_KEY:-}" ]] &&
              jq -e 'index("opencode-free") != null' "$RUNNER_TEMP/factory-fleet-sources.json" >/dev/null; then
             go_args=(--worker "$WORKER" --rotation "${GITHUB_RUN_NUMBER:-0}"
               --exclusions-file "$exclusions_file")
@@ -701,6 +721,7 @@ jobs:
           FACTORY_OMNIROUTE_ENABLED: ${{ vars.FACTORY_OMNIROUTE_ENABLED || 'off' }}
           FACTORY_ASSIGNMENT: ${{ inputs.assignment }}
           FACTORY_EXACT_MODEL: ${{ inputs.model || 'auto' }}
+          FACTORY_EXACT_SOURCE: ${{ inputs.provider || 'auto' }}
           FACTORY_WORKER: ${{ steps.lane.outputs.worker }}
           FACTORY_SOURCE: ${{ steps.executor.outputs.source || steps.lane.outputs.source }}
           FACTORY_MODEL: ${{ steps.executor.outputs.model || steps.lane.outputs.model }}
