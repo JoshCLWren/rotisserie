@@ -58,3 +58,16 @@ def test_runtime_has_no_default_adopter() -> None:
         text = path.read_text(encoding="utf-8")
         assert not re.search(r'GITHUB_REPOSITORY"\s*,\s*"[^"]', text), path.name
         assert 'setdefault("GITHUB_REPOSITORY"' not in text, path.name
+
+
+def test_runtime_scripts_never_name_a_fixed_adopter_repository() -> None:
+    import re
+    from pathlib import Path
+
+    scripts = Path(__file__).resolve().parents[1] / ".github" / "scripts"
+    pattern = re.compile(r'name\s*[:=]\s*\\?"comic-pile\\?"|"name":\s*"comic-pile"')
+    offenders = [
+        path.name for path in scripts.glob("*.py")
+        if not path.name.startswith("test_") and pattern.search(path.read_text(encoding="utf-8"))
+    ]
+    assert offenders == []

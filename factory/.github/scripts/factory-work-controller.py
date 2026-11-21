@@ -153,10 +153,11 @@ def rotisserie_issue_intake(issues: list[dict[str, Any]], prs: list[dict[str, An
             snapshot_path = root / "snapshot.json"
             config_path = root / "operator.toml"
             snapshot_path.write_text(json.dumps(snapshot), encoding="utf-8")
+            owner, name = REPO.split("/", 1)
             config_path.write_text(
                 'schema_version = 1\n[repository]\nhost = "github.com"\n'
-                'owner = "JoshCLWren"\nname = "comic-pile"\n[repositories]\n'
-                'allow = [{ host = "github.com", owner = "JoshCLWren", name = "comic-pile" }]\n'
+                f'owner = "{owner}"\nname = "{name}"\n[repositories]\n'
+                f'allow = [{{ host = "github.com", owner = "{owner}", name = "{name}" }}]\n'
                 '[local]\nsnapshot = "snapshot.json"\nstate_directory = "state"\n'
                 'mutations_enabled = false\n',
                 encoding="utf-8",
