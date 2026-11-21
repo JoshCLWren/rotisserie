@@ -132,3 +132,79 @@ def test_deferred_collector_uses_same_attempt_recording(monkeypatch) -> None:
                         lambda repo, run, outcome, job_log=None: calls.append(job_log) or 4)
     reconcile._record("owner/repo", RUN, dict(OUTCOME), LOG)
     assert calls == [LOG]
+
+
+def test_failure_tail_preserves_model_specific_diagnostics_without_next_model_leakage() -> None:
+    failing = (
+        line("2026-11-21T13:22:50Z", "openrouter-free", "recursive/flint-v1.0:free",
+             "retrying (attempt 2): Rate limit exceeded: free-models-per-day-high-balance.")
+        + "2026-11-21T13:24:10.3315859Z \x1b[91mError: \x1b[0m"
+          "Rate limit exceeded: free-models-per-day-high-balance.\n"
+    )
+    next_model = line("2026-11-21T13:30:00Z", "nvidia", "nvidia/nemotron-3-ultra-550b-a55b",
+                      "Error: independent nvidia review failure")
+    events = model_attempt_events(RUN, OUTCOME, LOG.replace(
+        line("2026-11-21T13:24:10.4236097Z", "openrouter-free", "recursive/flint-v1.0:free",
+             "agent exit status 1 for pr #5628"),
+        failing + line("2026-11-21T13:24:10.4236097Z", "openrouter-free",
+                       "recursive/flint-v1.0:free", "agent exit status 1 for pr #5628"),
+    ) + next_model)
+    tail = events[0]["failure_log_tail"]
+    assert "Rate limit exceeded: free-models-per-day-high-balance" in tail
+    assert "agent exit status 1" in tail
+    assert "FACTORY_TRUSTED_FAILOVER" in tail
+    assert "independent nvidia review failure" not in tail
+    assert "semantic_review_recovery_failed" in events[2]["failure_log_tail"]
+
+
+def test_failure_tail_drops_secret_context_and_redacts_private_urls() -> None:
+    source, model = "opencode-free", "hy4-flash-free"
+    start = line("2026-11-21T13:00:00Z", source, model,
+                 f"FACTORY_EXECUTION_CANDIDATE: source={source} model={model} runtime=opencode/{model}")
+    risky = (
+        "2026-11-21T13:00:01Z Error: authorization Bearer sk-VERY-PRIVATE-CREDENTIAL\n"
+        "2026-11-21T13:00:02Z Error: password=something-private\n"
+        "2026-11-21T13:00:03Z Error: called https://host.example/private?code=VERYPRIVATESECRET\n"
+        "2026-11-21T13:00:04Z Error: sent to nobody@example.com\n"
+        "2026-11-21T13:00:05Z Error: request ID 0123456789abcdef0123456789abcdef0123 failed\n"
+        "2026-11-21T13:00:06Z Python prompt with confidential source content\n"
+    )
+    fail = line("2026-11-21T13:00:08Z", source, model,
+                f"FACTORY_TRUSTED_FAILOVER: source={source} model={model} outcome=provider_quota scope=model")
+    event = model_attempt_events(RUN, {**OUTCOME, "source": source, "model": model}, start + risky + fail)[0]
+    tail = event["failure_log_tail"]
+    assert tail
+    assert "authorization" not in tail.lower()
+    assert "sk-VERY" not in tail
+    assert "password" not in tail.lower()
+    assert "https://host.example" not in tail
+    assert "nobody@example.com" not in tail
+    assert "0123456789abcdef" not in tail
+    assert "confidential source content" not in tail
+    assert "[redacted]" in tail
+    assert "FACTORY_TRUSTED_FAILOVER" in tail
+
+
+def test_failure_tail_is_bounded_to_last_diagnostic_lines() -> None:
+    source, model = "opencode-free", "hy4-flash-free"
+    start = line("2026-11-21T13:00:00Z", source, model,
+                 f"FACTORY_EXECUTION_CANDIDATE: source={source} model={model} runtime=opencode/{model}")
+    errors = "".join(
+        line("2026-11-21T13:00:01Z", source, model, f"Error: retry cycle {i}: " + "x" * 600)
+        for i in range(50)
+    )
+    event = model_attempt_events(RUN, {**OUTCOME, "source": source, "model": model}, start + errors)[0]
+    tail = event["failure_log_tail"]
+    assert tail
+    assert len(tail) <= 1600
+    assert len(tail.splitlines()) <= 8
+    assert "cycle 49" in tail
+    assert "cycle 0" not in tail
+
+
+def test_successful_final_attempt_has_no_failure_tail() -> None:
+    outcome = {**OUTCOME, "outcome_class": "success"}
+    events = model_attempt_events(RUN, outcome, LOG)
+    assert events[-1]["outcome_class"] == "success"
+    assert events[-1]["failure_log_tail"] is None
+    assert events[0]["failure_log_tail"] is not None
