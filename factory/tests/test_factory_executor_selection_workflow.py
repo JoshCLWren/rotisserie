@@ -224,3 +224,18 @@ def test_unavailability_health_is_persisted_from_the_log_not_a_snapshot(
     ]
     assert "model_unavailable" in operations.MODEL_COOLDOWNS
     assert "provider_quota" in operations.TRANSIENT
+
+def test_failed_go_oidc_still_enters_cross_provider_fallback() -> None:
+    """Missing/failed Go identity must not strand an already-owned worker."""
+    workflow = WORKFLOW.read_text(encoding="utf-8")
+    lane = _lane_resolution(workflow)
+    go = lane.split("opencode-free)", 1)[1].split(";;", 1)[0]
+    assert "configured=true" in go
+    assert "configured=false" not in go
+    assert "Go-service-account-oidc-unavailable-try-fleet" in go
+
+    selector = _dispatch_selector(workflow)
+    go_candidate = selector.split("opencode-free)", 1)[1].split(";;", 1)[0]
+    assert "factory_opencode_go.py" in go_candidate
+    assert "fleet_fallback 'Go" in go_candidate
+    assert "--blocked-provider \"$SOURCE\"" in selector
