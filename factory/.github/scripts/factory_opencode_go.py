@@ -90,13 +90,22 @@ def free_models(payload: Mapping[str, Any]) -> list[str]:
     return sorted(eligible)
 
 
-def choose(payload: Mapping[str, Any], worker: str, rotation: int = 0, excluded: set[str] | None = None) -> dict[str, str]:
+def choose(payload: Mapping[str, Any], worker: str, rotation: int = 0, excluded: set[str] | None = None, required_model: str | None = None) -> dict[str, str]:
     available = [model for model in free_models(payload) if model not in (excluded or set())]
     if not available:
         raise GoCatalogError("No zero-cost Go coding models outside cooldown")
     if not worker.isdecimal() or int(worker) < 1:
         raise GoCatalogError("Invalid worker")
-    model = PREFERRED if PREFERRED in available else available[(int(worker) + rotation) % len(available)]
+    if required_model is not None:
+        # Exact owner-directed manual invocation, never auto-substitute a
+        # paid Go model, Zen, another free model, or a cooled-down model.
+        if required_model != f"{PROVIDER}/{PREFERRED}":
+            raise GoCatalogError("Unsupported exact Go model")
+        if PREFERRED not in available:
+            raise GoCatalogError("Required free Go model unavailable or cooling")
+        model = PREFERRED
+    else:
+        model = PREFERRED if PREFERRED in available else available[(int(worker) + rotation) % len(available)]
     return {"source": SOURCE, "provider": PROVIDER, "model": model,
             "runtime_model": f"{PROVIDER}/{model}", "reason": "verified-Go-free-model"}
 
@@ -108,6 +117,7 @@ def main() -> int:
     parser.add_argument("--exclusions-file", type=Path)
     parser.add_argument("--catalog-json", type=Path)
     parser.add_argument("--catalog-output", type=Path)
+    parser.add_argument("--required-model", choices=(f"{PROVIDER}/{PREFERRED}",))
     args = parser.parse_args()
     try:
         payload = json.loads(args.catalog_json.read_text()) if args.catalog_json else catalog()
@@ -117,7 +127,7 @@ def main() -> int:
         values = state.get(SOURCE, []) if isinstance(state, dict) else None
         if not isinstance(values, list) or not all(isinstance(v, str) for v in values):
             raise GoCatalogError("Invalid model cooldown snapshot")
-        selected = choose(payload, args.worker, args.rotation, set(values))
+        selected = choose(payload, args.worker, args.rotation, set(values), args.required_model)
         if args.catalog_output:
             args.catalog_output.write_text(json.dumps(payload), encoding="utf-8")
             args.catalog_output.chmod(0o600)
