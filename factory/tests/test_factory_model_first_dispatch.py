@@ -170,3 +170,57 @@ def test_force_slot_deferred_does_not_create_or_steal_a_claim(monkeypatch):
         controller.dispatch_next('opencode-go', force_slot=True, slot_index=99)
     with pytest.raises(ValueError, match='requires --force-slot'):
         controller.dispatch_next('opencode-go', slot_index=1)
+
+
+def test_conflicted_pr_without_published_required_checks_can_enter_repair(monkeypatch):
+    """A conflict is not blocked forever by CI that cannot publish on its head."""
+    spec = importlib.util.spec_from_file_location(
+        'factory_work_controller_conflict_check',
+        ROOT / '.github/scripts/factory-work-controller.py',
+    )
+    assert spec and spec.loader
+    controller = importlib.util.module_from_spec(spec)
+    monkeypatch.setitem(sys.modules, spec.name, controller)
+    spec.loader.exec_module(controller)
+    candidate = SimpleNamespace(
+        kind='pr', number=5575, stage='factory:changes-requested', conflicted=True,
+    )
+    monkeypatch.setattr(controller, 'target_json', lambda _: {
+        'labels': [{'name': 'factory:changes-requested'}, {'name': 'factory:merge-conflict'}],
+    })
+    live = {'state': 'open', 'mergeable': False, 'mergeable_state': 'dirty'}
+    monkeypatch.setattr(controller, 'live_pr_state', lambda _: live)
+    responses = {'checks': '[]'}
+    monkeypatch.setattr(controller, 'run_gh', lambda *args, **kwargs: responses['checks'])
+
+    # Missing is distinguished only for a known conflicted head.
+    assert controller.required_checks_outcome(5575) == 'waiting'
+    assert controller.required_checks_outcome(5575, distinguish_absent=True) == 'absent'
+    assert controller.candidate_is_live_executable(candidate) is True
+
+    # No blanket bypass of active or malformed required check evidence.
+    for payload in ('[{"state":"PENDING"}]', '', '{broken'):
+        responses['checks'] = payload
+        assert controller.candidate_is_live_executable(candidate) is False
+
+    responses['checks'] = '[]'
+    # A stale conflict snapshot may not authorize work on a clean PR head.
+    live['mergeable'] = True
+    live['mergeable_state'] = 'clean'
+    assert controller.candidate_is_live_executable(candidate) is False
+    live['mergeable'] = False
+    live['mergeable_state'] = 'dirty'
+
+    # CI-stage and non-conflicted PRs still wait for required checks.
+    candidate.stage = 'factory:ci'
+    assert controller.candidate_is_live_executable(candidate) is False
+    candidate.stage = 'factory:changes-requested'
+    candidate.conflicted = False
+    assert controller.candidate_is_live_executable(candidate) is False
+
+    # An explicit ready stage remains a hard stop even if the PR is conflicted.
+    candidate.conflicted = True
+    monkeypatch.setattr(controller, 'target_json', lambda _: {
+        'labels': [{'name': 'factory:ready'}],
+    })
+    assert controller.candidate_is_live_executable(candidate) is False
