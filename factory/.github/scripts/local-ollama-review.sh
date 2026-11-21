@@ -190,11 +190,16 @@ gh_retry gh api "repos/${GITHUB_REPOSITORY}/pulls/${PR}" > /tmp/local-review-cur
 python3 .github/scripts/local_review_contract.py target \
   /tmp/local-review-current.json --expected-head "$HEAD" > /dev/null
 
-# A reject returns the PR to repair; it is not authority to close the PR.
-controller_verdict=approve
+# An APPROVE must carry a validated report for every acceptance item; a
+# REJECT needs one sentence. A small local model therefore rejects real fixes,
+# so its REJECT is advisory and never sends a PR back to repair.
 if [[ "$(jq -er .verdict /tmp/local-review-payload.json)" == REJECT ]]; then
-  controller_verdict=repair
+  echo "Advisory local REJECT for PR #${PR} at ${HEAD}; the controller is not called"
+  jq -r .reason /tmp/local-review-payload.json
+  { echo "### Local review (advisory) · REJECT"; jq -r .reason /tmp/local-review-payload.json; } >> "$GITHUB_STEP_SUMMARY"
+  exit 0
 fi
+controller_verdict=approve
 
 # Only the trusted controller posts the review attestation as github-actions[bot].
 gh pr edit "$PR" --add-label "factory:review,factory:77" >/dev/null 2>&1 || true

@@ -120,7 +120,7 @@ def test_script_uses_controller_and_never_claims_truncated_or_stale_review() -> 
     assert 'local_review_contract.py target' in script
     assert '--expected-head "$HEAD"' in script
     assert 'local_review_contract.py response /tmp/resp.json' in script
-    assert 'controller_verdict=repair' in script
+    assert 'controller_verdict=repair' not in script
     assert 'jq \'.max_tokens = 8192\'' in script
     assert 'gh_retry gh workflow run factory-ready-merge-drain.yml' in script
     assert 'gh pr merge' not in script
@@ -326,3 +326,11 @@ def test_review_candidate_skips_unlinked_older_pr_without_stealing_leases() -> N
     assert contract.select_review_candidate(candidates) == 9
     assert contract.select_review_candidate(candidates[:1]) is None
     assert contract.select_review_candidate(candidates[3:]) == 10
+
+
+def test_local_reject_is_advisory_and_stops_before_the_controller() -> None:
+    script = (ROOT / ".github/scripts/local-ollama-review.sh").read_text()
+    advisory = script.index("Advisory local REJECT")
+    assert advisory < script.index("factory-review-controller.py review")
+    assert advisory < script.index('gh pr edit "$PR" --add-label')
+    assert script.index("exit 0", advisory) < script.index("controller_verdict=approve")
