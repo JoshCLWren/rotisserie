@@ -307,3 +307,78 @@ def test_worker_preflight_preserves_live_conflict_state_from_leased_pr(monkeypat
     live['head']['sha'] = 'b' * 40
     with pytest.raises(ValueError, match='head moved'):
         controller.validate_assignment(worker, json.dumps(ctx))
+
+
+def test_operator_force_reaches_real_work_without_soft_intake_or_retry_filters(monkeypatch):
+    """One operator-forced slot should see the existing backlog, not a fake task."""
+    import factory_state_operations
+    spec = importlib.util.spec_from_file_location(
+        'factory_work_controller_override_policy',
+        ROOT / '.github/scripts/factory-work-controller.py',
+    )
+    assert spec and spec.loader
+    controller = importlib.util.module_from_spec(spec)
+    monkeypatch.setitem(sys.modules, spec.name, controller)
+    spec.loader.exec_module(controller)
+    candidate = controller.Candidate(
+        'issue', 5592, 1, 4, '2026-11-21T11:00:00Z',
+    )
+    issues = [{'number': 5592, 'state': 'OPEN',
+               'labels': [{'name': 'factory:unowned'}, {'name': 'user-reported'}]}]
+    monkeypatch.setattr(controller, 'reconcile_stale_leases', lambda: [])
+    monkeypatch.setattr(controller, 'reconcile_contradictory_labels', lambda: [])
+    monkeypatch.setattr(controller, 'list_issues', lambda: issues)
+    monkeypatch.setattr(controller, 'list_prs', lambda: [])
+    monkeypatch.setattr(controller, 'load_no_diff_attempt_records', lambda: [])
+    monkeypatch.setenv('FACTORY_JEV_RANKING_FILE', '')
+    observed = {}
+    def build(_issues, _prs, **kwargs):
+        observed['backpressure_override'] = kwargs['include_backpressured_issues']
+        return [candidate]
+    def intake(_issues, _prs, *, operator_force=False):
+        observed['portable_override'] = operator_force
+        return {5592}
+    monkeypatch.setattr(controller, 'build_candidates', build)
+    monkeypatch.setattr(controller, 'rotisserie_issue_intake', intake)
+    monkeypatch.setattr(controller, 'resolve_review_head_contributors',
+                        lambda rows, _prs: rows)
+    monkeypatch.setattr(controller, 'order_candidates_for_worker',
+                        lambda rows, _worker: rows)
+    monkeypatch.setattr(controller, 'candidate_is_live_executable', lambda _: True)
+    monkeypatch.setattr(controller, 'issue_excludes_worker_on_strike_retry',
+                        lambda *_: False)
+    monkeypatch.setattr(controller, 'assign_candidate', lambda *_args, **_kwargs: True)
+    monkeypatch.setattr(
+        factory_state_operations, 'cooling_prs',
+        lambda *_args, **_kwargs:
+        pytest.fail('operator force must bypass only advisory retry cooldown'),
+    )
+    chosen = controller.assign_from_pool('6', operator_force=True)
+    assert chosen is candidate
+    assert observed == {'backpressure_override': True, 'portable_override': True}
+
+
+def test_operator_force_dispatch_passes_owner_override_into_assignment(monkeypatch):
+    """The --force-slot flow is more than ignoring historical slot health."""
+    import factory_worker_slots as worker_slots
+    spec = importlib.util.spec_from_file_location(
+        'factory_work_controller_force_autorun',
+        ROOT / '.github/scripts/factory-work-controller.py',
+    )
+    assert spec and spec.loader
+    controller = importlib.util.module_from_spec(spec)
+    monkeypatch.setitem(sys.modules, spec.name, controller)
+    spec.loader.exec_module(controller)
+    monkeypatch.setattr(worker_slots, 'slots', lambda: [
+        SimpleNamespace(source='opencode-free', index=0, worker='1000000000001'),
+    ])
+    calls = []
+    monkeypatch.setattr(controller, 'assign',
+                        lambda worker, **kwargs: calls.append((worker, kwargs)) or None)
+    monkeypatch.setattr(controller, 'worker_skip_reason',
+                        lambda worker: 'No currently claimable work')
+    result = controller.dispatch_next(
+        'opencode-go', 'opencode-go/hy4-flash-free', force_slot=True,
+    )
+    assert result['status'] == 'deferred'
+    assert calls == [('1000000000001', {'operator_force': True})]
