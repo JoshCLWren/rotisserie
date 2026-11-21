@@ -12,6 +12,11 @@ on:
         description: Active fixed-model Factory number from the roster
         required: true
         type: string
+      model:
+        description: Optional exact model chosen by targeted trusted dispatcher
+        required: false
+        default: auto
+        type: string
 
 permissions:
   id-token: write
@@ -27,6 +32,7 @@ jobs:
     with:
       worker: ${{ inputs.worker }}
       assignment: ${{ inputs.assignment }}
+      model: ${{ inputs.model }}
     secrets: inherit
 
   # The preceding job owns the entire worker lease and its release. A
