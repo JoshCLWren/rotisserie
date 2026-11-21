@@ -122,7 +122,7 @@ def test_worker_recovery_is_fresh_bounded_and_fail_closed() -> None:
     assert 'factory_sanitize_review_log "$recovery_log" "$sanitized_recovery_log"' in worker
     assert '"$sanitized_review_log" "$sanitized_recovery_log"' in worker
     assert "FACTORY_GATE_BLOCKED" in helper
-    assert "recovery_timeout=90" in worker
+    assert "recovery_timeout=600" in worker
     assert "current_head" in worker
     assert "current_owner_is_self" in worker
     assert "semantic-review-recovery-failed" in worker
@@ -350,9 +350,9 @@ def test_worker_checks_full_mission_before_recovered_ready() -> None:
     assert '"$EXPECTED_HEAD" "$acceptance_mission"; then' in worker
     assert "policy.report_matches_mission(recovered, sys.argv[5])" in helper
     assert "A bare JSON object" in helper
-    assert "recovery_timeout=90" in worker
-    assert "recovery_timeout=180" in worker
-    assert 'if [[ "$RUNTIME_MODEL" == \'openrouter/free\' ]]; then' in worker
+    assert "recovery_timeout=600" in worker
+    assert "recovery_timeout=90" not in worker
+    assert '(( recovery_timeout > available - 45 )) && recovery_timeout=$((available - 45))' in worker
 
 
 def test_failed_recovery_does_not_reenable_errexit_in_the_worker(tmp_path: Path) -> None:
