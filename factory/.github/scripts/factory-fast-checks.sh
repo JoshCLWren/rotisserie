@@ -147,6 +147,22 @@ factory_ensure_commit_hook_toolchain() {
   uv sync --frozen --all-extras --quiet
 }
 
+# An adopter replaces the built-in checks with `[checks] fast` in its
+# Rotisserie config. The command runs from the repository root.
+_factory_fast_check_adopter_command() {
+  python3 - "${ROTISSERIE_CONFIG:-.rotisserie/config.toml}" <<'PY' 2>/dev/null || true
+import sys
+import tomllib
+
+try:
+    with open(sys.argv[1], "rb") as handle:
+        command = (tomllib.load(handle).get("checks") or {}).get("fast") or ""
+except FileNotFoundError:
+    command = ""
+print(command if isinstance(command, str) else "")
+PY
+}
+
 # Run the fast checks for the diff against BASE_REF. Writes a full log to
 # $2 (default /tmp/factory-fast-checks-<worker>.log) and returns non-zero when
 # any check (or the toolchain it needs) fails.
@@ -158,6 +174,12 @@ factory_run_fast_checks() {
   case "$(printf '%s' "${FACTORY_FAST_CHECKS:-on}" | tr '[:upper:]' '[:lower:]')" in
     0|off|false|no) printf 'fast checks disabled by FACTORY_FAST_CHECKS\n' >> "$log"; return 0 ;;
   esac
+  local adopter_command
+  adopter_command="$(_factory_fast_check_adopter_command)"
+  if [[ -n "$adopter_command" ]]; then
+    _factory_fast_check_run "$log" "adopter fast checks: ${adopter_command}" bash -c "$adopter_command"
+    return
+  fi
   plan="$(factory_fast_check_paths "$base_ref" | factory_fast_check_plan)"
   local fe_project=0 rust_project=0 rust_ingress=0 openapi_check=0 deps_project=0
   while IFS=$'\t' read -r kind file; do

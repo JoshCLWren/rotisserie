@@ -90,3 +90,23 @@ def test_worker_exports_are_empty_without_neon_unless_required(monkeypatch) -> N
     monkeypatch.setenv("FACTORY_NEON_LEASE_REQUIRED", "true")
     with pytest.raises(RuntimeError):
         ops.export_model_exclusions("o/r", "1")
+
+
+def test_adopter_fast_check_command_replaces_builtin_checks(tmp_path, monkeypatch) -> None:
+    import os
+    import subprocess
+    import sys
+    from pathlib import Path
+
+    script = Path(__file__).resolve().parents[1] / ".github" / "scripts" / "factory-fast-checks.sh"
+    config = tmp_path / ".rotisserie" / "config.toml"
+    config.parent.mkdir()
+    for fast, expected in (('exit 0', 0), ('echo boom; exit 3', 3)):
+        config.write_text(f'[checks]\nfast = "{fast}"\n')
+        result = subprocess.run(
+            ["bash", "-c", f'source "{script}"; factory_run_fast_checks HEAD "{tmp_path}/log"'],
+            cwd=tmp_path, capture_output=True, text=True,
+            env={**os.environ, "ROTISSERIE_CONFIG": str(config), "PATH": f"{Path(sys.executable).parent}:{os.environ['PATH']}"},
+        )
+        assert result.returncode == expected
+        assert "adopter fast checks" in (tmp_path / "log").read_text()
