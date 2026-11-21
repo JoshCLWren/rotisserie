@@ -161,7 +161,9 @@ jobs:
       # workflow dispatch. Git fetch/push and PR creation use the dedicated
       # PAT so pull_request workflows and initial review use a trusted actor.
       GH_TOKEN: ${{ github.token }}
-      PR_REBASE_TOKEN: ${{ secrets.PR_REBASE_TOKEN }}
+      # Without a push token, CI on factory pushes comes from the merge
+      # drain's workflow_dispatch recovery.
+      PR_REBASE_TOKEN: ${{ secrets.PR_REBASE_TOKEN || github.token }}
       # Worker 48 installation token inputs. Empty unless Josh has created the App.
       FACTORY_WORKER_48_APP_ID: ${{ secrets.FACTORY_WORKER_48_APP_ID }}
       FACTORY_WORKER_48_INSTALLATION_ID: ${{ secrets.FACTORY_WORKER_48_INSTALLATION_ID }}
@@ -208,7 +210,7 @@ jobs:
           ref: main
           fetch-depth: 0
           persist-credentials: false
-          token: ${{ secrets.PR_REBASE_TOKEN }}
+          token: ${{ secrets.PR_REBASE_TOKEN || github.token }}
 
       - name: Install factory syntax parsers
         uses: ./.github/actions/factory-syntax
