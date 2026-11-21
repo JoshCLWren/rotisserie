@@ -120,6 +120,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           FACTORY_ASSIGNMENT: ${{ inputs.assignment }}
           FACTORY_WORKER: ${{ inputs.worker }}
+          FACTORY_NEON_LEASE_REQUIRED: ${{ secrets.NEON_API_KEY != '' }}
         run: |
           set -Eeuo pipefail
           printf '%s' "$FACTORY_ASSIGNMENT" | python3 .github/scripts/factory-work-controller.py validate-assignment --worker "$FACTORY_WORKER" >/dev/null
