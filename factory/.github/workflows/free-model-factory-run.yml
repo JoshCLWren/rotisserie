@@ -557,6 +557,20 @@ jobs:
           mv "$temp_config.merged" "$HOME/.config/opencode/opencode.json"
           chmod 600 "$HOME/.config/opencode/opencode.json"
 
+      - name: Use the selected model for OpenCode defaults and subagents
+        if: steps.lane.outputs.configured == 'true'
+        shell: bash
+        env:
+          RUNTIME_MODEL: ${{ steps.executor.outputs.runtime_model || steps.lane.outputs.runtime_model }}
+        run: |
+          set -Eeuo pipefail
+          config="$HOME/.config/opencode/opencode.json"
+          tmp="$(mktemp)"
+          trap 'rm -f "$tmp"' EXIT
+          jq --arg runtime "$RUNTIME_MODEL" '.model = $runtime | .agents.title.model = $runtime' "$config" > "$tmp"
+          mv "$tmp" "$config"
+          chmod 600 "$config"
+
       # Catalog membership is advisory. A missing or exhausted initial model
       # must not abort the assigned worker before the fleet-wide failover loop.
       # Its first real coding call establishes actual inference availability.
