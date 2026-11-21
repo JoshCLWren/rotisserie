@@ -150,7 +150,7 @@ jobs:
           PY
             fi
           fi
-          snapshot="$(python3 .github/scripts/factory_state_operations.py export-model-exclusions --repo "$GITHUB_REPOSITORY" --worker "$FACTORY_WORKER")"
+          snapshot="$(python3 .github/scripts/factory_state_operations.py export-model-exclusions --repo "$GITHUB_REPOSITORY" --worker "$FACTORY_WORKER" --requested-model "$REQUESTED_MODEL")"
           jq -e 'type == "object"' <<< "$snapshot" >/dev/null
           echo "exclusions=$snapshot" >> "$GITHUB_OUTPUT"
           candidate_health="$(python3 .github/scripts/factory_state_operations.py export-candidate-health --repo "$GITHUB_REPOSITORY")"
