@@ -33,7 +33,7 @@ def test_canonical_roster_offers_ollama_without_manual_dispatch() -> None:
     )[1].split("      - name: Queue roster successor outside assignment lease lock", 1)[0]
     assert "github.event_name == 'schedule'" in job
     assert "inputs.mode == 'roster'" in job
-    assert "!inputs.target" in job
+    assert "!(inputs.target || inputs.provider)" in job
     assert "factory:review" in job
     assert "factory:unowned" in job
     assert "local-ollama-review.yml" in job
