@@ -59,7 +59,7 @@ def test_model_first_chooses_canonical_provider_worker_and_real_pr(monkeypatch):
 
 
 def test_unknown_provider_and_runtime_prefix_fail_without_leasing(monkeypatch):
-    with pytest.raises(ValueError, match='Unsupported factory provider'):
+    with pytest.raises(ValueError, match='does not support exact-model selection'):
         exact.validate_model_syntax('not-a-provider', 'not-a-provider/some-model')
     with pytest.raises(ValueError, match='does not belong'):
         exact.validate_model_syntax('opencode-free', 'opencode/paid')
