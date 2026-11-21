@@ -39,21 +39,21 @@ MAX_FAILURE_TAIL_LINES = 8
 MAX_FAILURE_TAIL_CHARS = 1600
 MAX_FAILURE_LINE_CHARS = 240
 LOG_PREFIX = re.compile(
-    r"^\\[factory:(?P<worker>\\d+)\\]"
-    r"\\[source:(?P<source>[^\\]\\r\\n]+)\\]"
-    r"\\[model:(?P<model>[^\\]\\r\\n]+)\\] (?P<message>.*)$"
+    r"^\[factory:(?P<worker>\d+)\]"
+    r"\[source:(?P<source>[^\]\r\n]+)\]"
+    r"\[model:(?P<model>[^\]\r\n]+)\] (?P<message>.*)$"
 )
-LOG_STAMP = re.compile(r"^\\d{4}-\\d\\d-\\d\\dT\\d\\d:\\d\\d:\\d\\d(?:\\.\\d+)?Z\\s+")
+LOG_STAMP = re.compile(r"^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d(?:\.\d+)?Z\s+")
 DIAGNOSTIC = re.compile(
     r"(?i)^(?:"
-    r"(?:error|fatal|exception|warning|traceback|failure|failed|timeout|timed out)\\s*:"
-    r"|(?:[!>]\\s*)?retrying\\s*\\(attempt\\s+\\d+\\)\\s*:"
-    r"|(?:\\S+(?:Error|Exception))\\s*:"
+    r"(?:error|fatal|exception|warning|traceback|failure|failed|timeout|timed out)\s*:"
+    r"|(?:[!>]\s*)?retrying\s*\(attempt\s+\d+\)\s*:"
+    r"|(?:\S+(?:Error|Exception))\s*:"
     r"|FACTORY_TRUSTED_FAILOVER:"
     r"|FACTORY_NO_CHANGE_FAILOVER:"
-    r"|agent exit status\\s+-?\\d+\\s+for\\s+(?:pr|issue)\\s+#\\d+"
+    r"|agent exit status\s+-?\d+\s+for\s+(?:pr|issue)\s+#\d+"
     r"|semantic_review_recovery_failed:"
-    r"|\\[?error\\]?:"
+    r"|\[?error\]?:"
     r")"
 )
 # Avoid persisting an error message if it mentions secret-bearing parameters.
@@ -63,10 +63,10 @@ SECRET_CONTEXT = re.compile(
     r"(?i)(?:authorization|bearer|api[_-]?key|password|passwd|secret|"
     r"access[_-]?token|refresh[_-]?token|client[_-]?secret|"
     r"private[_-]?key|database[_-]?url|connection[_-]?uri|"
-    r"cookie|set-cookie|credential|\\bdsn\\b|"
+    r"cookie|set-cookie|credential|\bdsn\b|"
     r"gh[pousr]_|github_pat_|sk-[a-z0-9]|xox[baprs]-)"
 )
-URL_OR_CONTACT = re.compile(r"(?i)(?:\\b(?:https?|postgres(?:ql)?)://\\S+|\\b\\S+@\\S+\\.\\w+)")
+URL_OR_CONTACT = re.compile(r"(?i)(?:\b(?:https?|postgres(?:ql)?)://\S+|\b\S+@\S+\.\w+)")
 OPAQUE_VALUE = re.compile(r"(?<![A-Za-z0-9_])[A-Za-z0-9_-]{36,}(?![A-Za-z0-9_])")
 
 
@@ -98,7 +98,7 @@ def _sanitized_failure_tail(segment: str, worker: str, source: str, model: str) 
             selected.append(line)
             if len(selected) > MAX_FAILURE_TAIL_LINES:
                 selected.pop(0)
-    return "\\n".join(selected)[-MAX_FAILURE_TAIL_CHARS:] or None
+    return "\n".join(selected)[-MAX_FAILURE_TAIL_CHARS:] or None
 
 
 def _time(value: str) -> datetime | None:
