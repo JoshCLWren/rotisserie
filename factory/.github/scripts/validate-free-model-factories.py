@@ -83,7 +83,11 @@ def validate() -> None:
     assert "factory_opencode_go_oidc.sh" in runner
     assert "id-token: write" in entry
     assert "factory_kilo_catalog.py" in runner
-    assert runner.count('factory_worker_slots.py resolve --worker "$FACTORY_WORKER"') == 2
+    # Validate a manually pinned model against the worker's real provider in
+    # addition to the two established resolution checks.
+    assert runner.count('factory_worker_slots.py resolve --worker "$FACTORY_WORKER"') == 3
+    assert "Exact Go model requires an existing Go worker lease" in runner
+    assert "Exact requested model could not be selected; no provider fallback" in runner
     assert "[0-9]{0,2}" not in runner
     assert "Require Vercel model to remain zero-price" not in runner
     assert "selected-from-live-runtime-catalog" in runner
