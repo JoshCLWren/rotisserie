@@ -619,6 +619,19 @@ select_next_eligible_model() {
     SOURCE="$next_source"
     MODEL="$next_model"
     RUNTIME_MODEL="$next_runtime"
+    # An in-lease failover must update the default used by auxiliary agents
+    # as well as the explicitly selected main model.
+    local model_config="$HOME/.config/opencode/opencode.json" model_tmp
+    if [[ -f "$model_config" ]]; then
+      model_tmp="$(mktemp)"
+      if ! jq --arg runtime "$RUNTIME_MODEL" '.model = $runtime | .agents.title.model = $runtime' "$model_config" > "$model_tmp"; then
+        rm -f "$model_tmp"
+        record_terminal_outcome control_plane_failure "could not update selected model after failover"
+        return 1
+      fi
+      mv "$model_tmp" "$model_config"
+      chmod 600 "$model_config"
+    fi
     DISPLAY="$SOURCE · $MODEL"
     start_work_checkpoint
     log "FACTORY_FLEET_TRANSITION: source=$SOURCE model=$MODEL runtime=$RUNTIME_MODEL target=$MODE/$NUMBER"
