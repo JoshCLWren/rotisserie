@@ -1822,7 +1822,18 @@ def validate_assignment(worker: str, raw: str) -> dict[str, object]:
             raise ValueError('Assignment PR head moved')
         if stage_of(labels_of(live)) != context.get('stage'):
             raise ValueError('Assignment PR stage changed')
-        candidate = Candidate('pr', number, 3, 0, '', stage=str(context.get('stage') or ''))
+        # Match dispatch-time eligibility against the *live* merge state.
+        # Reconstructing a Candidate without conflicted=True previously
+        # rejected the very repair job that dispatch had just leased.
+        live_conflicted = (
+            live.get('mergeable') is False
+            or str(live.get('mergeable_state') or '').upper() == 'DIRTY'
+        )
+        candidate = Candidate(
+            'pr', number, 3, 0, '',
+            stage=str(context.get('stage') or ''),
+            conflicted=live_conflicted,
+        )
         if not candidate_is_live_executable(candidate):
             raise ValueError('Assignment PR is waiting or no longer executable')
     return context

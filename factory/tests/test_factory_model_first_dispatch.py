@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import importlib.util
+import json
 import sys
 from pathlib import Path
 from types import SimpleNamespace
@@ -259,3 +260,50 @@ def test_conflict_repair_unknown_check_snapshot_fails_closed(monkeypatch):
     })
     monkeypatch.setattr(controller, 'gh_json', lambda _: (_ for _ in ()).throw(RuntimeError('API down')))
     assert controller.conflicted_head_without_published_ci(5575) is False
+
+
+def test_worker_preflight_preserves_live_conflict_state_from_leased_pr(monkeypatch):
+    """Dispatch and worker preflight must agree on conflicted-head eligibility."""
+    spec = importlib.util.spec_from_file_location(
+        'factory_work_controller_conflict_preflight',
+        ROOT / '.github/scripts/factory-work-controller.py',
+    )
+    assert spec and spec.loader
+    controller = importlib.util.module_from_spec(spec)
+    monkeypatch.setitem(sys.modules, spec.name, controller)
+    spec.loader.exec_module(controller)
+    worker = '1327811785100'
+    head = 'a' * 40
+    branch = 'factory/work-checkpoints/issue-4737/beam-free/43742763406'
+    ctx = {'kind': 'pr', 'number': 5575, 'worker': worker,
+           'claim_id': 'exact-lease', 'stage': 'factory:changes-requested',
+           'head': head, 'branch': branch}
+    monkeypatch.setattr(controller, '_active_claim', lambda *_args:
+                        ('exact-lease', [5575]))
+    labels = [{'name': 'factory:' + worker},
+              {'name': 'factory:changes-requested'},
+              {'name': 'factory:merge-conflict'}]
+    monkeypatch.setattr(controller, 'target_json', lambda _: {
+        'state': 'open', 'labels': labels,
+    })
+    live = {'state': 'open', 'head': {'sha': head, 'ref': branch},
+            'labels': labels, 'mergeable': False, 'mergeable_state': 'dirty'}
+    monkeypatch.setattr(controller, 'live_pr_state', lambda _: live)
+    inspected = []
+    def gate(candidate):
+        inspected.append(candidate)
+        return candidate.conflicted is True
+    monkeypatch.setattr(controller, 'candidate_is_live_executable', gate)
+
+    assert controller.validate_assignment(worker, json.dumps(ctx)) == ctx
+    assert inspected[-1].conflicted is True
+    live['mergeable'] = True
+    live['mergeable_state'] = 'clean'
+    with pytest.raises(ValueError, match='waiting or no longer executable'):
+        controller.validate_assignment(worker, json.dumps(ctx))
+    assert inspected[-1].conflicted is False
+    live['mergeable'] = False
+    live['mergeable_state'] = 'dirty'
+    live['head']['sha'] = 'b' * 40
+    with pytest.raises(ValueError, match='head moved'):
+        controller.validate_assignment(worker, json.dumps(ctx))
