@@ -59,7 +59,7 @@ def test_dispatcher_releases_both_locks_before_roster_delay() -> None:
     assert 'delay_seconds > 3700' in script
     assert "steps.api_budget.outputs.quota_deferred == 'true'" in cadence["if"]
     assert "inputs.mode == 'roster'" in cadence["if"]
-    assert "!inputs.target" in cadence["if"]
+    assert "!(inputs.target || inputs.provider)" in cadence["if"]
 
     # Scheduler is at the end, after every assignment and review operation.
     assert cadence is steps[-1]

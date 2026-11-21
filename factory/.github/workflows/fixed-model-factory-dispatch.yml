@@ -1,5 +1,5 @@
 name: Fixed Model Factory Dispatcher
-run-name: Factory dispatch · ${{ inputs.source_run_id && format('completion {0}', inputs.source_run_id) || inputs.target || inputs.mode || github.event_name }}
+run-name: Factory dispatch · ${{ inputs.source_run_id && format('completion {0}', inputs.source_run_id) || inputs.target || inputs.provider || inputs.mode || github.event_name }}
 
 on:
   schedule:
@@ -29,14 +29,15 @@ on:
         description: Optional active external Factory; blank runs the strategy smoke set
         required: false
         type: string
+      provider:
+        description: Select existing provider lane; opencode-go uses opencode-free worker
+        required: false
+        type: string
       model:
-        description: Exact model for a manually targeted issue (auto keeps normal selection)
+        description: Exact runtime provider/model ID, or auto for a provider's eligible model
         required: false
         default: auto
-        type: choice
-        options:
-          - auto
-          - opencode-go/hy4-flash-free
+        type: string
       target:
         description: Optional issue or PR to advance, in the form issue:123 or pr:123
         required: false
@@ -90,13 +91,13 @@ permissions:
 # manual actions and measurements stay independent; an in-progress dispatch is
 # never cancelled. The job-level group still serializes every lease writer.
 concurrency:
-  group: ${{ inputs.target && format('factory-target-{0}-{1}', inputs.target, inputs.action || 'advance') || inputs.measure && format('factory-measure-{0}', github.run_id) || 'fixed-model-factory-dispatch-ingress' }}
+  group: ${{ inputs.target && format('factory-target-{0}-{1}', inputs.target, inputs.action || 'advance') || inputs.provider && format('factory-provider-{0}-{1}', inputs.provider, inputs.model || 'auto') || inputs.measure && format('factory-measure-{0}', github.run_id) || 'fixed-model-factory-dispatch-ingress' }}
   queue: single
   cancel-in-progress: false
 
 jobs:
   dispatch:
-    if: "!inputs.target || github.ref == 'refs/heads/main'"
+    if: "!(inputs.target || inputs.provider) || github.ref == 'refs/heads/main'"
     env:
       # Adopters without Neon run on the ledger's no-database mode.
       FACTORY_NEON_LEASE_REQUIRED: ${{ secrets.NEON_API_KEY != '' }}
@@ -322,12 +323,13 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: python3 .github/scripts/factory-work-controller.py snapshot > "$RUNNER_TEMP/factory-discovery.json"
 
-      - name: Advance selected issue or pull request
-        if: inputs.target && steps.api_budget.outputs.allow == 'true'
+      - name: Advance selected issue or pull request, or pick next work for a model
+        if: (inputs.target || inputs.provider) && steps.api_budget.outputs.allow == 'true'
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
           TARGET: ${{ inputs.target }}
+          REQUESTED_PROVIDER: ${{ inputs.provider }}
           ACTION: ${{ inputs.action }}
           REQUESTED_MODEL: ${{ inputs.model || 'auto' }}
           # Keep targeted issue/PR handoffs on the same credential-availability
@@ -354,19 +356,28 @@ jobs:
           FACTORY_OMNIROUTE_ENABLED: ${{ vars.FACTORY_OMNIROUTE_ENABLED || 'off' }}
         run: |
           set -Eeuo pipefail
-          if ! [[ "$TARGET" =~ ^(issue|pr):([1-9][0-9]*)$ ]]; then
-            echo "::error::Select a valid issue or pull request."
-            exit 1
+          if [[ -n "$TARGET" ]]; then
+            if ! [[ "$TARGET" =~ ^(issue|pr):([1-9][0-9]*)$ ]]; then
+              echo "::error::Select a valid issue or pull request."
+              exit 1
+            fi
+            python3 .github/scripts/factory-work-controller.py dispatch-target \
+              --kind "${BASH_REMATCH[1]}" --number "${BASH_REMATCH[2]}" \
+              --action "$ACTION" --model "$REQUESTED_MODEL"
+          else
+            [[ -n "$REQUESTED_PROVIDER" ]] || {
+              echo '::error::Select a provider for model-first dispatch'
+              exit 1
+            }
+            python3 .github/scripts/factory-work-controller.py dispatch-next \
+              --provider "$REQUESTED_PROVIDER" --model "$REQUESTED_MODEL"
           fi
-          python3 .github/scripts/factory-work-controller.py dispatch-target \
-            --kind "${BASH_REMATCH[1]}" --number "${BASH_REMATCH[2]}" \
-            --action "$ACTION" --model "$REQUESTED_MODEL"
 
       - name: Report quota-deferred targeted dispatch without failing a worker
-        if: inputs.target && steps.api_budget.outputs.allow != 'true'
+        if: (inputs.target || inputs.provider) && steps.api_budget.outputs.allow != 'true'
         shell: bash
         env:
-          TARGET: ${{ inputs.target }}
+          TARGET: ${{ inputs.target || inputs.provider }}
           QUOTA_DEFERRED: ${{ steps.api_budget.outputs.quota_deferred }}
           API_RESET_EPOCH: ${{ steps.api_budget.outputs.reset_epoch }}
         run: |
@@ -378,7 +389,7 @@ jobs:
           echo "::notice::Targeted dispatch deferred without a claim, work attempt, or lease mutation"
 
       - name: Reconcile serialized migration finalization lane
-        if: steps.api_budget.outputs.allow == 'true' && !inputs.target
+        if: steps.api_budget.outputs.allow == 'true' && !(inputs.target || inputs.provider)
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
@@ -387,7 +398,7 @@ jobs:
           python3 .github/scripts/factory_migration_lane.py reconcile
 
       - name: Check main health (block merges onto red main)
-        if: steps.api_budget.outputs.allow == 'true' && !inputs.target
+        if: steps.api_budget.outputs.allow == 'true' && !(inputs.target || inputs.provider)
         id: main_health
         shell: bash
         env:
@@ -423,7 +434,7 @@ jobs:
           fi
 
       - name: Reconcile unowned factory CI PRs
-        if: steps.api_budget.outputs.allow == 'true' && !inputs.target
+        if: steps.api_budget.outputs.allow == 'true' && !(inputs.target || inputs.provider)
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
@@ -432,7 +443,7 @@ jobs:
           python3 .github/scripts/factory-review-controller.py reconcile-ci
 
       - name: Drain exact-head ready factory PRs
-        if: steps.api_budget.outputs.allow == 'true' && !inputs.target && steps.main_health.outputs.main_red != 'true'
+        if: steps.api_budget.outputs.allow == 'true' && !(inputs.target || inputs.provider) && steps.main_health.outputs.main_red != 'true'
         continue-on-error: true
         shell: bash
         env:
@@ -527,7 +538,7 @@ jobs:
           done
 
       - name: Trigger merge drain on dispatcher cadence
-        if: steps.api_budget.outputs.allow == 'true' && !inputs.target
+        if: steps.api_budget.outputs.allow == 'true' && !(inputs.target || inputs.provider)
         continue-on-error: true
         shell: bash
         env:
@@ -555,7 +566,7 @@ jobs:
       # the decision only within existing interchangeable classes and otherwise
       # falls back.
       - name: Rank factory work selection with Jev (active selection)
-        if: steps.api_budget.outputs.allow == 'true' && !inputs.target
+        if: steps.api_budget.outputs.allow == 'true' && !(inputs.target || inputs.provider)
         continue-on-error: true
         shell: bash
         env:
@@ -589,7 +600,7 @@ jobs:
           echo "FACTORY_JEV_RANKING_FILE=$RUNNER_TEMP/jev-shadow.json" >> "$GITHUB_ENV"
 
       - name: Preserve Jev selection decision for later evaluation
-        if: always() && !inputs.target && hashFiles('.github/scripts/factory_jev_shadow.py') != ''
+        if: always() && !(inputs.target || inputs.provider) && hashFiles('.github/scripts/factory_jev_shadow.py') != ''
         continue-on-error: true
         uses: actions/upload-artifact@v7
         with:
@@ -599,7 +610,7 @@ jobs:
           retention-days: 14
 
       - name: Resolve and dispatch fixed workers
-        if: steps.api_budget.outputs.allow == 'true' && !inputs.target
+        if: steps.api_budget.outputs.allow == 'true' && !(inputs.target || inputs.provider)
         id: dispatch_workers
         shell: bash
         env:
@@ -836,7 +847,7 @@ jobs:
         if: >-
           always() && (github.event_name == 'schedule' ||
           (github.event_name == 'workflow_dispatch' && inputs.mode == 'roster'))
-          && !inputs.target && steps.api_budget.outputs.allow == 'true'
+          && !(inputs.target || inputs.provider) && steps.api_budget.outputs.allow == 'true'
         continue-on-error: true
         shell: bash
         env:
@@ -908,7 +919,7 @@ jobs:
 
       - name: Queue roster successor outside assignment lease lock
         id: chain
-        if: always() && (github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && inputs.mode == 'roster')) && !inputs.target && steps.rotisserie_install.outcome == 'success' && (steps.api_budget.outputs.allow == 'true' || steps.api_budget.outputs.quota_deferred == 'true')
+        if: always() && (github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && inputs.mode == 'roster')) && !(inputs.target || inputs.provider) && steps.rotisserie_install.outcome == 'success' && (steps.api_budget.outputs.allow == 'true' || steps.api_budget.outputs.quota_deferred == 'true')
         continue-on-error: true
         shell: bash
         env:

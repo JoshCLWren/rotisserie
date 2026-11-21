@@ -74,12 +74,13 @@ def test_model_choice_is_end_to_end_and_never_falls_back():
     entry = (ROOT / ".github/workflows/free-model-factory-entry.yml").read_text()
     runner = (ROOT / ".github/workflows/free-model-factory-run.yml").read_text()
     worker = (ROOT / ".github/scripts/free-model-factory-worker.sh").read_text()
-    assert "opencode-go/hy4-flash-free" in dispatch
+    assert "Exact runtime provider/model ID" in dispatch
+    assert "dispatch-next" in dispatch
     assert '--model "$REQUESTED_MODEL"' in dispatch
     assert 'model: ${{ inputs.model }}' in entry
     assert 'REQUESTED_MODEL: ${{ inputs.model ||' in runner
     assert "--required-model" in runner
     assert "Exact requested model could not be selected; no provider fallback" in runner
     assert 'FACTORY_EXACT_MODEL: ${{ inputs.model ||' in runner
-    assert "Explicit exact model" in worker
+    assert "Explicit operator provider/model selection" in worker
     assert "factory-work-controller.py validate-assignment" in runner

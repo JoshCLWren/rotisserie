@@ -2339,6 +2339,61 @@ def check_stale_prs(dry_run: bool = False) -> dict[str, Any]:
     }
 
 
+def dispatch_next(provider: str, model: str = 'auto') -> dict[str, object]:
+    """Assign the next eligible real task to an available existing provider slot.
+
+    Selection and leasing remain entirely with the regular controller. A model
+    request is a routing constraint, never an authorization to bypass backlog,
+    issue blockers, active ownership, or review/merge policy.
+    """
+    from factory_completion_controller import (
+        capacity_report, durable_factory_state, load_manifest_candidates,
+    )
+    from factory_worker_slots import sources
+
+    source = 'opencode-free' if provider == 'opencode-go' else provider
+    if source not in sources():
+        raise ValueError(f'Unsupported factory provider: {provider}')
+    if model != 'auto':
+        from factory_manual_model import validate_model_syntax
+        validate_model_syntax(source, model)
+    _view, health = durable_factory_state()
+    capacity = capacity_report(load_manifest_candidates(), health, now_epoch=int(time.time()))
+    slots = cast(list[dict[str, str]], capacity['executable_candidates'])
+    eligible = sorted(
+        {row['worker'] for row in slots if worker_sources().get(row['worker']) == source},
+        key=int,
+    )
+    for worker in eligible:
+        candidate = assign(worker)
+        if candidate is None:
+            continue
+        try:
+            run_gh([
+                'workflow', 'run', 'free-model-factory-entry.yml', '--repo', REPO,
+                '--ref', 'main', '-f', f'worker={worker}',
+                '-f', 'assignment=' + json.dumps(assignment_context(candidate, worker)),
+                '-f', f'model={model}',
+                '-f', f'provider={source}',
+            ])
+        except RuntimeError:
+            # An accepted but timed-out workflow_dispatch may already exist.
+            # Retaining the lease is safer than risking duplicate execution.
+            raise RuntimeError('Could not confirm worker dispatch. Inspect Actions before retrying.') from None
+        action = 'implement' if candidate.kind == 'issue' else completion_action_for(
+            candidate.stage, candidate.conflicted
+        )
+        return {
+            'status': 'dispatched', 'kind': candidate.kind, 'number': candidate.number,
+            'action': action, 'worker': worker, 'provider': source, 'model': model,
+        }
+    return {
+        'status': 'deferred', 'provider': source, 'model': model,
+        'reason': ('No eligible provider slot currently has executable work. '
+                   'Review stage, leases, source budgets, and capacity.'),
+    }
+
+
 def dispatch_target(kind: str, number: int, action: str, model: str = 'auto') -> dict[str, object]:
     """Allocate one worker to the selected target through the normal lease policy.
 
@@ -2453,6 +2508,9 @@ def main() -> int:
     assign_parser.add_argument('--kinds', nargs='*', default=None)
     assign_parser.add_argument('--batch-reconciled', action='store_true',
         help='Global reconciliation already succeeded once in the trusted dispatch batch')
+    next_parser = subparsers.add_parser('dispatch-next')
+    next_parser.add_argument('--provider', required=True)
+    next_parser.add_argument('--model', default='auto')
     target_parser = subparsers.add_parser('dispatch-target')
     target_parser.add_argument('--kind', required=True, choices=('issue', 'pr'))
     target_parser.add_argument('--number', required=True, type=int)
@@ -2510,6 +2568,9 @@ def main() -> int:
             print(json.dumps({'kind': 'none', 'reason': 'no_work'}))
             return 0
         print(json.dumps(assignment_context(candidate, args.worker)))
+        return 0
+    if args.command == 'dispatch-next':
+        print(json.dumps(dispatch_next(args.provider, args.model)))
         return 0
     if args.command == 'dispatch-target':
         print(json.dumps(dispatch_target(args.kind, args.number, args.action, args.model)))

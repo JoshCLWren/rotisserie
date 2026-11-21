@@ -13,7 +13,12 @@ on:
         required: true
         type: string
       model:
-        description: Optional exact model chosen by targeted trusted dispatcher
+        description: Optional exact model selected by trusted dispatcher
+        required: false
+        default: auto
+        type: string
+      provider:
+        description: Optional pinned existing provider source for model-first work
         required: false
         default: auto
         type: string
@@ -33,6 +38,7 @@ jobs:
       worker: ${{ inputs.worker }}
       assignment: ${{ inputs.assignment }}
       model: ${{ inputs.model }}
+      provider: ${{ inputs.provider }}
     secrets: inherit
 
   # The preceding job owns the entire worker lease and its release. A
