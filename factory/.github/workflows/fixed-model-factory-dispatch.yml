@@ -325,6 +325,7 @@ jobs:
           # contract as roster dispatch. These booleans prove configuration;
           # no provider secret is ever passed to the controller.
           FACTORY_HAS_NVIDIA_API_KEY: ${{ secrets.NVIDIA_API_KEY != '' }}
+          FACTORY_HAS_OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY != '' }}
           FACTORY_HAS_Z_AI_API_KEY: ${{ secrets.Z_AI_API_KEY != '' }}
           FACTORY_HAS_OLLAMA_API_KEY: ${{ secrets.OLLAMA_API_KEY != '' }}
           FACTORY_HAS_MISTRAL_API_KEY: ${{ secrets.MISTRAL_API_KEY != '' }}
@@ -598,6 +599,7 @@ jobs:
           DISPATCH_MODE: ${{ inputs.mode }}
           OPENROUTER_JEV_API_KEY: ${{ secrets.OPENROUTER_JEV_API_KEY }}
           FACTORY_HAS_NVIDIA_API_KEY: ${{ secrets.NVIDIA_API_KEY != '' }}
+          FACTORY_HAS_OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY != '' }}
           FACTORY_HAS_Z_AI_API_KEY: ${{ secrets.Z_AI_API_KEY != '' }}
           FACTORY_HAS_OLLAMA_API_KEY: ${{ secrets.OLLAMA_API_KEY != '' }}
           FACTORY_HAS_MISTRAL_API_KEY: ${{ secrets.MISTRAL_API_KEY != '' }}

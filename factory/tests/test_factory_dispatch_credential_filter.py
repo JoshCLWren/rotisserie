@@ -45,3 +45,14 @@ def test_workflow_filters_before_leasing():
     assert source.index("factory_dispatch_credential_filter.py filter") < source.index(
         'dispatch_assigned_worker "$worker"'
     )
+
+
+def test_openrouter_free_needs_its_api_key() -> None:
+    import importlib
+
+    module = importlib.import_module("factory_dispatch_credential_filter")
+    sources = {"1": "openrouter-free", "2": "opencode-free"}
+    kept, _ = module.filter_workers(["1", "2"], sources, {})
+    assert kept == ["2"]
+    kept, _ = module.filter_workers(["1"], sources, {"FACTORY_HAS_OPENROUTER_API_KEY": "true"})
+    assert kept == ["1"]
