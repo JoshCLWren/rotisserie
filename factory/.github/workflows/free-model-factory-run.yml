@@ -266,12 +266,13 @@ jobs:
           configure_adapter=false
           case "$source" in
             opencode-free)
+              # Keep already-leased work eligible for fleet fallback when
+              # authentication fails. The dispatcher gates new Go claims.
+              configured=true
               if [[ "${FACTORY_GO_TOKEN_READY:-}" == true ]]; then
-                configured=true
                 reason='Go-service-account-authenticated'
               else
-                configured=false
-                reason='Go-service-account-oidc-unavailable'
+                reason='Go-service-account-oidc-unavailable-try-fleet'
               fi
               ;;
             openrouter-free|kilo-auto)
