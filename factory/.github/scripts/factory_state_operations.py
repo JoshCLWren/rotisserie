@@ -944,8 +944,55 @@ async def _claim_wakeup(conn: Any, repo: str, scope: str, interval_seconds: int)
 def claim_wakeup(repo: str, scope: str, interval_seconds: int=120) -> bool:
     return _run(_claim_wakeup,repo,scope,interval_seconds) if enabled() else False
 
-async def _export_model_exclusions(conn: Any, repo: str, worker: str = "") -> dict[str, list[str]]:
-    """Trusted read-only snapshot for credential-isolated factory workers."""
+async def _export_model_exclusions(
+    conn: Any, repo: str, worker: str = "", requested_model: str = "auto",
+) -> dict[str, list[str]]:
+    """Trusted exclusions; permit one explicitly pinned, healthy Go work-failure retry.
+
+    An owner-selected *exact* free Go model can bypass advisory Fibonacci
+    backoff from earlier unsuccessful coding work. No stored cooldown is
+    deleted, and retired/cooling model health or active quota remains
+    authoritative. Automatic fleet selection uses the original exclusions.
+    """
+    retry_override: tuple[str, str] | None = None
+    if requested_model not in ("", "auto"):
+        roster = _roster()
+        if not worker or worker not in roster:
+            raise ValueError("trusted worker required for exact-model override")
+        source = roster[worker][0]
+        from factory_manual_model import validate_model_syntax
+        validate_model_syntax(source, requested_model)
+        if source == "opencode-free":
+            bare_model = requested_model.split("/", 1)[1]
+            health = await conn.fetchrow(
+                """SELECT status,last_outcome,cooldown_until
+                   FROM public.factory_model_health
+                   WHERE repo=$1 AND source=$2 AND model=$3""",
+                repo, source, bare_model,
+            )
+            budget = await conn.fetchrow(
+                """SELECT last_outcome,cooldown_until,quota_reset_at
+                   FROM public.factory_provider_budget
+                   WHERE repo=$1 AND source=$2""",
+                repo, source,
+            )
+            now = datetime.now(timezone.utc)
+            healthy = (
+                health is not None
+                and health["status"] == "healthy"
+                and health["last_outcome"] == "work_failure"
+                and (health["cooldown_until"] is None or health["cooldown_until"] <= now)
+            )
+            quota_active = (
+                budget is not None
+                and budget["last_outcome"] == "provider_quota"
+                and any(
+                    value is not None and value > now
+                    for value in (budget["cooldown_until"], budget["quota_reset_at"])
+                )
+            )
+            if healthy and not quota_active:
+                retry_override = (source, bare_model)
     rows = await conn.fetch(
         """SELECT source, model FROM public.factory_model_health
            WHERE repo=$1 AND (status='retired' OR
@@ -978,6 +1025,15 @@ async def _export_model_exclusions(conn: Any, repo: str, worker: str = "") -> di
         except (ValueError, TypeError):
             retry_at = None
         if retry_at is not None and retry_at > now:
+            if (
+                retry_override == (source, model)
+                and state.get("outcome") == "work_failure"
+                and state.get("suspended") is not True
+            ):
+                # Operator may retry prior unsuccessful coding work. Actual
+                # price, tool capability and provider access are checked live
+                # by factory_manual_model before running the model.
+                continue
             if model not in excluded.setdefault(source, []):
                 excluded[source].append(model)
     # The worker identity is validated for the trusted caller; issue #1093
@@ -1158,12 +1214,14 @@ def export_fleet_failover_sources(repo: str, worker: str) -> list[str]:
 
 
 
-def export_model_exclusions(repo: str, worker: str = "") -> dict[str, list[str]]:
+def export_model_exclusions(
+    repo: str, worker: str = "", requested_model: str = "auto",
+) -> dict[str, list[str]]:
     if not enabled():
         if not _neon_required():
             return {}
         raise RuntimeError("Neon is required for model health snapshot")
-    return _run(_export_model_exclusions, repo, worker)
+    return _run(_export_model_exclusions, repo, worker, requested_model)
 
 
 async def _reset_model_health(conn: Any, repo: str, include_retired: bool = False) -> dict[str, int]:
@@ -1209,6 +1267,7 @@ def main() -> int:
     parser.add_argument("--file",type=Path)
     parser.add_argument("--scope")
     parser.add_argument("--worker",default="")
+    parser.add_argument("--requested-model",default="auto")
     parser.add_argument("--cursor",default="")
     parser.add_argument("--include-retired",action="store_true")
     args=parser.parse_args()
@@ -1227,7 +1286,7 @@ def main() -> int:
     elif args.command=="export-fleet-failover-sources":
         print(json.dumps(export_fleet_failover_sources(args.repo,args.worker),separators=(",",":")))
     elif args.command=="export-model-exclusions":
-        print(json.dumps(export_model_exclusions(args.repo,args.worker),sort_keys=True,separators=(",",":")))
+        print(json.dumps(export_model_exclusions(args.repo,args.worker,args.requested_model),sort_keys=True,separators=(",",":")))
     elif args.command=="export-candidate-health":
         print(json.dumps(export_candidate_health(args.repo),sort_keys=True,separators=(",",":")))
     elif args.command=="filter":
