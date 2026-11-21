@@ -224,7 +224,7 @@ def test_targeted_dispatch_defers_without_fake_worker_failure_when_rest_quota_is
     target = workflow.split("- name: Advance selected issue or pull request", 1)[1].split(
         "- name: Report quota-deferred targeted dispatch", 1
     )[0]
-    assert "if: inputs.target && steps.api_budget.outputs.allow == 'true'" in target
+    assert "if: (inputs.target || inputs.provider) && steps.api_budget.outputs.allow == 'true'" in target
     assert "dispatch-target" in target
     assert "ALLOW:" not in target
     assert 'echo "::error::Factory API quota is low' not in target
