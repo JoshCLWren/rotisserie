@@ -110,7 +110,26 @@ def test_report_line_is_structured_and_exact():
     report = complete_report()
     line = acceptance.PREFIX + json.dumps(report)
     assert acceptance.report_from_text("Read issue and diff\n" + line + "\nFACTORY_GATE_READY") == report
-    assert acceptance.report_from_text(line + "\n" + line) is None
+    assert acceptance.report_from_text(line + "\n" + line) == report
+    assert acceptance.report_from_text(acceptance.PREFIX + line) == report
+    other = acceptance.PREFIX + json.dumps({**report, "head": "b" * 40})
+    assert acceptance.report_from_text(line + "\n" + other) is None
+
+
+def test_bug_report_context_sections_are_not_criteria():
+    body = (
+        "## Scenario\n\nRename a series in one tab.\n\n"
+        "## Observed\n\nThe title lagged 20 seconds.\n\n"
+        "## Expected\n\nThe title updates on tab focus.\n\n"
+        "## Repro (from login)\n\n1. Sign in.\n2. Rename the series.\n"
+    )
+    assert acceptance.requirements(body) == [
+        "Scenario: Rename a series in one tab.",
+        "Expected: The title updates on tab focus.",
+    ]
+    assert acceptance.requirements("## Observed\n\nOnly context.\n") == [
+        "Observed: Only context."
+    ]
 
 
 def test_new_completion_criteria_and_prose_are_not_discarded():
@@ -234,13 +253,17 @@ def test_tool_output_and_event_metadata_cannot_mint_acceptance():
 
 
 def test_multiple_jsonl_assistant_reports_fail_closed():
-    """Two reports are ambiguous even if the two copies are identical."""
+    """Identical copies are one report. Two different reports are ambiguous."""
     import json
 
-    line = acceptance.PREFIX + json.dumps(complete_report())
+    report = complete_report()
+    line = acceptance.PREFIX + json.dumps(report)
     event = json.dumps({"type": "text", "part": {"type": "text", "text": line}})
-    assert acceptance.report_from_text(event + "\n" + event) is None
-    assert acceptance.report_from_text(line + "\n" + event) is None
+    assert acceptance.report_from_text(event + "\n" + event) == report
+    assert acceptance.report_from_text(line + "\n" + event) == report
+    other = acceptance.PREFIX + json.dumps({**report, "issue": 4011})
+    other_event = json.dumps({"type": "text", "part": {"type": "text", "text": other}})
+    assert acceptance.report_from_text(event + "\n" + other_event) is None
 
 
 def test_changed_path_citations_allow_numeric_line_ranges_only():

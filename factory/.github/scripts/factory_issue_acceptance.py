@@ -11,6 +11,9 @@ PREFIX = "FACTORY_ACCEPTANCE_V1="
 HEADINGS = ("scope", "implementation required", "requirements", "acceptance", "verification before", "required evidence", "completion evidence", "expected behavior", "outcome")
 HEADING = re.compile(r"^#{1,6}\s+(.+?)\s*$")
 BULLET = re.compile(r"^\s*(?:[-*+]|\d+[.)])\s+(.*\S)\s*$")
+# Bug reports describe what happened and how to reproduce it. No changed file
+# can prove a repro step, so these sections are context, not criteria.
+CONTEXT_HEADINGS = ("observed", "repro", "steps to reproduce", "notes", "related", "background", "context")
 
 
 def requirements(body: str) -> list[str]:
@@ -26,13 +29,14 @@ def requirements(body: str) -> list[str]:
         ValueError: If the issue provides no reviewable requirement text.
     """
     section = "Issue"
-    entries: list[str] = []
+    entries: list[tuple[bool, str]] = []
     current: list[str] = []
 
     def flush() -> None:
         """Finish an entry without losing continuation lines."""
         if current:
-            entries.append(f"{section}: {' '.join(current)}")
+            context = section.lower().startswith(CONTEXT_HEADINGS)
+            entries.append((context, f"{section}: {' '.join(current)}"))
             current.clear()
 
     for source in body.splitlines():
@@ -61,7 +65,8 @@ def requirements(body: str) -> list[str]:
     flush()
     if not entries:
         raise ValueError("Issue has no reviewable criteria, clarification required")
-    return entries
+    criteria = [text for context, text in entries if not context]
+    return criteria or [text for _, text in entries]
 
 
 def digest(body: str) -> str:
@@ -142,13 +147,23 @@ def report_from_text(review_text: str) -> Mapping[str, Any] | None:
             continue
         lines.extend(line[len(PREFIX):] for line in message.splitlines()
                      if line.startswith(PREFIX))
-    if len(lines) != 1 or len(lines[0]) > 2000000:
-        return None
-    try:
-        data = json.loads(lines[0])
-    except (TypeError, ValueError):
-        return None
-    return data if isinstance(data, dict) else None
+    # Models often print their report and then cat or echo it again. Identical
+    # copies are one report; two different reports stay ambiguous.
+    reports: list[dict[str, Any]] = []
+    for line in lines:
+        while line.startswith(PREFIX):
+            line = line[len(PREFIX):]
+        if len(line) > 2000000:
+            return None
+        try:
+            data = json.loads(line)
+        except (TypeError, ValueError):
+            return None
+        if not isinstance(data, dict):
+            return None
+        if data not in reports:
+            reports.append(data)
+    return reports[0] if len(reports) == 1 else None
 
 
 def validate(
@@ -349,7 +364,8 @@ MISSION_IDENTITY_RE = re.compile(
 )
 PASS_SYNONYMS = frozenset({
     "pass", "passed", "passes", "verified", "met", "satisfied", "ok", "done",
-    "complete", "completed", "yes", "true",
+    "complete", "completed", "yes", "true", "fixed", "implemented", "addressed",
+    "resolved",
 })
 
 

@@ -231,7 +231,8 @@ def test_recovery_rejects_malformed_primary_and_multiple_reports(tmp_path: Path)
     assert primary.read_text() == "FACTORY_ACCEPTANCE_V1=not-json\n"
 
     primary.write_text("No report present.\n")
-    recovery.write_text(valid + valid)
+    other = "FACTORY_ACCEPTANCE_V1=" + json.dumps({**recovery_report(), "issue": 1}) + "\n"
+    recovery.write_text(valid + other)
     assert run_bash(call).returncode != 0
     assert primary.read_text() == "No report present.\n"
 
