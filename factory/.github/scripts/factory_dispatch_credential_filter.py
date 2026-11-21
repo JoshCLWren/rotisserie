@@ -9,7 +9,8 @@ import sys
 from factory_provider_registry import PROVIDERS
 from factory_worker_slots import slots
 
-ANONYMOUS = frozenset({"opencode-free", "openrouter-free", "kilo-auto"})
+# OpenRouter serves its free models only to callers with an API key.
+ANONYMOUS = frozenset({"opencode-free", "kilo-auto"})
 TRUTHY = frozenset({"true", "1", "yes", "on"})
 
 
@@ -24,6 +25,8 @@ def source_requirements(source: str) -> tuple[str, ...] | None:
         return tuple(f"FACTORY_HAS_{name}" for name in (spec.credential, *spec.additional_credentials))
     if source == "omniroute-free":
         return ("FACTORY_HAS_OMNIROUTE_API_KEY", "FACTORY_OMNIROUTE_ENABLED")
+    if source == "openrouter-free":
+        return ("FACTORY_HAS_OPENROUTER_API_KEY",)
     return None
 
 
