@@ -111,6 +111,7 @@ def _required_checks_outcome(github: GitHub, number: int) -> str:
                 "--required",
                 "--json",
                 "state",
+                allow_exit_one=True,
             )
         )
     except (GitHubError, ValueError):
@@ -350,7 +351,9 @@ def reserve_next(
         "client": client,
         "actor": actor,
         "renew": f"rotisserie factory renew {claim_id} --client {client} --repo {github.repo}",
-        "release": f"rotisserie factory release {claim_id} --client {client} --repo {github.repo}",
+        "release": (
+            f"rotisserie factory release {claim_id} --client {client} --repo {github.repo}"
+        ),
         "report": chosen.url,
         "review_and_merge_gates": "Existing exact-head independent review, CI and acceptance remain required",
     }
