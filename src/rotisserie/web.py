@@ -17,7 +17,7 @@ from collections.abc import Callable, Mapping
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from importlib.resources import files
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 from urllib.parse import parse_qs, urlsplit
 
 from rotisserie.factory_console.context import UsageError, find_repository
@@ -226,7 +226,7 @@ def make_handler(
 
         def _authorized(self) -> bool:
             host = self.headers.get("Host", "")
-            allowed = f"127.0.0.1:{self.server.server_port}"
+            allowed = f"127.0.0.1:{cast(ThreadingHTTPServer, self.server).server_port}"
             origin = self.headers.get("Origin", "")
             if host != allowed or (origin and origin != f"http://{allowed}"):
                 self._send_json(403, {"error": "This console is localhost-only."})
@@ -240,7 +240,7 @@ def make_handler(
             parsed = urlsplit(self.path)
             if parsed.path == "/":
                 # Host validation for the document prevents DNS-rebinding access.
-                if self.headers.get("Host", "") != f"127.0.0.1:{self.server.server_port}":
+                if self.headers.get("Host", "") != f"127.0.0.1:{cast(ThreadingHTTPServer, self.server).server_port}":
                     self._send_json(403, {"error": "This console is localhost-only."})
                     return
                 page = files("rotisserie").joinpath("web_ui.html").read_text(encoding="utf-8")
