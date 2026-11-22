@@ -6,8 +6,8 @@ from typing import cast
 
 import pytest
 
-from rotisserie.factory_console.github import GitHub, GitHubError
 from rotisserie.factory_console import runtime
+from rotisserie.factory_console.github import GitHub, GitHubError
 from rotisserie.factory_console.service import providers
 
 
