@@ -228,6 +228,14 @@ says to take it over (`run … --action ci-repair --take-over`).
 `--since 2h` sets the window; `--all` also follows routine scheduler passes,
 one row per worker each pass started.
 
+The factory merges a PR only when every check reported on its exact head is
+green, not just the ones branch rules require. Rules often require one
+aggregate check while path-filtered workflows (a Rust build that runs only when
+Rust files change) report beside it; a red one of those still blocks the merge,
+and a pending one waits. A check that is purely advisory can be exempted by
+listing its exact name in the `FACTORY_ADVISORY_CHECKS` environment variable
+(comma-separated) of the merge workflows. Nothing is exempt by default.
+
 ### Failing because of main
 
 A PR is tested as if merged into the default branch, so a breakage that lands
