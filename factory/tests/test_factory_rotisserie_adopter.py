@@ -7,6 +7,8 @@ import sys
 from pathlib import Path
 from types import ModuleType
 
+import pytest
+
 ROOT = Path(__file__).resolve().parents[1]
 SCRIPT = ROOT / ".github" / "scripts" / "factory_rotisserie_adopter.py"
 FIXTURE = ROOT / "tests" / "fixtures" / "factory-rotisserie" / "parity-view.json"
@@ -204,3 +206,37 @@ def test_human_gate_uses_the_structured_manual_only_contract() -> None:
     assert adapter._human_gate(issue("Gate: <!-- factory-execution:manual-only -->")) is False
     assert adapter._human_gate(issue("The `<!-- factory-execution:manual-only -->` marker.")) is False
     assert adapter._human_gate(issue("The `manual-only` marker.")) is False
+
+
+def test_intake_verdicts_keep_rotisserie_block_reasons(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The console's ``why`` relies on per-issue reasons; issue_intake on the eligible set."""
+    import subprocess
+
+    adopter = load_adapter()
+    monkeypatch.setenv("GITHUB_REPOSITORY", "acme/widgets")
+    observations = [
+        {"dimension": "eligibility", "subject": "work:1", "outcome": "eligible", "reasons": []},
+        {
+            "dimension": "eligibility",
+            "subject": "work:2",
+            "outcome": "blocked",
+            "reasons": ["backpressure"],
+        },
+        {"dimension": "ranking", "subject": "work:1", "outcome": "ranked", "rank": 0},
+    ]
+
+    def decide(*args: object, **kwargs: object) -> subprocess.CompletedProcess[str]:
+        envelope = {"status": "ok", "evidence": {"decisions": {"observations": observations}}}
+        return subprocess.CompletedProcess(args=[], returncode=0, stdout=json.dumps(envelope))
+
+    monkeypatch.setattr(adopter.subprocess, "run", decide)
+    control = {"stage": "expanded", "lane": {"name": "issue-intake", "subjects": ["label:factory:unowned"]}}
+    kwargs = {"revision": "a" * 40, "now": 1, "command": ["rotisserie"]}
+    assert adopter.intake_verdicts(control, [], [], **kwargs) == {
+        1: (True, ()),
+        2: (False, ("backpressure",)),
+    }
+    assert adopter.issue_intake(control, [], [], **kwargs) == {1}
+    assert adopter.issue_intake({"stage": "legacy"}, [], [], **kwargs) is None
+    with pytest.raises(ValueError):
+        adopter.intake_verdicts({"stage": "bogus"}, [], [], **kwargs)

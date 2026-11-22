@@ -1027,3 +1027,103 @@ def parse_declared_dependencies(body: str | None) -> set[int]:
 
 
 
+
+
+def explain_issue_report(
+    number: int,
+    payload: dict[str, Any],
+    *,
+    issues: list[dict[str, Any]],
+    prs: list[dict[str, Any]],
+    no_diff_attempts: Mapping[int, int],
+    intake: set[int] | None,
+    open_blocker: bool | None,
+    pr_wip_limit: int = FACTORY_PR_WIP_LIMIT,
+    review_backlog_limit: int = FACTORY_REVIEW_BACKLOG_LIMIT,
+    no_diff_limit: int = FACTORY_NO_DIFF_RETRY_LIMIT,
+) -> dict[str, Any]:
+    """Explain one issue's queue eligibility from already-read factory state.
+
+    This is the pure core of the controller's ``explain`` command and of the
+    operator console's ``rotisserie factory why``: both read GitHub their own
+    way, then hand the same inputs here so neither can drift from dispatch.
+
+    Args:
+        number: The issue number to explain.
+        payload: The issue row (state, labels, body).
+        issues: Open issue rows, including ``payload``, for dependency checks.
+        prs: Open pull request rows for canonical-PR suppression and gates.
+        no_diff_attempts: Rolling no-diff retry counts by issue number.
+        intake: Rotisserie-authorized issue numbers, or None in legacy mode.
+        open_blocker: Live GitHub dependency blocker result; None if unchecked.
+        pr_wip_limit: Effective ``FACTORY_PR_WIP_LIMIT``.
+        review_backlog_limit: Effective ``FACTORY_REVIEW_BACKLOG_LIMIT``.
+        no_diff_limit: Effective ``FACTORY_NO_DIFF_RETRY_LIMIT``.
+
+    Returns:
+        A JSON-serializable report with the verdict, its reasons, the canonical
+        owning PRs, and the dynamic gate results.
+    """
+    issue_map = {int(row['number']): row for row in issues}
+    suppressing = {
+        linked
+        for pr in prs
+        if (linked := linked_issue_from_pr(pr)) is not None
+        and pr_suppresses_issue_candidate(pr, issue_map)
+    }
+    non_executable = set(NON_EXECUTABLE_ISSUES)
+    unauthorized: set[int] = set()
+    if intake is not None:
+        unauthorized = set(issue_map) - intake
+        non_executable |= unauthorized
+    verdict = eligibility.explain_issue_eligibility(
+        number=number,
+        state=str(payload.get('state') or 'OPEN'),
+        labels=labels_of(payload),
+        body=str(payload.get('body') or ''),
+        open_numbers=set(issue_map),
+        suppressing_issue_numbers=suppressing,
+        non_executable_numbers=non_executable,
+        no_diff_attempts=no_diff_attempts.get(number, 0),
+        no_diff_limit=no_diff_limit,
+    )
+    owning_prs = sorted(
+        int(pr['number'])
+        for pr in prs
+        if linked_issue_from_pr(pr) == number and pr_suppresses_issue_candidate(pr, issue_map)
+    )
+    review_backlog = factory_review_backlog_count(prs)
+    gates: dict[str, Any] = {
+        'factory_pr_wip': factory_pr_wip_count(prs),
+        'factory_pr_wip_limit': pr_wip_limit,
+        'review_backlog': review_backlog,
+        'review_backlog_limit': review_backlog_limit,
+        'bypasses_wip_limit': issue_bypasses_wip_limit(payload),
+        'bypasses_saturated_review_backlog': issue_bypasses_wip_limit(
+            payload, review_backlog_saturated=True
+        ),
+        'rotisserie_intake': (
+            'legacy-unrestricted'
+            if intake is None
+            else ('authorized' if number not in unauthorized else 'not-authorized')
+        ),
+    }
+    if open_blocker is not None:
+        gates['open_dependency_blocker'] = open_blocker
+        gates['worker_specific_note'] = (
+            'strike-retry producer exclusion is per worker and evaluated at assignment'
+        )
+    report: dict[str, Any] = {
+        'issue': number,
+        'eligible': verdict.eligible,
+        'reasons': list(verdict.reasons),
+        'labels': sorted(labels_of(payload)),
+        'open_canonical_prs': owning_prs,
+        'dynamic_gates': gates,
+    }
+    if verdict.eligible and open_blocker:
+        report['eligible'] = False
+        report['reasons'] = [
+            reason for reason in verdict.reasons if not reason.startswith('eligible: ')
+        ] + ['a live open dependency blocker is reported by GitHub']
+    return report

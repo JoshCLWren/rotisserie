@@ -14,6 +14,7 @@ import json
 import subprocess
 import sys
 import tempfile
+from collections.abc import Sequence
 from pathlib import Path
 from typing import Any
 
@@ -254,6 +255,117 @@ def graph_snapshot(view: dict[str, Any]) -> dict[str, object]:
         ],
         "dependencies": dependencies,
     }
+
+
+def intake_verdicts(
+    control: object,
+    issues: list[dict[str, Any]],
+    prs: list[dict[str, Any]],
+    *,
+    revision: str,
+    now: int,
+    command: Sequence[str],
+    operator_force: bool = False,
+    pr_wip_limit: int = FACTORY_PR_WIP_LIMIT,
+    review_backlog_limit: int = FACTORY_REVIEW_BACKLOG_LIMIT,
+) -> dict[int, tuple[bool, tuple[str, ...]]] | None:
+    """Return Rotisserie's intake verdict per issue, or None while the lane is legacy.
+
+    Each verdict is ``(eligible, reasons)``; ``reasons`` are Rotisserie's
+    work-block codes (``backpressure``, ``dependency_incomplete``, …).
+
+    ``control`` is the parsed ``.github/factory-rotisserie-control.json``.
+    ``command`` runs the Rotisserie CLI (``["rotisserie"]`` in workflows, the
+    console's own interpreter when the operator asks ``why``). A deliberate
+    operator-forced worker bypasses *soft* WIP/review-backlog pressure, but the
+    same snapshot still enforces human boundaries, incomplete dependencies and
+    existing changes.
+
+    Raises:
+        ValueError, KeyError, OSError, subprocess.SubprocessError: the decision
+        could not be made; callers fail closed.
+    """
+    if not isinstance(control, dict):
+        raise ValueError("adopter control must be a JSON object")
+    stage = control.get("stage")
+    if stage == "legacy":
+        return None
+    if stage not in {"canary", "expanded"}:
+        raise ValueError("unsupported adopter stage")
+    if control.get("lane") != {"name": "issue-intake", "subjects": ["label:factory:unowned"]}:
+        raise ValueError("adopter control is outside the issue-intake lane")
+    slug = repository()
+    snapshot = graph_snapshot(
+        {
+            "schema_version": 1,
+            "repository": slug,
+            "revision": revision,
+            "captured_at": now,
+            "issues": issues,
+            "pull_requests": prs,
+        }
+    )
+    with tempfile.TemporaryDirectory(prefix="comic-pile-rotisserie-intake-") as directory:
+        root = Path(directory)
+        snapshot_path = root / "snapshot.json"
+        config_path = root / "operator.toml"
+        snapshot_path.write_text(json.dumps(snapshot), encoding="utf-8")
+        owner, name = slug.split("/", 1)
+        config_path.write_text(
+            'schema_version = 1\n[repository]\nhost = "github.com"\n'
+            f'owner = "{owner}"\nname = "{name}"\n[repositories]\n'
+            f'allow = [{{ host = "github.com", owner = "{owner}", name = "{name}" }}]\n'
+            '[local]\nsnapshot = "snapshot.json"\nstate_directory = "state"\n'
+            'mutations_enabled = false\n',
+            encoding="utf-8",
+        )
+        completed = subprocess.run(
+            [
+                *command,
+                "--config", str(config_path), "decide", "--snapshot", str(snapshot_path),
+                "--revision", revision, "--at", str(now),
+                "--completion-backlog", str(0 if operator_force else factory_review_backlog_count(prs)),
+                "--backlog-limit", str(review_backlog_limit),
+                "--active-changes", str(0 if operator_force else factory_pr_wip_count(prs)),
+                "--wip-limit", str(pr_wip_limit),
+            ],
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+    envelope = json.loads(completed.stdout)
+    if envelope.get("status") != "ok":
+        raise ValueError("Rotisserie decision was not successful")
+    observations = envelope["evidence"]["decisions"]["observations"]
+    return {
+        int(item["subject"].removeprefix("work:")): (
+            item.get("outcome") == "eligible",
+            tuple(str(reason) for reason in item.get("reasons") or ()),
+        )
+        for item in observations
+        if item.get("dimension") == "eligibility"
+        and str(item.get("subject", "")).startswith("work:")
+    }
+
+
+def issue_intake(
+    control: object,
+    issues: list[dict[str, Any]],
+    prs: list[dict[str, Any]],
+    *,
+    revision: str,
+    now: int,
+    command: Sequence[str],
+    operator_force: bool = False,
+) -> set[int] | None:
+    """Return Rotisserie-authorized issue numbers, or None while the lane is legacy."""
+    verdicts = intake_verdicts(
+        control, issues, prs, revision=revision, now=now, command=command,
+        operator_force=operator_force,
+    )
+    if verdicts is None:
+        return None
+    return {number for number, (eligible, _reasons) in verdicts.items() if eligible}
 
 
 def _work_blocks(

@@ -319,7 +319,8 @@ def explain_issue_eligibility(
     This covers the static, selector-independent share of eligibility: state,
     product exclusions, the structured manual-only directive, acceptance
     parents, blocked/terminal labels, ownership, explicit dependencies,
-    canonical open-PR suppression, and no-diff retry exhaustion. Dynamic
+    and canonical open-PR suppression. No-diff retries never suppress an
+    issue (#90); the counts are accepted for caller compatibility. Dynamic
     gates (worker WIP caps, review backpressure, live GitHub blockers, lease
     liveness) are evaluated by the calling selector and appended separately.
 

@@ -21,6 +21,7 @@ from rotisserie.factory_console.github import (
     JSON,
     GitHub,
     GitHubAuthError,
+    GitHubNotFoundError,
     GitHubRateLimitError,
     Obj,
     _classify,
@@ -160,6 +161,10 @@ class FakeGitHub:
             return ""
         if argv[:2] == ["pr", "view"]:
             return json.dumps(self.routes.get("pr-view", {}))
+        if argv[:2] == ["issue", "list"]:
+            return json.dumps(self.routes.get("issue-list", []))
+        if argv[:2] == ["pr", "list"]:
+            return json.dumps(self.routes.get("pr-list", []))
         return "[]"
 
     def dispatch_inputs(self) -> dict[str, str]:
@@ -571,6 +576,17 @@ def test_deferred_explains_the_real_reason(fake: FakeGitHub) -> None:
     assert code == 3
     assert "✗ No work assigned" in out
     assert "Reason: Nothing is waiting" in out
+    assert "See why: rotisserie factory why\n" in out
+
+
+def test_deferred_target_points_at_why_for_that_issue(fake: FakeGitHub) -> None:
+    scheduler_routes(
+        fake,
+        log='{"status":"deferred","reason":"Nothing is waiting: every open item is finished, claimed or blocked.","details":[]}\n',
+    )
+    code, out = invoke(["run", "opencode-go", "auto", "--force", "--target", "issue:3953"])
+    assert code == 3
+    assert "See why: rotisserie factory why issue:3953" in out
 
 
 def test_busy_target_offers_take_over_and_cancel(fake: FakeGitHub) -> None:
@@ -768,7 +784,195 @@ def test_wheel_ships_every_runtime_module_the_console_loads() -> None:
     root = Path(__file__).resolve().parents[1]
     config = tomllib.loads((root / "pyproject.toml").read_text())
     included = config["tool"]["hatch"]["build"]["targets"]["wheel"]["force-include"]
-    for name in runtime.RUNTIME_MODULES:
-        source = f"factory/.github/scripts/{name}.py"
+    assert set(runtime.RUNTIME_MODULES) <= set(runtime.RUNTIME_SOURCES)
+    for name, source in runtime.RUNTIME_SOURCES.items():
         assert included[source] == f"rotisserie/factory_console/factory_runtime/{name}.py"
         assert (root / source).is_file()
+
+
+# why ---------------------------------------------------------------------------------
+
+HEAD_SHA = "c" * 40
+
+
+def open_issue(number: int, *labels: str, body: str = "", title: str = "") -> Obj:
+    return {
+        "number": number,
+        "title": title or f"Issue {number}",
+        "body": body,
+        "labels": [{"name": label} for label in labels],
+        "createdAt": "2026-11-01T00:00:00Z",
+        "updatedAt": "2026-11-20T00:00:00Z",
+    }
+
+
+def factory_pr(number: int, issue: int, *labels: str) -> Obj:
+    return {
+        "number": number,
+        "title": f"Fix #{issue}",
+        "body": "",
+        "labels": [{"name": label} for label in labels],
+        "headRefName": f"factory/12-{issue}-change",
+        "headRefOid": "d" * 40,
+        "createdAt": "2026-11-10T00:00:00Z",
+        "updatedAt": "2026-11-20T00:00:00Z",
+        "isDraft": False,
+        "mergeable": "MERGEABLE",
+        "mergeStateStatus": "CLEAN",
+        "isCrossRepository": False,
+    }
+
+
+def why_routes(
+    fake: FakeGitHub,
+    issues: list[Obj],
+    prs: list[Obj] | None = None,
+    *,
+    stage: str | None = "legacy",
+    blockers: dict[int, list[JSON]] | None = None,
+) -> None:
+    import base64
+
+    fake.routes["issue-list"] = list[JSON](issues)
+    fake.routes["pr-list"] = list[JSON](prs or [])
+    fake.routes["commits/HEAD$"] = {"sha": HEAD_SHA}
+    if stage is not None:
+        control = {
+            "schema_version": 1,
+            "stage": stage,
+            "lane": {"name": "issue-intake", "subjects": ["label:factory:unowned"]},
+        }
+        fake.routes["contents/.github/factory-rotisserie-control.json"] = {
+            "content": base64.b64encode(json.dumps(control).encode()).decode()
+        }
+    for number, rows in (blockers or {}).items():
+        fake.routes[f"issues/{number}/dependencies/blocked_by"] = rows
+
+
+def test_why_says_an_unblocked_issue_can_start_now(fake: FakeGitHub) -> None:
+    why_routes(fake, [open_issue(41, "factory:unowned", title="Fix the importer")])
+    code, out = invoke(["why", "issue:41"])
+    assert code == 0
+    assert "#41  Fix the importer" in out
+    assert "Eligible now" in out
+    assert "prioritize issue:41" in out
+
+
+def test_why_names_every_reason_an_issue_is_skipped(fake: FakeGitHub) -> None:
+    issues = [
+        open_issue(7, "factory:12", "factory:blocked", body="Depends on #8"),
+        open_issue(8),
+    ]
+    why_routes(fake, issues, [factory_pr(300, 7, "factory:review")])
+    code, out = invoke(["why", "7"])
+    assert code == 0
+    assert "Not picked up automatically" in out
+    assert "It is labeled factory:blocked." in out
+    assert "Worker 12" in out and "is already on it." in out
+    assert "It depends on #8, still open." in out
+    assert "Pull request #300 already implements it" in out
+
+
+def test_why_reports_a_live_github_dependency_blocker(fake: FakeGitHub) -> None:
+    why_routes(
+        fake,
+        [open_issue(41, "factory:unowned")],
+        blockers={41: [{"number": 99, "state": "open"}, {"number": 98, "state": "closed"}]},
+    )
+    code, out = invoke(["why", "issue:41"])
+    assert code == 0
+    assert "GitHub lists open blocking issues: #99." in out
+    assert "#98" not in out
+
+
+def test_why_explains_review_backlog_pressure_with_numbers(fake: FakeGitHub) -> None:
+    prs = [factory_pr(300 + n, 900 + n, "factory:review") for n in range(6)]
+    why_routes(fake, [open_issue(41, "factory:unowned")], prs)
+    code, out = invoke(["--json", "why", "issue:41"])
+    data = json.loads(out)
+    assert code == 0
+    assert data["status"] == "waiting"
+    assert data["explanation"]["review_backlog"] == 6
+    assert data["explanation"]["review_backlog_limit"] == 6
+    assert "FACTORY_REVIEW_BACKLOG_LIMIT" in data["reasons"][0]
+
+
+def test_why_main_breakage_bypasses_review_backlog_pressure(fake: FakeGitHub) -> None:
+    prs = [factory_pr(300 + n, 900 + n, "factory:review") for n in range(6)]
+    why_routes(fake, [open_issue(41, "factory:unowned", "main-breakage")], prs)
+    code, out = invoke(["--json", "why", "issue:41"])
+    assert code == 0
+    assert json.loads(out)["status"] == "ready"
+
+
+def test_why_runs_the_real_rotisserie_intake_decision(fake: FakeGitHub) -> None:
+    prs = [factory_pr(300 + n, 900 + n, "factory:review") for n in range(6)]
+    issues = [open_issue(41, "factory:unowned"), open_issue(42, "factory:unowned")]
+    why_routes(fake, issues, prs, stage="expanded")
+    code, out = invoke(["why", "issue:41"])
+    assert code == 0
+    assert "held back by the factory's limits" in out
+    assert "Raise the limit:  rotisserie factory settings FACTORY_REVIEW_BACKLOG_LIMIT N" in out
+    code, out = invoke(["--verbose", "why", "issue:41"])
+    assert "intake not-authorized" in out
+
+    why_routes(fake, issues, [], stage="expanded")
+    code, out = invoke(["--json", "why", "issue:41"])
+    data = json.loads(out)
+    assert data["status"] == "ready"
+    assert data["explanation"]["intake"] == "authorized"
+
+
+def test_why_missing_intake_control_admits_nothing_like_the_controller(
+    fake: FakeGitHub,
+) -> None:
+    why_routes(fake, [open_issue(41, "factory:unowned")], stage=None)
+    fake.routes["contents/.github/factory-rotisserie-control.json"] = lambda: (_ for _ in ()).throw(
+        GitHubNotFoundError("missing")
+    )
+    code, out = invoke(["why", "issue:41"])
+    assert code == 0
+    assert "Rotisserie intake admits nothing right now" in out
+    assert "factory-rotisserie-control.json is missing" in out
+
+
+def test_why_without_a_target_summarizes_the_whole_queue(fake: FakeGitHub) -> None:
+    issues = [
+        open_issue(1, "factory:unowned", title="Ready one"),
+        open_issue(2, "factory:blocked"),
+        open_issue(3, "factory:blocked"),
+        open_issue(4, "epic"),
+        open_issue(5, body="<!-- factory-execution:manual-only -->"),
+    ]
+    why_routes(fake, issues)
+    code, out = invoke(["why"])
+    assert code == 0
+    assert "Open issues (5)" in out
+    assert "1 can start now." in out
+    assert "#1" in out and "Ready one" in out
+    assert re.search(r"2\s+are labeled blocked", out)
+    assert re.search(r"1\s+are epics or parent work", out)
+    code, out = invoke(["--json", "why"])
+    data = json.loads(out)
+    assert data["ready"] == [1]
+    assert data["not_starting"] == {"blocked": 2, "parent": 1, "manual-only": 1}
+
+
+def test_why_refuses_pull_requests(fake: FakeGitHub) -> None:
+    why_routes(fake, [])
+    code, out = invoke(["why", "pr:5"])
+    assert code == 2
+    assert "'why' explains issues" in out
+    fake.routes["issues/77$"] = {"number": 77, "pull_request": {}, "title": "A PR"}
+    code, out = invoke(["why", "77"])
+    assert code == 2
+    assert "#77 is a pull request" in out
+
+
+def test_why_explains_a_closed_issue(fake: FakeGitHub) -> None:
+    why_routes(fake, [])
+    fake.routes["issues/77$"] = {"number": 77, "title": "Old", "state": "closed", "labels": []}
+    code, out = invoke(["why", "issue:77"])
+    assert code == 0
+    assert "It is closed." in out
+    assert "--force" not in out

@@ -46,6 +46,11 @@ include = [
   "/factory/.github/scripts/factory_settings.py",
   "/factory/.github/scripts/factory_dispatch_credential_filter.py",
   "/factory/.github/scripts/factory_published_model_catalog.py",
+  "/factory/.github/scripts/factory_work_policy.py",
+  "/factory/.github/scripts/factory_rotisserie_adopter.py",
+  "/factory/.github/scripts/factory_review_policy.py",
+  "/factory/.github/scripts/factory_adopter.py",
+  "/factory/scripts/factory_eligibility.py",
   "/CHANGELOG.md",
   "/docs",
   "/examples",
@@ -65,6 +70,11 @@ packages = ["src/rotisserie"]
 "factory/.github/scripts/factory_settings.py" = "rotisserie/factory_console/factory_runtime/factory_settings.py"
 "factory/.github/scripts/factory_dispatch_credential_filter.py" = "rotisserie/factory_console/factory_runtime/factory_dispatch_credential_filter.py"
 "factory/.github/scripts/factory_published_model_catalog.py" = "rotisserie/factory_console/factory_runtime/factory_published_model_catalog.py"
+"factory/.github/scripts/factory_work_policy.py" = "rotisserie/factory_console/factory_runtime/factory_work_policy.py"
+"factory/.github/scripts/factory_rotisserie_adopter.py" = "rotisserie/factory_console/factory_runtime/factory_rotisserie_adopter.py"
+"factory/.github/scripts/factory_review_policy.py" = "rotisserie/factory_console/factory_runtime/factory_review_policy.py"
+"factory/.github/scripts/factory_adopter.py" = "rotisserie/factory_console/factory_runtime/factory_adopter.py"
+"factory/scripts/factory_eligibility.py" = "rotisserie/factory_console/factory_runtime/factory_eligibility.py"
 
 [tool.pytest.ini_options]
 addopts = "-ra"
