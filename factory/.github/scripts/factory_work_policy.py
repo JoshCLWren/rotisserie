@@ -415,18 +415,54 @@ def factory_review_backlog_count(prs: Iterable[dict[str, Any]]) -> int:
     reviewers held leases, so intake kept opening work while promotion stalled
     (incident #2309). Ready PRs remain excluded: the merge drain owns them.
     """
-    count = 0
+    return sum(1 for pr in prs if in_completion_backlog(pr))
+
+
+def in_completion_backlog(pr: dict[str, Any]) -> bool:
+    """Whether a PR counts toward ``FACTORY_REVIEW_BACKLOG_LIMIT``."""
+    if str(pr.get('state') or 'OPEN').upper() != 'OPEN' or pr.get('isDraft'):
+        return False
+    labels = labels_of(pr)
+    if not is_factory_managed_pr(pr):
+        return False
+    if labels & BLOCKED_LABELS or 'factory:ready' in labels:
+        return False
+    return stage_of(labels) in ('factory:review', 'factory:ci', 'factory:changes-requested')
+
+
+def completion_action_for(stage: str | None, conflicted: bool) -> str | None:
+    """The completion action a PR in this stage needs (merge conflicts first)."""
+    if conflicted:
+        return 'merge-conflict'
+    return {
+        'factory:ci': 'ci-repair',
+        'factory:changes-requested': 'review-findings',
+        'factory:review': 'review',
+    }.get(stage or '')
+
+
+def completion_backlog(prs: Iterable[dict[str, Any]]) -> list[dict[str, Any]]:
+    """The PRs behind ``factory_review_backlog_count``, each with the action it needs.
+
+    ``owner`` is the factory owner label (``factory:unowned`` when a worker
+    may take it). Read-only: assignment still goes through the controller.
+    """
+    backlog: list[dict[str, Any]] = []
     for pr in prs:
-        if str(pr.get('state') or 'OPEN').upper() != 'OPEN' or pr.get('isDraft'):
+        if not in_completion_backlog(pr):
             continue
         labels = labels_of(pr)
-        if not is_factory_managed_pr(pr):
-            continue
-        if labels & BLOCKED_LABELS or 'factory:ready' in labels:
-            continue
-        if stage_of(labels) in ('factory:review', 'factory:ci', 'factory:changes-requested'):
-            count += 1
-    return count
+        stage = stage_of(labels)
+        conflicted = pr_is_conflicted(pr)
+        backlog.append({
+            'number': int(pr['number']),
+            'title': str(pr.get('title') or ''),
+            'stage': stage,
+            'owner': owner_of(labels),
+            'conflicted': conflicted,
+            'action': completion_action_for(stage, conflicted),
+        })
+    return backlog
 
 
 def factory_ready_count(prs: Iterable[dict[str, Any]]) -> int:

@@ -165,6 +165,8 @@ class FakeGitHub:
             return json.dumps(self.routes.get("issue-list", []))
         if argv[:2] == ["pr", "list"]:
             return json.dumps(self.routes.get("pr-list", []))
+        if argv[:2] == ["secret", "list"]:
+            return json.dumps(self.routes.get("secret-list", []))
         return "[]"
 
     def dispatch_inputs(self) -> dict[str, str]:
@@ -976,3 +978,202 @@ def test_why_explains_a_closed_issue(fake: FakeGitHub) -> None:
     assert code == 0
     assert "It is closed." in out
     assert "--force" not in out
+
+
+# unstick -------------------------------------------------------------------------------
+
+
+def stats_snapshot(*models: tuple[str, str, int, int, Obj]) -> Obj:
+    import base64
+
+    entries: list[JSON] = [
+        {
+            "source": source,
+            "model": model,
+            "health": health,
+            "windows": {
+                "7d": {"runs": runs, "delivered": delivered, "failed": runs - delivered},
+                "24h": {"runs": 0, "delivered": 0, "failed": 0},
+            },
+        }
+        for source, model, runs, delivered, health in models
+    ]
+    payload = {"generated_at": "2026-11-21T22:50:00Z", "models": entries, "providers": []}
+    return {"content": base64.b64encode(json.dumps(payload).encode()).decode()}
+
+
+HEALTHY: Obj = {"status": "healthy"}
+
+
+def unstick_routes(fake: FakeGitHub, prs: list[Obj], issues: list[Obj] | None = None) -> None:
+    why_routes(fake, issues or [open_issue(41, "factory:unowned")], prs)
+    fake.routes["secret-list"] = [{"name": "OPENCODE_GO_CLIENT_ID"}, {"name": "NVIDIA_API_KEY"}]
+    fake.routes["contents/factory-stats.json"] = stats_snapshot(
+        ("opencode-free", "hy4-flash-free", 10, 2, HEALTHY),
+        ("opencode-free", "nemotron-3.5-lightning-free", 10, 5, HEALTHY),
+        # Best rate, but its provider is not set up here.
+        ("z-ai", "glm-9", 4, 4, HEALTHY),
+        # Paused right now.
+        (
+            "nvidia",
+            "moonshotai/kimi-k3.1-pro",
+            10,
+            9,
+            {"status": "cooling", "cooldown_until": "2026-11-22T05:00:00Z"},
+        ),
+    )
+
+
+def backlog(*specs: tuple[int, str, str]) -> list[Obj]:
+    prs = []
+    for number, stage, owner in specs:
+        pr = factory_pr(number, 900 + number, stage, owner)
+        if stage == "factory:conflict":
+            pr["labels"] = [{"name": "factory:review"}, {"name": owner}]
+            pr["mergeable"] = "CONFLICTING"
+        prs.append(pr)
+    return prs
+
+
+FULL_BACKLOG = backlog(
+    (301, "factory:review", "factory:unowned"),
+    (302, "factory:ci", "factory:unowned"),
+    (303, "factory:changes-requested", "factory:unowned"),
+    (304, "factory:conflict", "factory:unowned"),
+    (305, "factory:review", f"factory:{WORKER}"),
+    (306, "factory:review", "factory:unowned"),
+    (307, "factory:review", "factory:unowned"),
+)
+
+
+def test_unstick_plans_backlog_work_with_the_best_set_up_model(fake: FakeGitHub) -> None:
+    unstick_routes(fake, FULL_BACKLOG)
+    code, out = invoke(["--json", "unstick", "--dry-run"])
+    data = json.loads(out)
+    plan = data["plan"]
+    assert code == 0
+    assert plan["needed_to_reopen_intake"] == 2  # 7 in the backlog, limit 6
+    work = [(item["task"]["target"], item["task"]["action"]) for item in plan["assignments"]]
+    # Reviews first (they can leave the backlog directly), then repairs, then conflicts.
+    assert work == [
+        ("pr:301", "review"),
+        ("pr:306", "review"),
+        ("pr:307", "review"),
+        ("pr:302", "ci-repair"),
+        ("pr:303", "review-findings"),
+        ("pr:304", "merge-conflict"),
+    ]
+    assert {item["model"] for item in plan["assignments"]} == {
+        "opencode-go/nemotron-3.5-lightning-free"
+    }
+    assert "5 of 10 runs delivered" in plan["model_choice"]
+    assert [reason["prs"] for reason in plan["held"]] == [[305]]
+    assert not any(call[0] == "workflow" for call in fake.calls)
+
+
+def test_unstick_starts_one_forced_targeted_worker_per_task(fake: FakeGitHub) -> None:
+    unstick_routes(fake, FULL_BACKLOG)
+    code, out = invoke(["unstick", "--max", "2", "--yes"])
+    assert code == 0
+    assert "Plan: 2 workers" in out
+    assert "4 more could be started (raise --max)" in out
+    sent = [
+        dict(call[i + 1].split("=", 1) for i, item in enumerate(call) if item == "-f")
+        for call in fake.calls
+        if call[0] == "workflow"
+    ]
+    assert [(item["target"], item["action"], item["force_slot"]) for item in sent] == [
+        ("pr:301", "review", "true"),
+        ("pr:306", "review", "true"),
+    ]
+    assert all(item["provider"] == "opencode-go" for item in sent)
+    assert "pr:301: request sent" in out
+
+
+def test_unstick_needs_confirmation_outside_a_terminal(fake: FakeGitHub) -> None:
+    unstick_routes(fake, FULL_BACKLOG)
+    code, out = invoke(["unstick"])
+    assert code == 3
+    assert "Add --yes to start these workers." in out
+    assert not any(call[0] == "workflow" for call in fake.calls)
+
+
+def test_unstick_asks_before_starting_in_a_terminal(fake: FakeGitHub) -> None:
+    unstick_routes(fake, FULL_BACKLOG)
+    code, out = invoke(["unstick"], stdin="n\n", tty=True)
+    assert code == 3
+    assert "Nothing was started." in out
+    assert not any(call[0] == "workflow" for call in fake.calls)
+
+
+def test_unstick_without_backpressure_starts_issues_that_can_start(fake: FakeGitHub) -> None:
+    unstick_routes(fake, [], issues=[open_issue(41, "factory:unowned"), open_issue(42, "epic")])
+    code, out = invoke(["--json", "unstick", "--dry-run"])
+    plan = json.loads(out)["plan"]
+    assert [item["task"]["target"] for item in plan["assignments"]] == ["issue:41"]
+    assert plan["assignments"][0]["task"]["action"] == "advance"
+    assert plan["diagnosis"][0]["code"] == "ready"
+
+
+def test_unstick_honors_an_explicit_provider_and_model(fake: FakeGitHub) -> None:
+    unstick_routes(fake, FULL_BACKLOG)
+    code, out = invoke(
+        ["--json", "unstick", "opencode-go", "opencode-go/hy4-flash-free", "--dry-run"]
+    )
+    plan = json.loads(out)["plan"]
+    assert {item["model"] for item in plan["assignments"]} == {"opencode-go/hy4-flash-free"}
+    assert plan["model_choice"] == "you chose it"
+
+
+def test_unstick_reports_when_no_model_has_a_track_record(fake: FakeGitHub) -> None:
+    unstick_routes(fake, FULL_BACKLOG)
+    fake.routes["secret-list"] = []
+    code, out = invoke(["unstick", "--dry-run"])
+    assert code == 3
+    assert "No set-up, unpaused model has a track record; name PROVIDER MODEL" in out
+
+
+def test_paused_models_count_as_paused_only_until_the_cooldown_ends() -> None:
+    from rotisserie.factory_console.service import reliability
+
+    past: Obj = {"status": "cooling", "cooldown_until": "2026-11-21T20:00:00Z"}
+    future: Obj = {"status": "cooling", "cooldown_until": "2026-11-22T05:00:00Z"}
+    assert reliability.health_status(past, START) == "healthy"
+    assert reliability.health_status(future, START) == "paused"
+    assert reliability.health_status({"status": "retired"}, START) == "retired"
+
+
+def test_stats_does_not_show_an_expired_pause(fake: FakeGitHub) -> None:
+    fake.routes["contents/factory-stats.json"] = stats_snapshot(
+        (
+            "opencode-free",
+            "hy4-flash-free",
+            5,
+            1,
+            {"status": "cooling", "cooldown_until": "2026-11-21T20:00:00Z"},
+        ),
+    )
+    code, out = invoke(["stats"])
+    assert code == 0
+    assert "paused until" not in out
+
+
+def test_service_layer_stays_front_end_neutral() -> None:
+    """Web, TUI and MCP front ends reuse the service; it must never print or prompt."""
+    import ast
+    from pathlib import Path
+
+    service = Path(commands.__file__).with_name("service")
+    for path in sorted(service.glob("*.py")):
+        tree = ast.parse(path.read_text())
+        for node in ast.walk(tree):
+            if isinstance(node, ast.ImportFrom) and node.module:
+                assert node.module not in (
+                    "rotisserie.factory_console.ui",
+                    "rotisserie.factory_console.commands",
+                    "argparse",
+                ), f"{path.name} imports {node.module}"
+            if isinstance(node, ast.Import):
+                assert all(alias.name != "argparse" for alias in node.names), path.name
+            if isinstance(node, ast.Call) and isinstance(node.func, ast.Name):
+                assert node.func.id not in ("print", "input"), f"{path.name} calls {node.func.id}"

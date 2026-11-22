@@ -9,8 +9,21 @@ such change must be called out here and in its release notes.
 
 ## [Unreleased]
 
+### Fixed
+
+- `stats` showed models as paused after their cooldown had ended.
+
 ### Added
 
+- `rotisserie factory unstick` plans and starts the work that clears whatever
+  holds the factory back. For a full review backlog that means reviewing and
+  repairing the backlog PRs no worker holds. Each worker uses the provider and
+  model with the best delivered track record. It confirms before starting and
+  supports `--dry-run`, `--max N` and `--yes`.
+- `rotisserie.factory_console.service`: a front-end-neutral layer (queue
+  eligibility, unstick planning, dispatch, reliability, provider setup) with
+  typed results and structured reasons, so a TUI, web GUI or MCP server can
+  reuse the console's logic. `run`, `stats` and `providers` now use it.
 - `rotisserie factory why [issue:N]` explains why the factory is or is not
   picking up an issue: blocked or manual-only labels, open dependencies, an
   existing pull request, a worker already on it, Rotisserie intake, or the

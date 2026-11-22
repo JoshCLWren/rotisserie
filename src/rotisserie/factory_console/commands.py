@@ -15,7 +15,6 @@ the default. ``--json`` prints one machine-readable document. Exit codes:
 from __future__ import annotations
 
 import argparse
-import base64
 import json
 import os
 import re
@@ -30,10 +29,9 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import TextIO
 
-from rotisserie.factory_console import runtime, why
+from rotisserie.factory_console import runtime
 from rotisserie.factory_console.context import Context, UsageError, find_repository
 from rotisserie.factory_console.github import (
-    JSON,
     GitHub,
     GitHubError,
     GitHubNotFoundError,
@@ -44,6 +42,7 @@ from rotisserie.factory_console.github import (
     string,
     timestamp,
 )
+from rotisserie.factory_console.service import dispatch, providers, queue, reliability, unstick
 from rotisserie.factory_console.tracker import (
     DISPATCH_WORKFLOW,
     EXIT_CODES,
@@ -221,6 +220,22 @@ def add_parser(subcommands: argparse._SubParsersAction[argparse.ArgumentParser])
     explain.add_argument("what", nargs="?", help="issue:N (or just N); omit for every open issue")
     _common(explain)
 
+    clear = commands.add_parser(
+        "unstick",
+        help="start the workers that clear whatever is holding the factory back",
+        description=(
+            "Read why work is not starting, plan the work that clears it (for a full review "
+            "backlog: review and repair those pull requests), pick the provider and model with "
+            "the best delivered track record, and start one worker per task after you confirm."
+        ),
+    )
+    clear.add_argument("provider", nargs="?", help="use this provider instead of the best one")
+    clear.add_argument("model", nargs="?", help="use this exact model (with PROVIDER)")
+    clear.add_argument("--max", type=int, dest="max_workers", help="start at most N workers")
+    clear.add_argument("--dry-run", action="store_true", help="show the plan; start nothing")
+    clear.add_argument("--yes", "-y", action="store_true", help="start without asking")
+    _common(clear)
+
     providers = commands.add_parser(
         "providers", help="providers the factory can use and whether they are set up"
     )
@@ -333,6 +348,7 @@ def _help_text() -> str:
             "  rotisserie factory stats         reliable providers and models",
             "  rotisserie factory settings      limits, worker counts, priorities",
             "  rotisserie factory why [issue:N] why work is or is not being picked up",
+            "  rotisserie factory unstick       start the workers that clear the bottleneck",
             "  rotisserie factory cancel issue:N",
             "  rotisserie factory watch RUN",
             "  rotisserie factory providers | models PROVIDER | prioritize issue:N",
@@ -357,15 +373,7 @@ def _stopped_watching(console: Console, data: dict[str, object]) -> None:
 # run ---------------------------------------------------------------------------------
 
 
-@dataclass
-class Request:
-    provider: runtime.Provider
-    model: str
-    target: str = ""
-    force: bool = False
-    slot: int | None = None
-    action: str = "advance"
-    take_over: bool = False
+Request = dispatch.Request
 
 
 def cmd_run(context: Context, arguments: argparse.Namespace) -> Outcome:
@@ -431,7 +439,7 @@ def cmd_run(context: Context, arguments: argparse.Namespace) -> Outcome:
             console.line("Nothing was started.")
             return Outcome(Result.NO_WORK, 0, {"cancelled": True})
     data = context.progress
-    data["request"] = _request_data(request)
+    data["request"] = request.to_dict()
     if request.target:
         data["target_ref"] = request.target
     if request.target and request.take_over:
@@ -445,18 +453,6 @@ def cmd_run(context: Context, arguments: argparse.Namespace) -> Outcome:
     return _submit_and_watch(
         context, request, data, no_wait=arguments.no_wait, follow=arguments.follow
     )
-
-
-def _request_data(request: Request) -> dict[str, object]:
-    return {
-        "provider": request.provider.key,
-        "model": request.model,
-        "target": request.target or None,
-        "force": request.force,
-        "slot": request.slot,
-        "action": request.action,
-        "take_over": request.take_over,
-    }
 
 
 def _show_request(console: Console, request: Request) -> None:
@@ -496,42 +492,23 @@ def _submit_and_watch(
     context: Context, request: Request, data: dict[str, object], *, no_wait: bool, follow: bool
 ) -> Outcome:
     console = context.console
-    inputs = {
-        "provider": request.provider.key,
-        "model": request.model,
-        "mode": "smoke",
-        "action": request.action,
-        "force_slot": "true" if request.force else "false",
-    }
-    if request.target:
-        inputs["target"] = request.target
-    if request.slot is not None:
-        inputs["slot_index"] = str(request.slot)
-    submitted_at = context.clock.now()
-    output = context.github.workflow_run(DISPATCH_WORKFLOW, inputs)
-    console.debug(output.strip())
-    console.ok("Request sent", local_time(submitted_at))
-    tracker = Tracker(context.github, context.clock)
-    match = re.search(r"/actions/runs/(\d+)", output)
-    run_id = (
-        int(match.group(1))
-        if match
-        else tracker.find_submitted_run(
-            submitted_at, f"Factory dispatch · {request.target or request.provider.key}"
-        )
-    )
+    submission = dispatch.submit(context.github, context.clock, request)
+    console.debug(submission.raw.strip())
+    console.ok("Request sent", local_time(submission.submitted_at))
+    run_id = submission.run_id
     if run_id is None:
         console.fail("GitHub accepted the request but the scheduler run could not be found.")
-        console.link("Look here", context.url(f"/actions/workflows/{DISPATCH_WORKFLOW}"))
+        console.link("Look here", submission.url)
         return Outcome(Result.UNKNOWN, EXIT_CODES[Result.UNKNOWN], data)
     data["scheduler_run_id"] = run_id
-    data["scheduler_url"] = context.url(f"/actions/runs/{run_id}")
+    data["scheduler_url"] = submission.url
     if no_wait:
-        console.link("Scheduler", str(data["scheduler_url"]))
+        console.link("Scheduler", submission.url)
         console.note(f"Follow it later: rotisserie factory watch {run_id}")
         return Outcome(Result.SUBMITTED, EXIT_CODES[Result.SUBMITTED], data)
+    tracker = Tracker(context.github, context.clock)
     return _watch_scheduler(
-        context, tracker, run_id, submitted_at, data, follow=follow, request=request
+        context, tracker, run_id, submission.submitted_at, data, follow=follow, request=request
     )
 
 
@@ -1182,27 +1159,9 @@ def _main_health(github: GitHub) -> list[str]:
 # stats ---------------------------------------------------------------------------------
 
 
-def _load_stats(github: GitHub) -> Obj | None:
-    try:
-        content = obj(github.repo_api(f"contents/factory-stats.json?ref={STATS_BRANCH}"))
-    except GitHubNotFoundError:
-        return None
-    raw = string(content, "content")
-    if not raw:
-        return None
-    try:
-        parsed: JSON = json.loads(base64.b64decode(raw))
-    except ValueError:
-        return None
-    return obj(parsed)
-
-
-def _window(entry: Obj, name: str) -> Obj:
-    return obj(obj(entry.get("windows")).get(name))
-
-
-def _count(window: Obj, key: str) -> int:
-    return integer(window, key) or 0
+_load_stats = reliability.load_stats
+_window = reliability.window
+_count = reliability.count
 
 
 def _provider_rows(stats: Obj, window: str) -> list[list[str]]:
@@ -1256,8 +1215,8 @@ def cmd_stats(context: Context, arguments: argparse.Namespace) -> Outcome:
         counts = _window(entry, window)
         runs = _count(counts, "runs")
         health = obj(entry.get("health"))
-        status = string(health, "status")
-        if not runs and status not in ("cooling", "unavailable", "retired"):
+        status = reliability.health_status(health, context.clock.now())
+        if not runs and status not in ("paused", "retired"):
             continue
         failures = obj(counts.get("failures"))
         top = (
@@ -1274,7 +1233,7 @@ def cmd_stats(context: Context, arguments: argparse.Namespace) -> Outcome:
                 str(delivered),
                 str(_count(counts, "failed")),
                 OUTCOME_WORDS.get(top, top.replace("_", " ")),
-                _health_word(health),
+                _health_word(health, context.clock.now()),
             ]
         )
         models.append(
@@ -1305,9 +1264,9 @@ def cmd_stats(context: Context, arguments: argparse.Namespace) -> Outcome:
     )
 
 
-def _health_word(health: Obj) -> str:
-    status = string(health, "status")
-    if status == "cooling" or status == "unavailable":
+def _health_word(health: Obj, now: datetime) -> str:
+    status = reliability.health_status(health, now)
+    if status == "paused":
         until = timestamp(health, "cooldown_until")
         return f"paused until {local_time(until)}" if until else "paused"
     return {"healthy": "ok", "retired": "retired", "unknown": ""}.get(status, status)
@@ -1398,17 +1357,7 @@ def _format(unit: str, value: str) -> str:
     return value
 
 
-def _variables(github: GitHub) -> dict[str, str]:
-    try:
-        raw = github.gh("variable", "list", "--repo", github.repo, "--json", "name,value")
-        rows = json.loads(raw)
-    except (GitHubError, ValueError):
-        return {}
-    return {
-        str(row["name"]): str(row["value"])
-        for row in rows
-        if isinstance(row, dict) and "name" in row
-    }
+_variables = providers.repository_variables
 
 
 # prioritize ----------------------------------------------------------------------------
@@ -1455,7 +1404,6 @@ def cmd_prioritize(context: Context, arguments: argparse.Namespace) -> Outcome:
 
 
 def cmd_why(context: Context, arguments: argparse.Namespace) -> Outcome:
-    console = context.console
     number: int | None = None
     if arguments.what:
         if arguments.what.isdecimal():
@@ -1467,75 +1415,71 @@ def cmd_why(context: Context, arguments: argparse.Namespace) -> Outcome:
                     "'why' explains issues. For pull requests, see 'rotisserie factory status'."
                 )
     now = int(context.clock.now().timestamp())
-    board = why.read_board(context.github, _variables(context.github), now)
+    variables = _variables(context.github)
     if number is None:
-        return _why_everything(context, board)
-    row = why.issue_row(context.github, board, number)
-    blocked, detail = why.open_blocker(context.github, number)
-    explanation = why.explain(board, row, blocker=blocked)
-    answer = why.verdict(explanation, board, blocker_detail=detail)
-    title = string(row, "title")
-    console.heading(f"#{number}  {title}" if title else f"#{number}")
-    if answer.status == "ready":
+        summary = queue.summarize_queue(context.github, now=now, variables=variables)
+        _show_queue(context.console, summary)
+        return Outcome(Result.COMPLETED, EXIT_OK, summary.to_dict())
+    answer = queue.answer_issue(context.github, number, now=now, variables=variables)
+    _show_answer(context, answer)
+    data = answer.to_dict()
+    data["ref"] = f"issue:{number}"
+    data["reasons"] = [reason.text for reason in answer.verdict.reasons]
+    return Outcome(Result.COMPLETED, EXIT_OK, data)
+
+
+def _show_answer(context: Context, answer: queue.IssueAnswer) -> None:
+    console = context.console
+    number, found = answer.issue, answer.verdict
+    console.heading(f"#{number}  {answer.title}" if answer.title else f"#{number}")
+    if found.status == "ready":
         console.ok("Eligible now", "the next free worker can pick it up")
         console.line(
             "  Order among eligible work follows the priority settings; "
             f"to move it up: rotisserie factory prioritize issue:{number}"
         )
-    elif answer.status == "waiting":
+    elif found.status == "waiting":
         console.warn("Eligible, but held back by the factory's limits")
     else:
         console.fail("Not picked up automatically")
-    for line in answer.reasons:
-        console.line(f"  {console.dot} {line}")
-    if answer.status != "ready":
+    for reason in found.reasons:
+        console.line(f"  {console.dot} {reason.text}")
+    if found.status != "ready":
         console.line()
-        for hint in _why_hints(answer, number):
+        for hint in _why_hints(found, number):
             console.line(hint)
-    if board.intake_problem and answer.category != "intake":
-        console.warn(f"Rotisserie intake problem: {board.intake_problem}")
+    if answer.intake_problem and found.category != "intake":
+        console.warn(f"Rotisserie intake problem: {answer.intake_problem}")
     if console.verbose:
+        explanation = answer.explanation
         console.line()
         console.line("Dispatcher reasons, verbatim:")
-        for reason in explanation.reasons:
-            console.line(f"  {reason}")
+        for raw in explanation.reasons:
+            console.line(f"  {raw}")
         console.line(
             f"  open PRs with a worker {explanation.pr_wip}/{explanation.pr_wip_limit}, "
             f"review backlog {explanation.review_backlog}/{explanation.review_backlog_limit}, "
             f"intake {explanation.intake}"
         )
     console.link("Issue", context.url(f"/issues/{number}"))
-    return Outcome(
-        Result.COMPLETED,
-        EXIT_OK,
-        {
-            "ref": f"issue:{number}",
-            "status": answer.status,
-            "reasons": list(answer.reasons),
-            "explanation": asdict(explanation),
-            "intake_problem": board.intake_problem or None,
-        },
-    )
 
 
-def _why_hints(answer: why.Verdict, number: int) -> list[str]:
-    if answer.category in ("closed", "finished", "manual-only"):
+def _why_hints(found: queue.Verdict, number: int) -> list[str]:
+    if found.category in ("closed", "finished", "manual-only"):
         return []
-    if answer.category == "held":
+    if found.category == "held":
         return [
             f"Take it over: rotisserie factory run PROVIDER MODEL --target issue:{number} "
             "--take-over",
             f"Stop it:      rotisserie factory cancel issue:{number}",
         ]
-    if answer.category == "has-pr":
+    if found.category == "has-pr":
         return ["The pull request moves on through review, checks and repair."]
-    limit = {
-        "wip-limit": "FACTORY_PR_WIP_LIMIT",
-        "review-limit": "FACTORY_REVIEW_BACKLOG_LIMIT",
-    }.get(answer.category)
-    if limit:
+    setting = found.reasons[0].setting if found.reasons else None
+    if setting:
         return [
-            f"Raise the limit:  rotisserie factory settings {limit} N",
+            "Clear it:         rotisserie factory unstick",
+            f"Raise the limit:  rotisserie factory settings {setting} N",
             f"Start it anyway: rotisserie factory run PROVIDER MODEL --target issue:{number} "
             "--force",
         ]
@@ -1545,23 +1489,16 @@ def _why_hints(answer: why.Verdict, number: int) -> list[str]:
     ]
 
 
-def _why_everything(context: Context, board: why.Board) -> Outcome:
-    console = context.console
-    verdicts = why.sweep(context.github, board)
-    ready = sorted(
-        (row for row, item in verdicts if item.status == "ready"),
-        key=lambda row: integer(row, "number") or 0,
-    )
-    held = why.summarize(verdicts)
-    console.heading(f"Open issues ({len(verdicts)})")
+def _show_queue(console: Console, summary: queue.QueueSummary) -> None:
+    ready = summary.ready
+    held = summary.not_starting
+    console.heading(f"Open issues ({len(summary.entries)})")
     console.line(f"{len(ready)} can start now.")
     if ready:
-        rows = []
-        for row in ready[:15]:
-            title = string(row, "title")
-            rows.append(
-                [f"#{integer(row, 'number')}", title if len(title) <= 70 else title[:69] + "…"]
-            )
+        rows = [
+            [f"#{entry.issue}", entry.title if len(entry.title) <= 70 else entry.title[:69] + "…"]
+            for entry in ready[:15]
+        ]
         console.table(["Issue", "Title"], rows)
         if len(ready) > 15:
             console.line(f"  …and {len(ready) - 15} more")
@@ -1569,31 +1506,94 @@ def _why_everything(context: Context, board: why.Board) -> Outcome:
         console.line()
         console.line("Not starting:")
         for category, count in held.most_common():
-            console.line(f"  {count:>4}  {why.CATEGORY_WORDS.get(category, category)}")
-    if board.intake_problem:
+            console.line(f"  {count:>4}  {queue.CATEGORY_WORDS.get(category, category)}")
+    if summary.board.intake_problem:
         console.line()
-        console.warn(f"Rotisserie intake admits nothing: {board.intake_problem}")
+        console.warn(f"Rotisserie intake admits nothing: {summary.board.intake_problem}")
     console.line()
-    console.line("Ask about one: rotisserie factory why issue:N")
-    return Outcome(
-        Result.COMPLETED,
-        EXIT_OK,
-        {
-            "open_issues": len(verdicts),
-            "ready": [integer(row, "number") for row in ready],
-            "not_starting": dict(held),
-            "issues": [
-                {
-                    "issue": integer(row, "number"),
-                    "status": item.status,
-                    "category": item.category,
-                    "reasons": list(item.reasons),
-                }
-                for row, item in verdicts
-            ],
-            "intake_problem": board.intake_problem or None,
-        },
+    if any(code in held for code in ("review-limit", "wip-limit", "backpressure")):
+        console.line("Clear the backlog: rotisserie factory unstick")
+    console.line("Ask about one:     rotisserie factory why issue:N")
+
+
+# unstick --------------------------------------------------------------------------------
+
+
+def cmd_unstick(context: Context, arguments: argparse.Namespace) -> Outcome:
+    console = context.console
+    if arguments.model and not arguments.provider:
+        raise UsageError("Name the provider before the model.")
+    if arguments.max_workers is not None and arguments.max_workers < 1:
+        raise UsageError("--max must be 1 or more.")
+    found = unstick.plan(
+        context.github,
+        now=context.clock.now(),
+        max_workers=arguments.max_workers,
+        provider=arguments.provider,
+        model=arguments.model,
     )
+    data: dict[str, object] = {"plan": found.to_dict()}
+    _show_plan(console, found)
+    if not found.assignments:
+        for problem in found.problems:
+            console.fail(problem[0].upper() + problem[1:])
+        return Outcome(Result.NO_WORK, EXIT_CODES[Result.NO_WORK], data)
+    if arguments.dry_run:
+        console.line("Dry run: nothing was started.")
+        return Outcome(Result.COMPLETED, EXIT_OK, data)
+    if not arguments.yes:
+        if not context.interactive:
+            console.line("Nothing was started. Add --yes to start these workers.")
+            return Outcome(Result.NO_WORK, EXIT_CODES[Result.NO_WORK], data)
+        count = len(found.assignments)
+        if not context.prompt.confirm(f"Start {count} worker{'s' if count != 1 else ''}?"):
+            console.line("Nothing was started.")
+            return Outcome(Result.NO_WORK, EXIT_CODES[Result.NO_WORK], data)
+    submissions = unstick.start(context.github, context.clock, found)
+    started = []
+    for submission in submissions:
+        target = submission.request.target
+        if submission.run_id is None:
+            console.warn(f"{target}: sent, but its scheduler run could not be found")
+        else:
+            console.ok(f"{target}: request sent", submission.url)
+        started.append({"target": target, "run_id": submission.run_id, "url": submission.url})
+    data["started"] = started
+    console.line()
+    console.line("Watch them: rotisserie factory status")
+    return Outcome(Result.SUBMITTED, EXIT_CODES[Result.SUBMITTED], data)
+
+
+def _show_plan(console: Console, found: unstick.Plan) -> None:
+    console.heading("What is holding the factory back")
+    for reason in found.diagnosis:
+        console.line(f"  {console.dot} {reason.text}")
+    for reason in found.held:
+        console.line(f"  {console.dot} {reason.text}")
+    if not found.assignments:
+        return
+    first = found.assignments[0]
+    console.heading(f"Plan: {len(found.assignments)} workers")
+    console.fields(
+        [
+            ("Provider", runtime.resolve_provider(first.provider).name),
+            ("Model", first.model),
+            ("Why", found.model_choice),
+            ("Override", "On: targeted requests ignore the factory's own limits"),
+        ]
+    )
+    rows = [
+        [
+            item.task.target.replace(":", " #").replace("pr", "PR"),
+            unstick.ACTION_WORDS[item.task.action],
+            item.task.title if len(item.task.title) <= 60 else item.task.title[:59] + "…",
+        ]
+        for item in found.assignments
+    ]
+    console.table(["Item", "Work", "Title"], rows)
+    if found.left_out:
+        console.line(f"  {found.left_out} more could be started (raise --max)")
+    console.line()
 
 
 # providers / models --------------------------------------------------------------------
@@ -1601,8 +1601,6 @@ def _why_everything(context: Context, board: why.Board) -> Outcome:
 
 def cmd_providers(context: Context, arguments: argparse.Namespace) -> Outcome:
     console = context.console
-    secrets = _secret_names(context.github)
-    variables = _variables(context.github)
     working = Counter(item.provider for item in current_work(context.github, with_session=False))
     stats = _load_stats(context.github)
     delivered: dict[str, str] = {}
@@ -1611,20 +1609,12 @@ def cmd_providers(context: Context, arguments: argparse.Namespace) -> Outcome:
             delivered[row[0]] = f"{row[2]} PRs / {row[1]} runs"
     rows = []
     out = []
-    for provider in runtime.providers():
-        missing = [
-            name
-            for name in provider.secrets
-            if secrets is not None and name not in secrets and name not in variables
-        ]
-        if provider.needs_variable and variables.get(
-            provider.needs_variable, "off"
-        ).lower() not in ("on", "true", "1", "yes"):
-            missing.append(f"{provider.needs_variable}=on")
+    for setup in providers.provider_setup(context.github):
+        provider = setup.provider
         ready = (
             "unknown"
-            if secrets is None
-            else ("ready" if not missing else "missing " + ", ".join(missing))
+            if not setup.known
+            else ("ready" if not setup.missing else "missing " + ", ".join(setup.missing))
         )
         rows.append(
             [
@@ -1652,15 +1642,6 @@ def cmd_providers(context: Context, arguments: argparse.Namespace) -> Outcome:
         "the worker checks price, quota and access at start."
     )
     return Outcome(Result.COMPLETED, EXIT_OK, {"providers": out})
-
-
-def _secret_names(github: GitHub) -> set[str] | None:
-    try:
-        raw = github.gh("secret", "list", "--repo", github.repo, "--json", "name")
-        rows = json.loads(raw)
-    except (GitHubError, ValueError):
-        return None
-    return {str(row["name"]) for row in rows if isinstance(row, dict) and "name" in row}
 
 
 def discover_models(provider: runtime.Provider) -> list[tuple[str, str]]:
@@ -1867,6 +1848,7 @@ HANDLERS = {
     "settings": cmd_settings,
     "prioritize": cmd_prioritize,
     "why": cmd_why,
+    "unstick": cmd_unstick,
     "explain": cmd_why,
     "providers": cmd_providers,
     "models": cmd_models,

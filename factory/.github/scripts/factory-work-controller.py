@@ -21,7 +21,7 @@ from factory_capacity_policy import (
     omniroute_enabled,
     remaining_omniroute_free_entry_slots,
 )
-from factory_work_policy import (BLOCKED_LABELS, FACTORY_NO_DIFF_RETRY_LIMIT, FACTORY_NO_DIFF_RETRY_RESET_SECONDS, FACTORY_PR_WIP_LIMIT, FACTORY_REVIEW_BACKLOG_LIMIT, FIXED_LEASE_TTL_SECONDS, LOCAL_LEASE_TTL_SECONDS, FIXED_OWNER_RE, NoDiffAttempt, NON_EXECUTABLE_ISSUES, OWNER_RE, REQUIRED_CHECK_FAILURE_STATES, STAGE_LABELS, STAGE_PRECEDENCE, Candidate, build_candidates, comment_is_trusted, eligibility, explain_issue_report, provenance_lane, env_positive_int, factory_pr_wip_count, factory_review_backlog_count, is_manual_only, item_is_unowned, issue_bypasses_wip_limit, issue_explicitly_closed_by_pr, labels_of, lease_is_stale, linked_issue_from_branch, linked_issue_from_pr, order_candidates_for_worker, owner_of, parse_no_diff_attempts_from_comments, plan_distinct_assignments, pr_suppresses_issue_candidate, stage_of)
+from factory_work_policy import (BLOCKED_LABELS, FACTORY_NO_DIFF_RETRY_LIMIT, FACTORY_NO_DIFF_RETRY_RESET_SECONDS, FACTORY_PR_WIP_LIMIT, FACTORY_REVIEW_BACKLOG_LIMIT, FIXED_LEASE_TTL_SECONDS, LOCAL_LEASE_TTL_SECONDS, FIXED_OWNER_RE, NoDiffAttempt, NON_EXECUTABLE_ISSUES, OWNER_RE, REQUIRED_CHECK_FAILURE_STATES, STAGE_LABELS, STAGE_PRECEDENCE, Candidate, build_candidates, comment_is_trusted, completion_action_for, eligibility, explain_issue_report, provenance_lane, env_positive_int, factory_pr_wip_count, factory_review_backlog_count, is_manual_only, item_is_unowned, issue_bypasses_wip_limit, issue_explicitly_closed_by_pr, labels_of, lease_is_stale, linked_issue_from_branch, linked_issue_from_pr, order_candidates_for_worker, owner_of, parse_no_diff_attempts_from_comments, plan_distinct_assignments, pr_suppresses_issue_candidate, stage_of)
 from factory_jev_shadow import apply_completion_ranking, apply_jev_ranking
 from stale_pr_decay import StalePRGuard, list_factory_prs
 from factory_review_policy import recorded_pr_contributors, trusted_comment_bodies
@@ -149,17 +149,6 @@ def target_json(number: int) -> dict[str, Any]:
 def live_pr_state(number: int) -> dict[str, Any]:
     """Read the authoritative PR head, merge state, and labels at lease time."""
     return cast(dict[str, Any], gh_json(['api', f'repos/{REPO}/pulls/{number}']))
-
-
-def completion_action_for(stage: str | None, conflicted: bool) -> str | None:
-    """Derive the same completion action the dispatcher offered for this stage."""
-    if conflicted:
-        return 'merge-conflict'
-    return {
-        'factory:ci': 'ci-repair',
-        'factory:changes-requested': 'review-findings',
-        'factory:review': 'review',
-    }.get(stage or '')
 
 
 def last_github_update_epoch(item: dict[str, Any], *, now_epoch: int) -> int | None:

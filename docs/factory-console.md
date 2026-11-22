@@ -11,6 +11,7 @@ rotisserie factory report      # what merged, what failed and why, is it running
 rotisserie factory stats       # which providers and models actually deliver
 rotisserie factory settings    # limits, worker counts and priority order
 rotisserie factory why issue:N # why an issue is or is not being picked up
+rotisserie factory unstick     # start the workers that clear the bottleneck
 ```
 
 The repository is taken from `--repo owner/name`, `FACTORY_REPO`, the nearest
@@ -125,6 +126,61 @@ The intake decision runs the installed Rotisserie, which may be newer or older
 than the one the factory workflow uses. A specific worker may still skip an
 eligible issue it failed on before (strike retry); that is decided at
 assignment.
+
+## Clearing the bottleneck
+
+`rotisserie factory unstick` turns `why`'s diagnosis into work. It reads the
+same board, then plans:
+
+- **Review backlog at its limit** (`FACTORY_REVIEW_BACKLOG_LIMIT`): new issues
+  cannot start, so it targets the backlog PRs no worker holds. Reviews come
+  first (an approval moves a PR out of the backlog), then CI repairs, review
+  feedback, and merge conflicts. It says how many PRs must leave the backlog
+  before new issues can start.
+- **Nothing backed up**: the issues that can start now.
+
+PRs a worker already holds are listed, never taken. Each task gets the
+provider and model with the best delivered track record over 7 days, from
+the published reliability counts: set up in the repository, not paused, at
+least 3 runs, at least one PR delivered. Name `PROVIDER MODEL` to choose them
+yourself.
+
+```
+rotisserie factory unstick --dry-run   # show the plan only
+rotisserie factory unstick             # show it, ask, then start
+rotisserie factory unstick --max 3 -y  # start at most 3 without asking
+```
+
+Starting sends one forced, targeted request per task (the same as
+`run PROVIDER MODEL --force --target pr:N --action ACTION`). Outside a terminal
+it starts nothing unless you pass `--yes`.
+
+## Other front ends
+
+The console's logic lives in `rotisserie.factory_console.service`, which never
+prints, prompts or parses arguments. It returns typed results with `to_dict()`
+and structured reason codes (`Reason.code`, plus the issues, PRs and setting
+involved), so a TUI, web page or MCP server can call it directly:
+
+```python
+from datetime import UTC, datetime
+
+from rotisserie.factory_console.github import GitHub
+from rotisserie.factory_console.service import providers, queue, unstick
+
+github = GitHub("owner/repo")
+now = datetime.now(UTC)
+summary = queue.summarize_queue(
+    github, now=int(now.timestamp()), variables=providers.repository_variables(github)
+)
+plan = unstick.plan(github, now=now)
+print(plan.to_dict())
+```
+
+`queue` (why), `unstick` (plan and start), `dispatch` (submit a request),
+`reliability` (track record) and `providers` (setup) are in the service so far.
+Older commands still mix reading, deciding and printing in `commands.py` and
+move into the service when they are next changed.
 
 ## Exit codes
 
