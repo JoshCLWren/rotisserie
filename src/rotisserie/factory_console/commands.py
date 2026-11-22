@@ -49,6 +49,7 @@ from rotisserie.factory_console.service import (
     dispatch,
     doctor,
     groom,
+    misrouted,
     outcomes,
     providers,
     queue,
@@ -399,7 +400,16 @@ def add_parser(subcommands: argparse._SubParsersAction[argparse.ArgumentParser])
     _common(fix)
 
     red = commands.add_parser("checks", help="why a pull request's checks fail, in one line each")
-    red.add_argument("what", help="pr:N")
+    red.add_argument("what", nargs="?", help="pr:N")
+    red.add_argument(
+        "--misrouted", action="store_true",
+        help="PRs waiting for review whose own checks fail (main did not cause it)",
+    )  # fmt: skip
+    red.add_argument(
+        "--requeue", action="store_true",
+        help="with --misrouted: move them from review to CI repair (never a held PR)",
+    )  # fmt: skip
+    red.add_argument("--yes", action="store_true", help="requeue without asking")
     _common(red)
 
     gate = commands.add_parser(
@@ -533,6 +543,8 @@ def _help_text() -> str:
             "  rotisserie factory unstick       start the workers that clear the bottleneck",
             "  rotisserie factory outcomes      did the requested work actually happen",
             "  rotisserie factory checks pr:N   why its checks fail",
+            "  rotisserie factory checks --misrouted [--requeue --yes]",
+            "                                   PRs in review whose own checks fail",
             "  rotisserie factory conflicts pr:N  what main changed under it",
             "  rotisserie factory sync pr:N     merge main in (never while a worker holds it)",
             "  rotisserie factory leases        who holds which item",
@@ -2141,6 +2153,14 @@ def cmd_leases(context: Context, arguments: argparse.Namespace) -> Outcome:
 
 
 def cmd_checks(context: Context, arguments: argparse.Namespace) -> Outcome:
+    if arguments.misrouted:
+        if arguments.what:
+            raise UsageError("--misrouted scans every PR in review; leave out pr:N.")
+        return _checks_misrouted(context, arguments)
+    if arguments.requeue:
+        raise UsageError("--requeue works with --misrouted.")
+    if not arguments.what:
+        raise UsageError("checks takes a pull request (pr:N) or --misrouted.")
     kind, number = _split_target(arguments.what)
     if kind != "pr":
         raise UsageError("checks takes a pull request: pr:N")
@@ -2177,6 +2197,54 @@ def cmd_checks(context: Context, arguments: argparse.Namespace) -> Outcome:
         EXIT_OK,
         {"pr": number, "failing": [i.to_dict() for i in failing], "origins": shared.to_dict()},
     )
+
+
+def _checks_misrouted(context: Context, arguments: argparse.Namespace) -> Outcome:
+    console = context.console
+    github = context.github
+    found = misrouted.scan(github)
+    for problem in found.problems:
+        console.warn(problem)
+    if not found.misrouted:
+        console.ok(
+            f"No PR waiting for review has failing checks of its own ({found.scanned} in review)."
+        )
+    for item in found.misrouted:
+        console.fail(item.text)
+        if item.inherited:
+            console.line(f"  Also red because of main: {', '.join(item.inherited)}")
+        if item.held:
+            console.line(f"  Held by {item.owner}; left alone until its worker finishes.")
+        for check in item.own:
+            console.link(f"  {check.name}", check.url)
+    if found.waiting_on_main:
+        names = ", ".join(f"#{number}" for number in found.waiting_on_main)
+        console.line(f"Red only because of main (review stays): {names}")
+    data: dict[str, object] = {"scan": found.to_dict()}
+    if not arguments.requeue:
+        if found.movable:
+            console.line(
+                "Move them to CI repair: rotisserie factory checks --misrouted --requeue --yes"
+            )
+        return Outcome(Result.COMPLETED, EXIT_OK, data)
+    candidates = found.movable
+    if not candidates:
+        console.line("Nothing to move: no misrouted PR is free of a worker.")
+        return Outcome(Result.NO_WORK, EXIT_CODES[Result.NO_WORK], data)
+    console.line(f"Move to CI repair: {', '.join(f'#{item.pr}' for item in candidates)}")
+    if not arguments.yes:
+        if not context.interactive:
+            console.line("Nothing was changed. Add --yes to move these.")
+            return Outcome(Result.NO_WORK, EXIT_CODES[Result.NO_WORK], data)
+        if not context.prompt.confirm("Move these?", default=False):
+            console.line("Nothing was changed.")
+            return Outcome(Result.NO_WORK, EXIT_CODES[Result.NO_WORK], data)
+    done = [misrouted.requeue(github, item) for item in candidates]
+    for result in done:
+        (console.ok if result.ok else console.fail)(result.text)
+    data["requeued"] = [result.to_dict() for result in done]
+    outcome = Result.COMPLETED if all(result.ok for result in done) else Result.FAILED
+    return Outcome(outcome, EXIT_CODES[outcome], data)
 
 
 # review ---------------------------------------------------------------------------------

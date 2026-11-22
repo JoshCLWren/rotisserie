@@ -51,6 +51,7 @@ rotisserie factory unstick     # start the workers that clear the bottleneck
 rotisserie factory outcomes    # did the requested work actually happen
 rotisserie factory close pr:N --reason TEXT  # close work that should not be done
 rotisserie factory checks pr:N # why its checks fail, in one line each
+rotisserie factory checks --misrouted [--requeue --yes]  # PRs in review whose own checks fail
 rotisserie factory review pr:N # whose approval counts: known self-review vs missing metadata
 rotisserie factory groom inventory  # the whole open backlog, with evidence per item
 rotisserie factory doctor      # is the factory itself healthy
@@ -303,6 +304,24 @@ Rust files change) report beside it; a red one of those still blocks the merge,
 and a pending one waits. A check that is purely advisory can be exempted by
 listing its exact name in the `FACTORY_ADVISORY_CHECKS` environment variable
 (comma-separated) of the merge workflows. Nothing is exempt by default.
+
+### In review with its own checks red
+
+The scheduler never hands a review to a `factory:review` PR whose own checks
+fail: it moves the PR to `factory:ci` (CI repair) instead, and CI
+reconciliation then hands the failure to a repair worker. "Own" means the same
+check's latest default-branch run, found through the failing run's workflow,
+did not fail. A failure main caused keeps today's path (see below). The move is
+an owner compare-and-swap, so a PR a worker claimed in between is left alone.
+
+`rotisserie factory checks --misrouted` finds PRs that are already in that
+state, using the full shared-failure analysis below (file and main evidence).
+It is read-only; `--requeue --yes` moves the free ones to CI repair with one
+label-set replacement after re-reading each PR. It refuses a PR whose head or
+stage changed, one a worker's owner label holds, and one with a live Neon lease
+(where Neon is configured; an unreadable Neon counts as held). Checks named in
+the `FACTORY_ADVISORY_CHECKS` repository variable are ignored. `doctor` reports
+the same finding, and `doctor --fix` performs the move.
 
 ### Failing because of main
 
