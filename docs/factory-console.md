@@ -141,7 +141,9 @@ same board, then plans:
 - **Nothing backed up**: the issues that can start now.
 
 PRs a worker already holds are listed, never taken. Each task gets the
-provider and model with the best delivered track record over 7 days, from
+best-ranked model that has not missed on that same item in the last 6 hours
+(from `outcomes`), so a model that just left a conflict in place is not sent
+back to it. Models are ranked by delivered track record over 7 days, from
 the published reliability counts: set up in the repository, not paused, at
 least 3 runs, at least one PR delivered. Name `PROVIDER MODEL` to choose them
 yourself.

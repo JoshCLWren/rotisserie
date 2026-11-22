@@ -11,11 +11,18 @@ Starting the plan submits one forced, targeted request per task.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import datetime, timedelta
 
 from rotisserie.factory_console import runtime
-from rotisserie.factory_console.github import GitHub
-from rotisserie.factory_console.service import catalog, dispatch, providers, queue, reliability
+from rotisserie.factory_console.github import GitHub, GitHubError
+from rotisserie.factory_console.service import (
+    catalog,
+    dispatch,
+    outcomes,
+    providers,
+    queue,
+    reliability,
+)
 from rotisserie.factory_console.tracker import Clock
 
 # Order within the backlog: a review can move a PR straight to ready (out of the
@@ -52,6 +59,7 @@ class Assignment:
     task: Task
     provider: str  # provider key
     model: str
+    why: str = ""  # why this model for this task
 
     def request(self) -> dispatch.Request:
         return dispatch.Request(
@@ -162,8 +170,9 @@ def plan(
             )
 
     capped = tasks if max_workers is None else tasks[:max_workers]
-    choice_text, chosen, problems = _choose_model(github, variables, now, provider, model)
-    assignments = tuple(Assignment(task, chosen[0], chosen[1]) for task in capped) if chosen else ()
+    choice_text, ranked, problems = _choose_models(github, variables, now, provider, model)
+    missed = _recent_misses(github, now) if ranked and len(ranked) > 1 else {}
+    assignments = tuple(_assign(task, ranked, missed) for task in capped) if ranked else ()
     if not tasks:
         problems = (*problems, "nothing is waiting that a new worker could take")
     return Plan(
@@ -177,22 +186,55 @@ def plan(
     )
 
 
-def _choose_model(
+# How far back a model's miss on an item keeps it off that item.
+MISS_WINDOW = timedelta(hours=6)
+
+
+def _recent_misses(github: GitHub, now: datetime) -> dict[str, set[str]]:
+    """Models whose recent request on each target did not reach its goal."""
+    found: dict[str, set[str]] = {}
+    try:
+        recent = outcomes.request_outcomes(github, since=now - MISS_WINDOW)
+    except GitHubError:
+        return found
+    for item in recent:
+        if item.goal == "not-met" and item.model and item.target:
+            found.setdefault(item.target, set()).add(item.model)
+    return found
+
+
+def _assign(
+    task: Task, ranked: list[tuple[str, str, str]], missed: dict[str, set[str]]
+) -> Assignment:
+    """The best-ranked model that has not just missed on this task's target."""
+    tried = missed.get(task.target, set())
+    for provider, model, why in ranked:
+        if model not in tried:
+            note = f"; {', '.join(sorted(tried))} just missed on it" if tried else ""
+            return Assignment(task, provider, model, why + note)
+    provider, model, why = ranked[0]
+    return Assignment(
+        task, provider, model, why + "; every offered model already missed on it recently"
+    )
+
+
+def _choose_models(
     github: GitHub,
     variables: dict[str, str],
     now: datetime,
     provider: str | None,
     model: str | None,
-) -> tuple[str, tuple[str, str] | None, tuple[str, ...]]:
+) -> tuple[str, list[tuple[str, str, str]], tuple[str, ...]]:
+    """Ranked (provider key, model, why) choices, best first."""
     if provider and model:
         found = runtime.resolve_provider(provider)
         runtime.validate_model(found, model)
-        return "you chose it", (found.key, model), ()
+        return "you chose it", [(found.key, model, "you chose it")], ()
     stats = reliability.load_stats(github)
     if stats is None:
         return (
             "no track record is published yet",
-            None,
+            [],
             ("no reliability snapshot to pick a model from; name PROVIDER MODEL",),
         )
     setup = providers.provider_setup(github, variables)
@@ -203,14 +245,14 @@ def _choose_model(
     if not choices:
         return (
             "no set-up model has delivered recently",
-            None,
+            [],
             (
                 "no set-up, unpaused model that the provider still offers has a track record; "
                 "name PROVIDER MODEL",
             ),
         )
-    best = choices[0]
-    return f"best track record: {best.why}", (best.provider.key, best.model), ()
+    ranked = [(item.provider.key, item.model, item.why) for item in choices]
+    return f"best track record: {choices[0].why}", ranked, ()
 
 
 def start(github: GitHub, clock: Clock, chosen: Plan) -> list[dispatch.Submission]:

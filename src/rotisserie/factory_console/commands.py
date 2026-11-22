@@ -1598,24 +1598,31 @@ def _show_plan(console: Console, found: unstick.Plan) -> None:
     if not found.assignments:
         return
     first = found.assignments[0]
+    models = {(item.provider, item.model) for item in found.assignments}
     console.heading(f"Plan: {len(found.assignments)} workers")
-    console.fields(
-        [
+    rows_meta = [("Why", found.model_choice)] if len(models) == 1 else []
+    if len(models) == 1:
+        rows_meta = [
             ("Provider", runtime.resolve_provider(first.provider).name),
             ("Model", first.model),
-            ("Why", found.model_choice),
-            ("Override", "On: targeted requests ignore the factory's own limits"),
+            *rows_meta,
         ]
+    console.fields(
+        [*rows_meta, ("Override", "On: targeted requests ignore the factory's own limits")]
     )
     rows = [
         [
             item.task.target.replace(":", " #").replace("pr", "PR"),
             unstick.ACTION_WORDS[item.task.action],
-            item.task.title if len(item.task.title) <= 60 else item.task.title[:59] + "…",
+            item.model.split("/", 1)[-1],
+            item.task.title if len(item.task.title) <= 50 else item.task.title[:49] + "…",
         ]
         for item in found.assignments
     ]
-    console.table(["Item", "Work", "Title"], rows)
+    console.table(["Item", "Work", "Model", "Title"], rows)
+    for item in found.assignments:
+        if "missed" in item.why:
+            console.line(f"  {item.task.target}: {item.why.split('; ', 1)[-1]}")
     if found.left_out:
         console.line(f"  {found.left_out} more could be started (raise --max)")
     console.line()

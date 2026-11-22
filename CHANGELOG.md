@@ -23,7 +23,9 @@ such change must be called out here and in its release notes.
 - `rotisserie factory outcomes` follows each requested piece of work to its
   effect and says whether its goal holds now (conflict gone, checks fixed,
   review decided, PR delivered), flagging workers that reported success or
-  "nothing to do" while the problem remains.
+  "nothing to do" while the problem remains. `unstick` uses it to avoid
+  sending a model back to an item it just missed on, so workers spread across
+  models.
 - `status` shows each worker's model. Worker runs are now named
   `Factory N · MODEL · fixed-model entry` (`auto` when the worker picks it);
   every run-name parser accepts both that and the older model-less name.
