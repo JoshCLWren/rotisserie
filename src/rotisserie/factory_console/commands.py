@@ -18,8 +18,6 @@ import argparse
 import json
 import os
 import re
-import shutil
-import subprocess
 import sys
 from collections import Counter
 from collections.abc import Sequence
@@ -42,7 +40,14 @@ from rotisserie.factory_console.github import (
     string,
     timestamp,
 )
-from rotisserie.factory_console.service import dispatch, providers, queue, reliability, unstick
+from rotisserie.factory_console.service import (
+    catalog,
+    dispatch,
+    providers,
+    queue,
+    reliability,
+    unstick,
+)
 from rotisserie.factory_console.tracker import (
     DISPATCH_WORKFLOW,
     EXIT_CODES,
@@ -1647,45 +1652,7 @@ def cmd_providers(context: Context, arguments: argparse.Namespace) -> Outcome:
     return Outcome(Result.COMPLETED, EXIT_OK, {"providers": out})
 
 
-def discover_models(provider: runtime.Provider) -> list[tuple[str, str]]:
-    """Models from live sources, each labelled with where it came from."""
-    found: dict[str, str] = {}
-    if provider.model_prefix:
-        for model in _opencode_catalog():
-            if model.startswith(provider.model_prefix):
-                if provider.source == "openrouter-free" and not model.endswith(":free"):
-                    continue
-                found.setdefault(model, "listed by your local OpenCode")
-        try:
-            for model in runtime.published_models(provider):
-                found.setdefault(
-                    f"{provider.model_prefix}{model}"
-                    if not model.startswith(provider.model_prefix)
-                    else model,
-                    "listed by the provider",
-                )
-        except Exception:  # noqa: BLE001 - public catalogs are best effort
-            pass
-    return sorted(found.items())
-
-
-def _opencode_catalog() -> list[str]:
-    for candidate in ("opencode", str(Path.home() / ".opencode/bin/opencode")):
-        executable = shutil.which(candidate) or (candidate if Path(candidate).is_file() else None)
-        if executable is None:
-            continue
-        try:
-            output = subprocess.run(
-                [executable, "models"], capture_output=True, text=True, timeout=45, check=False
-            ).stdout
-        except (OSError, subprocess.SubprocessError):
-            continue
-        return [
-            line.split()[0]
-            for line in output.splitlines()
-            if line.strip() and "/" in line.split()[0]
-        ]
-    return []
+discover_models = catalog.discover_models
 
 
 def cmd_models(context: Context, arguments: argparse.Namespace) -> Outcome:
@@ -1707,11 +1674,10 @@ def cmd_models(context: Context, arguments: argparse.Namespace) -> Outcome:
     models = discover_models(provider)
     known = {model for model, _ in models}
     rows = [[model, record.get(model, ""), origin] for model, origin in models]
-    rows += [
-        [model, value, "ran in the factory"]
-        for model, value in record.items()
-        if model not in known
-    ]
+    # A model with a track record that the live lists no longer include would be
+    # refused by the worker; say so instead of offering it.
+    gone = "no longer offered (the worker would refuse it)" if known else "ran in the factory"
+    rows += [[model, value, gone] for model, value in record.items() if model not in known]
     rows.sort(key=lambda row: (row[1] == "", row[0]))
     console.heading(f"{provider.name} models")
     if not provider.model_prefix:
@@ -1729,7 +1695,15 @@ def cmd_models(context: Context, arguments: argparse.Namespace) -> Outcome:
         EXIT_OK,
         {
             "provider": provider.key,
-            "models": [{"model": r[0], "track_record": r[1] or None, "source": r[2]} for r in rows],
+            "models": [
+                {
+                    "model": r[0],
+                    "track_record": r[1] or None,
+                    "source": r[2],
+                    "offered": (r[0] in known) if known else None,
+                }
+                for r in rows
+            ],
         },
     )
 

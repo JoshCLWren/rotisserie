@@ -11,6 +11,11 @@ such change must be called out here and in its release notes.
 
 ### Fixed
 
+- `unstick` picked models the provider no longer offers, so every worker it
+  started failed at model selection ("not a current zero-price tool-capable Go
+  model"). It now checks the live model lists (local OpenCode CLI, published
+  catalogs) and skips dropped models; models it cannot check rank last and say
+  so. `models PROVIDER` marks track-record models the provider dropped.
 - `stats` showed models as paused after their cooldown had ended.
 
 ### Added

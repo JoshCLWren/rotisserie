@@ -15,7 +15,7 @@ from datetime import datetime
 
 from rotisserie.factory_console import runtime
 from rotisserie.factory_console.github import GitHub
-from rotisserie.factory_console.service import dispatch, providers, queue, reliability
+from rotisserie.factory_console.service import catalog, dispatch, providers, queue, reliability
 from rotisserie.factory_console.tracker import Clock
 
 # Order within the backlog: a review can move a PR straight to ready (out of the
@@ -199,12 +199,15 @@ def _choose_model(
     ready = {item.provider.key for item in setup if item.ready}
     if provider:
         ready &= {runtime.resolve_provider(provider).key}
-    choices = reliability.pick_models(stats, ready=ready, now=now)
+    choices = reliability.pick_models(stats, ready=ready, now=now, live=catalog.live_models)
     if not choices:
         return (
             "no set-up model has delivered recently",
             None,
-            ("no set-up, unpaused model has a track record; name PROVIDER MODEL",),
+            (
+                "no set-up, unpaused model that the provider still offers has a track record; "
+                "name PROVIDER MODEL",
+            ),
         )
     best = choices[0]
     return f"best track record: {best.why}", (best.provider.key, best.model), ()

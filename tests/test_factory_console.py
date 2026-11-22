@@ -1005,6 +1005,20 @@ def stats_snapshot(*models: tuple[str, str, int, int, Obj]) -> Obj:
 HEALTHY: Obj = {"status": "healthy"}
 
 
+LIVE_MODELS: dict[str, frozenset[str] | None] = {}
+
+
+@pytest.fixture(autouse=True)
+def live_catalog(monkeypatch: pytest.MonkeyPatch) -> dict[str, frozenset[str] | None]:
+    """Never read this machine's OpenCode CLI or the network in tests."""
+    from rotisserie.factory_console.service import catalog
+
+    LIVE_MODELS.clear()
+    monkeypatch.setattr(catalog, "live_models", lambda provider: LIVE_MODELS.get(provider.key))
+    monkeypatch.setattr(catalog, "opencode_catalog", lambda: [])
+    return LIVE_MODELS
+
+
 def unstick_routes(fake: FakeGitHub, prs: list[Obj], issues: list[Obj] | None = None) -> None:
     why_routes(fake, issues or [open_issue(41, "factory:unowned")], prs)
     fake.routes["secret-list"] = [{"name": "OPENCODE_GO_CLIENT_ID"}, {"name": "NVIDIA_API_KEY"}]
@@ -1130,7 +1144,7 @@ def test_unstick_reports_when_no_model_has_a_track_record(fake: FakeGitHub) -> N
     fake.routes["secret-list"] = []
     code, out = invoke(["unstick", "--dry-run"])
     assert code == 3
-    assert "No set-up, unpaused model has a track record; name PROVIDER MODEL" in out
+    assert "No set-up, unpaused model that the provider still offers has a track record" in out
 
 
 def test_paused_models_count_as_paused_only_until_the_cooldown_ends() -> None:
@@ -1211,3 +1225,40 @@ def test_status_shows_each_workers_model_from_its_run_name(fake: FakeGitHub) -> 
         "issue:12": "auto",
         "issue:13": None,
     }
+
+
+def test_unstick_skips_models_the_provider_no_longer_offers(fake: FakeGitHub) -> None:
+    unstick_routes(fake, FULL_BACKLOG)
+    # nemotron has the best record but OpenCode Go no longer lists it; the worker
+    # would refuse it ("not a current zero-price tool-capable Go model").
+    LIVE_MODELS["opencode-go"] = frozenset({"opencode-go/hy4-flash-free"})
+    code, out = invoke(["--json", "unstick", "--dry-run"])
+    plan = json.loads(out)["plan"]
+    assert {item["model"] for item in plan["assignments"]} == {"opencode-go/hy4-flash-free"}
+    assert "could not check" not in plan["model_choice"]
+
+
+def test_unstick_ranks_unverifiable_models_after_checked_ones(fake: FakeGitHub) -> None:
+    unstick_routes(fake, FULL_BACKLOG)
+    LIVE_MODELS["opencode-go"] = None  # no readable live list on this machine
+    code, out = invoke(["--json", "unstick", "--dry-run"])
+    plan = json.loads(out)["plan"]
+    assert "could not check that the provider still offers it" in plan["model_choice"]
+
+
+def test_models_flags_track_record_models_the_provider_dropped(
+    fake: FakeGitHub, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from rotisserie.factory_console.service import catalog
+
+    fake.routes["contents/factory-stats.json"] = stats_snapshot(
+        ("opencode-free", "hy4-flash-free", 10, 2, HEALTHY),
+        ("opencode-free", "deepseek-v4.1-flash-free", 29, 4, HEALTHY),
+    )
+    monkeypatch.setattr(catalog, "opencode_catalog", lambda: ["opencode-go/hy4-flash-free"])
+    code, out = invoke(["--json", "models", "opencode-go"])
+    rows = {row["model"]: row for row in json.loads(out)["models"]}
+    assert code == 0
+    assert rows["opencode-go/hy4-flash-free"]["offered"] is True
+    assert rows["opencode-go/deepseek-v4.1-flash-free"]["offered"] is False
+    assert "no longer offered" in rows["opencode-go/deepseek-v4.1-flash-free"]["source"]

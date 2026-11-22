@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import base64
 import json
+from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import datetime
 
@@ -110,6 +111,7 @@ class Choice:
     model: str
     record: ModelRecord
     why: str
+    checked: bool = True  # the provider's live list includes it
 
 
 def dispatch_model_id(provider: runtime.Provider, model: str) -> str | None:
@@ -134,16 +136,21 @@ def pick_models(
     now: datetime,
     name: str = "7d",
     minimum_runs: int = 3,
+    live: Callable[[runtime.Provider], frozenset[str] | None] | None = None,
 ) -> list[Choice]:
     """Models that can run now, best delivered track record first.
 
     ``ready`` holds provider keys whose credentials are set up. Paused and
     retired models are left out; so are models with fewer than
     ``minimum_runs`` runs or nothing delivered, because one lucky run is not
-    a track record.
+    a track record. ``live`` lists the models a provider offers right now; a
+    model missing from a readable list is left out (the worker would refuse
+    it), and one whose provider has no readable list is kept but ranked after
+    every checked model.
     """
     providers = {provider.source: provider for provider in runtime.providers()}
     choices = []
+    offered: dict[str, frozenset[str] | None] = {}
     for record in model_records(stats, name=name, now=now):
         provider = providers.get(record.source)
         if provider is None or provider.key not in ready:
@@ -155,12 +162,24 @@ def pick_models(
         model = dispatch_model_id(provider, record.model)
         if model is None:
             continue
+        if provider.key not in offered:
+            offered[provider.key] = live(provider) if live else None
+        listed = offered[provider.key]
+        if listed is not None and model not in listed:
+            continue
         why = (
             f"{record.delivered} of {record.runs} runs delivered a pull request "
             f"in the last {'7 days' if name == '7d' else '24 hours'}"
         )
-        choices.append(Choice(provider, model, record, why))
+        if listed is None:
+            why += " (could not check that the provider still offers it)"
+        choices.append(Choice(provider, model, record, why, checked=listed is not None))
     return sorted(
         choices,
-        key=lambda item: (-item.record.delivery_rate, -item.record.delivered, item.model),
+        key=lambda item: (
+            not item.checked,
+            -item.record.delivery_rate,
+            -item.record.delivered,
+            item.model,
+        ),
     )
