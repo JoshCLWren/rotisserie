@@ -393,11 +393,12 @@ def parse_outcome(log: str) -> WorkerOutcome | None:
     if match is None:
         return None
     message = match.group("message").strip()
-    pr = re.search(r"PR #(\d+)", message)
+    # "Verified PR #N was handed off" or "Code saved on the work PR; ... (work PR: N)".
+    pr = re.search(r"PR #(\d+)|work PR: (\d+)", message)
     return WorkerOutcome(
         VERDICTS.get(match.group("verdict"), Result.UNKNOWN),
         message,
-        int(pr.group(1)) if pr else None,
+        int(pr.group(1) or pr.group(2)) if pr else None,
     )
 
 

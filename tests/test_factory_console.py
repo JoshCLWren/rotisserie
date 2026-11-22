@@ -397,6 +397,15 @@ def test_failure_reasons_drop_generic_exit_lines_and_read_tracebacks() -> None:
     assert failure_reasons([], log) == ["Unsupported factory provider: bogus"]
 
 
+def test_failed_outcome_still_links_the_work_pr_with_saved_code() -> None:
+    # Verbatim from live run 44968096160 (issue #5592).
+    outcome = parse_outcome(
+        "[factory-outcome] failed: Code saved on the work PR; validation incomplete; "
+        "worker failed: work_failure (work PR: 5660)"
+    )
+    assert outcome is not None and (outcome.result, outcome.pr) == (Result.FAILED, 5660)
+
+
 def test_worker_outcome_verdicts() -> None:
     delivered = parse_outcome(
         "t [factory-outcome] code_delivered: Verified PR #5701 was handed off; agent outcome: success"
