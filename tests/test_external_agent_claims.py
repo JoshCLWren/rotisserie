@@ -31,6 +31,8 @@ class GitHubDouble:
         self.head = head
         self.priority = priority
         self.dependency_open = dependency_open
+        self.review_labels: list[str] = []
+        self.review_issue = 7
 
     def whoami(self) -> str:
         return "alice"
@@ -43,8 +45,21 @@ class GitHubDouble:
         if route.startswith("issues/"):
             return {"state": "open", "labels": [{"name": self.priority}]}
         if route.startswith("pulls/"):
-            return {"state": "open", "head": {"sha": self.head, "ref": "work-7"}}
+            return {
+                "state": "open",
+                "title": "Implement issue",
+                "body": f"Closes #{self.review_issue}",
+                "draft": False,
+                "labels": [{"name": x} for x in self.review_labels],
+                "head": {"sha": self.head, "ref": "work-7"},
+            }
         raise AssertionError(route)
+
+    def gh(self, *args: str, **kwargs: Any) -> str:
+        assert args[:1] == ("api",)
+        assert "issues/88/labels" in str(args[1])
+        self.review_labels = ["factory", "factory:review", "factory:unowned"]
+        return "{}"
 
 
 class LedgerDouble:
@@ -53,6 +68,17 @@ class LedgerDouble:
         self.holder: str | None = None
         self.calls = 0
         self.code_authors: set[str] = set()
+
+    def external_claim_details(
+        self, repo: str, actor: str, client: str, claim_id: str
+    ) -> dict[str, object]:
+        if self.holder != client:
+            raise RuntimeError("claim identity changed")
+        return {
+            "target": "issue:7", "action": "implement", "head": None,
+            "targets": [7], "client": client, "actor": actor,
+            "claim_id": claim_id,
+        }
 
     def external_code_authors(self, repo: str, numbers: list[int]) -> set[str]:
         assert repo == REPO
@@ -85,9 +111,12 @@ class LedgerDouble:
         with self.lock:
             if client != self.holder:
                 return {"status": "conflict", "reason": "stale_or_wrong_client"}
-            if kwargs.get("operation") == "release":
+            if kwargs.get("operation") in {"release", "handoff"}:
                 self.holder = None
-                return {"status": "released"}
+                return {
+                    "status": "released",
+                    "handoff_recorded": kwargs.get("operation") == "handoff",
+                }
             return {"status": "renewed"}
 
 
@@ -385,3 +414,37 @@ def test_dependency_opened_after_neon_cas_releases_our_claim(
     assert "99" in str(result["reason"])
     assert setup.calls == 1
     assert setup.holder is None
+
+
+def test_fenced_implementation_handoff_enrolls_linked_pr_for_independent_review(
+    setup: LedgerDouble,
+) -> None:
+    github = GitHubDouble()
+    reserved = external.reserve_next(cast(GitHub, github), client="chatgpt", environment={})
+    assert reserved["status"] == "reserved"
+    delivered = external.claim_action(
+        cast(GitHub, github), client="chatgpt",
+        claim_id="11111111-1111-4111-8111-111111111111",
+        operation="handoff", environment={},
+        evidence=f"https://github.com/{REPO}/pull/88",
+    )
+    assert delivered["handoff_recorded"] is True
+    assert github.review_labels == ["factory", "factory:review", "factory:unowned"]
+    assert setup.holder is None
+
+
+def test_unrelated_handoff_pr_cannot_release_implementation_claim(
+    setup: LedgerDouble,
+) -> None:
+    github = GitHubDouble()
+    github.review_issue = 99
+    external.reserve_next(cast(GitHub, github), client="codebuff", environment={})
+    with pytest.raises(ValueError, match="linked issue"):
+        external.claim_action(
+            cast(GitHub, github), client="codebuff",
+            claim_id="11111111-1111-4111-8111-111111111111",
+            operation="handoff", environment={},
+            evidence=f"https://github.com/{REPO}/pull/88",
+        )
+    assert setup.holder == "codebuff"
+    assert github.review_labels == []
