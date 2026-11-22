@@ -31,17 +31,16 @@ def test_github_frontier_is_manual_and_read_only() -> None:
 
 def test_installer_inserts_pinned_runtime_before_frontier_query() -> None:
     import importlib.util
+    import sys
 
     installer_path = ROOT / "install" / "install.py"
     spec = importlib.util.spec_from_file_location("frontier_installer", installer_path)
     assert spec is not None and spec.loader is not None
-    # Use the module's own path so its dataclasses are resolved correctly.
-    from runpy import run_path
-
-    installer = run_path(str(installer_path), run_name="frontier_installer")
-    render = installer["render"]
+    installer = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = installer
+    spec.loader.exec_module(installer)
     sha = "c" * 40
-    rendered = render(TEMPLATE.read_text(encoding="utf-8"), source="org/rotisserie", ref=sha)
+    rendered = installer.render(TEMPLATE.read_text(encoding="utf-8"), source="org/rotisserie", ref=sha)
     assert "repository: org/rotisserie" in rendered
     assert f"ref: {sha}" in rendered
     assert "bash .rotisserie/runtime/factory/install/overlay.sh" in rendered
