@@ -83,6 +83,8 @@ packages = ["src/rotisserie"]
 [tool.pytest.ini_options]
 addopts = "-ra"
 testpaths = ["prototype", "tests"]
+# Tests import repository scripts (`scripts.publish_factory_quota`) from the root.
+pythonpath = ["."]
 
 [tool.ruff]
 target-version = "py312"
