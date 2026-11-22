@@ -108,6 +108,7 @@ OUTCOME_WORDS = {
     "unknown_failure": "unclassified failure",
     "unconfigured": "provider not configured",
 }
+TAKE_OVER_ATTEMPTS = 2
 FORCE_EXPLANATION = (
     "Ignores the factory's own limits (open-PR and review limits, cooldowns, "
     "health history, budgets, pauses, worker counts). It still cannot take "
@@ -529,17 +530,41 @@ def cmd_run(context: Context, arguments: argparse.Namespace) -> Outcome:
     data["request"] = request.to_dict()
     if request.target:
         data["target_ref"] = request.target
-    if request.target and request.take_over:
-        kind, number = _split_target(request.target)
+    if not (request.target and request.take_over):
+        return _submit_and_watch(
+            context, request, data, no_wait=arguments.no_wait, follow=arguments.follow
+        )
+    # Between releasing the old worker and this request reaching the scheduler, a
+    # routine pass can hand the item to another worker. A takeover therefore waits
+    # for the scheduler's decision (even with --no-wait) and, if the item was
+    # re-claimed in that gap, takes it over once more.
+    kind, number = _split_target(request.target)
+    outcome = Outcome(Result.UNKNOWN, EXIT_CODES[Result.UNKNOWN], data)
+    stopped_workers: list[str] = []
+    for attempt in range(TAKE_OVER_ATTEMPTS):
         item = lookup(context.github, kind, number)
         if item.owner:
             stopped = _stop_worker(context, item, wait=True, purpose="take over")
+            stopped_workers.append(item.owner)
+            data["stopped_workers"] = list(stopped_workers)
             data["stopped_worker"] = item.owner
             if not stopped:
                 return Outcome(Result.FAILED, EXIT_CODES[Result.FAILED], data)
-    return _submit_and_watch(
-        context, request, data, no_wait=arguments.no_wait, follow=arguments.follow
-    )
+        outcome = _submit_and_watch(
+            context,
+            request,
+            data,
+            no_wait=False,
+            follow=arguments.follow,
+            decision_only=arguments.no_wait,
+        )
+        if outcome.result is not Result.BUSY or attempt + 1 == TAKE_OVER_ATTEMPTS:
+            break
+        console.warn(
+            f"Another worker claimed #{number} before this request landed; taking it over again"
+        )
+    data["take_over_attempts"] = attempt + 1
+    return outcome
 
 
 def _show_request(console: Console, request: Request) -> None:
@@ -576,7 +601,13 @@ def _split_target(target: str) -> tuple[str, int]:
 
 
 def _submit_and_watch(
-    context: Context, request: Request, data: dict[str, object], *, no_wait: bool, follow: bool
+    context: Context,
+    request: Request,
+    data: dict[str, object],
+    *,
+    no_wait: bool,
+    follow: bool,
+    decision_only: bool = False,
 ) -> Outcome:
     console = context.console
     submission = dispatch.submit(context.github, context.clock, request)
@@ -595,7 +626,14 @@ def _submit_and_watch(
         return Outcome(Result.SUBMITTED, EXIT_CODES[Result.SUBMITTED], data)
     tracker = Tracker(context.github, context.clock)
     return _watch_scheduler(
-        context, tracker, run_id, submission.submitted_at, data, follow=follow, request=request
+        context,
+        tracker,
+        run_id,
+        submission.submitted_at,
+        data,
+        follow=follow,
+        request=request,
+        decision_only=decision_only,
     )
 
 
@@ -608,6 +646,7 @@ def _watch_scheduler(
     *,
     follow: bool,
     request: Request | None = None,
+    decision_only: bool = False,
 ) -> Outcome:
     console = context.console
     shown: set[Stage] = set()
@@ -628,7 +667,9 @@ def _watch_scheduler(
     console.finish()
     outcome = tracker.dispatch_outcome(run_id, jobs)
     data["scheduler"] = asdict(outcome)
-    return _report_dispatch(context, tracker, outcome, data, follow=follow, request=request)
+    return _report_dispatch(
+        context, tracker, outcome, data, follow=follow, request=request, decision_only=decision_only
+    )
 
 
 def _report_dispatch(
@@ -639,6 +680,7 @@ def _report_dispatch(
     *,
     follow: bool,
     request: Request | None,
+    decision_only: bool = False,
 ) -> Outcome:
     console = context.console
     scheduler_url = str(data.get("scheduler_url", ""))
@@ -660,6 +702,10 @@ def _report_dispatch(
         console.note(f"Task: {ACTION_WORDS.get(assignment.action, assignment.action)}")
         data["target_ref"] = f"{assignment.kind}:{assignment.number}"
         data["assignment"] = asdict(assignment)
+        if decision_only:
+            console.link("Scheduler", scheduler_url)
+            console.note(f"Follow the worker: rotisserie factory watch {data['scheduler_run_id']}")
+            return Outcome(Result.SUBMITTED, EXIT_CODES[Result.SUBMITTED], data)
         return _watch_worker(context, tracker, assignment, data, follow=follow)
     console.line()
     if outcome.status == "busy":

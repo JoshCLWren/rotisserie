@@ -125,7 +125,7 @@ class FakeGitHub:
     """Routes ``gh`` invocations to scripted responses and records them."""
 
     routes: dict[str, JSON | Callable[[], JSON]] = field(default_factory=dict)
-    texts: dict[str, str] = field(default_factory=dict)
+    texts: dict[str, str | Callable[[], str]] = field(default_factory=dict)
     calls: list[list[str]] = field(default_factory=list)
     dispatch_output: str = f"https://github.com/{REPO}/actions/runs/900\n"
     error: Exception | None = None
@@ -146,7 +146,7 @@ class FakeGitHub:
             if "--allow-escape-sequences" in argv:
                 for prefix, text in self.texts.items():
                     if path.endswith(prefix):
-                        return text
+                        return text() if callable(text) else text
                 return ""
             for prefix, value in self.routes.items():
                 if re.search(prefix, path):
@@ -1772,3 +1772,65 @@ def test_doctor_fix_reruns_the_publisher_for_a_stale_snapshot(fake: FakeGitHub) 
     run = next(call for call in fake.calls if call[0] == "workflow")
     assert run[:3] == ["workflow", "run", "factory-status-pages.yml"]
     assert "started factory-status-pages.yml" in out
+
+
+def test_take_over_retries_when_a_routine_pass_reclaims_the_item(fake: FakeGitHub) -> None:
+    """Stopping the holder frees the item; a routine pass can grab it first."""
+    slots = runtime.module("factory_worker_slots")
+    first, second = str(slots.worker_id("z-ai", 0)), str(slots.worker_id("kilo-auto", 0))
+    phase = {"n": 0}  # 0: first holds it, 1: second re-claimed it, 2: free
+
+    def issue() -> JSON:
+        owner = {0: first, 1: second}.get(phase["n"])
+        labels: list[JSON] = [{"name": f"factory:{owner}"}] if owner else []
+        return {"number": 3953, "title": "t", "labels": labels, "state": "open"}
+
+    def running() -> JSON:
+        owner = {0: first, 1: second}.get(phase["n"])
+        rows: list[JSON] = []
+        if owner:
+            rows.append(
+                {
+                    "id": 777 + phase["n"],
+                    "display_title": f"Factory {owner} · fixed-model entry",
+                    "status": "in_progress",
+                    "run_started_at": "2026-11-21T22:00:00Z",
+                }
+            )
+        return {"workflow_runs": rows}
+
+    def decision() -> str:
+        sent = sum(1 for call in fake.calls if call[0] == "workflow")
+        if sent == 1:
+            return (
+                '{"status":"busy","number":3953,"owner":"factory:'
+                + second
+                + '","owner_worker":"'
+                + second
+                + '"}\n'
+            )
+        return dispatched_log()
+
+    scheduler_routes(fake, log="")
+    fake.texts["actions/jobs/11/logs"] = decision
+    fake.routes["issues/3953$"] = issue
+    fake.routes = {"status=in_progress": running, **fake.routes}
+    clock = FakeClock()
+
+    def release(count: int) -> None:
+        cancels = sum(1 for call in fake.calls if call[:2] == ["run", "cancel"])
+        phase["n"] = 1 if cancels == 1 else 2
+
+    clock.on_sleep = release
+    code, out = invoke(
+        ["--json", "run", "opencode-go", "auto", "--target", "issue:3953", "--take-over",
+         "--no-wait"],
+        clock=clock,
+    )  # fmt: skip
+    data = json.loads(out)
+    assert code == 0, out
+    assert data["take_over_attempts"] == 2
+    assert data["stopped_workers"] == [first, second]
+    cancels = [call[2] for call in fake.calls if call[:2] == ["run", "cancel"]]
+    assert cancels == ["777", "778"]
+    assert sum(1 for call in fake.calls if call[0] == "workflow") == 2

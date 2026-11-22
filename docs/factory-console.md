@@ -50,7 +50,7 @@ asks nothing.
 | `--force` (alias `--force-slot`) | override the factory's own limits (below) |
 | `--slot N` | use worker number N for the provider (implies `--force`) |
 | `--action ACTION` | on a chosen PR: `review`, `review-findings`, `ci-repair`, `merge-conflict` |
-| `--take-over` | if another worker holds the target, stop it first, then start yours |
+| `--take-over` | if another worker holds the target, stop it first, then start yours; waits for the scheduler's decision (even with `--no-wait`) and takes over once more if a routine pass re-claimed the item in between |
 | `--no-wait` | submit and return immediately |
 | `--follow` | watch until the worker finishes and show the PR's checks and review |
 | `--json` | print one JSON document instead of progress |

@@ -11,6 +11,9 @@ such change must be called out here and in its release notes.
 
 ### Fixed
 
+- `run --take-over` could lose the item to a routine scheduler pass between
+  stopping the holder and its own request landing ("busy"). It now waits for
+  the scheduler's decision and takes over once more if that happened.
 - `outcomes` judged ci-repair by the PR's stage label; it now requires the
   PR's checks to pass. When a worker fails validation it names the factory
   gate that rejected the change (e.g. "factory fast checks failed: native
