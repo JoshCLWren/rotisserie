@@ -58,7 +58,8 @@ def slot_count(env: Mapping[str, str] | None = None) -> int:
             variables = json.loads(values.get("FACTORY_REPO_VARS") or "{}")
         except ValueError:
             variables = {}
-        if isinstance(variables, dict) and variables.get("FACTORY_SLOTS_PER_PROVIDER") is not None:
+        # Unset repository variables arrive as "" and mean the default.
+        if isinstance(variables, dict) and str(variables.get("FACTORY_SLOTS_PER_PROVIDER") or ""):
             raw = str(variables["FACTORY_SLOTS_PER_PROVIDER"])
     raw = "12" if raw is None else raw
     try:
