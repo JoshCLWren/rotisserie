@@ -240,7 +240,10 @@ def make_handler(
             parsed = urlsplit(self.path)
             if parsed.path == "/":
                 # Host validation for the document prevents DNS-rebinding access.
-                if self.headers.get("Host", "") != f"127.0.0.1:{cast(ThreadingHTTPServer, self.server).server_port}":
+                if (
+                    self.headers.get("Host", "")
+                    != f"127.0.0.1:{cast(ThreadingHTTPServer, self.server).server_port}"
+                ):
                     self._send_json(403, {"error": "This console is localhost-only."})
                     return
                 page = files("rotisserie").joinpath("web_ui.html").read_text(encoding="utf-8")
