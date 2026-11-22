@@ -102,6 +102,7 @@ def _target_leases(repository: str, rows: list[dict[str, Any]]) -> dict[int, dic
             "operation": str(row.get("operation", "")),
             "expires_at": str(row.get("expires_at", "")),
             "active": row.get("active") is True,
+            "wip": row.get("wip") is True,
         }
     return leases
 
@@ -305,15 +306,24 @@ def capture(github: GitHub, *, now: datetime) -> Frontier:
     board = summary.board
     # This is precisely the installed factory policy's deterministic candidate
     # order. In-flight Jev overrides remain controller-owned, never simulated.
+    # Shared Neon target keys record external ownership; count each linked
+    # PR/issue claim only once when enforcing the normal WIP gate.
+    leases, problem = _active_leases(github.repo)
+    external_wip = len({
+        str(value["claim_id"])
+        for value in leases.values()
+        if str(value.get("operation", "")).startswith("external:")
+        and value.get("wip") is True
+    })
     core = runtime.module("factory_work_policy")
     candidates = core.build_candidates(
         board.issues,
         board.prs,
         pr_wip_limit=board.pr_wip_limit,
         review_backlog_limit=board.review_backlog_limit,
+        external_wip=external_wip,
     )
     by_issue = {entry.issue: entry.verdict for entry in summary.entries}
-    leases, problem = _active_leases(github.repo)
     rows_for_counts: list[Mapping[str, object]] = list(board.prs)
     return from_snapshot(
         github.repo,
