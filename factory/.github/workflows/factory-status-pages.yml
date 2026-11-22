@@ -4,6 +4,12 @@ on:
   schedule:
     - cron: '*/15 * * * *'
   workflow_dispatch:
+  # GitHub ran the */15 schedule only 3 times in ~14 hours on Comic Pile, so the
+  # reliability snapshot went stale for hours. The scheduler finishes every few
+  # minutes: after it, publish only when the snapshot is actually stale.
+  workflow_run:
+    workflows: ["Fixed Model Factory Dispatcher"]
+    types: [completed]
   push:
     branches: [main]
     paths:
@@ -36,7 +42,35 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  freshness:
+    runs-on: ubuntu-latest
+    outputs:
+      stale: ${{ steps.age.outputs.stale }}
+    steps:
+      - id: age
+        name: Skip a scheduler-triggered refresh while the snapshot is fresh
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EVENT: ${{ github.event_name }}
+        run: |
+          set -euo pipefail
+          if [[ "$EVENT" != "workflow_run" ]]; then
+            echo "stale=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          generated="$(gh api "repos/${GITHUB_REPOSITORY}/contents/factory-stats.json?ref=factory-status-live" \
+            --jq '.content' 2>/dev/null | base64 -d 2>/dev/null | jq -r '.generated_at // empty' 2>/dev/null || true)"
+          if [[ -z "$generated" ]]; then
+            echo "stale=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          age=$(( $(date -u +%s) - $(date -u -d "$generated" +%s) ))
+          echo "reliability snapshot age: ${age}s"
+          if (( age > 840 )); then echo "stale=true"; else echo "stale=false"; fi >> "$GITHUB_OUTPUT"
+
   publish-live-dashboard:
+    needs: freshness
+    if: needs.freshness.outputs.stale == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7

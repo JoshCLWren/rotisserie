@@ -68,3 +68,22 @@ def test_large_dashboard_upload_uses_file_input_not_process_arguments() -> None:
     assert '--input "$payload_file"' in workflow
     assert '-f "content=\u0024{content}"' not in workflow
     assert '-f "content=\u0024(base64 -w0 site/funnel-cache.json)"' not in workflow
+
+
+def test_publisher_also_runs_after_the_scheduler_when_the_snapshot_is_stale() -> None:
+    """GitHub throttled the */15 schedule (3 runs in ~14 hours); stats went stale."""
+    import yaml
+
+    workflow = yaml.safe_load(WORKFLOW.read_text(encoding="utf-8"))
+    triggers = workflow[True]  # PyYAML reads the bare `on:` key as True
+    assert triggers["workflow_run"] == {
+        "workflows": ["Fixed Model Factory Dispatcher"],
+        "types": ["completed"],
+    }
+    assert "schedule" in triggers and "workflow_dispatch" in triggers
+    jobs = workflow["jobs"]
+    assert jobs["publish-live-dashboard"]["needs"] == "freshness"
+    assert jobs["publish-live-dashboard"]["if"] == "needs.freshness.outputs.stale == 'true'"
+    gate = jobs["freshness"]["steps"][0]["run"]
+    assert 'if [[ "$EVENT" != "workflow_run" ]]' in gate  # manual and cron runs always publish
+    assert "age > 840" in gate
