@@ -232,8 +232,7 @@ def _post_claim_change(
                 return "linked issue changed after reservation"
             all_labels.update(core.labels_of(linked_row))
         conflicting = (
-            live.get("mergeable") is False
-            or string(live, "mergeable_state").upper() == "DIRTY"
+            live.get("mergeable") is False or string(live, "mergeable_state").upper() == "DIRTY"
         )
         if core.completion_action_for(core.stage_of(labels), conflicting) != offer.action:
             return "PR stage or merge state changed after reservation"
