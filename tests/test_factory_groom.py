@@ -10,7 +10,7 @@ from pathlib import Path
 
 import pytest
 
-from rotisserie.factory_console.github import JSON, GitHub, GitHubError
+from rotisserie.factory_console.github import JSON, GitHub, GitHubError, Obj
 from rotisserie.factory_console.service import groom
 
 REPO = "acme/widgets"
@@ -53,8 +53,10 @@ def fake(monkeypatch: pytest.MonkeyPatch) -> Fake:
     return found
 
 
-def issue(number: int, title: str, body: str = "", labels: Sequence[str] = (), **extra: object):
-    row: dict[str, object] = {
+def issue(
+    number: int, title: str, body: str = "", labels: Sequence[str] = (), **extra: JSON
+) -> Obj:
+    row: Obj = {
         "number": number,
         "title": title,
         "body": body,
@@ -68,7 +70,7 @@ def issue(number: int, title: str, body: str = "", labels: Sequence[str] = (), *
     return row
 
 
-def pr(number: int, title: str, body: str = "", labels: Sequence[str] = ()):
+def pr(number: int, title: str, body: str = "", labels: Sequence[str] = ()) -> Obj:
     return issue(number, title, body, labels, pull_request={"url": "x"})
 
 
@@ -76,8 +78,8 @@ def pr(number: int, title: str, body: str = "", labels: Sequence[str] = ()):
 
 
 def test_inventory_reads_every_page_not_just_the_first_hundred(fake: Fake) -> None:
-    first = [issue(n, f"Issue {n}") for n in range(1, 101)]
-    second = [issue(101, "Issue 101"), pr(102, "Fix", "Closes #5")]
+    first: list[JSON] = [issue(n, f"Issue {n}") for n in range(1, 101)]
+    second: list[JSON] = [issue(101, "Issue 101"), pr(102, "Fix", "Closes #5")]
     fake.routes[r"issues\?state=open.*page=1$"] = first
     fake.routes[r"issues\?state=open.*page=2$"] = second
     fake.routes[r"pulls/102$"] = {"head": {"sha": "a" * 40, "ref": "factory/x"}}
@@ -167,7 +169,9 @@ def test_every_action_needs_evidence_and_the_right_target() -> None:
         )
 
 
-def live(fake: Fake, number: int, body: str = "old", labels: Sequence[str] = (), **extra: object):
+def live(
+    fake: Fake, number: int, body: str = "old", labels: Sequence[str] = (), **extra: JSON
+) -> None:
     fake.routes[rf"issues/{number}$"] = issue(number, "t", body, labels, **extra)
 
 
@@ -289,7 +293,9 @@ def test_already_closed_items_are_skipped(fake: Fake) -> None:
     assert groom.apply(GitHub(REPO), actions, write=True)[0].status == "skipped"
 
 
-def test_groom_cli_dry_run_and_audit_log(fake: Fake, tmp_path: Path, monkeypatch) -> None:
+def test_groom_cli_dry_run_and_audit_log(
+    fake: Fake, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     from rotisserie.factory_console import commands
 
     live(fake, 1)
