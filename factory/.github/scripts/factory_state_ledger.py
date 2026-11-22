@@ -372,6 +372,7 @@ def release_expired_leases(repo: str) -> int:
                          DELETE FROM public.factory_state_kv
                          WHERE starts_with(cache_key, $1)
                            AND expires_at <= now() - interval '1 hour'
+                           AND COALESCE(payload->0->>'external', 'false') != 'true'
                          RETURNING 1)
                        SELECT count(*) FROM gone""",
                     f"{LEASE_PREFIX}{repo}:",
