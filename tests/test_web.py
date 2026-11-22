@@ -26,9 +26,7 @@ from rotisserie import cli, web
         ("outcomes", {}, ["outcomes", "--since", "2h", "--limit", "40"]),
     ],
 )
-def test_read_commands_are_bounded(
-    name: str, query: dict[str, str], expected: list[str]
-) -> None:
+def test_read_commands_are_bounded(name: str, query: dict[str, str], expected: list[str]) -> None:
     assert web.read_command(name, query) == expected
 
 
@@ -61,9 +59,19 @@ def test_run_maps_to_nonblocking_console_command_without_shell() -> None:
             "slot": 2,
         }
     ) == [
-        "run", "opencode-go", "opencode-go/hy4-flash-free", "--no-wait", "--yes",
-        "--target", "pr:123", "--action", "ci-repair", "--force", "--take-over",
-        "--slot", "2",
+        "run",
+        "opencode-go",
+        "opencode-go/hy4-flash-free",
+        "--no-wait",
+        "--yes",
+        "--target",
+        "pr:123",
+        "--action",
+        "ci-repair",
+        "--force",
+        "--take-over",
+        "--slot",
+        "2",
     ]
 
 
@@ -73,8 +81,11 @@ def test_run_maps_to_nonblocking_console_command_without_shell() -> None:
         {"operation": "run", "provider": "opencode-go;echo", "model": "auto"},
         {"operation": "run", "provider": "opencode-go", "model": "auto", "take_over": True},
         {
-            "operation": "run", "provider": "opencode-go", "model": "auto",
-            "target": "issue:1", "action": "review",
+            "operation": "run",
+            "provider": "opencode-go",
+            "model": "auto",
+            "target": "issue:1",
+            "action": "review",
         },
         {"operation": "run", "provider": "opencode-go", "model": "auto", "slot": -2},
         {"operation": "cancel", "target": "pr:0"},
@@ -144,17 +155,17 @@ def test_browser_requires_local_origin_session_and_bounded_operations() -> None:
         assert "unit-test-session" in page
         assert "acme/widgets" in page
         status, body = send(
-            "POST", "/api/command",
+            "POST",
+            "/api/command",
             {"operation": "run", "provider": "opencode-go", "model": "auto"},
             auth,
         )
         assert status == 200
         assert json.loads(body)["result"] == "completed"
         assert calls[-1][1] == ["run", "opencode-go", "auto", "--no-wait", "--yes"]
-        assert send(
-            "POST", "/api/command",
-            {"operation": "close", "target": "pr:1"}, auth
-        )[0] == 400
+        assert (
+            send("POST", "/api/command", {"operation": "close", "target": "pr:1"}, auth)[0] == 400
+        )
     finally:
         server.shutdown()
         server.server_close()
