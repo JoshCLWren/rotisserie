@@ -263,3 +263,25 @@ def test_capture_passes_repository_capacity_to_shared_policy(monkeypatch: pytest
         assert len(result.offers) == 1
         assert result.offers[0].capacity["review_limit"] == backlog
     assert settings == [(8, 6), (14, 12)]
+
+
+def test_shared_policy_applies_nondefault_backpressure_to_candidates() -> None:
+    from rotisserie.factory_console import runtime
+
+    policy = runtime.module("factory_work_policy")
+    rows = [
+        {
+            "number": number,
+            "title": f"Review PR {number}",
+            "headRefName": f"factory/worker-{number}",
+            "headRefOid": "a" * 40,
+            "labels": ["factory:review", "factory:unowned"],
+        }
+        for number in range(100, 106)
+    ]
+    fresh = issue(7, "factory:unowned")
+    default = policy.build_candidates([fresh], rows, pr_wip_limit=8, review_backlog_limit=6)
+    configured = policy.build_candidates([fresh], rows, pr_wip_limit=8, review_backlog_limit=12)
+    assert not any(item.kind == "issue" and item.number == 7 for item in default)
+    assert any(item.kind == "issue" and item.number == 7 for item in configured)
+    assert all(item.kind == "pr" for item in default)
