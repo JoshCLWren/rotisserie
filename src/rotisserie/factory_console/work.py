@@ -20,7 +20,8 @@ from rotisserie.factory_console.github import (
 from rotisserie.factory_console.tracker import WORKER_WORKFLOW, Tracker, session_started
 
 OWNER_LABEL = re.compile(r"^factory:(\d+)$")
-WORKER_TITLE = re.compile(r"^Factory (\d+) · fixed-model entry$")
+# ``Factory N · MODEL · fixed-model entry``; older runs have no model segment.
+WORKER_TITLE = re.compile(r"^Factory (\d+)(?: · (?P<model>[^·]+?))? · fixed-model entry$")
 
 
 @dataclass
@@ -31,6 +32,9 @@ class WorkerRun:
     started: datetime | None
     url: str
     coding_since: datetime | None = None
+    # Exact model from the run name; "auto" when the worker picks it at start,
+    # "" for runs started before run names carried the model.
+    model: str = ""
 
 
 @dataclass
@@ -54,6 +58,15 @@ class Item:
             return ""
         found = runtime.provider_for_worker(self.owner)
         return found.name if found else "local or unknown worker"
+
+    @property
+    def model(self) -> str:
+        """The worker's model in operator words; empty when nothing is running."""
+        if self.run is None:
+            return ""
+        if self.run.model == "auto":
+            return "picked by the worker"
+        return self.run.model or "not recorded (older run)"
 
 
 def owner_of(labels: set[str]) -> str:
@@ -116,6 +129,7 @@ def active_worker_runs(github: GitHub) -> dict[str, WorkerRun]:
                     string(row, "status"),
                     timestamp(row, "run_started_at") or timestamp(row, "created_at"),
                     string(row, "html_url"),
+                    model=(match.group("model") or "").strip(),
                 ),
             )
     return runs

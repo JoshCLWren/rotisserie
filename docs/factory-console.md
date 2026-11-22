@@ -6,7 +6,7 @@ ComicPile's old `scripts/factory-run`.
 
 ```bash
 rotisserie factory run opencode-go opencode-go/hy4-flash-free --force
-rotisserie factory status      # who is working on what, and for how long
+rotisserie factory status      # who is working on what: provider, model, state, how long
 rotisserie factory report      # what merged, what failed and why, is it running
 rotisserie factory stats       # which providers and models actually deliver
 rotisserie factory settings    # limits, worker counts and priority order

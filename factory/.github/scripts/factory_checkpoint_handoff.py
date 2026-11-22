@@ -247,7 +247,7 @@ def labels_of(value: dict) -> set[str]:
 
 def source_worker(run: dict) -> str:
     """Bind source identity to the trusted workflow's dispatch-derived run name."""
-    found = re.fullmatch(r"Factory ([1-9][0-9]*) · fixed-model entry",
+    found = re.fullmatch(r"Factory ([1-9][0-9]*)(?: · [^·]+?)? · fixed-model entry",
                         run.get("display_title", ""))
     if not found:
         raise ValueError("Canonical source run does not expose its dispatched factory")
@@ -354,8 +354,12 @@ def newer_worker_run(repo: str, run: dict, worker: str) -> bool:
     if not isinstance(runs, list) or not runs:
         return True
     source_id = int(run["id"])
-    title = f"Factory {worker} · fixed-model entry"
-    if any(item.get("display_title") == title and int(item["id"]) > source_id for item in runs):
+    # Titles may carry the model (``Factory N · MODEL · fixed-model entry``).
+    title = re.compile(rf"Factory {re.escape(str(worker))}(?: · [^·]+?)? · fixed-model entry")
+    if any(
+        title.fullmatch(str(item.get("display_title") or "")) and int(item["id"]) > source_id
+        for item in runs
+    ):
         return True
     return min(int(item["id"]) for item in runs) > source_id
 

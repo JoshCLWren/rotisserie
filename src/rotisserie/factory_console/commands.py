@@ -837,7 +837,9 @@ def cmd_status(context: Context, arguments: argparse.Namespace) -> Outcome:
     if not rows:
         console.line("Nothing is being worked on.")
     else:
-        console.table(["Item", "Title", "Provider", "State", "For"], [row[:5] for row in rows])
+        console.table(
+            ["Item", "Title", "Provider", "Model", "State", "For"], [row[:6] for row in rows]
+        )
         if console.verbose:
             for item in work:
                 if item.run:
@@ -848,6 +850,7 @@ def cmd_status(context: Context, arguments: argparse.Namespace) -> Outcome:
                 "ref": item.ref,
                 "title": item.title,
                 "provider": item.provider,
+                "model": item.run.model if item.run and item.run.model else None,
                 "worker": item.owner,
                 "run_url": item.run.url if item.run else None,
                 "running_since": item.run.started.isoformat()
@@ -891,7 +894,7 @@ def _work_row(item: Item, now: datetime) -> list[str]:
         state, age = "waiting for a machine", since(item.run.started, now)
     else:
         state, age = "starting up", since(item.run.started, now)
-    return [f"#{item.number}", title, item.provider, state, age]
+    return [f"#{item.number}", title, item.provider, item.model, state, age]
 
 
 # cancel --------------------------------------------------------------------------------

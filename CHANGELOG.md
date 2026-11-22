@@ -15,6 +15,9 @@ such change must be called out here and in its release notes.
 
 ### Added
 
+- `status` shows each worker's model. Worker runs are now named
+  `Factory N · MODEL · fixed-model entry` (`auto` when the worker picks it);
+  every run-name parser accepts both that and the older model-less name.
 - `rotisserie factory unstick` plans and starts the work that clears whatever
   holds the factory back. For a full review backlog that means reviewing and
   repairing the backlog PRs no worker holds. Each worker uses the provider and

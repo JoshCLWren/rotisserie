@@ -1177,3 +1177,37 @@ def test_service_layer_stays_front_end_neutral() -> None:
                 assert all(alias.name != "argparse" for alias in node.names), path.name
             if isinstance(node, ast.Call) and isinstance(node.func, ast.Name):
                 assert node.func.id not in ("print", "input"), f"{path.name} calls {node.func.id}"
+
+
+def test_status_shows_each_workers_model_from_its_run_name(fake: FakeGitHub) -> None:
+    other = runtime.module("factory_worker_slots").worker_id("opencode-free", 2)
+    third = runtime.module("factory_worker_slots").worker_id("opencode-free", 3)
+    fake.routes[r"issues\?state=open&per_page=100&page=1&"] = [
+        {"number": 11, "title": "Exact model", "labels": [{"name": f"factory:{WORKER}"}]},
+        {"number": 12, "title": "Auto model", "labels": [{"name": f"factory:{other}"}]},
+        {"number": 13, "title": "Old run", "labels": [{"name": f"factory:{third}"}]},
+    ]
+    fake.routes[r"free-model-factory-entry.yml/runs\?status=in_progress"] = {
+        "workflow_runs": [
+            {
+                "id": 1,
+                "display_title": f"Factory {WORKER} · opencode-go/hy4-flash-free · fixed-model entry",
+                "status": "in_progress",
+            },
+            {"id": 2, "display_title": f"Factory {other} · auto · fixed-model entry"},
+            {"id": 3, "display_title": f"Factory {third} · fixed-model entry"},
+        ]
+    }
+    code, out = invoke(["status"])
+    assert code == 0
+    assert "Model" in out
+    assert "opencode-go/hy4-flash-free" in out
+    assert "picked by the worker" in out
+    assert "not recorded (older run)" in out
+    code, out = invoke(["--json", "status"])
+    models = {item["ref"]: item["model"] for item in json.loads(out)["working"]}
+    assert models == {
+        "issue:11": "opencode-go/hy4-flash-free",
+        "issue:12": "auto",
+        "issue:13": None,
+    }

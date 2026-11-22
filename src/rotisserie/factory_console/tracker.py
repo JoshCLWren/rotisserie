@@ -464,9 +464,9 @@ class Tracker:
             ),
             "workflow_runs",
         )
-        title = f"Factory {worker} · fixed-model entry"
+        title = re.compile(rf"^Factory {re.escape(worker)}(?: · [^·]+?)? · fixed-model entry$")
         matches = sorted(
-            (run for run in runs if string(run, "display_title") == title),
+            (run for run in runs if title.match(string(run, "display_title"))),
             key=lambda item: string(item, "created_at"),
         )
         return integer(matches[0], "id") if matches else None
