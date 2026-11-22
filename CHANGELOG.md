@@ -30,6 +30,8 @@ such change must be called out here and in its release notes.
 
 ### Added
 
+- `doctor --fix` re-runs the stats publisher when the snapshot is missing or
+  stale (GitHub's schedule lagged by over an hour tonight).
 - `rotisserie factory doctor`: reliability snapshot missing or stale, the
   dashboard publisher's last failure (step and error), scheduler stopped,
   intake undecidable, and one factory gate rejecting most workers.

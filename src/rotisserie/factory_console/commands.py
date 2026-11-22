@@ -308,6 +308,11 @@ def add_parser(subcommands: argparse._SubParsersAction[argparse.ArgumentParser])
     health = commands.add_parser(
         "doctor", help="is the factory itself healthy (stats, dashboard, scheduler, gates)"
     )
+    health.add_argument(
+        "--fix",
+        action="store_true",
+        help="make the safe repairs it finds (e.g. re-run the stats publisher when stale)",
+    )
     _common(health)
 
     red = commands.add_parser("checks", help="why a pull request's checks fail, in one line each")
@@ -1798,9 +1803,22 @@ def cmd_doctor(context: Context, arguments: argparse.Namespace) -> Outcome:
             console.fail(line)
         if item.hint and item.status != "ok":
             console.line(f"    {item.hint}")
+    data: dict[str, object] = {"findings": [i.to_dict() for i in findings]}
+    fixable = [item for item in findings if item.fix and item.status != "ok"]
+    if fixable and not arguments.fix:
+        console.line()
+        console.line("Safe repairs are available: rotisserie factory doctor --fix")
+    if arguments.fix:
+        applied = doctor.apply_fixes(context.github, findings)
+        console.line()
+        for change in applied:
+            console.ok(change.text, change.url)
+        if not applied:
+            console.line("Nothing to repair automatically.")
+        data["applied"] = [change.to_dict() for change in applied]
     worst = "fail" if any(i.status == "fail" for i in findings) else "ok"
     result = Result.FAILED if worst == "fail" else Result.COMPLETED
-    return Outcome(result, EXIT_CODES[result], {"findings": [i.to_dict() for i in findings]})
+    return Outcome(result, EXIT_CODES[result], data)
 
 
 # checks ---------------------------------------------------------------------------------

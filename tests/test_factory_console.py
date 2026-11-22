@@ -1748,3 +1748,27 @@ def test_doctor_reports_a_missing_stats_snapshot_and_a_failed_publisher(
     assert "dashboard publisher: last run failure at step 'Generate factory dashboard'" in out
     assert "factory slot capacity must be a positive integer" in out
     assert "✓ scheduler: running" in out
+
+
+def test_doctor_fix_reruns_the_publisher_for_a_stale_snapshot(fake: FakeGitHub) -> None:
+    import base64
+
+    stale = {"generated_at": "2026-11-21T20:00:00Z", "models": [], "providers": []}
+    fake.routes["contents/factory-stats.json"] = {
+        "content": base64.b64encode(json.dumps(stale).encode()).decode()
+    }
+    fake.routes["factory-status-pages.yml/runs"] = {
+        "workflow_runs": [{"id": 77, "status": "completed", "conclusion": "success"}]
+    }
+    fake.routes["fixed-model-factory-dispatch.yml/runs"] = {
+        "workflow_runs": [{"id": 1, "created_at": "2026-11-21T22:59:00Z"}]
+    }
+    why_routes(fake, [])
+    code, out = invoke(["doctor"])
+    assert "factory-stats.json is stale" in out
+    assert "Safe repairs are available: rotisserie factory doctor --fix" in out
+    assert not any(call[0] == "workflow" for call in fake.calls)
+    code, out = invoke(["doctor", "--fix"])
+    run = next(call for call in fake.calls if call[0] == "workflow")
+    assert run[:3] == ["workflow", "run", "factory-status-pages.yml"]
+    assert "started factory-status-pages.yml" in out

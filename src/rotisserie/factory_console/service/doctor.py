@@ -48,6 +48,7 @@ class Finding:
     status: str  # ok | warn | fail
     text: str
     hint: str = ""
+    fix: str = ""  # a safe repair `apply_fixes` can make; empty when none
 
     def to_dict(self) -> dict[str, object]:
         return asdict(self)
@@ -60,8 +61,8 @@ def _stats(github: GitHub, now: datetime) -> Finding:
             "reliability snapshot",
             "fail",
             "factory-stats.json has never been published, so stats and model picking are blind",
-            f"check the {DASHBOARD_WORKFLOW} runs below; run it: gh workflow run "
-            f"{DASHBOARD_WORKFLOW}",
+            f"check the {DASHBOARD_WORKFLOW} runs below; doctor --fix runs it now",
+            fix="publish-snapshot",
         )
     generated = timestamp(stats, "generated_at")
     if generated is None or now - generated > STATS_STALE:
@@ -70,7 +71,8 @@ def _stats(github: GitHub, now: datetime) -> Finding:
             "reliability snapshot",
             "warn",
             f"factory-stats.json is stale (age {age}; it should refresh every 15 minutes)",
-            f"check the {DASHBOARD_WORKFLOW} runs; scheduled runs can lag by hours",
+            "GitHub's 15-minute schedule can lag by hours; doctor --fix runs the publisher now",
+            fix="publish-snapshot",
         )
     return Finding("reliability snapshot", "ok", "published and fresh")
 
@@ -195,3 +197,25 @@ def run_checks(github: GitHub, *, now: datetime, clock: Clock | None = None) -> 
         except GitHubError as exc:
             found.append(Finding(name, "warn", f"could not check: {exc}"))
     return found
+
+
+@dataclass(frozen=True)
+class Applied:
+    fix: str
+    text: str
+    url: str = ""
+
+    def to_dict(self) -> dict[str, object]:
+        return asdict(self)
+
+
+def apply_fixes(github: GitHub, findings: list[Finding]) -> list[Applied]:
+    """Make the safe repairs the findings name. Each is idempotent and reversible."""
+    done: list[Applied] = []
+    wanted = {item.fix for item in findings if item.fix and item.status != "ok"}
+    if "publish-snapshot" in wanted:
+        # The same job the schedule runs: regenerate the dashboard and stats snapshot.
+        output = github.gh("workflow", "run", DASHBOARD_WORKFLOW, "--repo", github.repo)
+        url = next((part for part in output.split() if "/actions/runs/" in part), "")
+        done.append(Applied("publish-snapshot", f"started {DASHBOARD_WORKFLOW}", url))
+    return done

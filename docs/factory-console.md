@@ -242,6 +242,11 @@ found by hand. It exits 4 when any check fails.
 
 A check that cannot reach GitHub says so instead of failing.
 
+`doctor --fix` makes the safe repairs it finds. Today that is re-running the
+stats publisher (`factory-status-pages.yml`) when the snapshot is missing or
+stale; GitHub's 15-minute schedule can lag by hours. Without `--fix` it only
+says a repair is available.
+
 ## Other front ends
 
 The console's logic lives in `rotisserie.factory_console.service`, which never
