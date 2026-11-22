@@ -1669,3 +1669,15 @@ def test_outcomes_shows_the_first_error_from_the_published_excerpt(fake: FakeGit
         "factory fast checks failed: frontend typecheck "
         "(src/api.ts(3,1): error TS2322: Type 'string' is not assignable to type 'number'.)"
     )
+
+
+def test_unstick_skip_and_only_scope_the_plan(fake: FakeGitHub) -> None:
+    unstick_routes(fake, FULL_BACKLOG)
+    code, out = invoke(["--json", "unstick", "--dry-run", "--skip", "pr:301", "--skip", "pr:306"])
+    targets = [item["task"]["target"] for item in json.loads(out)["plan"]["assignments"]]
+    assert "pr:301" not in targets and "pr:306" not in targets and "pr:307" in targets
+    code, out = invoke(["--json", "unstick", "--dry-run", "--only", "pr:302"])
+    targets = [item["task"]["target"] for item in json.loads(out)["plan"]["assignments"]]
+    assert targets == ["pr:302"]
+    code, out = invoke(["unstick", "--dry-run", "--skip", "5656"])
+    assert code == 2 and "--skip/--only take pr:N or issue:N" in out

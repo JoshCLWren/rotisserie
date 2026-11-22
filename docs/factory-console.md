@@ -163,6 +163,11 @@ rotisserie factory unstick             # show it, ask, then start
 rotisserie factory unstick --max 3 -y  # start at most 3 without asking
 ```
 
+`--skip pr:N` keeps an item out of the plan and `--only pr:N` limits the plan to
+the named items (both repeatable). Every run plans again from live state, so a
+plan seen with `--dry-run` can differ a minute later; to start exactly what
+you reviewed, pass those items with `--only`.
+
 Starting sends one forced, targeted request per task (the same as
 `run PROVIDER MODEL --force --target pr:N --action ACTION`). Outside a terminal
 it starts nothing unless you pass `--yes`.

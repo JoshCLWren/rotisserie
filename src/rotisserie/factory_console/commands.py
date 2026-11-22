@@ -246,6 +246,20 @@ def add_parser(subcommands: argparse._SubParsersAction[argparse.ArgumentParser])
     clear.add_argument("provider", nargs="?", help="use this provider instead of the best one")
     clear.add_argument("model", nargs="?", help="use this exact model (with PROVIDER)")
     clear.add_argument("--max", type=int, dest="max_workers", help="start at most N workers")
+    clear.add_argument(
+        "--skip",
+        action="append",
+        default=[],
+        metavar="ITEM",
+        help="never start this item (pr:N or issue:N); repeatable",
+    )
+    clear.add_argument(
+        "--only",
+        action="append",
+        default=[],
+        metavar="ITEM",
+        help="start only these items (pr:N or issue:N); repeatable",
+    )
     clear.add_argument("--dry-run", action="store_true", help="show the plan; start nothing")
     clear.add_argument("--yes", "-y", action="store_true", help="start without asking")
     _common(clear)
@@ -1573,12 +1587,17 @@ def cmd_unstick(context: Context, arguments: argparse.Namespace) -> Outcome:
         raise UsageError("Name the provider before the model.")
     if arguments.max_workers is not None and arguments.max_workers < 1:
         raise UsageError("--max must be 1 or more.")
+    for item in [*arguments.skip, *arguments.only]:
+        if not TARGET.match(item):
+            raise UsageError(f"--skip/--only take pr:N or issue:N, not {item!r}.")
     found = unstick.plan(
         context.github,
         now=context.clock.now(),
         max_workers=arguments.max_workers,
         provider=arguments.provider,
         model=arguments.model,
+        skip=frozenset(arguments.skip),
+        only=frozenset(arguments.only),
     )
     data: dict[str, object] = {"plan": found.to_dict()}
     _show_plan(console, found)

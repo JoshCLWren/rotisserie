@@ -30,6 +30,9 @@ such change must be called out here and in its release notes.
 
 ### Added
 
+- `unstick --skip ITEM` and `--only ITEM` scope a plan to what the operator
+  wants; runs plan again from live state, so `--only` starts exactly what a
+  dry run showed.
 - `rotisserie factory checks pr:N` summarizes each failing check on a PR's
   head (formatting diff with files, failing tests, compile errors). `unstick`
   sends ci-repair instead of review work to PRs with red checks and says when

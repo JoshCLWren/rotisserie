@@ -101,6 +101,8 @@ def plan(
     max_workers: int | None = None,
     provider: str | None = None,
     model: str | None = None,
+    skip: frozenset[str] = frozenset(),
+    only: frozenset[str] = frozenset(),
 ) -> Plan:
     """Diagnose the queue and plan workers for it. Reads only; starts nothing."""
     variables = providers.repository_variables(github)
@@ -224,6 +226,10 @@ def plan(
                 )
             )
 
+    # The operator's own scope wins over the planner: never start what they excluded.
+    tasks = [
+        task for task in tasks if task.target not in skip and (not only or task.target in only)
+    ]
     capped = tasks if max_workers is None else tasks[:max_workers]
     choice_text, ranked, problems = _choose_models(github, variables, now, provider, model)
     missed = _recent_misses(github, now) if ranked and len(ranked) > 1 else {}
