@@ -13,6 +13,10 @@ on:
 # normal Deploy Production `push: main` trigger is not sufficient. This workflow
 # observes worker completion directly and explicitly dispatches deployment only
 # when main advanced while that worker was running.
+env:
+  # Operator settings (rotisserie factory settings) reach every factory script.
+  FACTORY_REPO_VARS: ${{ toJSON(vars) }}
+
 concurrency:
   group: production-deploy-wakeup
   cancel-in-progress: true

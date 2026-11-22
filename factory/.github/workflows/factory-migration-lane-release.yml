@@ -8,6 +8,10 @@ on:
     types: [closed, converted_to_draft, labeled, unlabeled]
   workflow_dispatch:
 
+env:
+  # Operator settings (rotisserie factory settings) reach every factory script.
+  FACTORY_REPO_VARS: ${{ toJSON(vars) }}
+
 permissions:
   contents: read
   issues: write

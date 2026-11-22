@@ -52,9 +52,11 @@ def worker_sources(path: Path | str | None = None) -> dict[str, str]:
     An explicit fixture path remains supported for isolated historical parsers.
     """
     if path is None:
-        from factory_worker_slots import slots
+        # Operator overflow identities must still resolve to their provider so
+        # budgets, credentials and outcome accounting see them.
+        from factory_worker_slots import all_identities
 
-        return {slot.worker: slot.source for slot in slots()}
+        return all_identities()
     mapping: dict[str, str] = {}
     for raw in Path(path).read_text(encoding="utf-8").splitlines():
         fields = raw.split("\t")

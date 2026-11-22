@@ -18,6 +18,10 @@ on:
       - '.github/scripts/factory_completion_controller.py'
       - '.github/workflows/factory-status-pages.yml'
 
+env:
+  # Operator settings (rotisserie factory settings) reach every factory script.
+  FACTORY_REPO_VARS: ${{ toJSON(vars) }}
+
 permissions:
   contents: write
   issues: read
@@ -89,6 +93,16 @@ jobs:
           OMNIROUTE_BASE_URL: ${{ vars.OMNIROUTE_BASE_URL }}
         run: python3 .github/scripts/generate_factory_status_dashboard.py
 
+      - name: Export provider and model reliability counts
+        continue-on-error: true
+        env:
+          PYTHONPATH: .github/scripts
+        run: |
+          set -Eeuo pipefail
+          # Counts of trusted worker outcomes only; read by `rotisserie factory stats`.
+          python3 .github/scripts/factory_state_operations.py export-reliability > site/factory-stats.json.tmp
+          mv site/factory-stats.json.tmp site/factory-stats.json
+
       - name: Publish live dashboard snapshot
         env:
           GH_TOKEN: ${{ github.token }}
@@ -140,6 +154,10 @@ jobs:
             if [[ "$cache_sha" != "$local_sha" ]]; then
               publish_snapshot site/funnel-cache.json funnel-cache.json 'chore: cache merged factory attribution' "$cache_sha"
             fi
+          fi
+          if [[ -s site/factory-stats.json ]]; then
+            stats_sha="$(gh api "repos/${GITHUB_REPOSITORY}/contents/factory-stats.json?ref=${branch}" --jq '.sha' 2>/dev/null || true)"
+            publish_snapshot site/factory-stats.json factory-stats.json 'chore: refresh factory reliability counts' "$stats_sha"
           fi
 
   build-pages-shell:

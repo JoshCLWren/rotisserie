@@ -14,6 +14,10 @@ on:
         default: '15'
         type: string
 
+env:
+  # Operator settings (rotisserie factory settings) reach every factory script.
+  FACTORY_REPO_VARS: ${{ toJSON(vars) }}
+
 permissions:
   actions: read
   contents: read

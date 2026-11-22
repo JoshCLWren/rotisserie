@@ -8,6 +8,10 @@ on:
   pull_request_target:
     types: [opened, reopened, ready_for_review, labeled, synchronize]
 
+env:
+  # Operator settings (rotisserie factory settings) reach every factory script.
+  FACTORY_REPO_VARS: ${{ toJSON(vars) }}
+
 permissions:
   actions: write
   contents: read

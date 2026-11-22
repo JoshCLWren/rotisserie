@@ -19,6 +19,10 @@ on:
 
 # This job deliberately receives no repository/provider secrets or inherited
 # secret bundle. Contributor code, dependencies, tests, and hooks run only here.
+env:
+  # Operator settings (rotisserie factory settings) reach every factory script.
+  FACTORY_REPO_VARS: ${{ toJSON(vars) }}
+
 permissions:
   contents: read
   issues: read

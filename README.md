@@ -80,6 +80,7 @@ The intended result is a system that can:
 | `src/rotisserie/adapters/github/` | Repository-scoped GitHub projection and bounded mutation contracts |
 | `src/rotisserie/operator/` | Versioned local configuration, durable simulation state, records, metrics, and diagnostics |
 | `src/rotisserie/cli.py` | One-operation CLI with dry-run mutation plans and stable JSON output |
+| `src/rotisserie/factory_console/` | `rotisserie factory` operator console ([docs](docs/factory-console.md)) |
 | `prototype/` | Dependency and eligibility migration evidence with domain compatibility tests |
 | `tests/` | Rotisserie repository-safety guards |
 | `reference/legacy-factory/` | Archived migration evidence, code, tests, prompts, and disabled workflows |

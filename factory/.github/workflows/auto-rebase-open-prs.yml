@@ -7,6 +7,10 @@ name: Rebase Open Factory PRs
 on:
   workflow_dispatch:
 
+env:
+  # Operator settings (rotisserie factory settings) reach every factory script.
+  FACTORY_REPO_VARS: ${{ toJSON(vars) }}
+
 permissions:
   contents: read
 

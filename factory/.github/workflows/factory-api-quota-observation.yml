@@ -6,6 +6,10 @@ on:
     # One sample per hour, independent of factory worker heartbeat cadence.
     - cron: '17 * * * *'
 
+env:
+  # Operator settings (rotisserie factory settings) reach every factory script.
+  FACTORY_REPO_VARS: ${{ toJSON(vars) }}
+
 permissions:
   contents: read
 

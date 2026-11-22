@@ -90,6 +90,10 @@ on:
       - '.github/factory-source-budgets.json'
       - '.github/scripts/factory_source_budget.py'
 
+env:
+  # Operator settings (rotisserie factory settings) reach every factory script.
+  FACTORY_REPO_VARS: ${{ toJSON(vars) }}
+
 permissions:
   contents: read
   actions: write
@@ -384,11 +388,11 @@ jobs:
               echo '::error::Select a provider for model-first dispatch'
               exit 1
             }
-            if [[ "$ACTION" != advance ]]; then
-              echo '::error::Provider-first dispatch selects the currently eligible action; use action=advance'
+            if [[ "$ACTION" != advance && ( "$FORCE_SLOT" != true || -z "$TARGET" ) ]]; then
+              echo '::error::A specific action needs an operator-forced request for a chosen issue or PR'
               exit 1
             fi
-            args=(--provider "$REQUESTED_PROVIDER" --model "$REQUESTED_MODEL")
+            args=(--provider "$REQUESTED_PROVIDER" --model "$REQUESTED_MODEL" --action "$ACTION")
             if [[ "$FORCE_SLOT" == true ]]; then
               args+=(--force-slot)
             fi

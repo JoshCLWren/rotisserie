@@ -29,6 +29,10 @@ on:
     # repeatedly paging the full PR history every 15 minutes.
     - cron: '31 * * * *'
 
+env:
+  # Operator settings (rotisserie factory settings) reach every factory script.
+  FACTORY_REPO_VARS: ${{ toJSON(vars) }}
+
 permissions:
   contents: read
   issues: write

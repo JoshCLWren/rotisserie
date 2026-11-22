@@ -6,6 +6,10 @@ name: Fixed Model Factory Dispatcher (compatibility entrypoint)
 on:
   workflow_dispatch:
 
+env:
+  # Operator settings (rotisserie factory settings) reach every factory script.
+  FACTORY_REPO_VARS: ${{ toJSON(vars) }}
+
 permissions:
   actions: write
   checks: read

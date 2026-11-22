@@ -15,6 +15,10 @@ on:
   repository_dispatch:
     types: [local-ollama-review]
 
+env:
+  # Operator settings (rotisserie factory settings) reach every factory script.
+  FACTORY_REPO_VARS: ${{ toJSON(vars) }}
+
 permissions:
   actions: write # Dispatch the existing canonical ready-merge drain on trusted readiness.
   contents: read

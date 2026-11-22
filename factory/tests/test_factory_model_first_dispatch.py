@@ -54,6 +54,7 @@ def test_model_first_chooses_canonical_provider_worker_and_real_pr(monkeypatch):
     monkeypatch.setattr(controller, 'run_gh', lambda argv: launched.append(argv))
 
     selected = controller.dispatch_next('opencode-go', 'opencode-go/hy4-flash-free')
+    assert isinstance(selected.pop('dispatched_at'), int)
     assert selected == {
         'status': 'dispatched', 'kind': 'issue', 'number': 5147,
         'action': 'implement', 'worker': '1327811785101',
@@ -135,6 +136,7 @@ def test_force_slot_bypasses_advisory_health_but_keeps_existing_slot_and_target(
     })
     launched = []
     calls = []
+    monkeypatch.setattr(controller, 'worker_skip_reason', lambda worker, **_kw: None)
     monkeypatch.setattr(controller, 'run_gh', lambda argv: launched.append(argv))
     outcome = controller.dispatch_next(
         'opencode-go', 'opencode-go/hy4-flash-free',
@@ -143,7 +145,11 @@ def test_force_slot_bypasses_advisory_health_but_keeps_existing_slot_and_target(
     assert outcome['status'] == 'dispatched'
     assert outcome['worker'] == '1000000000002'
     assert outcome['forced'] is True
-    assert calls == [('1000000000002', {'target': ('issue', 5123)})]
+    # Owner decision (2026-11-21): a forced explicit target is an operator
+    # override too, not normal targeted scheduling.
+    assert calls == [('1000000000002', {
+        'target': ('issue', 5123), 'requested_action': 'advance', 'operator_force': True,
+    })]
     assert 'model=opencode-go/hy4-flash-free' in launched[0]
     assert 'provider=opencode-free' in launched[0]
 
@@ -160,15 +166,19 @@ def test_force_slot_deferred_does_not_create_or_steal_a_claim(monkeypatch):
     monkeypatch.setattr(worker_slots, 'slots', lambda: [
         SimpleNamespace(source='opencode-free', index=0, worker='1000000000001'),
     ])
-    monkeypatch.setattr(controller, 'assign', lambda *args, **kwargs: None)
-    monkeypatch.setattr(controller, 'worker_skip_reason', lambda worker: 'active Neon lease')
+    monkeypatch.setattr(controller, 'assign',
+                        lambda *args, **kwargs: pytest.fail('a running worker must not be reassigned'))
+    monkeypatch.setattr(controller, 'worker_skip_reason',
+                        lambda worker, **_kw: f'Factory {worker} already has an active lease')
     monkeypatch.setattr(controller, 'run_gh',
                         lambda argv: pytest.fail('no worker should be started'))
     outcome = controller.dispatch_next('opencode-go', force_slot=True, slot_index=1)
     assert outcome['status'] == 'deferred'
-    assert 'active Neon lease' in outcome['details']
+    assert outcome['reason'] == 'All 1 opencode-go workers are running right now.'
+    # Explicit operator slots may go past configured capacity, never past
+    # the stable identity space.
     with pytest.raises(ValueError, match='does not exist'):
-        controller.dispatch_next('opencode-go', force_slot=True, slot_index=99)
+        controller.dispatch_next('opencode-go', force_slot=True, slot_index=100)
     with pytest.raises(ValueError, match='requires --force-slot'):
         controller.dispatch_next('opencode-go', slot_index=1)
 
@@ -375,10 +385,11 @@ def test_operator_force_dispatch_passes_owner_override_into_assignment(monkeypat
     calls = []
     monkeypatch.setattr(controller, 'assign',
                         lambda worker, **kwargs: calls.append((worker, kwargs)) or None)
-    monkeypatch.setattr(controller, 'worker_skip_reason',
-                        lambda worker: 'No currently claimable work')
+    monkeypatch.setattr(controller, 'worker_skip_reason', lambda worker, **_kw: None)
     result = controller.dispatch_next(
         'opencode-go', 'opencode-go/hy4-flash-free', force_slot=True,
     )
     assert result['status'] == 'deferred'
+    assert result['reason'] == 'Nothing is waiting: every open item is finished, claimed or blocked.'
+    # The shared pool is identical for every identity: one look is enough.
     assert calls == [('1000000000001', {'operator_force': True})]

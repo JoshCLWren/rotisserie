@@ -8,6 +8,7 @@ integration metadata; runtime catalogs determine executable model candidates.
 from __future__ import annotations
 
 import argparse
+import functools
 import hashlib
 import json
 import os
@@ -49,7 +50,17 @@ def sources() -> tuple[str, ...]:
 def slot_count(env: Mapping[str, str] | None = None) -> int:
     """Provider concurrency capacity controls slots, not the model catalog size."""
     values = os.environ if env is None else env
-    raw = values.get("FACTORY_SLOTS_PER_PROVIDER", "12")
+    raw = values.get("FACTORY_SLOTS_PER_PROVIDER")
+    if raw is None and env is None:
+        # Operator-configured repository variable (rotisserie factory settings).
+        # Read inline: trusted staged copies of this module stand alone.
+        try:
+            variables = json.loads(values.get("FACTORY_REPO_VARS") or "{}")
+        except ValueError:
+            variables = {}
+        if isinstance(variables, dict) and variables.get("FACTORY_SLOTS_PER_PROVIDER") is not None:
+            raw = str(variables["FACTORY_SLOTS_PER_PROVIDER"])
+    raw = "12" if raw is None else raw
     try:
         slots = int(raw)
     except (TypeError, ValueError) as exc:
@@ -80,11 +91,40 @@ def slots(env: Mapping[str, str] | None = None) -> tuple[WorkerSlot, ...]:
     return values
 
 
+def operator_slots(source: str) -> tuple[WorkerSlot, ...]:
+    """Extra identities an operator-forced request may use beyond capacity.
+
+    Configured capacity paces automatic scheduling only. When every regular
+    worker for a provider is busy, an operator-forced request takes the next
+    of these stable identities instead of being refused.
+    """
+    if source not in sources():
+        raise ValueError(f"unknown factory integration: {source}")
+    count = slot_count()
+    return tuple(
+        WorkerSlot(worker_id(source, index), source, index, scheduler="operator")
+        for index in range(count, MAX_SLOTS_PER_SOURCE)
+    )
+
+
+@functools.cache
+def all_identities() -> dict[str, str]:
+    """Every valid worker identity, regular or operator overflow, to its source."""
+    return {
+        worker_id(source, index): source
+        for source in sources() for index in range(MAX_SLOTS_PER_SOURCE)
+    }
+
+
 def resolve(worker: str, env: Mapping[str, str] | None = None) -> WorkerSlot:
-    """Resolve only a current integrated slot; never infer a model ID."""
+    """Resolve a regular or operator overflow slot; never infer a model ID."""
     for item in slots(env):
         if item.worker == worker:
             return item
+    for source in sources():
+        for index in range(MAX_SLOTS_PER_SOURCE):
+            if worker_id(source, index) == worker:
+                return WorkerSlot(worker, source, index, scheduler="operator")
     raise ValueError("unknown or inactive worker slot")
 
 
