@@ -1250,11 +1250,22 @@ def external_claim_details(
                 or record.get("external") is not True
             ):
                 raise RuntimeError("external claim identity changed")
+            numbers = list(record["targets"])
+            target_rows = await conn.fetch(
+                """SELECT cache_key, payload->0->>'claim_id' AS claim_id
+                   FROM public.factory_state_kv
+                   WHERE cache_key=ANY($1::text[])""",
+                [_target_key(repo, number) for number in numbers],
+            )
+            if len(target_rows) != len(numbers) or any(
+                row["claim_id"] != claim_id for row in target_rows
+            ):
+                raise RuntimeError("stale external claim target fences")
             return {
                 "target": record["target"],
                 "action": record["action"],
                 "head": record.get("head"),
-                "targets": list(record["targets"]),
+                "targets": numbers,
                 "client": client,
                 "actor": actor,
                 "claim_id": claim_id,
