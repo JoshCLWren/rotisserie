@@ -10,7 +10,10 @@ from rotisserie.factory_console.github import GitHub, GitHubError
 
 
 def repository_variables(github: GitHub) -> dict[str, str]:
-    """Repository Actions variables; empty when they cannot be read."""
+    """Use the exact registered workflow snapshot before the optional API."""
+    delivered: dict[str, str] = runtime.module("factory_settings").repository_variables()
+    if delivered:
+        return delivered
     try:
         raw = github.gh("variable", "list", "--repo", github.repo, "--json", "name,value")
         rows = json.loads(raw)
