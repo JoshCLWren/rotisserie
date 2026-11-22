@@ -30,6 +30,29 @@ backpressure can invalidate an earlier order. Distinct `parallel_group`
 values identify target scopes, **not** proven conflict-free concurrent work.
 Unknown file overlap, worker capacity and liveness are explicitly uncertain.
 
+## GitHub-only read access
+
+Once the adopter has installed `rotisserie-external-frontier.yml` from a
+Rotisserie revision containing `factory next`, a GitHub-only agent can:
+
+1. Open **Actions > Rotisserie External Work Frontier > Run workflow** on the
+   adopter's main branch. This is manual-only, with no worker dispatched.
+2. Inspect the job summary for the ranked view, or download the
+   `rotisserie-work-frontier-RUN_ID` JSON artifact (retained one day).
+3. Treat every record as a **short-lived observation**, not a reservation.
+   The GitHub Actions job never changes issue ownership, PR labels, leases or
+   approval state. Missing Neon observations are marked held.
+
+The installer injects a checkout of the selected Rotisserie revision and a
+factory runtime overlay. The workflow installs from **that pinned local copy**,
+not an untrusted or floating remote package. The existing restricted
+`factory_state` database connection is supplied only to the trusted runner;
+agents obtain only secret-free JSON.
+
+GitHub-only write/claim support is still outstanding in #177 and must be
+implemented through the authorized, fenced controller bridge. Do not attempt
+to claim by editing labels or issue comments.
+
 ## Universal external-agent instruction
 
 > Ask Rotisserie for the next meaningful work in the target repository.
