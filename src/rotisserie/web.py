@@ -127,7 +127,8 @@ def write_command(data: Mapping[str, Any]) -> list[str]:
             args.extend(("--slot", str(slot)))
         return args
     if name == "cancel":
-        return ["cancel", _match(_string(data, "target", required=True), TARGET, "target"), "--no-wait"]
+        target = _match(_string(data, "target", required=True), TARGET, "target")
+        return ["cancel", target, "--no-wait"]
     if name == "prioritize":
         target = _match(_string(data, "target", required=True), TARGET, "target")
         level = _string(data, "level") or "critical"
