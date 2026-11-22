@@ -317,3 +317,28 @@ def test_transfer_moves_a_runtime_issue_upstream_after_the_same_checks(fake: Fak
     assert ["issue", "transfer", "5", "acme/runtime", "--repo", REPO] in fake.calls
     with pytest.raises(groom.PlanError, match="to_repo"):
         plan({"op": "transfer", "target": "issue:5", "why": "w", "comment": "c"})
+
+
+def test_a_comment_locked_issue_records_the_note_and_marker_in_its_body(fake: Fake) -> None:
+    live(fake, 9, body="registry")
+
+    def locked(_argv: list[str]) -> JSON:
+        raise GitHubError("GitHub request failed: gh: Commenting is disabled on issues with more")
+
+    fake.routes[r"POST issues/9/comments"] = locked
+    actions = plan(
+        {"id": "close-9", "op": "close-issue", "target": "issue:9", "reason": "not_planned",
+         "why": "retired", "comment": "Retired registry."}
+    )  # fmt: skip
+    [result] = groom.apply(GitHub(REPO), actions, write=True)
+    assert result.status == "applied"
+    patches = [call for call in fake.writes() if "PATCH" in call]
+    note = next(part for part in patches[0] if part.startswith("body="))
+    assert "> Retired registry." in note and "rotisserie-groom:v1:close-9" in note
+    assert note.endswith("registry")  # the original body is kept below the note
+    assert "state=closed" in patches[1]
+    # Applied again: the marker in the body makes it a no-op.
+    live(fake, 9, body=note.removeprefix("body="))
+    fake.calls.clear()
+    [again] = groom.apply(GitHub(REPO), actions, write=True)
+    assert again.status == "skipped" and not fake.writes()

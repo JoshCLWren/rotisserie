@@ -549,8 +549,29 @@ def _with_marker(action: Action, text: str) -> str:
 
 
 def _already_applied(github: GitHub, action: Action) -> bool:
+    if marker(action) in string(obj(github.repo_api(f"issues/{action.number}")), "body"):
+        return True  # recorded in the body because the issue does not accept comments
     comments = _all_pages(github, f"issues/{action.number}/comments")
     return any(marker(action) in string(row, "body") for row in comments)
+
+
+def _note(github: GitHub, action: Action, text: str) -> None:
+    """Post the action's explanation with its marker.
+
+    GitHub refuses comments on issues with very many comments (a long-lived
+    registry, say). The explanation must still be on record, and the marker must
+    still make the action idempotent, so it goes at the top of the body instead.
+    """
+    try:
+        github.repo_api(f"issues/{action.number}/comments", method="POST",
+                        fields={"body": _with_marker(action, text)})  # fmt: skip
+    except GitHubError as exc:
+        if "commenting is disabled" not in str(exc).lower():
+            raise
+        body = string(obj(github.repo_api(f"issues/{action.number}")), "body")
+        note = "\n".join(f"> {line}" if line else ">" for line in text.splitlines())
+        github.repo_api(f"issues/{action.number}", method="PATCH",
+                        fields={"body": f"{note}\n\n{marker(action)}\n\n{body}"})  # fmt: skip
 
 
 def check(github: GitHub, action: Action) -> tuple[str, str, Obj]:
@@ -604,14 +625,15 @@ def _open_implementing_prs(github: GitHub, issue: int) -> list[int]:
 def _write(github: GitHub, action: Action) -> None:
     n = action.number
     if action.op == "comment":
-        github.repo_api(f"issues/{n}/comments", method="POST",
-                        fields={"body": _with_marker(action, action.comment)})  # fmt: skip
+        _note(github, action, action.comment)
         return
     if action.op == "edit-body":
         github.repo_api(f"issues/{n}", method="PATCH", fields={"body": action.body})
-        note = action.comment or f"Description updated by backlog grooming: {action.why}"
-        github.repo_api(f"issues/{n}/comments", method="POST",
-                        fields={"body": _with_marker(action, note)})  # fmt: skip
+        _note(
+            github,
+            action,
+            action.comment or f"Description updated by backlog grooming: {action.why}",
+        )
         return
     if action.op == "labels":
         for label in action.add:
@@ -622,16 +644,13 @@ def _write(github: GitHub, action: Action) -> None:
             except GitHubError as exc:
                 if "does not exist" not in str(exc).lower():
                     raise
-        note = action.comment or f"Labels updated by backlog grooming: {action.why}"
-        github.repo_api(f"issues/{n}/comments", method="POST",
-                        fields={"body": _with_marker(action, note)})  # fmt: skip
+        _note(github, action, action.comment or f"Labels updated by backlog grooming: {action.why}")
         return
     # Closures: comment first, so the reason is on record even if the close fails.
     text = action.comment
     if action.op == "duplicate":
         text = f"Duplicate of #{action.duplicate_of}.\n\n{text}"
-    github.repo_api(f"issues/{n}/comments", method="POST",
-                    fields={"body": _with_marker(action, text)})  # fmt: skip
+    _note(github, action, text)
     if action.op == "close-pr":
         github.repo_api(f"pulls/{n}", method="PATCH", fields={"state": "closed"})
         return
