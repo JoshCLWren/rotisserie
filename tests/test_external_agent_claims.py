@@ -445,7 +445,7 @@ def test_unrelated_handoff_pr_cannot_release_implementation_claim(
     github = GitHubDouble()
     github.review_issue = 99
     external.reserve_next(cast(GitHub, github), client="codebuff", environment={})
-    with pytest.raises(ValueError, match="linked issue"):
+    with pytest.raises(ValueError, match="claimed issue"):
         external.claim_action(
             cast(GitHub, github),
             client="codebuff",
