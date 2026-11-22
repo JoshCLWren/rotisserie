@@ -1217,3 +1217,49 @@ def external_code_authors(repo: str, numbers: list[int]) -> set[str]:
             await conn.close()
 
     return asyncio.run(_read())
+
+
+def external_claim_details(
+    repo: str, actor: str, client: str, claim_id: str
+) -> dict[str, Any]:
+    """Read a fenced external claim before validating its GitHub handoff."""
+    _external_request(repo, actor, client, [1])
+    try:
+        uuid.UUID(claim_id)
+    except (ValueError, AttributeError):
+        raise ValueError("invalid claim ID") from None
+    if not enabled():
+        raise RuntimeError("Neon is not configured")
+
+    async def _read() -> dict[str, Any]:
+        conn = await measured_connect(dsn=_dsn(), timeout=8, command_timeout=8)
+        try:
+            row = await conn.fetchrow(
+                "SELECT payload FROM public.factory_state_kv WHERE cache_key=$1",
+                _external_key(repo, claim_id),
+            )
+            if row is None:
+                raise RuntimeError("external claim missing or replaced")
+            payload = row["payload"]
+            data = json.loads(payload) if isinstance(payload, str) else payload
+            record = data[0] if isinstance(data, list) and data else {}
+            if (
+                record.get("claim_id") != claim_id
+                or record.get("actor") != actor
+                or record.get("client") != client
+                or record.get("external") is not True
+            ):
+                raise RuntimeError("external claim identity changed")
+            return {
+                "target": record["target"],
+                "action": record["action"],
+                "head": record.get("head"),
+                "targets": list(record["targets"]),
+                "client": client,
+                "actor": actor,
+                "claim_id": claim_id,
+            }
+        finally:
+            await conn.close()
+
+    return asyncio.run(_read())
