@@ -276,7 +276,13 @@ def test_unknown_neon_liveness_holds_all_work(
 def test_changed_pr_head_rejected_before_neon_claim(
     setup: LedgerDouble, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    offer = replace(make_offer(), target="pr:44", url=f"https://github.com/{REPO}/pull/44", action="review", head_sha="a" * 40)
+    offer = replace(
+        make_offer(),
+        target="pr:44",
+        url=f"https://github.com/{REPO}/pull/44",
+        action="review",
+        head_sha="a" * 40,
+    )
     monkeypatch.setattr(external.frontier, "capture", lambda *a, **k: make_frontier(offer))
     monkeypatch.setattr(
         external,
@@ -304,7 +310,13 @@ def test_dependency_change_holds_issue_before_claim(monkeypatch: pytest.MonkeyPa
 
 
 def test_review_waits_for_required_ci(monkeypatch: pytest.MonkeyPatch) -> None:
-    offered = replace(make_offer(), target="pr:44", url=f"https://github.com/{REPO}/pull/44", action="review", head_sha="a" * 40)
+    offered = replace(
+        make_offer(),
+        target="pr:44",
+        url=f"https://github.com/{REPO}/pull/44",
+        action="review",
+        head_sha="a" * 40,
+    )
     monkeypatch.setattr(external.frontier, "capture", lambda *a, **k: make_frontier(offered))
     monkeypatch.setattr(external, "_required_checks_outcome", lambda *a, **k: "waiting")
     ok, reason = external._live_offer(cast(GitHub, GitHubDouble()), offered)
@@ -315,7 +327,13 @@ def test_review_waits_for_required_ci(monkeypatch: pytest.MonkeyPatch) -> None:
 def test_known_external_code_author_cannot_reserve_own_review(
     setup: LedgerDouble, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    review = replace(make_offer(), target="pr:44", url=f"https://github.com/{REPO}/pull/44", action="review", head_sha="a" * 40)
+    review = replace(
+        make_offer(),
+        target="pr:44",
+        url=f"https://github.com/{REPO}/pull/44",
+        action="review",
+        head_sha="a" * 40,
+    )
     second = replace(make_offer(number=8), rank=2)
     monkeypatch.setattr(external.frontier, "capture", lambda *a, **k: make_frontier(review, second))
     monkeypatch.setattr(
