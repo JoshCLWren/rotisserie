@@ -81,9 +81,7 @@ def _active_leases(repository: str) -> tuple[dict[int, dict[str, object]], str]:
     return leases, ""
 
 
-def _target_leases(
-    repository: str, rows: list[dict[str, Any]]
-) -> dict[int, dict[str, object]]:
+def _target_leases(repository: str, rows: list[dict[str, Any]]) -> dict[int, dict[str, object]]:
     """Decode the target keyed row, not the other targets in a claim payload."""
     prefix = f"factory-lease-v1:{repository}:target:"
     leases: dict[int, dict[str, object]] = {}
