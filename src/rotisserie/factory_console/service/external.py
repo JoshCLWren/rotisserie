@@ -37,6 +37,7 @@ def ledger() -> ModuleType:
             "reserve_external",
             "external_lease_action",
             "external_wip_count",
+            "external_claim_details",
         )
     ):
         raise RuntimeError("installed Rotisserie factory runtime lacks external claim authority")
