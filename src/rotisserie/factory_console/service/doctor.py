@@ -204,7 +204,8 @@ def shared_failures(github: GitHub, now: datetime) -> Finding:
             + "rotisserie factory unstick --dry-run shows the evidence; no worker is sent "
             "to these PRs until main is fixed",
         )
-    free = {item.number for item in backlog if item.free}
+    # Conflicting PRs get merge-conflict work, which merges main; update-branch cannot.
+    free = {item.number for item in backlog if item.free and not item.conflicted}
     syncs = []
     waiting = []
     for number in sorted(red):

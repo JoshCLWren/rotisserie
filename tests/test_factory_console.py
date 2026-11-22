@@ -2168,3 +2168,27 @@ def test_doctor_fix_syncs_free_prs_main_moved_past(fake: FakeGitHub) -> None:
     assert [item.fix for item in applied] == ["sync-main"]
     puts = [call for call in fake.calls if any("update-branch" in part for part in call)]
     assert len(puts) == 1 and f"expected_head_sha={301:040d}" in puts[0]
+
+
+def test_a_conflicting_pr_gets_merge_conflict_work_not_a_sync(fake: FakeGitHub) -> None:
+    unstick_routes(fake, FULL_BACKLOG)
+    baseline_routes(fake, {304: "src/d.rs"}, changed_at="2026-11-22T13:00:00Z")
+    code, out = invoke(["--json", "unstick", "--dry-run"])
+    plan = json.loads(out)["plan"]
+    assert not plan["syncs"]
+    work = {item["task"]["target"]: item["task"]["action"] for item in plan["assignments"]}
+    assert work["pr:304"] == "merge-conflict"
+
+
+def test_sync_reports_a_conflict_as_merge_conflict_work(fake: FakeGitHub) -> None:
+    from rotisserie.factory_console.github import GitHub, GitHubError
+    from rotisserie.factory_console.service import unstick
+
+    fake.routes[r"issues/301$"] = {"labels": [{"name": "factory:unowned"}]}
+
+    def conflict() -> JSON:
+        raise GitHubError("GitHub request failed: gh: merge conflict between base and head")
+
+    fake.routes[r"pulls/301/update-branch"] = conflict
+    result = unstick.sync(GitHub(REPO), unstick.Sync(301, "a" * 40, "t", "w"))
+    assert not result.ok and "needs merge-conflict work" in result.text

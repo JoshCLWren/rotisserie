@@ -208,7 +208,9 @@ def plan(
                 )
             )
             continue
-        if everything and shared.needs_sync(item.number):
+        # A conflicting PR cannot be synced by update-branch; its merge-conflict work
+        # merges main anyway, so it takes the normal path below.
+        if everything and shared.needs_sync(item.number) and not item.conflicted:
             if item.free:
                 head = _head(github, item.number)
                 if head:
@@ -382,6 +384,12 @@ def sync(github: GitHub, item: Sync) -> Synced:
             fields={"expected_head_sha": item.head},
         )
     except GitHubError as exc:
+        if "merge conflict" in str(exc).lower():
+            return Synced(
+                item.pr,
+                False,
+                f"PR #{item.pr}: conflicts with main, so it needs merge-conflict work, not a sync",
+            )
         return Synced(item.pr, False, f"PR #{item.pr}: not synced: {exc}")
     return Synced(item.pr, True, f"PR #{item.pr}: merged main into it; its checks run again")
 
