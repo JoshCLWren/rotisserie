@@ -1515,3 +1515,85 @@ def test_outcomes_counts_a_closed_pr_as_overtaken_not_missed(fake: FakeGitHub) -
     assert data["requests"][0]["goal"] == "closed"
     code, out = invoke(["outcomes"])
     assert "Not done" not in out
+
+
+# checks ---------------------------------------------------------------------------------
+
+
+def test_check_logs_are_summarized_by_their_first_real_failure() -> None:
+    from rotisserie.factory_console.service.checks import summarize_log
+
+    fmt = (
+        "2026-11-20T17:20:00Z Diff in /home/runner/work/comic-pile/comic-pile/native/roll-service/src/a.rs:162:\n"
+        "2026-11-20T17:20:00Z Diff in /home/runner/work/comic-pile/comic-pile/native/roll-service/src/b.rs:9:\n"
+        "##[error]Process completed with exit code 1.\n"
+    )
+    kind, summary, files = summarize_log(fmt)
+    assert kind == "formatting"
+    assert summary == "cargo fmt --check wants changes in a.rs, b.rs"
+    assert files == ("native/roll-service/src/a.rs", "native/roll-service/src/b.rs")
+    tests = (
+        "test same_path_openapi::tests::checked_in_contract_is_current ... FAILED\n"
+        "error: test failed, to rerun pass `-p comicpile-roll-service --lib`\n"
+    )
+    kind, summary, _ = summarize_log(tests)
+    assert kind == "tests"
+    assert "same_path_openapi::tests::checked_in_contract_is_current" in summary
+    assert "regenerate it" in summary
+    kind, summary, _ = summarize_log("error[E0308]: mismatched types\n")
+    assert (kind, summary) == ("compile", "error[E0308]: mismatched types")
+    kind, summary, _ = summarize_log("##[error]Process completed with exit code 1.\n")
+    assert kind == "other"
+
+
+def test_checks_command_reports_failing_checks_on_the_head(fake: FakeGitHub) -> None:
+    fake.routes[r"pulls/5629$"] = {"head": {"sha": "6dcf97e6" + "0" * 32}}
+    fake.routes[r"commits/6dcf97e6\w+/check-runs"] = {
+        "check_runs": [
+            {"id": 71, "name": "rust-roll", "conclusion": "failure", "html_url": "u1"},
+            {"id": 72, "name": "lint", "conclusion": "success", "html_url": "u2"},
+        ]
+    }
+    fake.texts["actions/jobs/71/logs"] = "Diff in /home/runner/work/w/w/src/a.rs:1:\n"
+    code, out = invoke(["checks", "pr:5629"])
+    assert code == 0
+    assert "rust-roll (formatting): cargo fmt --check wants changes in a.rs" in out
+    assert "--action ci-repair" in out and "lint" not in out
+
+
+def test_unstick_sends_ci_repair_not_review_when_checks_are_red(fake: FakeGitHub) -> None:
+    unstick_routes(fake, FULL_BACKLOG)
+    fake.routes[r"pulls/303$"] = {"head": {"sha": "a" * 40}}
+    fake.routes[r"commits/a{40}/check-runs"] = {
+        "check_runs": [{"id": 81, "name": "rust-roll", "conclusion": "failure", "html_url": "u"}]
+    }
+    fake.texts["actions/jobs/81/logs"] = "test x::y ... FAILED\n"
+    code, out = invoke(["--json", "unstick", "--dry-run"])
+    plan = json.loads(out)["plan"]
+    work = {item["task"]["target"]: item["task"] for item in plan["assignments"]}
+    assert work["pr:303"]["action"] == "ci-repair"  # was changes-requested
+    assert "checks fail: rust-roll: failing tests: x::y" in work["pr:303"]["why"]
+
+
+def test_by_item_flags_items_going_in_circles() -> None:
+    from rotisserie.factory_console.service.outcomes import RequestOutcome, by_item
+
+    def outcome(run: int, target: str, goal: str, result: str = "failed") -> RequestOutcome:
+        return RequestOutcome(
+            run, START, target, "dispatched", "", "review-findings", "m", "w", None,
+            result, "", goal, "",
+        )  # fmt: skip
+
+    histories = by_item(
+        [
+            outcome(5, "pr:1", "pending", "running"),
+            outcome(4, "pr:1", "not-met"),
+            outcome(3, "pr:1", "not-met"),
+            outcome(2, "pr:2", "met", "delivered"),
+            outcome(1, "pr:2", "not-met"),
+        ]
+    )
+    assert [(item.target, item.rounds, item.missed, item.churning) for item in histories] == [
+        ("pr:1", 3, 2, True),
+        ("pr:2", 2, 1, False),
+    ]

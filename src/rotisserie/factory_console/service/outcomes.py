@@ -299,3 +299,47 @@ def latest_misses(found: list[RequestOutcome]) -> list[RequestOutcome]:
         if item.goal == "not-met":
             misses.append(item)
     return misses
+
+
+@dataclass(frozen=True)
+class ItemHistory:
+    """Every started request on one item: is it converging or going round in circles?"""
+
+    target: str
+    rounds: int  # workers started on it
+    missed: int  # rounds whose goal did not hold (failed, idle with the problem left, ...)
+    running: int
+    actions: tuple[str, ...]  # newest first
+    latest: str  # latest round's worker result
+    latest_goal: str
+
+    @property
+    def churning(self) -> bool:
+        """Two or more misses with nothing done: more of the same is unlikely to help."""
+        return self.missed >= 2 and self.latest_goal != "met"
+
+    def to_dict(self) -> dict[str, object]:
+        data = asdict(self)
+        data["churning"] = self.churning
+        return data
+
+
+def by_item(found: list[RequestOutcome]) -> list[ItemHistory]:
+    """Group started requests (newest first) per item, the most-missed items first."""
+    groups: dict[str, list[RequestOutcome]] = {}
+    for item in found:
+        if item.decision == "dispatched" and item.target:
+            groups.setdefault(item.target, []).append(item)
+    histories = [
+        ItemHistory(
+            target,
+            len(rows),
+            sum(1 for row in rows if row.goal == "not-met"),
+            sum(1 for row in rows if row.worker_result == "running"),
+            tuple(row.action for row in rows),
+            rows[0].worker_result,
+            rows[0].goal,
+        )
+        for target, rows in groups.items()
+    ]
+    return sorted(histories, key=lambda item: (-item.missed, -item.rounds, item.target))

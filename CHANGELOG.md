@@ -25,6 +25,12 @@ such change must be called out here and in its release notes.
 
 ### Added
 
+- `rotisserie factory checks pr:N` summarizes each failing check on a PR's
+  head (formatting diff with files, failing tests, compile errors). `unstick`
+  sends ci-repair instead of review work to PRs with red checks and says when
+  a held PR needs a ci-repair takeover.
+- `outcomes --by-item` (rounds, misses and latest result per item; flags items
+  going in circles) and `outcomes --limit N`.
 - `rotisserie factory close pr:N --reason TEXT` stops any worker on the PR,
   closes it with the reason, and closes its issue as not planned.
 - `unstick` starts at most as many issues as the review-backlog and open-PR

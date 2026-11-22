@@ -14,6 +14,7 @@ rotisserie factory why issue:N # why an issue is or is not being picked up
 rotisserie factory unstick     # start the workers that clear the bottleneck
 rotisserie factory outcomes    # did the requested work actually happen
 rotisserie factory close pr:N --reason TEXT  # close work that should not be done
+rotisserie factory checks pr:N # why its checks fail, in one line each
 ```
 
 The repository is taken from `--repo owner/name`, `FACTORY_REPO`, the nearest
@@ -198,6 +199,22 @@ A failed worker never counts as done, even when later work fixed the item.
 Requests the scheduler deferred count as "not started", not as misses. The
 "Not done" list shows each item whose latest started request missed its goal.
 A PR someone closed counts as "closed" (overtaken), not as a miss.
+
+`outcomes --by-item` shows one line per item: rounds, misses, actions and the
+latest result, most-missed first. An item that missed twice or more with
+nothing done is marked "going in circles": another round on the same models
+is unlikely to help. `--limit N` reads more scheduler passes (default 40,
+newest first) for long windows.
+
+## Why are its checks failing?
+
+`rotisserie factory checks pr:N` reads the failing check runs on the PR's
+current head and pulls the first real error out of each log: a `cargo fmt`
+diff (with the files), failing test names (and a hint when the failure is a
+stale checked-in generated contract), or a compile error. A review-feedback
+round cannot validate while these are red, so `unstick` plans **ci-repair**
+instead of review work for such PRs, and for one a worker already holds it
+says to take it over (`run … --action ci-repair --take-over`).
 `--since 2h` sets the window; `--all` also follows routine scheduler passes,
 one row per worker each pass started.
 

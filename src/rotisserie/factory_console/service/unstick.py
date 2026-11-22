@@ -11,13 +11,14 @@ Starting the plan submits one forced, targeted request per task.
 from __future__ import annotations
 
 from concurrent.futures import ThreadPoolExecutor
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import datetime, timedelta
 
 from rotisserie.factory_console import runtime
 from rotisserie.factory_console.github import GitHub, GitHubError
 from rotisserie.factory_console.service import (
     catalog,
+    checks,
     dispatch,
     outcomes,
     providers,
@@ -148,11 +149,35 @@ def plan(
         for found in stale.values()
         if found is not None and found.obsolete
     ]
+    live = [item for item in backlog if stale.get(item.number) is None or not _gone(stale, item)]
+    with ThreadPoolExecutor(max_workers=6) as pool:
+        red = dict(
+            zip(
+                (item.number for item in live),
+                pool.map(lambda pr: _red_checks(github, pr.number), live),
+                strict=True,
+            )
+        )
     for item in sorted(backlog, key=lambda pr: (ACTION_ORDER.index(pr.action), pr.number)):
         found = stale.get(item.number)
         if found is not None and found.obsolete:
             continue
+        failing = red.get(item.number) or []
+        if failing and item.action in ("review", "review-findings"):
+            # No review round can validate while the PR's own checks are red.
+            item = replace(item, action="ci-repair")
         if not item.free:
+            if failing and item.action == "ci-repair":
+                held.append(
+                    queue.Reason(
+                        "red-checks",
+                        f"PR #{item.number}: its checks fail ({_red_text(failing)}), but the "
+                        "worker on it is not repairing them. Take it over: run PROVIDER MODEL "
+                        f"--target pr:{item.number} --action ci-repair --take-over",
+                        prs=(item.number,),
+                    )
+                )
+                continue
             worker = item.owner.removeprefix("factory:")
             holder = runtime.provider_for_worker(worker)
             who = (
@@ -168,13 +193,14 @@ def plan(
                 )
             )
             continue
+        detail = f"; checks fail: {_red_text(failing)}" if failing else ""
         tasks.append(
             Task(
                 f"pr:{item.number}",
                 item.action,
                 item.title,
                 f"in the review backlog ({item.stage.removeprefix('factory:')}); "
-                f"{ACTION_WORDS[item.action]}",
+                f"{ACTION_WORDS[item.action]}{detail}",
             )
         )
     if not review_full and wip < board.pr_wip_limit:
@@ -214,6 +240,22 @@ def plan(
         tuple(problems),
         tuple(obsolete),
     )
+
+
+def _gone(stale: dict[int, obsolete_check.Staleness | None], item: runtime.BacklogPR) -> bool:
+    found = stale.get(item.number)
+    return found is not None and found.obsolete
+
+
+def _red_checks(github: GitHub, number: int) -> list[checks.FailingCheck]:
+    try:
+        return checks.failing_checks(github, number)
+    except GitHubError:
+        return []
+
+
+def _red_text(failing: list[checks.FailingCheck]) -> str:
+    return "; ".join(f"{item.name}: {item.summary}" for item in failing[:2])
 
 
 def _staleness(github: GitHub, number: int) -> obsolete_check.Staleness | None:

@@ -42,6 +42,7 @@ from rotisserie.factory_console.github import (
 )
 from rotisserie.factory_console.service import (
     catalog,
+    checks,
     close,
     dispatch,
     outcomes,
@@ -262,6 +263,14 @@ def add_parser(subcommands: argparse._SubParsersAction[argparse.ArgumentParser])
     results.add_argument(
         "--all", action="store_true", help="include routine scheduler passes, not just targeted"
     )
+    results.add_argument(
+        "--by-item",
+        action="store_true",
+        help="one line per item: rounds, misses, latest result (find items going in circles)",
+    )
+    results.add_argument(
+        "--limit", type=int, default=40, help="scheduler passes to read (default 40, newest first)"
+    )
     _common(results)
 
     shut = commands.add_parser(
@@ -280,6 +289,10 @@ def add_parser(subcommands: argparse._SubParsersAction[argparse.ArgumentParser])
     )
     shut.add_argument("--yes", "-y", action="store_true", help="do not ask first")
     _common(shut)
+
+    red = commands.add_parser("checks", help="why a pull request's checks fail, in one line each")
+    red.add_argument("what", help="pr:N")
+    _common(red)
 
     providers = commands.add_parser(
         "providers", help="providers the factory can use and whether they are set up"
@@ -395,6 +408,7 @@ def _help_text() -> str:
             "  rotisserie factory why [issue:N] why work is or is not being picked up",
             "  rotisserie factory unstick       start the workers that clear the bottleneck",
             "  rotisserie factory outcomes      did the requested work actually happen",
+            "  rotisserie factory checks pr:N   why its checks fail",
             "  rotisserie factory close pr:N --reason TEXT   close work that should not be done",
             "  rotisserie factory cancel issue:N",
             "  rotisserie factory watch RUN",
@@ -1661,9 +1675,17 @@ GOAL_WORDS = {
 def cmd_outcomes(context: Context, arguments: argparse.Namespace) -> Outcome:
     console = context.console
     start = parse_since(arguments.since, context.clock.now())
+    if arguments.limit < 1:
+        raise UsageError("--limit must be 1 or more.")
     found = outcomes.request_outcomes(
-        context.github, since=start, clock=context.clock, targeted_only=not arguments.all
+        context.github,
+        since=start,
+        clock=context.clock,
+        targeted_only=not arguments.all,
+        limit=arguments.limit,
     )
+    if arguments.by_item:
+        return _show_by_item(console, start, outcomes.by_item(found))
     console.heading(f"Requests since {local_time(start)} ({len(found)})")
     if not found:
         console.line("No requests in that window.")
@@ -1699,6 +1721,64 @@ def cmd_outcomes(context: Context, arguments: argparse.Namespace) -> Outcome:
         "goals": dict(summary),
     }
     return Outcome(Result.COMPLETED, EXIT_OK, data)
+
+
+def _show_by_item(
+    console: Console, start: datetime, histories: list[outcomes.ItemHistory]
+) -> Outcome:
+    console.heading(f"Work per item since {local_time(start)} ({len(histories)})")
+    rows = [
+        [
+            item.target,
+            str(item.rounds),
+            str(item.missed),
+            ", ".join(dict.fromkeys(item.actions)),
+            item.latest,
+            GOAL_WORDS.get(item.latest_goal, item.latest_goal),
+            "going in circles" if item.churning else "",
+        ]
+        for item in histories
+    ]
+    console.table(["Item", "Rounds", "Missed", "Actions", "Latest", "Goal", ""], rows)
+    churning = [item for item in histories if item.churning]
+    if churning:
+        console.line()
+        console.line(
+            f"{len(churning)} item(s) missed twice or more with nothing done. Another round "
+            "on the same models is unlikely to help: try a different model "
+            "(run PROVIDER MODEL --target …), or look at the item yourself."
+        )
+    return Outcome(
+        Result.COMPLETED,
+        EXIT_OK,
+        {"since": start.isoformat(), "items": [item.to_dict() for item in histories]},
+    )
+
+
+# checks ---------------------------------------------------------------------------------
+
+
+def cmd_checks(context: Context, arguments: argparse.Namespace) -> Outcome:
+    kind, number = _split_target(arguments.what)
+    if kind != "pr":
+        raise UsageError("checks takes a pull request: pr:N")
+    console = context.console
+    failing = checks.failing_checks(context.github, number)
+    if not failing:
+        console.ok(f"PR #{number}: no failing checks on its current head")
+    else:
+        console.fail(f"PR #{number}: {len(failing)} failing check(s)")
+        for item in failing:
+            console.line(f"  {console.dot} {item.name} ({item.kind}): {item.summary}")
+            console.link("    Log", item.url)
+        console.line()
+        console.line(
+            f"Repair it: rotisserie factory run PROVIDER MODEL --target pr:{number} "
+            "--action ci-repair"
+        )
+    return Outcome(
+        Result.COMPLETED, EXIT_OK, {"pr": number, "failing": [i.to_dict() for i in failing]}
+    )
 
 
 # close ----------------------------------------------------------------------------------
@@ -1967,6 +2047,7 @@ HANDLERS = {
     "unstick": cmd_unstick,
     "outcomes": cmd_outcomes,
     "close": cmd_close,
+    "checks": cmd_checks,
     "explain": cmd_why,
     "providers": cmd_providers,
     "models": cmd_models,
