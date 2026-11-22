@@ -75,25 +75,37 @@ def _active_leases(repository: str) -> tuple[dict[int, dict[str, object]], str]:
         return {}, problem
     try:
         rows: list[dict[str, Any]] = ledger.list_leases(repository)
+        leases = _target_leases(repository, rows)
     except Exception as exc:
         return {}, f"Neon lease state unavailable ({type(exc).__name__})"
+    return leases, ""
+
+
+def _target_leases(
+    repository: str, rows: list[dict[str, Any]]
+) -> dict[int, dict[str, object]]:
+    """Decode the target keyed row, not the other targets in a claim payload."""
+    prefix = f"factory-lease-v1:{repository}:target:"
     leases: dict[int, dict[str, object]] = {}
     for row in rows:
-        # An expired token is not proof of worker inactivity. Reconciliation
-        # must establish liveness before reusing that target.
-        for number in row.get("targets", []):
-            if not isinstance(number, int) or number < 1:
-                continue
-            if ":target:" not in str(row.get("key", "")):
-                continue
-            leases[number] = {
-                "claim_id": str(row.get("claim_id", "")),
-                "worker": str(row.get("worker", "")),
-                "operation": str(row.get("operation", "")),
-                "expires_at": str(row.get("expires_at", "")),
-                "active": row.get("active") is True,
-            }
-    return leases, ""
+        key = row.get("key")
+        if not isinstance(key, str) or not key.startswith(prefix):
+            continue  # Worker rows share target lists, but are not target leases.
+        number_text = key.removeprefix(prefix)
+        if not number_text.isascii() or not number_text.isdecimal():
+            raise ValueError("Neon ledger returned an invalid target lease key")
+        number = int(number_text)
+        if number <= 0 or number in leases:
+            raise ValueError("Neon ledger returned a duplicate or invalid target")
+        # Expired rows remain holds until trusted liveness reconciliation.
+        leases[number] = {
+            "claim_id": str(row.get("claim_id", "")),
+            "worker": str(row.get("worker", "")),
+            "operation": str(row.get("operation", "")),
+            "expires_at": str(row.get("expires_at", "")),
+            "active": row.get("active") is True,
+        }
+    return leases
 
 
 def _number(row: Obj) -> int:
@@ -296,7 +308,12 @@ def capture(github: GitHub, *, now: datetime) -> Frontier:
     # This is precisely the installed factory policy's deterministic candidate
     # order. In-flight Jev overrides remain controller-owned, never simulated.
     core = runtime.module("factory_work_policy")
-    candidates = core.build_candidates(board.issues, board.prs)
+    candidates = core.build_candidates(
+        board.issues,
+        board.prs,
+        pr_wip_limit=board.pr_wip_limit,
+        review_backlog_limit=board.review_backlog_limit,
+    )
     by_issue = {entry.issue: entry.verdict for entry in summary.entries}
     leases, problem = _active_leases(github.repo)
     rows_for_counts: list[Mapping[str, object]] = list(board.prs)
