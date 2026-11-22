@@ -37,6 +37,7 @@ class FailingCheck:
     kind: str  # formatting | compile | tests | other
     summary: str
     files: tuple[str, ...] = ()
+    completed_at: str = ""  # ISO time the check run finished
 
     def to_dict(self) -> dict[str, object]:
         return asdict(self)
@@ -99,5 +100,14 @@ def failing_checks(github: GitHub, number: int, *, read_logs: bool = True) -> li
                 kind, summary, files = summarize_log(github.text(f"actions/jobs/{job}/logs"))
             except GitHubError:
                 pass
-        found.append(FailingCheck(name, string(run, "html_url"), kind, summary, files))
+        found.append(
+            FailingCheck(
+                name,
+                string(run, "html_url"),
+                kind,
+                summary,
+                files,
+                string(run, "completed_at"),
+            )
+        )
     return found

@@ -12,6 +12,7 @@ import re
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
+from typing import Any
 
 import pytest
 
@@ -140,8 +141,10 @@ class FakeGitHub:
         if argv[0] == "api":
             path = next(
                 item
-                for item in argv[1:]
-                if not item.startswith("-") and item not in ("GET", "POST")
+                for index, item in enumerate(argv[1:], start=1)
+                if not item.startswith("-")
+                and argv[index - 1] not in ("-f", "-F", "--method", "-X")
+                and item not in ("GET", "POST")
             )
             if "--allow-escape-sequences" in argv:
                 for prefix, text in self.texts.items():
@@ -1904,3 +1907,288 @@ def test_unstick_hands_repeated_conflict_failures_to_a_person(fake: FakeGitHub) 
     assert "pr:304" not in [item["task"]["target"] for item in plan["assignments"]]
     assert plan["needs_person"][0]["prs"] == [304]
     assert "3 models failed to resolve its conflicts" in plan["needs_person"][0]["text"]
+
+
+# shared failures (baseline) -----------------------------------------------------------
+
+MAIN_FILE = "native/svc/src/shared.rs"
+FMT_LOG = (
+    f"Diff in /home/runner/work/w/w/{MAIN_FILE}:12:\n##[error]Process completed with exit code 1.\n"
+)
+
+
+def failing_check(
+    name: str = "rust-roll",
+    *,
+    files: tuple[str, ...] = (MAIN_FILE,),
+    summary: str = "cargo fmt --check wants changes in shared.rs",
+    completed: str = "2026-11-22T12:00:00Z",
+    run: int = 7000,
+) -> Any:
+    from rotisserie.factory_console.service.checks import FailingCheck
+
+    return FailingCheck(
+        name, f"https://github.com/{REPO}/actions/runs/{run}/job/{run + 1}", "formatting",
+        summary, files, completed,
+    )  # fmt: skip
+
+
+def main_check(conclusion: str, ran_at: str, files: tuple[str, ...] = (MAIN_FILE,)) -> Any:
+    from rotisserie.factory_console.service.baseline import MainCheck
+
+    return MainCheck("rust-roll", conclusion, "e" * 40, "u", ran_at, "s", files)
+
+
+def change(when: str, pr: int | None = 5629) -> Any:
+    from rotisserie.factory_console.service.baseline import Change
+
+    return Change(MAIN_FILE, "f" * 40, when, "add shared code", pr)
+
+
+def test_a_failure_in_files_the_pr_does_not_change_is_inherited() -> None:
+    from rotisserie.factory_console.service import baseline
+
+    verdict = baseline.judge(
+        1,
+        failing_check(),
+        frozenset({"src/mine.rs"}),
+        None,
+        lambda _p: change("2026-11-22T05:00:00Z"),
+    )
+    assert verdict.origin == baseline.INHERITED
+    assert "shared.rs, which the PR does not change" in verdict.reason
+    assert verdict.not_the_prs and not verdict.main_fixed
+
+
+def test_a_failure_in_the_prs_own_files_is_its_own() -> None:
+    from rotisserie.factory_console.service import baseline
+
+    verdict = baseline.judge(1, failing_check(), frozenset({MAIN_FILE}), None, lambda _p: None)
+    assert verdict.origin == baseline.OWN
+
+
+def test_a_failure_without_files_is_inherited_only_when_main_fails_the_same_way() -> None:
+    from rotisserie.factory_console.service import baseline
+
+    bare = failing_check(files=(), summary="error[E0308]: mismatched types")
+    assert baseline.judge(1, bare, frozenset(), None, lambda _p: None).origin == baseline.OWN
+    red_main = baseline.MainCheck(
+        "rust-roll", "failure", "e" * 40, "u", "2026-11-22T11:00:00Z",
+        "error[E0308]: mismatched types",
+    )  # fmt: skip
+    verdict = baseline.judge(1, bare, frozenset(), red_main, lambda _p: None)
+    assert (verdict.origin, verdict.reason) == (baseline.INHERITED, "main fails the same way")
+
+
+def test_mixed_failures_wait_on_main_until_main_is_fixed() -> None:
+    from rotisserie.factory_console.service import baseline
+
+    both = failing_check(files=(MAIN_FILE, "src/mine.rs"))
+    files = frozenset({"src/mine.rs"})
+    broken = baseline.judge(1, both, files, None, lambda _p: change("2026-11-22T05:00:00Z"))
+    assert broken.origin == baseline.MIXED and not broken.main_fixed
+    report = baseline.Report(verdicts=(broken,))
+    assert report.waits_on_main(1) and not report.needs_sync(1)
+    fixed = baseline.judge(1, both, files, None, lambda _p: change("2026-11-22T13:00:00Z"))
+    assert fixed.main_fixed and "already fixed" in fixed.reason
+    report = baseline.Report(verdicts=(fixed,))
+    assert report.needs_sync(1) and not report.waits_on_main(1)
+    # Own failures beside a fixed inherited one: sync first, repair after.
+    own = baseline.judge(
+        1, failing_check("lint", files=("src/mine.rs",)), files, None, lambda _p: None
+    )
+    report = baseline.Report(verdicts=(fixed, own))
+    assert report.needs_sync(1) and report.own_failures(1, [both]) == [both]
+
+
+def test_main_moving_past_an_inherited_failure_means_sync_not_repair() -> None:
+    from rotisserie.factory_console.service import baseline
+
+    touched = baseline.judge(
+        1, failing_check(), frozenset(), None, lambda _p: change("2026-11-22T13:00:00Z")
+    )
+    assert touched.origin == baseline.FIXED_ON_MAIN
+    assert "main changed shared.rs after this run" in touched.reason
+    passed = baseline.judge(
+        1, failing_check(), frozenset(), main_check("success", "2026-11-22T13:00:00Z"),
+        lambda _p: None,
+    )  # fmt: skip
+    assert passed.origin == baseline.FIXED_ON_MAIN and "passed on main since" in passed.reason
+    # A newer main run that still fails outweighs a newer change to the file.
+    still = baseline.judge(
+        1, failing_check(), frozenset(), main_check("failure", "2026-11-22T14:00:00Z"),
+        lambda _p: change("2026-11-22T13:00:00Z"),
+    )  # fmt: skip
+    assert still.origin == baseline.INHERITED
+
+
+def test_shared_failures_group_by_root_cause_across_checks_with_evidence() -> None:
+    from rotisserie.factory_console.service import baseline
+
+    stale_main = main_check("success", "2026-11-21T03:00:00Z")
+    verdicts = [
+        baseline.judge(pr, failing_check(name), frozenset(), None, lambda _p: None)
+        for pr in (11, 12)
+        for name in ("rust-roll", "Rust build")
+    ]
+    verdicts.append(
+        baseline.judge(13, failing_check(), frozenset({MAIN_FILE}), None, lambda _p: None)
+    )
+    incidents = baseline.group(
+        verdicts, {"rust-roll": stale_main}, lambda _p: change("2026-11-22T05:39:14Z")
+    )
+    assert len(incidents) == 1
+    incident = incidents[0]
+    assert incident.checks == ("rust-roll", "Rust build")
+    assert incident.prs == (11, 12)  # #13 changes the file itself
+    assert incident.state == "broken" and not incident.confirmed
+    assert "(PR #5629) last changed shared.rs on main" in incident.cause
+    assert any("none of them change shared.rs" in line for line in incident.evidence)
+    assert any("green result is out of date" in line for line in incident.evidence)
+    assert "Fix it once on main" in incident.text
+
+
+def baseline_routes(fake: FakeGitHub, prs: dict[int, str], *, changed_at: str) -> None:
+    """PRs whose rust-roll fails in MAIN_FILE; prs maps PR number to its own changed file."""
+    fake.routes[f"repos/{REPO}$"] = {"default_branch": "main"}
+    for number, own in prs.items():
+        head = f"{number:040d}"
+        fake.routes[f"pulls/{number}$"] = {"head": {"sha": head}}
+        fake.routes[f"pulls/{number}/files"] = [{"filename": own, "status": "modified"}]
+        fake.routes[f"commits/{head}/check-runs"] = {
+            "check_runs": [
+                {
+                    "id": 10 + number, "name": "rust-roll", "conclusion": "failure",
+                    "html_url": f"https://github.com/{REPO}/actions/runs/70{number}/job/{10 + number}",
+                    "completed_at": "2026-11-22T12:00:00Z",
+                }
+            ]
+        }  # fmt: skip
+        fake.texts[f"actions/jobs/{10 + number}/logs"] = FMT_LOG
+        fake.routes[f"actions/runs/70{number}$"] = {"workflow_id": 55}
+    fake.routes[r"actions/workflows/55/runs"] = {"workflow_runs": []}
+    fake.routes[r"commits\?sha=main&path="] = [
+        {
+            "sha": "f" * 40,
+            "commit": {"message": "add shared code", "committer": {"date": changed_at}},
+        }
+    ]
+    fake.routes[r"commits/f{40}/pulls"] = [{"number": 5629, "merged_at": changed_at}]
+
+
+def test_unstick_sends_no_worker_to_prs_red_only_because_of_main(fake: FakeGitHub) -> None:
+    unstick_routes(fake, FULL_BACKLOG)
+    baseline_routes(fake, {301: "src/a.rs", 302: "src/b.rs"}, changed_at="2026-11-22T05:39:14Z")
+    code, out = invoke(["--json", "unstick", "--dry-run"])
+    plan = json.loads(out)["plan"]
+    targets = {item["task"]["target"] for item in plan["assignments"]}
+    assert "pr:301" not in targets and "pr:302" not in targets
+    assert "pr:306" in targets  # unaffected PRs are still planned
+    assert [item["prs"] for item in plan["waiting_on_main"]] == [[301], [302]]
+    [incident] = plan["shared_failures"]
+    assert incident["prs"] == [301, 302] and incident["state"] == "broken"
+    assert "PR #5629" in incident["cause"]
+    code, out = invoke(["unstick", "--dry-run"])
+    assert "Failing because of main (1)" in out
+    assert "No worker until main is fixed" in out
+
+
+def test_unstick_syncs_free_prs_once_main_moved_past_the_failure(fake: FakeGitHub) -> None:
+    unstick_routes(fake, FULL_BACKLOG)
+    baseline_routes(fake, {301: "src/a.rs", 305: "src/e.rs"}, changed_at="2026-11-22T13:00:00Z")
+    fake.routes[r"issues/301$"] = {"labels": [{"name": "factory:unowned"}]}
+    code, out = invoke(["--json", "unstick", "--dry-run"])
+    plan = json.loads(out)["plan"]
+    assert [(item["pr"], item["head"]) for item in plan["syncs"]] == [(301, f"{301:040d}")]
+    assert "pr:301" not in {item["task"]["target"] for item in plan["assignments"]}
+    # #305 has a worker: it is left alone, with a note to sync later.
+    assert any("sync it with main once its worker finishes" in r["text"] for r in plan["held"])
+    assert not any("update-branch" in " ".join(call) for call in fake.calls)
+    code, out = invoke(["unstick", "--yes", "--only", "pr:301"])
+    puts = [call for call in fake.calls if any("update-branch" in part for part in call)]
+    assert len(puts) == 1 and "PUT" in puts[0]
+    assert f"expected_head_sha={301:040d}" in puts[0]
+    assert "PR #301: merged main into it" in out
+
+
+def test_sync_leaves_a_pr_a_worker_took_since_the_plan(fake: FakeGitHub) -> None:
+    from rotisserie.factory_console.github import GitHub
+    from rotisserie.factory_console.service import unstick
+
+    fake.routes[r"issues/301$"] = {"labels": [{"name": f"factory:{WORKER}"}]}
+    result = unstick.sync(GitHub(REPO), unstick.Sync(301, "a" * 40, "t", "w"))
+    assert not result.ok and "took it" in result.text
+    assert not any("update-branch" in " ".join(call) for call in fake.calls)
+
+
+def test_unknown_pr_files_never_make_a_failure_inherited(fake: FakeGitHub) -> None:
+    from rotisserie.factory_console.github import GitHub
+    from rotisserie.factory_console.service import baseline
+
+    fake.routes[f"repos/{REPO}$"] = {"default_branch": "main"}
+    fake.routes[r"pulls/9/files"] = []
+    report = baseline.analyze(GitHub(REPO), {9: [failing_check()]})
+    assert [item.origin for item in report.verdicts] == [baseline.OWN]
+    assert not report.incidents and "unknown" in report.problems[0]
+
+
+def test_checks_command_says_which_failures_main_caused(fake: FakeGitHub) -> None:
+    baseline_routes(fake, {5670: "src/a.rs"}, changed_at="2026-11-22T05:39:14Z")
+    code, out = invoke(["checks", "pr:5670"])
+    assert code == 0
+    assert "From main (inherited): fails in shared.rs, which the PR does not change" in out
+    assert "Likely cause on main: ffffffff add shared code (PR #5629)" in out
+    assert "Nothing here is the PR's to repair" in out and "--action ci-repair" not in out
+
+
+def test_doctor_fails_when_main_breaks_backlog_prs(fake: FakeGitHub) -> None:
+    from rotisserie.factory_console.github import GitHub
+    from rotisserie.factory_console.service import doctor
+
+    unstick_routes(fake, FULL_BACKLOG)
+    baseline_routes(fake, {301: "src/a.rs", 302: "src/b.rs"}, changed_at="2026-11-22T05:39:14Z")
+    finding = doctor.shared_failures(GitHub(REPO), START)
+    assert finding.status == "fail"
+    assert "#301, #302" in finding.text and "Likely cause" in finding.hint
+    assert not finding.fix
+
+
+def test_doctor_fix_syncs_free_prs_main_moved_past(fake: FakeGitHub) -> None:
+    from rotisserie.factory_console.github import GitHub
+    from rotisserie.factory_console.service import doctor
+
+    unstick_routes(fake, FULL_BACKLOG)
+    baseline_routes(fake, {301: "src/a.rs", 305: "src/e.rs"}, changed_at="2026-11-22T13:00:00Z")
+    fake.routes[r"issues/301$"] = {"labels": [{"name": "factory:unowned"}]}
+    finding = doctor.shared_failures(GitHub(REPO), START)
+    assert (finding.status, finding.fix) == ("warn", "sync-main")
+    assert finding.targets == (f"pr:301@{301:040d}",)  # #305 has a worker
+    assert "#305 also need it once their workers finish" in finding.text
+    applied = doctor.apply_fixes(GitHub(REPO), [finding])
+    assert [item.fix for item in applied] == ["sync-main"]
+    puts = [call for call in fake.calls if any("update-branch" in part for part in call)]
+    assert len(puts) == 1 and f"expected_head_sha={301:040d}" in puts[0]
+
+
+def test_a_conflicting_pr_gets_merge_conflict_work_not_a_sync(fake: FakeGitHub) -> None:
+    unstick_routes(fake, FULL_BACKLOG)
+    baseline_routes(fake, {304: "src/d.rs"}, changed_at="2026-11-22T13:00:00Z")
+    code, out = invoke(["--json", "unstick", "--dry-run"])
+    plan = json.loads(out)["plan"]
+    assert not plan["syncs"]
+    work = {item["task"]["target"]: item["task"]["action"] for item in plan["assignments"]}
+    assert work["pr:304"] == "merge-conflict"
+
+
+def test_sync_reports_a_conflict_as_merge_conflict_work(fake: FakeGitHub) -> None:
+    from rotisserie.factory_console.github import GitHub, GitHubError
+    from rotisserie.factory_console.service import unstick
+
+    fake.routes[r"issues/301$"] = {"labels": [{"name": "factory:unowned"}]}
+
+    def conflict() -> JSON:
+        raise GitHubError("GitHub request failed: gh: merge conflict between base and head")
+
+    fake.routes[r"pulls/301/update-branch"] = conflict
+    result = unstick.sync(GitHub(REPO), unstick.Sync(301, "a" * 40, "t", "w"))
+    assert not result.ok and "needs merge-conflict work" in result.text
