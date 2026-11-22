@@ -601,3 +601,24 @@ def test_only_present_ingress_contract_tests_run(tmp_path: Path) -> None:
     uv_log = (tmp_path / "uv.log").read_text()
     assert "test_vercel_deployment.py" in uv_log
     assert "test_native_roll_live_ingress.py" not in uv_log
+
+
+def test_failed_step_output_is_published_to_the_job_log(tmp_path: Path) -> None:
+    """The /tmp log is never uploaded; a failure must say why in the job log.
+
+    PR #5656's worker was rejected for "frontend typecheck" with no error
+    visible anywhere an operator or `rotisserie factory outcomes` could read.
+    """
+    repo = repo_with(tmp_path, {"native/roll-service/src/queue.rs": "bad rust\n"})
+    rust_fixture(repo)
+    bin_dir = rust_stubs(tmp_path, fail_clippy=True)
+    result = run_checks(repo, env={"PATH": f"{bin_dir}{os.pathsep}{os.environ['PATH']}"})
+    # stderr is the job log; stdout here is only the test harness printing fast.log.
+    output = result.stderr
+    assert result.returncode == 1
+    assert "=== factory fast check failure output ===" in output
+    excerpt = output.split("=== factory fast check failure output ===", 1)[1]
+    excerpt = excerpt.split("=== end factory fast check failure output ===", 1)[0]
+    assert "### Rust workspace format, Clippy, and compilation" in excerpt
+    assert "error[E0308]: mismatched types" in excerpt
+    assert "[exit " in excerpt
