@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import threading
+from dataclasses import replace
 from concurrent.futures import ThreadPoolExecutor
 from datetime import UTC, datetime, timedelta
 from typing import Any, cast
@@ -40,6 +41,12 @@ class LedgerDouble:
         self.lock = threading.Lock()
         self.holder: str | None = None
         self.calls = 0
+        self.code_authors: set[str] = set()
+
+    def external_code_authors(self, repo: str, numbers: list[int]) -> set[str]:
+        assert repo == REPO
+        assert numbers
+        return self.code_authors
 
     def reserve_external(
         self, repo: str, actor: str, client: str, numbers: list[int], **kwargs: Any
@@ -267,15 +274,7 @@ def test_unknown_neon_liveness_holds_all_work(
 
 
 def test_changed_pr_head_rejected_before_neon_claim(setup: LedgerDouble, monkeypatch: pytest.MonkeyPatch) -> None:
-    offer = frontier.Offer(
-        **{
-            **make_offer().__dict__,
-            "target": "pr:44",
-            "url": f"https://github.com/{REPO}/pull/44",
-            "action": "review",
-            "head_sha": "a" * 40,
-        }
-    )
+    offer = replace(make_offer(), target="pr:44", url=f"https://github.com/{REPO}/pull/44", action="review", head_sha="a" * 40)
     monkeypatch.setattr(external.frontier, "capture", lambda *a, **k: make_frontier(offer))
     monkeypatch.setattr(external, "_linked_targets", lambda g, o: [44] if g.head == "a" * 40 else (_ for _ in ()).throw(ValueError("head changed")))
     with pytest.raises(ValueError, match="head changed"):
@@ -297,15 +296,7 @@ def test_dependency_change_holds_issue_before_claim(monkeypatch: pytest.MonkeyPa
 
 
 def test_review_waits_for_required_ci(monkeypatch: pytest.MonkeyPatch) -> None:
-    offered = frontier.Offer(
-        **{
-            **make_offer().__dict__,
-            "target": "pr:44",
-            "action": "review",
-            "head_sha": "a" * 40,
-            "url": f"https://github.com/{REPO}/pull/44",
-        }
-    )
+    offered = replace(make_offer(), target="pr:44", url=f"https://github.com/{REPO}/pull/44", action="review", head_sha="a" * 40)
     monkeypatch.setattr(external.frontier, "capture", lambda *a, **k: make_frontier(offered))
     monkeypatch.setattr(external, "_required_checks_outcome", lambda *a, **k: "waiting")
     ok, reason = external._live_offer(cast(GitHub, GitHubDouble()), offered)
@@ -316,19 +307,11 @@ def test_review_waits_for_required_ci(monkeypatch: pytest.MonkeyPatch) -> None:
 def test_known_external_code_author_cannot_reserve_own_review(
     setup: LedgerDouble, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    review = frontier.Offer(
-        **{
-            **make_offer().__dict__,
-            "target": "pr:44",
-            "action": "review",
-            "head_sha": "a" * 40,
-            "url": f"https://github.com/{REPO}/pull/44",
-        }
-    )
-    second = frontier.Offer(**{**make_offer(number=8).__dict__, "rank": 2})
+    review = replace(make_offer(), target="pr:44", url=f"https://github.com/{REPO}/pull/44", action="review", head_sha="a" * 40)
+    second = replace(make_offer(number=8), rank=2)
     monkeypatch.setattr(external.frontier, "capture", lambda *a, **k: make_frontier(review, second))
     monkeypatch.setattr(external, "_linked_targets", lambda g, o: [44] if o.action == "review" else [8])
-    setup.external_code_authors = lambda repo, nums: {"chatgpt"}  # type: ignore[attr-defined]
+    setup.code_authors.add("chatgpt")
     result = external.reserve_next(cast(GitHub, GitHubDouble()), client="chatgpt", environment={})
     assert result["status"] == "reserved"
     handoff = result["handoff"]
