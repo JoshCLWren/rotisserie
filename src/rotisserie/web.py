@@ -25,7 +25,7 @@ from rotisserie.factory_console.context import UsageError, find_repository
 REPO = re.compile(r"^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$")
 TARGET = re.compile(r"^(?:issue|pr):[1-9][0-9]*$")
 PR = re.compile(r"^pr:[1-9][0-9]*$")
-PROVIDER = re.compile(r"^[a-zA-Z0-9_.-]{1,80}$")
+PROVIDER = re.compile(r"^[a-zA-Z0-9][a-zA-Z0-9_.-]{0,79}$")
 MODEL = re.compile(r"^[a-zA-Z0-9_./:+-]{1,180}$")
 SETTING = re.compile(r"^[A-Z][A-Z0-9_]{1,100}$")
 INTEGER = re.compile(r"^[0-9]{1,7}$")
@@ -84,6 +84,17 @@ def read_command(name: str, query: Mapping[str, str]) -> list[str]:
     """Build only allowlisted, non-mutating factory commands."""
     if name not in READ_ONLY:
         raise InvalidRequest("Unknown read operation")
+    allowed_parameters = {
+        "models": {"provider"},
+        "why": {"target"},
+        "checks": {"target"},
+        "review": {"target"},
+        "conflicts": {"target"},
+        "report": {"since"},
+        "stats": {"window"},
+    }
+    if set(query) - allowed_parameters.get(name, set()):
+        raise InvalidRequest("Unsupported query parameter")
     args = [name]
     if name == "models":
         args.append(_match(_string(query, "provider", required=True), PROVIDER, "provider"))
