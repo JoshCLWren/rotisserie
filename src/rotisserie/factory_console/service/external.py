@@ -162,13 +162,11 @@ def _live_offer(github: GitHub, previous: frontier.Offer) -> tuple[bool, str]:
         or found.head_sha != previous.head_sha
         or found.priority != previous.priority
         or found.lane != previous.lane
+        or found.rank != previous.rank
     ):
         return False, "head, priority, stage or action changed"
     if found.status != "candidate":
         return False, "offer no longer eligible: " + "; ".join(found.hold_reasons)
-    higher = [o for o in latest.offers if o.rank < found.rank and o.status == "candidate"]
-    if higher:
-        return False, "a higher-ranked eligible action appeared"
     kind, number_text = previous.target.split(":")
     number = int(number_text)
     if kind == "issue":
@@ -225,16 +223,29 @@ def reserve_next(
                 "reason": "offer_snapshot_expired",
                 "retry": "refresh_frontier",
             }
-    candidates = [
-        o
-        for o in snapshot.offers
-        if o.status == "candidate"
-        and o.action in abilities
-        and not _is_known_author(o, client=client)
-    ]
-    if not candidates:
+    chosen: frontier.Offer | None = None
+    numbers: list[int] = []
+    for offered in snapshot.offers:
+        if offered.status != "candidate" or offered.action not in abilities:
+            continue
+        if _is_known_author(offered, client=client):
+            continue
+        if offered.action == "review":
+            try:
+                linked = _linked_targets(github, offered)
+                authors: set[str] = store.external_code_authors(github.repo, linked)
+            except (GitHubError, RuntimeError, ValueError) as exc:
+                return {
+                    "status": "held", "reason": f"review authorship unavailable: {exc}",
+                    "retry": "refresh_frontier",
+                }
+            if client in authors:
+                continue
+            numbers = linked
+        chosen = offered
+        break
+    if chosen is None:
         return {"status": "held", "reason": "no_eligible_offer", "retry": "refresh_frontier"}
-    chosen = candidates[0]
     if expected and chosen.target != expected:
         return {
             "status": "conflict",
@@ -246,7 +257,8 @@ def reserve_next(
     okay, reason = _live_offer(github, chosen)
     if not okay:
         return {"status": "conflict", "reason": reason, "retry": "refresh_frontier"}
-    numbers = _linked_targets(github, chosen)
+    if not numbers:
+        numbers = _linked_targets(github, chosen)
     outcome: dict[str, object] = store.reserve_external(
         github.repo,
         actor,
