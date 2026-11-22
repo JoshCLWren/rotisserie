@@ -922,3 +922,262 @@ def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
+
+
+# External agents share the same repository advisory lock and target keys as
+# factory workers. They do NOT impersonate numeric worker slots or spend model
+# provider reservations. An expired external claim is intentionally still a
+# hold until its identity-fenced release or verified operator reconciliation.
+EXTERNAL_ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$")
+EXTERNAL_ACTIONS = frozenset({
+    "implement", "review", "review-findings", "ci-repair", "merge-conflict",
+})
+EXTERNAL_WIP_ACTIONS = frozenset({
+    "implement", "review-findings", "ci-repair", "merge-conflict",
+})
+
+
+def _external_request(repo: str, actor: str, client: str, numbers: list[int]) -> list[int]:
+    if (not re.fullmatch(r"[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+", repo)
+            or not EXTERNAL_ID_RE.fullmatch(actor)
+            or not EXTERNAL_ID_RE.fullmatch(client)):
+        raise ValueError("invalid external actor, client or repository")
+    if not numbers or len(numbers) > 2 or any(type(n) is not int or n < 1 for n in numbers):
+        raise ValueError("invalid external lease targets")
+    if len(set(numbers)) != len(numbers):
+        raise ValueError("external lease targets must be distinct")
+    return sorted(numbers)
+
+
+def _external_key(repo: str, token: str) -> str:
+    return f"{LEASE_PREFIX}{repo}:external:{token}"
+
+
+async def _reserve_external(
+    repo: str, actor: str, client: str, numbers: list[int], *,
+    target: str, action: str, head: str | None, ttl: int,
+    observed_wip: int, wip_limit: int, offer_at: str,
+) -> dict[str, Any]:
+    token = str(uuid.uuid4())
+    keys = [_target_key(repo, n) for n in numbers]
+    conn = await measured_connect(dsn=_dsn(), timeout=8, command_timeout=12)
+    try:
+        async with conn.transaction():
+            await conn.execute(
+                "SELECT pg_advisory_xact_lock(hashtextextended($1, 0))", LEASE_PREFIX + repo
+            )
+            # Unlike the historic numeric-worker fallback, an expired but
+            # unreconciled external row is NOT implicitly reusable.
+            busy = await conn.fetch(
+                "SELECT cache_key FROM public.factory_state_kv WHERE cache_key = ANY($1::text[])",
+                keys,
+            )
+            if busy:
+                return {
+                    "status": "conflict", "reason": "existing_or_unreconciled_lease",
+                    "targets": sorted(str(row["cache_key"]) for row in busy),
+                    "retry": "refresh_frontier",
+                }
+            count = await conn.fetchval(
+                """SELECT count(*) FROM public.factory_state_kv
+                   WHERE starts_with(cache_key, $1)
+                     AND payload->0->>'wip' = 'true'""",
+                f"{LEASE_PREFIX}{repo}:external:",
+            )
+            if action == "implement" and observed_wip + int(count or 0) >= wip_limit:
+                return {
+                    "status": "conflict", "reason": "wip_capacity_changed",
+                    "retry": "refresh_frontier",
+                }
+            claim = {
+                "claim_id": token,
+                "operation": f"external:{actor}/{client}",
+                "external": True,
+                "actor": actor,
+                "client": client,
+                "targets": numbers,
+                "target": target,
+                "action": action,
+                "head": head,
+                "wip": action in EXTERNAL_WIP_ACTIONS,
+                "offer_at": offer_at,
+            }
+            for key in [*keys, _external_key(repo, token)]:
+                await conn.execute(
+                    """INSERT INTO public.factory_state_kv
+                       (cache_key, payload, fetched_at, expires_at, updated_at)
+                       VALUES ($1, $2::jsonb, now(),
+                               now() + $3::int * interval '1 second', now())
+                       ON CONFLICT (cache_key) DO NOTHING""",
+                    key, json.dumps([claim]), ttl,
+                )
+                # CAS never overwrites a claim, including an expired one.
+                matches = await conn.fetchval(
+                    """SELECT count(*) FROM public.factory_state_kv
+                       WHERE cache_key=$1 AND payload->0->>'claim_id'=$2""",
+                    key, token,
+                )
+                if matches != 1:
+                    raise RuntimeError("external lease CAS lost under repository lock")
+            expires_at = await conn.fetchval(
+                "SELECT expires_at FROM public.factory_state_kv WHERE cache_key=$1",
+                _external_key(repo, token),
+            )
+            await conn.execute(
+                """INSERT INTO public.factory_state_events
+                   (source,event_type,subject_type,subject_number,detail)
+                   VALUES ('rotisserie-external','external_reserved','target',$1,
+                           $2::jsonb)""",
+                numbers[-1], json.dumps({**claim, "repo": repo}),
+            )
+        return {
+            "status": "reserved", "claim_id": token, "actor": actor,
+            "client": client, "target": target, "action": action,
+            "head": head, "targets": numbers,
+            "expires_at": expires_at.isoformat(),
+        }
+    finally:
+        await conn.close()
+
+
+def reserve_external(
+    repo: str, actor: str, client: str, numbers: list[int], *,
+    target: str, action: str, head: str | None, ttl: int = 1800,
+    observed_wip: int, wip_limit: int, offer_at: str,
+) -> dict[str, Any]:
+    """Atomically fence one external claim using the factory's existing keys."""
+    numbers = _external_request(repo, actor, client, numbers)
+    if (action not in EXTERNAL_ACTIONS or not re.fullmatch(r"(issue|pr):[1-9][0-9]*", target)
+            or (head is not None and not re.fullmatch(r"[0-9a-f]{40}", head))
+            or not 300 <= ttl <= 3600 or not 1 <= wip_limit <= 10000
+            or not 0 <= observed_wip <= 10000 or not offer_at):
+        raise ValueError("invalid external reservation request")
+    if not enabled():
+        raise RuntimeError("trusted external claims require Neon")
+    return asyncio.run(_reserve_external(
+        repo, actor, client, numbers, target=target, action=action,
+        head=head, ttl=ttl, observed_wip=observed_wip, wip_limit=wip_limit,
+        offer_at=offer_at,
+    ))
+
+
+async def _finish_external(
+    repo: str, actor: str, client: str, token: str, *,
+    operation: str, evidence: str, ttl: int,
+) -> dict[str, Any]:
+    key = _external_key(repo, token)
+    conn = await measured_connect(dsn=_dsn(), timeout=8, command_timeout=12)
+    try:
+        async with conn.transaction():
+            await conn.execute(
+                "SELECT pg_advisory_xact_lock(hashtextextended($1, 0))", LEASE_PREFIX + repo
+            )
+            row = await conn.fetchrow(
+                "SELECT payload, expires_at FROM public.factory_state_kv WHERE cache_key=$1",
+                key,
+            )
+            if not row:
+                return {"status": "conflict", "reason": "claim_missing_or_replaced"}
+            payload = row["payload"]
+            value = json.loads(payload) if isinstance(payload, str) else payload
+            record = value[0] if isinstance(value, list) and value else {}
+            if (record.get("claim_id") != token or record.get("actor") != actor
+                    or record.get("client") != client or record.get("external") is not True):
+                return {"status": "conflict", "reason": "stale_or_wrong_client"}
+            numbers = record["targets"]
+            keys = [_target_key(repo, n) for n in numbers]
+            confirmed = await conn.fetch(
+                """SELECT cache_key, payload->0->>'claim_id' AS id
+                   FROM public.factory_state_kv WHERE cache_key=ANY($1::text[])""",
+                keys,
+            )
+            if len(confirmed) != len(keys) or any(row["id"] != token for row in confirmed):
+                return {"status": "conflict", "reason": "stale_target_fence"}
+            if operation == "renew":
+                if row["expires_at"] <= datetime.now(timezone.utc):
+                    return {"status": "conflict", "reason": "lease_expired_liveness_unknown"}
+                for target_key in [key, *keys]:
+                    await conn.execute(
+                        """UPDATE public.factory_state_kv
+                           SET expires_at=now()+$3::int*interval '1 second',
+                               updated_at=now()
+                           WHERE cache_key=$1 AND payload->0->>'claim_id'=$2""",
+                        target_key, token, ttl,
+                    )
+                expires_at = await conn.fetchval(
+                    "SELECT expires_at FROM public.factory_state_kv WHERE cache_key=$1", key
+                )
+                event = "external_renewed"
+            else:
+                # Handoff is evidence, not approval: independent review, exact-head
+                # CI, merge authorization and deployment remain controller gates.
+                await conn.execute(
+                    """DELETE FROM public.factory_state_kv
+                       WHERE cache_key=ANY($1::text[])
+                         AND payload->0->>'claim_id'=$2""",
+                    [key, *keys], token,
+                )
+                expires_at = None
+                event = "external_handoff" if operation == "handoff" else "external_released"
+            await conn.execute(
+                """INSERT INTO public.factory_state_events
+                   (source,event_type,subject_type,subject_number,detail)
+                   VALUES ('rotisserie-external',$1,'target',$2,$3::jsonb)""",
+                event, numbers[-1], json.dumps({
+                    "repo": repo, "claim_id": token, "actor": actor,
+                    "client": client, "target": record["target"],
+                    "action": record["action"], "head": record.get("head"),
+                    "evidence": evidence,
+                }),
+            )
+        return {
+            "status": "renewed" if operation == "renew" else "released",
+            "claim_id": token,
+            "expires_at": expires_at.isoformat() if expires_at else None,
+            "handoff_recorded": operation == "handoff",
+        }
+    finally:
+        await conn.close()
+
+
+def external_lease_action(
+    repo: str, actor: str, client: str, claim_id: str, *,
+    operation: str, evidence: str = "", ttl: int = 1800,
+) -> dict[str, Any]:
+    _external_request(repo, actor, client, [1])
+    try:
+        uuid.UUID(claim_id)
+    except (ValueError, AttributeError):
+        raise ValueError("invalid claim ID") from None
+    if operation not in {"renew", "release", "handoff"} or not 300 <= ttl <= 3600:
+        raise ValueError("invalid external lease operation")
+    if operation == "handoff" and not evidence.strip():
+        raise ValueError("handoff requires durable evidence")
+    if len(evidence) > 2000 or any(c in evidence for c in "\r\n"):
+        raise ValueError("invalid external evidence")
+    if not enabled():
+        raise RuntimeError("trusted external claims require Neon")
+    return asyncio.run(_finish_external(
+        repo, actor, client, claim_id, operation=operation, evidence=evidence, ttl=ttl
+    ))
+
+
+def external_wip_count(repo: str) -> int:
+    """Count all external WIP claims, even expired/unreconciled ones, once each."""
+    if not enabled():
+        raise RuntimeError("Neon is not configured")
+
+    async def _read() -> int:
+        conn = await measured_connect(dsn=_dsn(), timeout=8, command_timeout=8)
+        try:
+            result = await conn.fetchval(
+                """SELECT count(*) FROM public.factory_state_kv
+                   WHERE starts_with(cache_key, $1)
+                     AND payload->0->>'wip'='true'""",
+                f"{LEASE_PREFIX}{repo}:external:",
+            )
+            return int(result or 0)
+        finally:
+            await conn.close()
+
+    return asyncio.run(_read())
