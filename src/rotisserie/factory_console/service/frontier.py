@@ -309,6 +309,14 @@ def capture(github: GitHub, *, now: datetime) -> Frontier:
     # Shared Neon target keys record external ownership; count each linked
     # PR/issue claim only once when enforcing the normal WIP gate.
     leases, problem = _active_leases(github.repo)
+    if len(board.issues) >= 1000 or len(board.prs) >= 500:
+        # gh list --limit is a cap, not proof that the server has no more rows.
+        # A partial graph may conceal a higher-priority item or active PR.
+        problem = (
+            "GitHub open issue/PR listing reached its pagination cap; "
+            "a complete work view cannot be established"
+            + (f"; {problem}" if problem else "")
+        )
     external_wip = len(
         {
             str(value["claim_id"])
