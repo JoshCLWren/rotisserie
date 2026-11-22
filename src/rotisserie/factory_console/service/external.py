@@ -419,9 +419,7 @@ def reserve_next(
     return outcome
 
 
-def _verify_and_project_handoff(
-    github: GitHub, claim: dict[str, Any], evidence: str
-) -> None:
+def _verify_and_project_handoff(github: GitHub, claim: dict[str, Any], evidence: str) -> None:
     """Validate evidence against the fenced task before factory-stage projection.
 
     Only this authorized controller adds review-stage labels to the PR it
@@ -526,9 +524,7 @@ def claim_action(
     actor = principal(github, environment)
     store = ledger()
     if operation == "handoff":
-        claim: dict[str, Any] = store.external_claim_details(
-            github.repo, actor, client, claim_id
-        )
+        claim: dict[str, Any] = store.external_claim_details(github.repo, actor, client, claim_id)
         _verify_and_project_handoff(github, claim, evidence)
     result: dict[str, object] = store.external_lease_action(
         github.repo, actor, client, claim_id, operation=operation, evidence=evidence
