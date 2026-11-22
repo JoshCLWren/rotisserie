@@ -60,6 +60,7 @@ from rotisserie.domain import (
     WorkId,
     resolve_wip_limit,
 )
+from rotisserie.factory_console import commands as factory_commands
 from rotisserie.operator import (
     ConfigurationError,
     LocalCoordinationPort,
@@ -84,10 +85,19 @@ MUTATING = frozenset({"claim", "run", "review", "complete", "recover"})
 
 
 def parser() -> argparse.ArgumentParser:
-    value = argparse.ArgumentParser(prog="rotisserie")
-    value.add_argument("--config", type=Path, required=True)
+    value = argparse.ArgumentParser(
+        prog="rotisserie",
+        description=(
+            "Rotisserie coordinates AI and human workers. "
+            "Start with 'rotisserie factory' to operate a software factory."
+        ),
+    )
+    value.add_argument(
+        "--config", type=Path, help="adopter configuration (required for graph commands)"
+    )
     value.add_argument("--correlation-id")
     subcommands = value.add_subparsers(dest="command", required=True)
+    factory_commands.add_parser(subcommands)
 
     subcommands.add_parser("inspect", help="inspect the configured graph")
     plan = subcommands.add_parser("plan", help="plan deterministic work selection")
@@ -272,7 +282,12 @@ def parser() -> argparse.ArgumentParser:
 
 
 def main(argv: Sequence[str] | None = None) -> int:
-    arguments = parser().parse_args(argv)
+    command_parser = parser()
+    arguments = command_parser.parse_args(argv)
+    if arguments.command == "factory":
+        return factory_commands.main(arguments)
+    if arguments.config is None:
+        command_parser.error(f"--config is required for '{arguments.command}'")
     correlation_id = arguments.correlation_id or str(uuid.uuid4())
     try:
         config = load_config(arguments.config.resolve())

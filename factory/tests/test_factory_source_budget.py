@@ -16,7 +16,11 @@ SLOTS = importlib.import_module("factory_worker_slots")
 def test_dynamic_source_mapping_never_reads_a_model_manifest() -> None:
     sources = BUDGET.worker_sources()
     assert sources
-    assert sources == {slot.worker: slot.source for slot in SLOTS.slots()}
+    # Every regular slot resolves, and so does each operator overflow
+    # identity a forced request may use; nothing comes from a model manifest.
+    regular = {slot.worker: slot.source for slot in SLOTS.slots()}
+    assert regular.items() <= sources.items()
+    assert sources == SLOTS.all_identities()
     assert set(sources.values()) == set(SLOTS.sources())
 
 

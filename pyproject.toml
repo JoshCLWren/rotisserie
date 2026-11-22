@@ -40,6 +40,12 @@ dev = [
 [tool.hatch.build.targets.sdist]
 include = [
   "/src",
+  "/factory/.github/scripts/factory_provider_registry.py",
+  "/factory/.github/scripts/factory_worker_slots.py",
+  "/factory/.github/scripts/factory_manual_model.py",
+  "/factory/.github/scripts/factory_settings.py",
+  "/factory/.github/scripts/factory_dispatch_credential_filter.py",
+  "/factory/.github/scripts/factory_published_model_catalog.py",
   "/CHANGELOG.md",
   "/docs",
   "/examples",
@@ -49,6 +55,16 @@ include = [
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/rotisserie"]
+
+# The operator console reads provider, worker and settings metadata from the
+# same factory runtime files the dispatcher uses; ship them inside the wheel.
+[tool.hatch.build.targets.wheel.force-include]
+"factory/.github/scripts/factory_provider_registry.py" = "rotisserie/factory_console/factory_runtime/factory_provider_registry.py"
+"factory/.github/scripts/factory_worker_slots.py" = "rotisserie/factory_console/factory_runtime/factory_worker_slots.py"
+"factory/.github/scripts/factory_manual_model.py" = "rotisserie/factory_console/factory_runtime/factory_manual_model.py"
+"factory/.github/scripts/factory_settings.py" = "rotisserie/factory_console/factory_runtime/factory_settings.py"
+"factory/.github/scripts/factory_dispatch_credential_filter.py" = "rotisserie/factory_console/factory_runtime/factory_dispatch_credential_filter.py"
+"factory/.github/scripts/factory_published_model_catalog.py" = "rotisserie/factory_console/factory_runtime/factory_published_model_catalog.py"
 
 [tool.pytest.ini_options]
 addopts = "-ra"
@@ -61,6 +77,10 @@ extend-exclude = ["reference/legacy-factory", "factory"]
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP"]
+
+[tool.ruff.lint.per-file-ignores]
+# Verbatim GitHub log lines and dispatcher JSON are fixtures; do not wrap them.
+"tests/test_factory_console.py" = ["E501"]
 
 [tool.mypy]
 python_version = "3.12"

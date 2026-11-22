@@ -22,7 +22,7 @@ from factory_capacity_policy import (
     omniroute_enabled,
     remaining_omniroute_free_entry_slots,
 )
-from factory_work_policy import (BLOCKED_LABELS, FACTORY_NO_DIFF_RETRY_LIMIT, FACTORY_NO_DIFF_RETRY_RESET_SECONDS, FACTORY_PR_WIP_LIMIT, FACTORY_REVIEW_BACKLOG_LIMIT, FIXED_LEASE_TTL_SECONDS, LOCAL_LEASE_TTL_SECONDS, FIXED_OWNER_RE, NoDiffAttempt, NON_EXECUTABLE_ISSUES, OWNER_RE, REQUIRED_CHECK_FAILURE_STATES, STAGE_LABELS, STAGE_PRECEDENCE, Candidate, build_candidates, comment_is_trusted, eligibility, env_positive_int, factory_pr_wip_count, factory_review_backlog_count, is_manual_only, item_is_unowned, issue_bypasses_wip_limit, issue_explicitly_closed_by_pr, labels_of, lease_is_stale, linked_issue_from_branch, linked_issue_from_pr, order_candidates_for_worker, owner_of, parse_no_diff_attempts_from_comments, plan_distinct_assignments, pr_suppresses_issue_candidate, stage_of)
+from factory_work_policy import (BLOCKED_LABELS, FACTORY_NO_DIFF_RETRY_LIMIT, FACTORY_NO_DIFF_RETRY_RESET_SECONDS, FACTORY_PR_WIP_LIMIT, FACTORY_REVIEW_BACKLOG_LIMIT, FIXED_LEASE_TTL_SECONDS, LOCAL_LEASE_TTL_SECONDS, FIXED_OWNER_RE, NoDiffAttempt, NON_EXECUTABLE_ISSUES, OWNER_RE, REQUIRED_CHECK_FAILURE_STATES, STAGE_LABELS, STAGE_PRECEDENCE, Candidate, build_candidates, comment_is_trusted, eligibility, provenance_lane, env_positive_int, factory_pr_wip_count, factory_review_backlog_count, is_manual_only, item_is_unowned, issue_bypasses_wip_limit, issue_explicitly_closed_by_pr, labels_of, lease_is_stale, linked_issue_from_branch, linked_issue_from_pr, order_candidates_for_worker, owner_of, parse_no_diff_attempts_from_comments, plan_distinct_assignments, pr_suppresses_issue_candidate, stage_of)
 from factory_jev_shadow import apply_completion_ranking, apply_jev_ranking
 from stale_pr_decay import StalePRGuard, list_factory_prs
 from factory_review_policy import recorded_pr_contributors, trusted_comment_bodies
@@ -1407,19 +1407,27 @@ def is_authorized_fixed_worker(worker: str) -> bool:
     )
 
 
-def worker_skip_reason(worker: str) -> str | None:
+def worker_skip_reason(worker: str, *, operator_force: bool = False) -> str | None:
     """Return why this worker itself cannot take work now, or None.
 
     These checks are about the worker (pause, credentials, lease, budget,
     entry capacity), not the shared work pool. Callers must not treat a
     non-None reason as evidence that there is no executable work.
+
+    An operator-forced request is never held back by pacing the factory set
+    for itself: configured quota pauses, remembered provider cooldowns, daily
+    dispatch budgets and shared entry caps. If the provider really refuses,
+    the worker run reports that refusal. Missing credentials (the run could not
+    authenticate at all) and this worker already running still apply; the
+    caller then tries another identity.
     """
-    quota_pause = quota_pause_for(worker)
-    if quota_pause is not None:
-        return describe_quota_pause(quota_pause)
-    runtime_pause = runtime_quota_block_reason(worker)
-    if runtime_pause is not None:
-        return runtime_pause
+    if not operator_force:
+        quota_pause = quota_pause_for(worker)
+        if quota_pause is not None:
+            return describe_quota_pause(quota_pause)
+        runtime_pause = runtime_quota_block_reason(worker)
+        if runtime_pause is not None:
+            return runtime_pause
     try:
         sources = worker_sources()
         source = sources.get(str(worker), "")
@@ -1437,6 +1445,8 @@ def worker_skip_reason(worker: str) -> str | None:
         return f'credential eligibility unavailable for Factory {worker} ({type(exc).__name__})'
     if worker_has_active_lease(worker):
         return f'Factory {worker} already has an active lease'
+    if operator_force:
+        return None
     budget_reason = budget_block_reason(worker)
     if budget_reason is not None:
         return budget_reason
@@ -1467,10 +1477,12 @@ def assign(worker: str, kinds: tuple[str, ...] | None = None,
     """
     if not is_authorized_fixed_worker(worker):
         raise SystemExit(f'unsupported fixed-model worker: {worker}')
-    skip_reason = worker_skip_reason(worker)
+    skip_reason = worker_skip_reason(worker, operator_force=operator_force)
     if skip_reason is not None:
         print(f'[factory-controller] {skip_reason}; skipping dispatch', file=sys.stderr)
         return None
+    if operator_force and target is not None:
+        return assign_forced_target(worker, target, requested_action)
     return assign_from_pool(worker, kinds, target=target, requested_action=requested_action,
                             batch_reconciled=batch_reconciled, operator_force=operator_force)
 
@@ -1851,7 +1863,7 @@ def validate_assignment(worker: str, raw: str) -> dict[str, object]:
             stage=str(context.get('stage') or ''),
             conflicted=live_conflicted,
         )
-        if not candidate_is_live_executable(candidate):
+        if not candidate_is_live_executable(candidate) and not operator_forced_claim(number, worker):
             raise ValueError('Assignment PR is waiting or no longer executable')
     return context
 
@@ -2418,6 +2430,162 @@ def check_stale_prs(dry_run: bool = False) -> dict[str, Any]:
     }
 
 
+class TargetBusy(RuntimeError):
+    """An operator target is held by another worker; report, never steal."""
+
+    def __init__(self, number: int, owner: str) -> None:
+        super().__init__(f'#{number} is being worked on by {owner}')
+        self.number = number
+        self.owner = owner
+
+
+def _owners(labels: set[str]) -> set[str]:
+    return {label for label in labels if OWNER_RE.fullmatch(label) and label != 'factory:unowned'}
+
+
+def forced_target_candidate(kind: str, number: int, requested_action: str = 'advance') -> tuple[Candidate, str, str | None]:
+    """Build the operator-chosen work item from live GitHub state.
+
+    Operator force is the owner's explicit decision, so the factory's own
+    pacing and selection rules (queue limits, review backlog, retry counts,
+    cooldowns, intake authorization, dependency or blocked labels, CI still
+    running) do not hide the item. It must be open, and it must not be held by
+    another worker (:class:`TargetBusy`); the operator may stop or take over
+    that worker explicitly.
+
+    Returns the candidate, the action to run and the stage label to set.
+    """
+    target = target_json(number)
+    if str(target.get('state') or '').lower() != 'open':
+        raise RuntimeError(f'#{number} is closed. Reopen it to work on it.')
+    is_pr = 'pull_request' in target
+    if kind == 'pr' and not is_pr:
+        raise RuntimeError(f'#{number} is an issue, not a pull request. Use issue:{number}.')
+    if kind == 'issue' and is_pr:
+        kind = 'pr'
+    if kind == 'issue':
+        linked = [
+            pr for pr in list_prs()
+            if linked_issue_from_pr(pr) == number and pr_suppresses_issue_candidate(pr, {})
+        ]
+        if len(linked) > 1:
+            numbers = ', '.join(f"#{int(pr['number'])}" for pr in linked)
+            raise RuntimeError(f'Issue #{number} has several open pull requests ({numbers}). Choose one with pr:N.')
+        if linked:
+            # Continue the existing pull request instead of starting a duplicate.
+            return forced_target_candidate('pr', int(linked[0]['number']), requested_action)
+    if is_manual_only(target.get('body')):
+        raise RuntimeError(
+            f'#{number} is marked manual-only in its description. '
+            'Remove that marker to let a model work on it.'
+        )
+    labels = labels_of(target)
+    owners = _owners(labels)
+    if owners:
+        raise TargetBusy(number, sorted(owners)[0])
+    if kind == 'issue':
+        candidate = Candidate('issue', number, provenance_lane(labels), 0,
+                              str(target.get('created_at') or ''), stage=stage_of(labels))
+        return candidate, 'implement', 'factory:building'
+    live = live_pr_state(number)
+    conflicted = (live.get('mergeable') is False
+                  or str(live.get('mergeable_state') or '').upper() == 'DIRTY')
+    stage = stage_of(labels)
+    linked_issue = linked_issue_from_branch(str((live.get('head') or {}).get('ref') or ''))
+    if linked_issue is not None:
+        issue_labels = labels_of(target_json(linked_issue))
+        if _owners(issue_labels):
+            raise TargetBusy(linked_issue, sorted(_owners(issue_labels))[0])
+    stage_actions = {
+        'review': 'factory:review', 'review-findings': 'factory:changes-requested',
+        'ci-repair': 'factory:ci', 'merge-conflict': 'factory:changes-requested',
+    }
+    if requested_action != 'advance' and requested_action in stage_actions:
+        action = requested_action
+        stage = stage_actions[requested_action]
+    else:
+        action = completion_action_for(stage, conflicted) or 'review-findings'
+        if completion_action_for(stage, conflicted) is None:
+            # No stage action (for example, ready or blocked): address any
+            # outstanding feedback on the pull request.
+            stage = 'factory:changes-requested'
+    candidate = Candidate('pr', number, 3, 0, str(target.get('created_at') or ''),
+                          linked_issue=linked_issue, stage=stage, conflicted=conflicted)
+    return candidate, action, stage
+
+
+def assign_forced_target(worker: str, target: tuple[str, int], requested_action: str = 'advance') -> Candidate | None:
+    """Claim an operator-chosen item for one worker through the Neon ledger.
+
+    The atomic Neon reservation still prevents two workers from owning the
+    same item. Returns None when this worker could not be reserved.
+    """
+    candidate, action, stage = forced_target_candidate(target[0], target[1], requested_action)
+    if worker_has_active_lease(worker):
+        return None
+    owner = f'factory:{worker}'
+    numbers = [candidate.number]
+    if candidate.kind == 'pr' and candidate.linked_issue is not None:
+        numbers.insert(0, candidate.linked_issue)
+    try:
+        token = acquire_lease(REPO, worker, numbers, FIXED_LEASE_TTL_SECONDS)
+    except Exception as exc:
+        raise RuntimeError(f'Claim database unavailable ({type(exc).__name__}); nothing was started.') from None
+    if token is None:
+        return None
+    claimed: list[int] = []
+    try:
+        for number in numbers:
+            current = labels_of(target_json(number))
+            if _owners(current) - {owner}:
+                raise TargetBusy(number, sorted(_owners(current) - {owner})[0])
+            is_selected = number == candidate.number
+            replace_factory_labels(number, owner, stage if is_selected else None)
+            if not target_owned_by(number, owner):
+                raise RuntimeError(f'Could not record the claim on #{number}.')
+            claimed.append(number)
+            head = None
+            if is_selected and candidate.kind == 'pr':
+                head = str((live_pr_state(number).get('head') or {}).get('sha') or '') or None
+            record_controller_lease_activity(
+                number, worker, candidate.kind if is_selected else 'issue',
+                action=action if is_selected else None, source='operator', head=head,
+            )
+    except BaseException:
+        for number in claimed:
+            try:
+                if target_owned_by(number, owner):
+                    replace_factory_labels(number, 'factory:unowned')
+            except Exception:
+                pass
+        try:
+            release_lease(REPO, worker, token, 'operator-claim-rollback')
+        except Exception as exc:
+            print(f'[factory-controller] Neon claim rollback failed ({type(exc).__name__})', file=sys.stderr)
+        raise
+    print(f'[factory-controller] operator force: claimed {candidate.kind} #{candidate.number} '
+          f'action={action} for Factory {worker}', file=sys.stderr)
+    return candidate
+
+
+def operator_forced_claim(number: int, worker: str) -> bool:
+    """Return whether this worker's latest trusted claim on #number was operator-forced."""
+    try:
+        pages = gh_json(['api', '--paginate', '--slurp', f'repos/{REPO}/issues/{number}/comments?per_page=100'])
+    except RuntimeError:
+        return False
+    pattern = re.compile(
+        r'comic-pile-factory-controller-claim-v1:(?:issue|pr)-' + str(number) + ':' + re.escape(worker) + r':\d{10}(?P<fields>[^>]*)-->'
+    )
+    latest: str | None = None
+    for comment in flatten_pages(pages):
+        if not comment_is_trusted(comment):
+            continue
+        for match in pattern.finditer(str(comment.get('body') or '')):
+            latest = match.group('fields')
+    return latest is not None and ':source=operator' in latest
+
+
 def dispatch_next(
     provider: str,
     model: str = 'auto',
@@ -2425,17 +2593,21 @@ def dispatch_next(
     force_slot: bool = False,
     slot_index: int | None = None,
     target: str = '',
+    action: str = 'advance',
 ) -> dict[str, object]:
-    """Assign an existing provider slot to real executable work.
+    """Assign a provider worker to real work and start it.
 
-    Operator force mode bypasses *advisory historical worker health* only.
-    It never bypasses credential checks, current quotas, worker/target leases,
-    task blockers, CI, live authorization or merge policy.
+    Without force, normal scheduling applies. With operator force the request
+    always results in work when any exists: the factory's own pacing (worker
+    health history, configured capacity, queue and review limits, cooldowns,
+    budgets, pauses) never refuses it, and if every regular worker identity is
+    busy an extra operator identity is used. Force never takes an item another
+    worker holds (status ``busy``) and never switches provider or model.
     """
     from factory_completion_controller import (
         capacity_report, durable_factory_state, load_manifest_candidates,
     )
-    from factory_worker_slots import slots as registered_slots, sources
+    from factory_worker_slots import operator_slots, slots as registered_slots, sources
 
     source = 'opencode-free' if provider == 'opencode-go' else provider
     if source not in sources():
@@ -2458,14 +2630,19 @@ def dispatch_next(
         entry for entry in registered_slots() if entry.source == source
         and (slot_index is None or entry.index + 1 == slot_index)
     ]
+    if force_slot and slot_index is not None and not provider_slots:
+        provider_slots = [
+            entry for entry in operator_slots(source) if entry.index + 1 == slot_index
+        ]
     if not provider_slots:
         raise ValueError('Requested slot does not exist for this provider')
 
     if force_slot:
-        # Historical model/worker health is advisory in owner-forced mode.
-        # Only real registered slots may be requested, and assign() still
-        # validates current capacity, credentials, budgets and Neon leases.
+        # Regular identities first, then operator overflow identities, so a
+        # forced request is never refused because configured capacity is full.
         eligible = [entry.worker for entry in provider_slots]
+        if slot_index is None:
+            eligible += [entry.worker for entry in operator_slots(source)]
     else:
         _view, health = durable_factory_state()
         capacity = capacity_report(load_manifest_candidates(), health, now_epoch=int(time.time()))
@@ -2474,18 +2651,40 @@ def dispatch_next(
         eligible = [entry.worker for entry in provider_slots if entry.worker in allowed]
 
     skipped: list[str] = []
+    busy_workers = 0
     for worker in eligible:
-        # A manual target skips unrelated tasks, but never the target's live
-        # eligibility and lease checks.
+        if force_slot:
+            reason = worker_skip_reason(worker, operator_force=True)
+            if reason is not None:
+                if 'already has an active lease' in reason:
+                    busy_workers += 1
+                    continue
+                # Credentials are per provider, so every identity fails alike.
+                return {
+                    'status': 'deferred', 'provider': source, 'model': model,
+                    'forced': True, 'slot_index': slot_index, 'blocker': 'credentials',
+                    'reason': f'The {provider} provider is not usable: {reason}.',
+                    'details': [reason],
+                }
         try:
             candidate = (
-                assign(worker, target=target_spec) if target_spec
+                assign(worker, target=target_spec, requested_action=action, operator_force=True)
+                if force_slot and target_spec
+                else assign(worker, target=target_spec) if target_spec
                 else assign(worker, operator_force=True) if force_slot
                 else assign(worker)
             )
+        except TargetBusy as busy:
+            return {
+                'status': 'busy', 'provider': source, 'model': model,
+                'forced': force_slot, 'number': busy.number, 'owner': busy.owner,
+                'owner_worker': busy.owner.removeprefix('factory:'),
+                'reason': f'#{busy.number} is already being worked on by {busy.owner}.',
+            }
         except RuntimeError as exc:
             if target_spec and (
-                'No eligible work on this target' in str(exc)
+                force_slot
+                or 'No eligible work on this target' in str(exc)
                 or 'blocked or still waiting on checks' in str(exc)
                 or 'not currently executable' in str(exc).lower()
             ):
@@ -2496,7 +2695,10 @@ def dispatch_next(
             # Only for operator commands, provide a useful reason when a
             # registered slot cannot start. Do not mutate it or steal a lease.
             if force_slot:
-                skipped.append(worker_skip_reason(worker) or 'No executable unowned work')
+                skipped.append(worker_skip_reason(worker, operator_force=True) or 'No executable unowned work')
+                if not target_spec:
+                    # The shared pool is the same for every identity.
+                    break
             continue
         try:
             run_gh([
@@ -2510,12 +2712,19 @@ def dispatch_next(
             # An accepted but timed-out workflow_dispatch may already exist.
             # Retaining the lease is safer than risking duplicate execution.
             raise RuntimeError('Could not confirm worker dispatch. Inspect Actions before retrying.') from None
-        action = 'implement' if candidate.kind == 'issue' else completion_action_for(
-            candidate.stage, candidate.conflicted
-        )
+        if candidate.kind == 'issue':
+            chosen_action: str | None = 'implement'
+        elif force_slot and target_spec and action != 'advance':
+            chosen_action = action
+        elif force_slot:
+            # Forced PR work with no stage action addresses review feedback.
+            chosen_action = completion_action_for(candidate.stage, candidate.conflicted) or 'review-findings'
+        else:
+            chosen_action = completion_action_for(candidate.stage, candidate.conflicted)
         result: dict[str, object] = {
             'status': 'dispatched', 'kind': candidate.kind, 'number': candidate.number,
-            'action': action, 'worker': worker, 'provider': source, 'model': model,
+            'action': chosen_action, 'worker': worker, 'provider': source, 'model': model,
+            'dispatched_at': int(time.time()),
         }
         if force_slot:
             result.update(forced=True, slot_index=slot_index)
@@ -2526,15 +2735,21 @@ def dispatch_next(
             'reason': ('No eligible provider slot currently has executable work. '
                        'Review stage, leases, source budgets, and capacity.'),
         }
+    if force_slot and not skipped and busy_workers:
+        reason = f'All {busy_workers} {provider} workers are running right now.'
+    elif force_slot and not target_spec:
+        reason = 'Nothing is waiting: every open item is finished, claimed or blocked.'
+    elif force_slot:
+        reason = skipped[0] if skipped else 'The selected item could not be claimed.'
+    else:
+        reason = ('No registered slot passed historical health screening'
+                  if not eligible else
+                  'All checked slots are currently busy, blocked or have no executable work')
     return {
         'status': 'deferred', 'provider': source, 'model': model,
         'forced': force_slot, 'slot_index': slot_index,
         'eligible_slots': len(eligible),
-        'reason': (
-            'No registered slot passed historical health screening'
-            if not eligible else
-            'All checked slots are currently busy, blocked or have no executable work'
-        ),
+        'reason': reason,
         'details': list(dict.fromkeys(skipped))[:5],
     }
 
@@ -2659,6 +2874,9 @@ def main() -> int:
     next_parser.add_argument('--force-slot', action='store_true')
     next_parser.add_argument('--slot-index', type=int)
     next_parser.add_argument('--target', default='')
+    next_parser.add_argument('--action', default='advance', choices=(
+        'advance', 'implement', 'merge-conflict', 'ci-repair', 'review-findings', 'review',
+    ))
     target_parser = subparsers.add_parser('dispatch-target')
     target_parser.add_argument('--kind', required=True, choices=('issue', 'pr'))
     target_parser.add_argument('--number', required=True, type=int)
@@ -2720,7 +2938,7 @@ def main() -> int:
     if args.command == 'dispatch-next':
         print(json.dumps(dispatch_next(
             args.provider, args.model, force_slot=args.force_slot,
-            slot_index=args.slot_index, target=args.target,
+            slot_index=args.slot_index, target=args.target, action=args.action,
         )))
         return 0
     if args.command == 'dispatch-target':

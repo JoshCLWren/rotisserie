@@ -11,6 +11,23 @@ such change must be called out here and in its release notes.
 
 ### Added
 
+- `rotisserie factory`, the factory operator console (moved from ComicPile's
+  `scripts/factory-run`): `run`, `watch`, `status`, `cancel`, `report`,
+  `stats`, `settings`, `prioritize`, `providers` and `models`. Progress is
+  read from real GitHub signals in plain language and distinguishes
+  assignment from a model actually working. It has `--json` output, stable
+  exit codes and Ctrl+C that never cancels work. Provider, worker and settings
+  metadata come from the packaged factory runtime; no lists are duplicated.
+  `--config` is now required only for graph commands. See
+  `docs/factory-console.md`.
+- Operator force always yields work: it ignores every limit the factory sets
+  for itself, uses extra worker identities beyond configured capacity, and can
+  target blocked items. It never takes an item another worker holds and never
+  switches provider or model.
+- Factory settings registry (`factory_settings.py`) delivered to workflows as
+  repository variables, a configurable priority order, and a published
+  provider/model reliability snapshot (`factory-stats.json`).
+
 - Bounded exact-head completion claim and guarded merge handoff with complete
   trusted contributor provenance, semantic review, CI/readiness evidence,
   durable full-view CAS and an actual expected-head merge fence. Versioned

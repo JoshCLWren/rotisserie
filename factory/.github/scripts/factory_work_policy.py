@@ -80,8 +80,27 @@ def comment_is_trusted(comment: Mapping[str, Any]) -> bool:
     return isinstance(app, Mapping) and app.get('slug') in TRUSTED_FACTORY_APP_SLUGS
 
 
+try:
+    import factory_settings as _settings
+except ImportError:  # trusted staged copies may carry only this module
+    _settings = None
+
+# Work categories in default pick-up order; index == historical lane number.
+_CATEGORIES = (
+    'main-breakage', 'user-bug', 'user-bug-pr', 'normal', 'e2e', 'infrastructure',
+)
+
+
 def env_positive_int(name: str, default: int) -> int:
-    """Return a positive integer environment setting or its safe default."""
+    """Return a positive integer setting: environment, repository variable, default.
+
+    Registered settings (``factory_settings.SETTINGS``) resolve through the
+    operator settings registry so ``rotisserie factory settings`` changes apply.
+    """
+    if _settings is not None:
+        if name in _settings.BY_NAME:
+            return _settings.integer(name)
+        return _settings.integer(name, default)
     raw = os.environ.get(name)
     if raw is None:
         return default
@@ -146,7 +165,8 @@ class Candidate:
 
     def sort_key(self) -> tuple[int, int, float, int]:
         """Return the deterministic queue ordering key (oldest work first)."""
-        return (self.lane, -self.priority, parse_time(self.created_at), self.number)
+        return (configured_lane_rank(self.lane), -self.priority,
+                parse_time(self.created_at), self.number)
 
 
 def parse_time(value: str | None) -> float:
@@ -326,17 +346,35 @@ def normalize_target_state(labels: set[str], current_owner: str | None) -> tuple
     return owner, stage_of(labels)
 
 
-def provenance_lane(labels: set[str]) -> int:
-    """Return the deterministic assignment lane for a label set."""
+def work_category(labels: set[str], *, pull_request: bool = False) -> str:
+    """Name the operator-visible priority category for a label set."""
     if 'main-breakage' in labels or 'deploy-fix' in labels:
-        return 0
+        return 'main-breakage'
     if 'user-reported' in labels and 'bug' in labels:
-        return 1
+        return 'user-bug-pr' if pull_request else 'user-bug'
     if labels & INFRA_LABELS:
-        return 5
+        return 'infrastructure'
     if 'e2e-discovered' in labels:
-        return 4
-    return 3
+        return 'e2e'
+    return 'normal'
+
+
+def provenance_lane(labels: set[str], *, pull_request: bool = False) -> int:
+    """Return the fixed semantic lane for a label set.
+
+    Lane numbers keep their historical meaning (0 main-breakage, 1 user bug,
+    2 user-bug PR, 3 normal, 4 e2e, 5 infrastructure) because other policy
+    reads them. Pick-up *order* is configurable separately; see
+    :func:`configured_lane_rank`.
+    """
+    return _CATEGORIES.index(work_category(labels, pull_request=pull_request))
+
+
+def configured_lane_rank(lane: int) -> int:
+    """Return the operator-configured pick-up rank for a semantic lane."""
+    if _settings is None or not 0 <= lane < len(_CATEGORIES):
+        return lane
+    return _settings.priority_ranks()[_CATEGORIES[lane]]
 
 
 def item_is_unowned(labels: set[str]) -> bool:
@@ -719,9 +757,7 @@ def build_candidates(
         labels = set(pr_labels)
         if linked is not None and linked in issue_map:
             labels |= labels_of(issue_map[linked])
-        lane = provenance_lane(labels)
-        if lane == 1:
-            lane = 2
+        lane = provenance_lane(labels, pull_request=True)
         candidates.append(
             Candidate(
                 kind='pr',
