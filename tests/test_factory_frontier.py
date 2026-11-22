@@ -286,7 +286,6 @@ def test_capture_passes_repository_capacity_to_shared_policy(
     assert "pagination cap" in held.authority_note
 
 
-
 def test_shared_policy_applies_nondefault_backpressure_to_candidates() -> None:
     from rotisserie.factory_console import runtime
 
