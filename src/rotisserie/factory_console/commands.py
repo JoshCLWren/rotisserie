@@ -48,6 +48,7 @@ from rotisserie.factory_console.service import (
     conflicts,
     dispatch,
     doctor,
+    groom,
     outcomes,
     providers,
     queue,
@@ -324,6 +325,32 @@ def add_parser(subcommands: argparse._SubParsersAction[argparse.ArgumentParser])
     )
     clash.add_argument("what", help="pr:N")
     _common(clash)
+
+    groom = commands.add_parser(
+        "groom",
+        help="inventory the whole open backlog, then apply reviewed corrections",
+        description=(
+            "inventory reads every open issue and PR with evidence for each; apply checks a "
+            "reviewed JSON plan against live state and, with --yes, performs it."
+        ),
+    )
+    groom_steps = groom.add_subparsers(dest="step", required=True)
+    survey = groom_steps.add_parser("inventory", help="every open issue and PR, with evidence")
+    survey.add_argument("--out", help="also write the full inventory (JSON) to this file")
+    survey.add_argument(
+        "--all", action="store_true", help="list every item, not only those with evidence"
+    )
+    survey.add_argument(
+        "--no-timelines",
+        action="store_true",
+        help="skip per-issue merged-PR lookups (faster, less evidence)",
+    )
+    _common(survey)
+    fix = groom_steps.add_parser("apply", help="check a reviewed plan; --yes performs it")
+    fix.add_argument("plan", help="JSON plan file (see docs/factory-console.md)")
+    fix.add_argument("--yes", "-y", action="store_true", help="perform it (default: dry run)")
+    fix.add_argument("--log", help="append each result (JSON lines) to this audit file")
+    _common(fix)
 
     red = commands.add_parser("checks", help="why a pull request's checks fail, in one line each")
     red.add_argument("what", help="pr:N")
@@ -2067,6 +2094,96 @@ def cmd_review(context: Context, arguments: argparse.Namespace) -> Outcome:
     return Outcome(result, EXIT_CODES[result], data)
 
 
+# groom ----------------------------------------------------------------------------------
+
+
+def cmd_groom(context: Context, arguments: argparse.Namespace) -> Outcome:
+    if arguments.step == "inventory":
+        return _groom_inventory(context, arguments)
+    return _groom_apply(context, arguments)
+
+
+def _groom_inventory(context: Context, arguments: argparse.Namespace) -> Outcome:
+    console = context.console
+    try:
+        found = groom.inventory(context.github, timelines=not arguments.no_timelines)
+    except groom.InventoryError as exc:
+        console.fail(f"Could not read the whole backlog: {exc}")
+        console.line("Nothing is reported, because a partial inventory would look complete.")
+        return Outcome(Result.FAILED, EXIT_CODES[Result.FAILED], {"error": str(exc)})
+    data = found.to_dict()
+    if arguments.out:
+        Path(arguments.out).write_text(json.dumps(data, indent=2) + "\n")
+    console.heading(f"Open backlog: {len(found.issues)} issues, {len(found.prs)} pull requests")
+    for kind, counts in found.counts.items():
+        parts = ", ".join(f"{counts[key]} {key}" for key in groom.DISPOSITIONS if key in counts)
+        console.line(f"  {'Issues' if kind == 'issue' else 'Pull requests'}: {parts}")
+    shown = [
+        item
+        for item in (*found.prs, *found.issues)
+        if arguments.all or item.signals or item.disposition != "active"
+    ]
+    if shown:
+        console.line()
+        rows = [
+            [
+                item.ref,
+                item.disposition,
+                item.owner.removeprefix("factory:"),
+                "; ".join(signal.text for signal in item.signals)[:110],
+            ]
+            for item in shown
+        ]
+        console.table(["Item", "Disposition", "Held by", "Evidence"], rows)
+    console.line()
+    console.line(
+        "Review the evidence, write a plan, then: rotisserie factory groom apply PLAN.json"
+    )
+    if arguments.out:
+        console.line(f"Full inventory: {arguments.out}")
+    return Outcome(Result.COMPLETED, EXIT_OK, data)
+
+
+def _groom_apply(context: Context, arguments: argparse.Namespace) -> Outcome:
+    console = context.console
+    try:
+        actions = groom.parse_plan(Path(arguments.plan).read_text())
+    except OSError as exc:
+        raise UsageError(f"Cannot read the plan: {exc}") from None
+    except groom.PlanError as exc:
+        raise UsageError(f"The plan is not valid: {exc}") from None
+    log = Path(arguments.log) if arguments.log else None
+
+    def record(result: groom.Applied) -> None:
+        if log is not None:
+            entry = {**asdict(result), "repo": context.github.repo,
+                     "at": context.clock.now().isoformat()}  # fmt: skip
+            with log.open("a") as handle:
+                handle.write(json.dumps(entry) + "\n")
+
+    console.heading(
+        f"{'Applying' if arguments.yes else 'Checking (dry run)'} {len(actions)} action(s)"
+    )
+    results = groom.apply(context.github, actions, write=arguments.yes, record=record)
+    for result in results:
+        line = f"{result.target} {result.op}: {result.text}"
+        if result.status in ("applied", "would-apply"):
+            console.ok(line)
+        elif result.status == "skipped":
+            console.line(f"  {console.dot} {line}")
+        else:
+            console.warn(f"{result.status}: {line}")
+    tally = Counter(result.status for result in results)
+    console.line()
+    console.line(", ".join(f"{count} {status}" for status, count in sorted(tally.items())))
+    if not arguments.yes and tally.get("would-apply"):
+        console.line("Nothing was changed. Add --yes to apply.")
+    data: dict[str, object] = {"results": [asdict(result) for result in results]}
+    failed = tally.get("failed", 0)
+    result_code = Result.FAILED if failed else Result.COMPLETED
+    return Outcome(result_code, EXIT_CODES[result_code], data)
+
+
 # close ----------------------------------------------------------------------------------
 
 
@@ -2335,6 +2452,7 @@ HANDLERS = {
     "close": cmd_close,
     "checks": cmd_checks,
     "review": cmd_review,
+    "groom": cmd_groom,
     "conflicts": cmd_conflicts,
     "doctor": cmd_doctor,
     "explain": cmd_why,
