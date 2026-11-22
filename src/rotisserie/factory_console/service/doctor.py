@@ -286,6 +286,13 @@ def disk_space(cwd: Path | None = None, env: Mapping[str, str] | None = None) ->
     except disk.DiskConfigError as exc:
         return Finding("disk space", "warn", f"could not check: {exc}")
     found = disk.volumes(settings)
+    if not found:
+        return Finding(
+            "disk space",
+            "warn",
+            "could not measure any volume",
+            "check the [disk] volumes setting and that the paths exist",
+        )
     full = [volume for volume in found if volume.percent > settings.warn_percent]
     if not full:
         return Finding(

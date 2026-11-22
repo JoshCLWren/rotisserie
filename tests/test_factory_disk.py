@@ -51,6 +51,7 @@ def run_git(path: Path, *args: str) -> str:
         check=True,
         capture_output=True,
         text=True,
+        env=disk.git_environment(os.environ),
     ).stdout
 
 
@@ -711,15 +712,23 @@ def test_unlistable_roots_yield_nothing(tmp_path: Path, monkeypatch: pytest.Monk
 # Doctor -------------------------------------------------------------------------------
 
 
-def test_doctor_warns_above_the_threshold_and_points_at_disk(tmp_path: Path) -> None:
-    adopter(tmp_path, f'[disk]\nvolumes = ["{tmp_path}"]\nwarn_percent = 1\n')
+def test_doctor_warns_above_the_threshold_and_points_at_disk(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    measured: dict[str, tuple[Volume, ...]] = {
+        "volumes": (Volume("/data", 100, 93, 7 * 1024**3), Volume("/", 100, 50, 50))
+    }
+    monkeypatch.setattr(disk, "volumes", lambda settings: measured["volumes"])
+    adopter(tmp_path, "[disk]\nwarn_percent = 80\n")
     found = doctor.disk_space(tmp_path, {"HOME": str(tmp_path)})
-    assert found.status == "warn"
-    assert "% full (" in found.text
+    assert (found.status, found.text) == ("warn", "/data is 93% full (7.0G free)")
     assert "rotisserie factory disk" in found.hint
-    adopter(tmp_path, f'[disk]\nvolumes = ["{tmp_path}"]\nwarn_percent = 99\n')
+    measured["volumes"] = (Volume("/", 100, 80, 20),)
     calm = doctor.disk_space(tmp_path, {"HOME": str(tmp_path)})
-    assert (calm.status, calm.text) == ("ok", "1 volume(s) at or under 99% full")
+    assert (calm.status, calm.text) == ("ok", "1 volume(s) at or under 80% full")
+    measured["volumes"] = ()
+    blind = doctor.disk_space(tmp_path, {"HOME": str(tmp_path)})
+    assert (blind.status, blind.text) == ("warn", "could not measure any volume")
     adopter(tmp_path, "[disk]\nnope = 1\n")
     assert doctor.disk_space(tmp_path, {}).text.startswith("could not check: unknown")
     assert doctor.disk_space().check == "disk space"
@@ -755,11 +764,11 @@ def test_cli_reports_without_deleting(cli_host: tuple[Host, Path]) -> None:
     code, out = run(["disk", "--config", str(config)])
     assert code == 0
     assert "Disk usage" in out and "Safe to reclaim:" in out
-    assert "Remove them: rotisserie factory disk --fix --yes" in out
+    assert f"Remove them: rotisserie factory disk --config {config} --fix --yes" in out
     assert "Kept: 3 item(s)" in out and "worker alive is still running" in out
     assert (host.worktrees / "done").exists()
     code, out = run(["disk", "--config", str(config), "--fix"])
-    assert "Dry run: --fix --yes would delete 6 item(s)" in out
+    assert f"Dry run: rotisserie factory disk --config {config} --fix --yes would delete 6" in out
     assert (host.worktrees / "done").exists() and host.cache.exists()
 
 
@@ -828,3 +837,213 @@ def test_other_commands_still_need_a_repository(
 
 def test_a_checkout_without_build_outputs_yields_none(tmp_path: Path) -> None:
     assert disk._ignored_outputs(tmp_path, disk.DEFAULT_BUILD_NAMES) == []
+
+
+# Review follow-ups -----------------------------------------------------------------------
+
+
+def test_the_suggested_command_keeps_the_config_and_kept_tags(
+    cli_host: tuple[Host, Path], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    host, config = cli_host
+    monkeypatch.chdir(host.base)
+    spaced = host.base / "my disk.toml"
+    spaced.write_text(config.read_text())
+    code, out = run(["disk", "--config", "my disk.toml", "--keep", "done", "--keep", "a b"])
+    assert code == 0
+    assert f"Remove them: rotisserie factory disk --config '{spaced}' --keep done " in out
+    assert "--keep 'a b' --fix --yes" in out
+    assert "worker done is still running" in out
+
+
+def test_git_ignores_inherited_repository_overrides(
+    host: Host, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    path = host.worktree("leaky")
+    (path / "unsaved.txt").write_text("x")
+    age(host.base)
+    # A clean checkout's GIT_DIR must not vouch for the dirty candidate.
+    monkeypatch.setenv("GIT_DIR", str(host.repo / ".git"))
+    monkeypatch.setenv("GIT_WORK_TREE", str(host.repo))
+    monkeypatch.setenv("GIT_INDEX_FILE", str(host.repo / ".git" / "index"))
+    assert judge().worktree(path).code == "dirty"
+    assert "GIT_DIR" not in disk.git_environment(os.environ)
+    assert disk.git_environment({"HOME": "/h", "GIT_WORK_TREE": "/w"}) == {"HOME": "/h"}
+
+
+def test_symlinks_below_a_root_never_steer_a_deletion(host: Host) -> None:
+    valuable = host.base / "valuable"
+    (valuable / "target").mkdir(parents=True)
+    (valuable / "target" / "keep.me").write_text("precious")
+    projects = host.base / "projects"
+    (projects / "real" / "target").mkdir(parents=True)
+    (projects / "evil").symlink_to(valuable)
+    age(host.base)
+    pattern = str(projects / "*" / "target")
+    assert disk._matches([pattern]) == [projects / "real" / "target"]
+    assert disk.contained(projects / "real" / "target", projects)
+    assert not disk.contained(projects / "evil" / "target", projects)
+    assert not disk.contained(valuable, projects)
+    scanner = Scanner(host.settings(build_dirs=(pattern,), caches=()), FakeProcesses())
+    report = scanner.scan()
+    assert [item.path for item in report.safe] == [str(projects / "real" / "target")]
+    forged = DiskReport(
+        (), (Item("build", str(projects / "evil" / "target"), 1, True, "safe", "forged"),), 80
+    )
+    assert scanner.remove(forged)[0].text == "outside the configured roots"
+    assert (valuable / "target" / "keep.me").exists()
+
+
+def test_symlinked_folders_inside_a_worktree_are_not_build_outputs(host: Host) -> None:
+    path = host.worktree("linky")
+    (path / "notes.txt").write_text("unsaved")
+    elsewhere = host.base / "elsewhere"
+    (elsewhere / "node_modules").mkdir(parents=True)
+    (path / "frontend").symlink_to(elsewhere)
+    (path / "node_modules").mkdir()
+    age(host.base)
+    outputs = disk._ignored_outputs(path, ("node_modules",))
+    assert outputs == [path / "node_modules"]
+    scanner = Scanner(host.settings(caches=()), FakeProcesses())
+    forged = DiskReport(
+        (), (Item("build", str(path / "frontend" / "node_modules"), 1, True, "safe", "x"),), 80
+    )
+    assert scanner.remove(forged)[0].text == "outside the configured roots"
+    assert (elsewhere / "node_modules").exists()
+
+
+def test_nothing_with_a_filesystem_mounted_inside_is_deleted(host: Host) -> None:
+    (host.cache / "shared").mkdir()
+    age(host.base)
+    mounts: dict[str, tuple[Path, ...] | None] = {"now": (Path("/"), host.cache / "shared")}
+    scanner = Scanner(
+        host.settings(worktree_roots=()), FakeProcesses(), mounts=lambda: mounts["now"]
+    )
+    kept = scanner.scan().kept[0]
+    assert (kept.code, kept.reason) == (
+        "mounted",
+        f"a filesystem is mounted at {host.cache}/shared",
+    )
+    mounts["now"] = None
+    assert scanner.scan().kept[0].reason == "cannot tell what is mounted inside it"
+    mounts["now"] = (Path("/"),)
+    report = scanner.scan()
+    assert report.safe[0].path == str(host.cache)
+    mounts["now"] = (host.cache / "shared",)  # mounted between the scan and the fix
+    removed = scanner.remove(report)
+    assert removed[0].text == f"kept: a filesystem is mounted at {host.cache}/shared"
+    assert (host.cache / "blob").exists()
+
+
+def test_mount_points_reads_mountinfo(tmp_path: Path) -> None:
+    info = tmp_path / "mountinfo"
+    info.write_text(
+        "22 1 259:6 / / rw,relatime shared:1 - ext4 /dev/root rw\n"
+        "40 22 259:8 /data /mnt/my\\040disk rw shared:2 - ext4 /dev/x rw\n"
+        "short line\n"
+    )
+    assert disk.mount_points(info) == (Path("/"), Path("/mnt/my disk"))
+    assert disk.mount_points(tmp_path / "missing") is None
+    assert Path("/") in (disk.mount_points() or (Path("/"),))
+
+
+@dataclass
+class ChangingProcesses:
+    """No process uses anything until ``after`` calls; then ``later`` is in use."""
+
+    later: Path
+    after: int
+    calls: int = 0
+
+    def alive(self, pid: int) -> bool:
+        return False
+
+    def paths_in_use(self) -> tuple[Path, ...]:
+        self.calls += 1
+        return (self.later.resolve(),) if self.calls > self.after else ()
+
+
+def test_process_use_is_checked_again_before_each_deletion(host: Host) -> None:
+    big, small = host.base / "big-cache", host.base / "small-cache"
+    for path, size in ((big, 90000), (small, 9000)):
+        path.mkdir()
+        (path / "blob").write_bytes(b"x" * size)
+    processes = ChangingProcesses(small, after=3)  # scan, remove's first look, the first deletion
+    scanner = Scanner(host.settings(worktree_roots=(), caches=(str(big), str(small))), processes)
+    report = scanner.scan()
+    assert [item.path for item in report.safe] == [str(big), str(small)]
+    removed = scanner.remove(report)
+    assert [change.text for change in removed] == ["removed", "kept: a running process uses it"]
+    assert small.exists() and not big.exists()
+
+
+def test_a_recent_change_deep_inside_keeps_a_target(tmp_path: Path) -> None:
+    deep = tmp_path / "t1" / "debug" / "incremental" / "session"
+    deep.mkdir(parents=True)
+    (deep / "file").write_text("x")
+    age(tmp_path)
+    assert judge().target(tmp_path / "t1").safe
+    os.utime(deep / "file")  # rewritten in place: no ancestor mtime changes
+    assert judge().target(tmp_path / "t1").code == "recent"
+
+
+def test_walk_stays_on_one_device(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    @dataclass
+    class Info:
+        st_mode: int
+        st_dev: int
+        st_mtime: float = 0.0
+
+    @dataclass
+    class Entry:
+        path: str
+        info: Info
+
+        def stat(self, follow_symlinks: bool = False) -> Info:
+            return self.info
+
+    device = tmp_path.lstat().st_dev
+    listings = {
+        str(tmp_path): [
+            Entry(str(tmp_path / "same"), Info(0o040755, device)),
+            Entry(str(tmp_path / "other"), Info(0o040755, device + 1)),
+        ],
+        str(tmp_path / "same"): [Entry(str(tmp_path / "same" / "f"), Info(0o100644, device))],
+    }
+    opened: list[str] = []
+
+    class Listing:
+        def __init__(self, path: str) -> None:
+            opened.append(str(path))
+            self.entries = listings.get(str(path), [])
+
+        def __enter__(self) -> list[Entry]:
+            return self.entries
+
+        def __exit__(self, *args: object) -> None:
+            return None
+
+    monkeypatch.setattr(os, "scandir", Listing)
+    assert len(list(disk.walk(tmp_path))) == 3
+    assert opened == [str(tmp_path), str(tmp_path / "same")]
+    assert list(disk.walk(tmp_path / "missing")) == []
+
+
+def test_a_safe_item_inside_a_safe_worktree_is_counted_once(host: Host) -> None:
+    done = host.worktree("done")
+    (done / "target").mkdir()
+    (done / "target" / "out").write_bytes(b"t" * 40000)
+    age(host.base)
+    pattern = str(host.worktrees / "*" / "target")
+    report = Scanner(host.settings(build_dirs=(pattern,), caches=()), FakeProcesses()).scan()
+    assert [(item.category, item.path) for item in report.safe] == [("worktree", str(done))]
+    assert report.total == report.safe[0].size >= 40000
+
+
+def test_a_config_that_is_not_utf8_is_a_config_error(tmp_path: Path) -> None:
+    config = adopter(tmp_path, "")
+    config.write_bytes(b"[disk]\nledger = '\xff'\n")
+    with pytest.raises(DiskConfigError, match="is not UTF-8 text"):
+        disk.load_settings(config, {}, tmp_path)
+    found = doctor.disk_space(tmp_path, {})
+    assert found.status == "warn" and "not UTF-8" in found.text

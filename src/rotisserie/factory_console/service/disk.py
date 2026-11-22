@@ -37,7 +37,7 @@ import stat
 import subprocess
 import time
 import tomllib
-from collections.abc import Callable, Iterable, Mapping, Sequence
+from collections.abc import Callable, Iterable, Iterator, Mapping, Sequence
 from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Protocol
@@ -72,6 +72,20 @@ IDLE_KEPT = ("dirty", "unpushed", "in-progress", "no-commits")
 LEDGER_LINE = re.compile(r"^(?P<tag>\S+)\s+pid=(?P<pid>\d+)\b")
 VARIABLE = re.compile(r"\$(?:\{(?P<braced>\w+)\}|(?P<plain>\w+))")
 GIT_TIMEOUT = 30
+# Inherited variables that point git at a different repository than ``-C`` names.
+# A clean GIT_DIR must never vouch for a dirty candidate.
+GIT_LOCATION_VARIABLES = (
+    "GIT_DIR",
+    "GIT_WORK_TREE",
+    "GIT_INDEX_FILE",
+    "GIT_COMMON_DIR",
+    "GIT_OBJECT_DIRECTORY",
+    "GIT_ALTERNATE_OBJECT_DIRECTORIES",
+    "GIT_NAMESPACE",
+    "GIT_PREFIX",
+)
+MOUNTINFO = Path("/proc/self/mountinfo")
+ESCAPE = re.compile(r"\\([0-7]{3})")
 
 
 class DiskConfigError(ValueError):
@@ -326,6 +340,8 @@ def load_settings(
         data = tomllib.loads(path.read_text(encoding="utf-8"))
     except OSError as exc:
         raise DiskConfigError(f"cannot read {path}: {exc.strerror or exc}") from exc
+    except UnicodeDecodeError as exc:
+        raise DiskConfigError(f"{path} is not UTF-8 text: {exc.reason}") from exc
     except tomllib.TOMLDecodeError as exc:
         raise DiskConfigError(f"{path} is not valid TOML: {exc}") from exc
     base = path.parent.parent if path.parent.name == ".rotisserie" else path.parent
@@ -395,17 +411,59 @@ def _expand(value: str, env: Mapping[str, str], base: Path) -> str:
     return str(path if path.is_absolute() else base / path)
 
 
+def contained(path: Path, base: Path) -> bool:
+    """Is ``path`` really inside ``base``: no symlink below ``base`` on the way to it?
+
+    ``base`` (a configured root's fixed prefix) is trusted; a worker-writable
+    symlink further down could otherwise steer a deletion somewhere else.
+    """
+    if not path.is_relative_to(base):
+        return False
+    current = base
+    for part in path.relative_to(base).parts:
+        current = current / part
+        if current.is_symlink():
+            return False
+    return Path(os.path.realpath(path)).is_relative_to(os.path.realpath(base))
+
+
 def _matches(patterns: Iterable[str]) -> list[Path]:
+    """Directories the patterns name, each reached without a symlink below its fixed prefix."""
     found: list[Path] = []
     for pattern in patterns:
         path = Path(pattern)
         if any(char in pattern for char in "*?["):
             anchor = Path(path.anchor or ".")
             relative = str(path.relative_to(anchor)) if path.is_absolute() else pattern
-            found.extend(sorted(anchor.glob(relative)))
+            matched = sorted(anchor.glob(relative))
         else:
-            found.append(path)
+            matched = [path]
+        base = Path(_static_prefix(pattern))
+        found.extend(match for match in matched if match == base or contained(match, base))
     return [path for path in dict.fromkeys(found) if path.is_dir() and not path.is_symlink()]
+
+
+def mount_points(source: Path = MOUNTINFO) -> tuple[Path, ...] | None:
+    """Every mount point on this host (bind mounts included); None when unknown."""
+    try:
+        lines = source.read_text(encoding="utf-8", errors="replace").splitlines()
+    except OSError:
+        return None
+    found: list[Path] = []
+    for line in lines:
+        fields = line.split()
+        if len(fields) > 4:
+            found.append(Path(ESCAPE.sub(lambda match: chr(int(match.group(1), 8)), fields[4])))
+    return tuple(found)
+
+
+def mounted_inside(path: Path, mounts: tuple[Path, ...] | None) -> str:
+    """Why deleting ``path`` could reach another filesystem; empty when it cannot."""
+    if mounts is None:
+        return "cannot tell what is mounted inside it"
+    resolved = Path(os.path.realpath(path))
+    inside = [point for point in mounts if point.is_relative_to(resolved)]
+    return f"a filesystem is mounted at {inside[0]}" if inside else ""
 
 
 # Measuring ----------------------------------------------------------------------------
@@ -454,16 +512,12 @@ def _static_prefix(pattern: str) -> str:
     return str(Path(*parts)) if parts else "/"
 
 
-def tree_size(path: Path) -> int:
-    """Bytes deleting ``path`` would free: allocated blocks of files linked only inside it."""
+def walk(path: Path) -> Iterator[os.stat_result]:
+    """Every entry under directory ``path``, not following symlinks or leaving its device."""
     try:
-        top = path.lstat()
+        device = path.lstat().st_dev
     except OSError:
-        return 0
-    if not stat.S_ISDIR(top.st_mode):
-        return _blocks(top) if top.st_nlink <= 1 else 0
-    inodes: dict[tuple[int, int], list[int]] = {}  # (dev, ino) -> [blocks, nlink, seen]
-    total = _blocks(top)
+        return
     stack = [path]
     while stack:
         directory = stack.pop()
@@ -474,18 +528,31 @@ def tree_size(path: Path) -> int:
                         info = entry.stat(follow_symlinks=False)
                     except OSError:
                         continue
-                    if stat.S_ISDIR(info.st_mode):
-                        total += _blocks(info)
+                    yield info
+                    if stat.S_ISDIR(info.st_mode) and info.st_dev == device:
                         stack.append(Path(entry.path))
-                    elif info.st_nlink <= 1:
-                        total += _blocks(info)
-                    else:
-                        record = inodes.setdefault(
-                            (info.st_dev, info.st_ino), [_blocks(info), info.st_nlink, 0]
-                        )
-                        record[2] += 1
         except OSError:
             continue
+
+
+def tree_size(path: Path) -> int:
+    """Bytes deleting ``path`` would free: allocated blocks of files linked only inside it."""
+    try:
+        top = path.lstat()
+    except OSError:
+        return 0
+    if not stat.S_ISDIR(top.st_mode):
+        return _blocks(top) if top.st_nlink <= 1 else 0
+    inodes: dict[tuple[int, int], list[int]] = {}  # (dev, ino) -> [blocks, nlink, seen]
+    total = _blocks(top)
+    for info in walk(path):
+        if stat.S_ISDIR(info.st_mode) or info.st_nlink <= 1:
+            total += _blocks(info)
+        else:
+            record = inodes.setdefault(
+                (info.st_dev, info.st_ino), [_blocks(info), info.st_nlink, 0]
+            )
+            record[2] += 1
     return total + sum(blocks for blocks, links, seen in inodes.values() if seen >= links)
 
 
@@ -494,23 +561,20 @@ def _blocks(info: os.stat_result) -> int:
 
 
 def last_activity(paths: Iterable[Path]) -> float:
-    """The newest modification time among ``paths`` and their direct children."""
+    """The newest modification time anywhere in ``paths``.
+
+    The whole tree counts: a file rewritten deep inside ``target/debug/incremental``
+    leaves its ancestors' mtimes old.
+    """
     newest = 0.0
     for path in paths:
         try:
-            newest = max(newest, path.lstat().st_mtime)
+            info = path.lstat()
         except OSError:
             continue
-        if path.is_dir() and not path.is_symlink():
-            try:
-                with os.scandir(path) as entries:
-                    for entry in entries:
-                        try:
-                            newest = max(newest, entry.stat(follow_symlinks=False).st_mtime)
-                        except OSError:
-                            continue
-            except OSError:
-                continue
+        newest = max(newest, info.st_mtime)
+        if stat.S_ISDIR(info.st_mode):
+            newest = max([newest, *(entry.st_mtime for entry in walk(path))])
     return newest
 
 
@@ -536,10 +600,16 @@ def git(path: Path, *args: str) -> str | None:
             text=True,
             timeout=GIT_TIMEOUT,
             check=False,
+            env=git_environment(os.environ),
         )
     except (OSError, subprocess.SubprocessError):
         return None
     return done.stdout if done.returncode == 0 else None
+
+
+def git_environment(env: Mapping[str, str]) -> dict[str, str]:
+    """``env`` without the variables that would point git at another repository."""
+    return {key: value for key, value in env.items() if key not in GIT_LOCATION_VARIABLES}
 
 
 def uses(path: Path, in_use: Sequence[Path]) -> bool:
@@ -640,7 +710,7 @@ def _ignored_outputs(path: Path, names: Sequence[str]) -> list[Path]:
             found.extend(
                 candidate
                 for candidate in sorted(path.glob(pattern))
-                if candidate.is_dir() and not candidate.is_symlink()
+                if candidate.is_dir() and not candidate.is_symlink() and contained(candidate, path)
             )
     if not found:
         return []
@@ -660,6 +730,7 @@ class Scanner:
     keep: tuple[str, ...] = ()
     clock: Callable[[], float] = time.time
     sizer: Callable[[Path], int] = tree_size
+    mounts: Callable[[], tuple[Path, ...] | None] = mount_points
 
     def judge(self) -> Judge:
         tags = live_tags(self.settings.ledger, self.processes)
@@ -692,15 +763,26 @@ class Scanner:
 
     def scan(self) -> DiskReport:
         judge = self.judge()
-        items: list[Item] = []
+        mounts = self.mounts()
+        judged: list[tuple[str, Path, Verdict]] = []
         for category, path in self.candidates():
-            found = self.verdict(judge, category, path)
-            items.append(self._item(category, path, found))
+            found = _unmounted(self.verdict(judge, category, path), path, mounts)
+            judged.append((category, path, found))
             if category == "worktree" and found.code in IDLE_KEPT:
                 # The checkout stays, but its git-ignored build outputs regenerate.
                 for output in _ignored_outputs(path, self.settings.build_names):
                     verdict = judge.output(output, f"git-ignored build output of {path.name}")
-                    items.append(self._item("build", output, verdict))
+                    judged.append(("build", output, _unmounted(verdict, output, mounts)))
+        # A safe item inside another safe item goes with it; listing both would
+        # count its blocks twice.
+        safe = [path for _, path, found in judged if found.safe]
+        items = [
+            self._item(category, path, found)
+            for category, path, found in judged
+            if not (
+                found.safe and any(path != other and path.is_relative_to(other) for other in safe)
+            )
+        ]
         items.sort(key=lambda item: (not item.safe, -item.size, item.path))
         return DiskReport(
             volumes(self.settings),
@@ -719,8 +801,9 @@ class Scanner:
         """Is ``path`` one of the things the configured roots may yield?"""
         if path.is_symlink() or os.path.ismount(path):
             return False
-        if category == "build" and self._holder(path) is not None:
-            return True
+        holder = self._holder(path) if category == "build" else None
+        if holder is not None:
+            return contained(path, holder)
         return (category, path) in self.candidates()
 
     def _holder(self, path: Path) -> Path | None:
@@ -743,6 +826,9 @@ class Scanner:
                 checkouts[holder] = judge.worktree(holder)
         removed: list[Removed] = []
         for item in report.safe:
+            # Look again before every deletion: a process may have started using
+            # this item while the previous one was being deleted.
+            judge = self.judge()
             path = Path(item.path)
             if not path.exists():
                 removed.append(Removed(item.category, item.path, 0, False, "already gone"))
@@ -758,6 +844,7 @@ class Scanner:
                 checkout = checkouts[holder]
                 if checkout.code not in IDLE_KEPT:
                     found = Verdict(False, checkout.code, f"its worktree: {checkout.reason}")
+            found = _unmounted(found, path, self.mounts())
             if not found.safe:
                 removed.append(Removed(item.category, item.path, 0, False, f"kept: {found.reason}"))
                 continue
@@ -781,6 +868,14 @@ class Scanner:
             else:
                 removed.append(Removed(item.category, item.path, item.size, True, "removed"))
         return removed
+
+
+def _unmounted(found: Verdict, path: Path, mounts: tuple[Path, ...] | None) -> Verdict:
+    """Keep a safe item that has a filesystem mounted inside it (rmtree would cross it)."""
+    if not found.safe:
+        return found
+    why = mounted_inside(path, mounts)
+    return Verdict(False, "mounted", why, found.repository) if why else found
 
 
 def _children(root: Path) -> list[Path]:

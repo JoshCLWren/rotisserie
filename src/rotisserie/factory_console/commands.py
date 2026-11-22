@@ -18,6 +18,7 @@ import argparse
 import json
 import os
 import re
+import shlex
 import sys
 from collections import Counter
 from collections.abc import Sequence
@@ -2098,16 +2099,28 @@ def cmd_disk(context: Context, arguments: argparse.Namespace) -> Outcome:
         )
         if len(shown) < len(kept):
             console.line(f"... and {len(kept) - len(shown)} more (--all lists them)")
-    data: dict[str, object] = {"settings": settings.to_dict(), **report.to_dict()}
+    # The same configuration and kept tags, or following the hint could delete
+    # what this report kept.
+    words = ["rotisserie", "factory", "disk"]
+    if arguments.config is not None:
+        words += ["--config", str(arguments.config.absolute())]
+    for tag in arguments.keep:
+        words += ["--keep", tag]
+    fix_command = shlex.join([*words, "--fix", "--yes"])
+    data: dict[str, object] = {
+        "settings": settings.to_dict(),
+        **report.to_dict(),
+        "fix_command": fix_command,
+    }
     if not arguments.fix:
         if report.safe:
             console.line()
-            console.line("Remove them: rotisserie factory disk --fix --yes")
+            console.line(f"Remove them: {fix_command}")
         return Outcome(Result.COMPLETED, EXIT_OK, data)
     if not arguments.yes:
         console.line()
         console.line(
-            f"Dry run: --fix --yes would delete {len(report.safe)} item(s), "
+            f"Dry run: {fix_command} would delete {len(report.safe)} item(s), "
             f"freeing about {size(report.total)}."
         )
         data["dry_run"] = True

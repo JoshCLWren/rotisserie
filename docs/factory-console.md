@@ -535,9 +535,15 @@ worktree or target directory name) has a running pid in the local factory
 uses it" means a process's working directory, an open file or its
 `CARGO_TARGET_DIR` is inside the item (read from `/proc`).
 
-`--fix --yes` re-checks each item just before deleting it, refuses any path
-that is not under a configured root (or is a symlink or a mount point), and
-runs `git worktree prune` after removing a worktree. Without `--yes`, `--fix`
+`--fix --yes` re-checks each item, including which processes use it, just
+before deleting it. It refuses any path that is not under a configured root,
+that is reached through a symlink below the root's fixed prefix, or that has a
+filesystem (bind mounts included, read from `/proc/self/mountinfo`) mounted at
+or inside it; it runs `git worktree prune` after removing a worktree. Idle time
+counts the newest change anywhere in the tree, and git runs without inherited
+`GIT_DIR`/`GIT_WORK_TREE`-style overrides. An item inside another safe item is
+listed (and counted) once, with its parent. The suggested fix command repeats
+`--config` and every `--keep`. Without `--yes`, `--fix`
 is a dry run. Sizes count only blocks the deletion would free: a file also
 hard-linked from elsewhere (uv's cache links into virtualenvs) frees nothing.
 It exits 4 when a deletion only partly succeeded.
