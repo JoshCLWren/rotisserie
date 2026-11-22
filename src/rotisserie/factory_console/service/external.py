@@ -11,6 +11,7 @@ import json
 import re
 from datetime import UTC, datetime
 from types import ModuleType
+from typing import Any
 
 from rotisserie.factory_console import runtime
 from rotisserie.factory_console.github import GitHub, GitHubError, obj, string
@@ -208,6 +209,48 @@ def _is_known_author(offer: frontier.Offer, *, client: str) -> bool:
     return client in contributors or client == offer.provenance.get("producer")
 
 
+def _post_claim_change(
+    github: GitHub, offer: frontier.Offer, numbers: list[int], live: dict[str, Any]
+) -> str:
+    """Recheck ownership, priority, dependencies, PR stage and CI after CAS."""
+    core = runtime.module("factory_work_policy")
+    labels = core.labels_of(live)
+    if core.owner_of(labels) not in (None, "factory:unowned"):
+        return "another worker became the GitHub owner after reservation"
+    kind, number_text = offer.target.split(":")
+    if kind == "issue":
+        blocked, why = queue.open_blocker(github, int(number_text))
+        if blocked:
+            return why or "dependency graph changed after reservation"
+        all_labels = labels
+    else:
+        all_labels = set(labels)
+        if len(numbers) == 2:
+            linked = next(n for n in numbers if n != int(number_text))
+            linked_row = obj(github.repo_api(f"issues/{linked}"))
+            if string(linked_row, "state") != "open":
+                return "linked issue changed after reservation"
+            all_labels.update(core.labels_of(linked_row))
+        conflicting = (
+            live.get("mergeable") is False
+            or string(live, "mergeable_state").upper() == "DIRTY"
+        )
+        if core.completion_action_for(core.stage_of(labels), conflicting) != offer.action:
+            return "PR stage or merge state changed after reservation"
+        checks = _required_checks_outcome(github, int(number_text))
+        if checks == "waiting" and not (
+            offer.action == "merge-conflict"
+            and _conflict_without_ci(github, int(number_text), offer.head_sha)
+        ):
+            return "required CI became pending or unknown after reservation"
+    if (
+        core.priority_rank(all_labels) != offer.priority
+        or core.provenance_lane(all_labels, pull_request=(kind == "pr")) != offer.lane
+    ):
+        return "priority or scheduling lane changed after reservation"
+    return ""
+
+
 def reserve_next(
     github: GitHub,
     *,
@@ -311,8 +354,11 @@ def reserve_next(
             raise ValueError("pull request head changed after reservation")
         if string(live, "state") != "open":
             raise ValueError("target closed after reservation")
+        changed = _post_claim_change(github, chosen, numbers, live)
+        if changed:
+            raise ValueError(changed)
     except (GitHubError, ValueError) as exc:
-        store.external_lease_action(
+        rolled_back = store.external_lease_action(
             github.repo,
             actor,
             client,
@@ -320,6 +366,13 @@ def reserve_next(
             operation="release",
             evidence="post-reservation-revalidation-failed",
         )
+        if rolled_back.get("status") != "released":
+            return {
+                "status": "held",
+                "reason": "claim rollback could not be verified",
+                "claim_id": claim_id,
+                "retry": "check_lease_before_retry",
+            }
         return {"status": "conflict", "reason": str(exc), "retry": "refresh_frontier"}
     kind, number_text = chosen.target.split(":")
     try:
