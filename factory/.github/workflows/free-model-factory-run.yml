@@ -573,14 +573,25 @@ jobs:
             while why="$(python3 .github/scripts/factory_review_model_guard.py check \
                 --authors-json "${FACTORY_REVIEW_AUTHORS:-[]}" --model "$runtime_model")"; do
               echo "Factory $WORKER: $why; selecting a different reviewer model"
-              avoided+=(--attempted-pair "$(jq -cn --arg s "$selected_source" --arg m "$model" '[$s, $m]')")
-              if (( ${#avoided[@]} > 16 )) || ! selection="$(python3 .github/scripts/factory_model_failover.py \
+              if [[ "$REQUESTED_PROVIDER" == auto ]]; then
+                avoided+=(--attempted-pair "$(jq -cn --arg s "$selected_source" --arg m "$model" '[$s, $m]')")
+                repick=(--eligible-sources-file "$RUNNER_TEMP/factory-fleet-sources.json"
+                  --fleet-catalog-cache "$RUNNER_TEMP/factory-fleet-catalogs.json")
+              else
+                # An operator-pinned provider stays pinned: re-pick inside its
+                # own catalog only, never across the fleet.
+                avoided+=(--attempted "$model")
+                case "$SOURCE" in
+                  opencode-free) repick=(--catalog-json "${catalog:-/nonexistent}") ;;
+                  kilo-auto) repick=(--catalog-file "${catalog:-/nonexistent}") ;;
+                  *) repick=(--catalog-cache "$RUNNER_TEMP/factory-proven-catalog.json") ;;
+                esac
+              fi
+              if (( ${#avoided[@]} > 32 )) || ! selection="$(python3 .github/scripts/factory_model_failover.py \
                   --source "$SOURCE" --worker "$WORKER" \
                   --rotation "${GITHUB_RUN_NUMBER:-0}" \
                   --exclusions-file "$exclusions_file" \
-                  --eligible-sources-file "$RUNNER_TEMP/factory-fleet-sources.json" \
-                  --fleet-catalog-cache "$RUNNER_TEMP/factory-fleet-catalogs.json" \
-                  "${avoided[@]}")"; then
+                  "${repick[@]}" "${avoided[@]}")"; then
                 printf 'model_unavailable\tNo eligible reviewer model outside the PR authors\n' > "$discovery_outcome"
                 echo '::error::Every available model authored this PR; the review stays queued for another model'
                 exit 1
