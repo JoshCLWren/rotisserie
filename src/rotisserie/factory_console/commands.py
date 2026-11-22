@@ -48,6 +48,7 @@ from rotisserie.factory_console.service import (
     conflicts,
     dispatch,
     doctor,
+    frontier,
     groom,
     outcomes,
     providers,
@@ -240,6 +241,17 @@ def add_parser(subcommands: argparse._SubParsersAction[argparse.ArgumentParser])
     )
     explain.add_argument("what", nargs="?", help="issue:N (or just N); omit for every open issue")
     _common(explain)
+
+    next_work = commands.add_parser(
+        "next",
+        help="read the ranked work frontier for external agents (never claims work)",
+        description=(
+            "Inspect versioned, ranked controller candidates and all known holds. "
+            "Neon ownership is authoritative and unavailable lease evidence holds closed. "
+            "The result is read-only; a separate trusted claim is required before work."
+        ),
+    )
+    _common(next_work)
 
     clear = commands.add_parser(
         "unstick",
@@ -530,6 +542,7 @@ def _help_text() -> str:
             "  rotisserie factory stats         reliable providers and models",
             "  rotisserie factory settings      limits, worker counts, priorities",
             "  rotisserie factory why [issue:N] why work is or is not being picked up",
+            "  rotisserie factory next         ranked read-only work offers for agents",
             "  rotisserie factory unstick       start the workers that clear the bottleneck",
             "  rotisserie factory outcomes      did the requested work actually happen",
             "  rotisserie factory checks pr:N   why its checks fail",
@@ -1741,6 +1754,26 @@ def _show_queue(console: Console, summary: queue.QueueSummary) -> None:
     console.line("Ask about one:     rotisserie factory why issue:N")
 
 
+# next -----------------------------------------------------------------------------------
+
+def cmd_next(context: Context, arguments: argparse.Namespace) -> Outcome:
+    found = frontier.capture(context.github, now=context.clock.now())
+    data = found.to_dict()
+    console = context.console
+    console.heading("Next meaningful factory work (read-only)")
+    for offer in found.offers[:12]:
+        held = "held" if offer.hold_reasons else "candidate"
+        console.line(f"  {offer.rank}. {offer.target} · {offer.action} · {held}")
+        console.line(f"     {offer.title}")
+        for reason in offer.hold_reasons[:2]:
+            console.line(f"     Hold: {reason}")
+    if not found.authoritative_claim_available:
+        console.warn("Lease authority is unavailable; all candidates are held.")
+        console.line(found.authority_note)
+    console.line("This list never reserves work. A trusted fenced claim is required.")
+    return Outcome(Result.COMPLETED, EXIT_OK, data)
+
+
 # unstick --------------------------------------------------------------------------------
 
 
@@ -2598,6 +2631,7 @@ HANDLERS = {
     "settings": cmd_settings,
     "prioritize": cmd_prioritize,
     "why": cmd_why,
+    "next": cmd_next,
     "unstick": cmd_unstick,
     "outcomes": cmd_outcomes,
     "close": cmd_close,
