@@ -7,13 +7,9 @@ code-writing agent is enrolled in the provider/model roster.
 
 from __future__ import annotations
 
-import importlib
 import re
-import sys
 from datetime import UTC, datetime
-from pathlib import Path
 from types import ModuleType
-from typing import Any
 
 from rotisserie.factory_console import runtime
 from rotisserie.factory_console.github import GitHub, GitHubError, obj, string
@@ -62,28 +58,6 @@ def principal(github: GitHub, environment: dict[str, str]) -> str:
     return actor
 
 
-def _selected(
-    snapshot: frontier.Frontier, *, abilities: frozenset[str], expected: str,
-) -> tuple[frontier.Offer | None, str]:
-    eligible: list[frontier.Offer] = []
-    for offer in snapshot.offers:
-        if offer.status != "candidate" or offer.action not in abilities:
-            continue
-        contributors = offer.provenance.get("head_contributors", [])
-        if offer.action == "review" and isinstance(contributors, list):
-            # The known author cannot be assigned independent review.
-            # Unknown authors remain subject to the existing review gate.
-            if any(value in abilities for value in ()):  # no author assumptions
-                continue
-        eligible.append(offer)
-    if not eligible:
-        return None, "no_eligible_offer"
-    top = eligible[0]
-    if expected and top.target != expected:
-        return None, "offer_reordered_or_no_longer_highest"
-    return top, ""
-
-
 def _linked_targets(github: GitHub, offer: frontier.Offer) -> list[int]:
     kind, number_text = offer.target.split(":")
     number = int(number_text)
@@ -127,7 +101,7 @@ def _live_offer(github: GitHub, previous: frontier.Offer) -> tuple[bool, str]:
         return False, "offer no longer eligible: " + "; ".join(found.hold_reasons)
     higher = [
         o for o in latest.offers
-        if o.rank < found.rank and o.status == "candidate" and o.action == previous.action
+        if o.rank < found.rank and o.status == "candidate"
     ]
     if higher:
         return False, "a higher-ranked eligible action appeared"
@@ -153,9 +127,17 @@ def reserve_next(
     snapshot = frontier.capture(github, now=datetime.now(UTC))
     if not snapshot.authoritative_claim_available:
         return {"status": "held", "reason": snapshot.authority_note, "retry": "refresh_frontier"}
-    if advertised_at and advertised_at != snapshot.generated_at:
-        # A supplied stale manifest is never silently substituted with live work.
-        return {"status": "conflict", "reason": "offer_snapshot_changed", "retry": "refresh_frontier"}
+    if advertised_at:
+        try:
+            offered_at = datetime.fromisoformat(advertised_at.replace("Z", "+00:00"))
+            seconds_old = (datetime.now(UTC) - offered_at).total_seconds()
+        except ValueError:
+            seconds_old = 999999
+        if not 0 <= seconds_old <= 60:
+            return {
+                "status": "conflict", "reason": "offer_snapshot_expired",
+                "retry": "refresh_frontier",
+            }
     candidates = [
         o for o in snapshot.offers
         if o.status == "candidate" and o.action in abilities
