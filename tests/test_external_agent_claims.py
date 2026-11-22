@@ -11,7 +11,7 @@ from typing import Any, cast
 import pytest
 
 from rotisserie.factory_console.github import GitHub
-from rotisserie.factory_console.service import external, frontier
+from rotisserie.factory_console.service import external, frontier, queue
 
 REPO = "acme/widgets"
 
@@ -125,7 +125,7 @@ def make_frontier(*offers: frontier.Offer) -> frontier.Frontier:
 def setup(monkeypatch: pytest.MonkeyPatch) -> LedgerDouble:
     store = LedgerDouble()
     monkeypatch.setattr(external, "ledger", lambda: cast(Any, store))
-    monkeypatch.setattr(external.frontier, "capture", lambda *a, **k: make_frontier(make_offer()))
+    monkeypatch.setattr(frontier, "capture", lambda *a, **k: make_frontier(make_offer()))
     monkeypatch.setattr(external, "_live_offer", lambda *a, **k: (True, ""))
     return store
 
@@ -266,7 +266,7 @@ def test_unknown_neon_liveness_holds_all_work(
         offers=bad.offers,
         holds=bad.holds,
     )
-    monkeypatch.setattr(external.frontier, "capture", lambda *a, **k: bad)
+    monkeypatch.setattr(frontier, "capture", lambda *a, **k: bad)
     result = external.reserve_next(cast(GitHub, GitHubDouble()), client="chatgpt", environment={})
     assert result["status"] == "held"
     assert "Neon" in str(result["reason"])
@@ -283,7 +283,7 @@ def test_changed_pr_head_rejected_before_neon_claim(
         action="review",
         head_sha="a" * 40,
     )
-    monkeypatch.setattr(external.frontier, "capture", lambda *a, **k: make_frontier(offer))
+    monkeypatch.setattr(frontier, "capture", lambda *a, **k: make_frontier(offer))
     monkeypatch.setattr(
         external,
         "_linked_targets",
@@ -302,8 +302,8 @@ def test_changed_pr_head_rejected_before_neon_claim(
 
 def test_dependency_change_holds_issue_before_claim(monkeypatch: pytest.MonkeyPatch) -> None:
     snapshot = make_frontier(make_offer())
-    monkeypatch.setattr(external.frontier, "capture", lambda *a, **k: snapshot)
-    monkeypatch.setattr(external.queue, "open_blocker", lambda *a, **k: (True, "New blocker"))
+    monkeypatch.setattr(frontier, "capture", lambda *a, **k: snapshot)
+    monkeypatch.setattr(queue, "open_blocker", lambda *a, **k: (True, "New blocker"))
     ok, reason = external._live_offer(cast(GitHub, GitHubDouble()), snapshot.offers[0])
     assert not ok
     assert reason == "New blocker"
@@ -317,7 +317,7 @@ def test_review_waits_for_required_ci(monkeypatch: pytest.MonkeyPatch) -> None:
         action="review",
         head_sha="a" * 40,
     )
-    monkeypatch.setattr(external.frontier, "capture", lambda *a, **k: make_frontier(offered))
+    monkeypatch.setattr(frontier, "capture", lambda *a, **k: make_frontier(offered))
     monkeypatch.setattr(external, "_required_checks_outcome", lambda *a, **k: "waiting")
     ok, reason = external._live_offer(cast(GitHub, GitHubDouble()), offered)
     assert not ok
@@ -335,7 +335,7 @@ def test_known_external_code_author_cannot_reserve_own_review(
         head_sha="a" * 40,
     )
     second = replace(make_offer(number=8), rank=2)
-    monkeypatch.setattr(external.frontier, "capture", lambda *a, **k: make_frontier(review, second))
+    monkeypatch.setattr(frontier, "capture", lambda *a, **k: make_frontier(review, second))
     monkeypatch.setattr(
         external, "_linked_targets", lambda g, o: [44] if o.action == "review" else [8]
     )
