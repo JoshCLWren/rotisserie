@@ -12,6 +12,10 @@ def test_github_frontier_is_manual_and_read_only() -> None:
     workflow = TEMPLATE.read_text(encoding="utf-8")
     assert "on:\n  workflow_dispatch:" in workflow
     assert "schedule:" not in workflow
+    assert "FACTORY_REPO_VARS: >-" in workflow
+    assert "uses: ./.github/actions/factory-state-cache" in workflow
+    assert "gh issue edit" not in workflow
+    assert "git push" not in workflow
     assert "contents: read" in workflow
     assert "issues: read" in workflow
     assert "pull-requests: read" in workflow
