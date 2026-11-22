@@ -548,6 +548,19 @@ def _with_marker(action: Action, text: str) -> str:
     return f"{text.rstrip()}\n\n{marker(action)}"
 
 
+def moved_to(github: GitHub, number: int) -> str:
+    """The issue's new URL when it was transferred out of this repository, else empty.
+
+    GitHub redirects a transferred issue's number to its new home, so the read
+    succeeds but names another repository.
+    """
+    live = obj(github.repo_api(f"issues/{number}"))
+    home = string(live, "repository_url")
+    if home and not home.endswith(f"/repos/{github.repo}"):
+        return string(live, "html_url") or home
+    return ""
+
+
 def _already_applied(github: GitHub, action: Action) -> bool:
     if marker(action) in string(obj(github.repo_api(f"issues/{action.number}")), "body"):
         return True  # recorded in the body because the issue does not accept comments
@@ -675,7 +688,12 @@ def apply(
     done: list[Applied] = []
     for action in actions:
         try:
-            if _already_applied(github, action):
+            elsewhere = moved_to(github, action.number)
+            if elsewhere:
+                status = "skipped" if action.op == "transfer" else "refused"
+                result = Applied(action.id, action.target, action.op, status,
+                                 f"#{action.number} now lives at {elsewhere}")  # fmt: skip
+            elif _already_applied(github, action):
                 result = Applied(action.id, action.target, action.op, "skipped",
                                  "already applied (its marker comment exists)")  # fmt: skip
             else:

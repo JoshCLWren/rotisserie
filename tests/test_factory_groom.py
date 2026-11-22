@@ -342,3 +342,17 @@ def test_a_comment_locked_issue_records_the_note_and_marker_in_its_body(fake: Fa
     fake.calls.clear()
     [again] = groom.apply(GitHub(REPO), actions, write=True)
     assert again.status == "skipped" and not fake.writes()
+
+
+def test_a_transferred_issue_is_skipped_on_the_next_run(fake: Fake) -> None:
+    live(fake, 5, repository_url="https://api.github.com/repos/acme/runtime",
+         html_url="https://github.com/acme/runtime/issues/77")  # fmt: skip
+    move = plan(
+        {"op": "transfer", "target": "issue:5", "to_repo": "acme/runtime", "why": "w",
+         "comment": "c"},
+        {"op": "comment", "target": "issue:5", "why": "w", "comment": "c"},
+    )  # fmt: skip
+    first, second = groom.apply(GitHub(REPO), move, write=True)
+    assert first.status == "skipped" and "acme/runtime/issues/77" in first.text
+    assert second.status == "refused"  # never write to an issue that moved away
+    assert not fake.writes()
