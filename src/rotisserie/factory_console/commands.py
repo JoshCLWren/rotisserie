@@ -1756,6 +1756,7 @@ def _show_queue(console: Console, summary: queue.QueueSummary) -> None:
 
 # next -----------------------------------------------------------------------------------
 
+
 def cmd_next(context: Context, arguments: argparse.Namespace) -> Outcome:
     found = frontier.capture(context.github, now=context.clock.now())
     data = found.to_dict()
