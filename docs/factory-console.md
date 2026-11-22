@@ -271,6 +271,52 @@ run) or **mixed** (fails in the PR's own files and in main's).
   makes the same syncs. PRs a worker holds are left alone.
 - If a PR's changed files cannot be read, its failures count as its own.
 
+## Syncing branches with main
+
+`rotisserie factory sync pr:N [pr:N ...]` or `rotisserie factory sync --all-stale`
+merges the default branch into pull requests. Rotisserie owns this operation: it
+replaces the hand-run `sync_watch.py` watcher, which is retired and must not be
+restarted. One implementation (`factory_branch_sync.py` in the factory runtime)
+serves the scheduler, `sync`, `unstick --yes` and `doctor --fix`.
+
+- **Ownership comes from Neon leases.** A sync first takes a short (5 min)
+  operation lease on the PR's Neon target key, which is the key a worker claim
+  checks. No worker can be assigned the PR mid-sync, and a PR a worker holds is
+  never touched. Owner labels are used only where Neon cannot be reached, and
+  then every result says "Neon leases were not consulted".
+- **Never overwrites work.** The write is GitHub's update-branch with
+  `expected_head_sha`: if a worker pushed since the snapshot, GitHub refuses and
+  the result is `head-moved`. It never force-pushes and never pushes to the
+  default branch.
+- **Conflicts go to merge-conflict work.** A conflicting PR is reported as
+  `conflicts` and left for the scheduler's merge-conflict routing. It isn't
+  retried.
+- **Results** per PR: `synced`, `held-by-worker`, `already-current`,
+  `conflicts`, `head-moved`, `closed` or `error`, each with a sentence of text.
+  `--json` prints them as data.
+- **Where it runs.** On a laptop without Neon, `sync --yes` *queues* each PR
+  with the `factory-sync-main` label. The dispatcher's routine pass, "Sync queued
+  factory PRs with main under Neon leases", performs queued syncs under a lease
+  (at most 5 writes per tick) and removes the label once a PR is synced,
+  current, conflicting or closed. `--now` syncs right away on owner labels
+  alone. `--contains SHA` treats a PR whose head already has that commit as done.
+  `--all-stale` picks the PRs `unstick` would sync: red only because main has
+  since moved past the failure, not conflicting.
+- **GitHub cost.** A pass reads the open-PR list once and passes it to every
+  step. Each candidate then costs one compare, plus one update-branch (and, for
+  a queued PR, one label removal) when it's written. The scheduler tick is one
+  paginated list call plus about 3 calls per PR it syncs. A tick with nothing
+  queued costs one list call.
+
+`rotisserie factory leases [pr:N ...]` shows who holds what: every worker and
+target lease row from Neon (active or expired, with its claim and holder) where
+Neon is reachable (`FACTORY_STATE_DSN_FILE` set and the ledger importable).
+Otherwise it says leases are visible only to the trusted runtime and shows owner
+labels instead. `leases --release-expired` deletes lease rows that expired over
+an hour ago. Expired rows already block nothing, so this is cleanup only and
+can never take an active claim. Stranded *active* claims are released by the
+dispatcher's stale-lease reconciler, not by this command.
+
 ## What does it conflict with?
 
 `rotisserie factory conflicts pr:N` compares each file the PR changes (files it

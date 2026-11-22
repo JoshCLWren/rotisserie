@@ -15,7 +15,15 @@ from dataclasses import dataclass, field, replace
 from datetime import datetime, timedelta
 
 from rotisserie.factory_console import runtime
-from rotisserie.factory_console.github import GitHub, GitHubError, label_names, obj, string
+from rotisserie.factory_console.github import (
+    JSON,
+    GitHub,
+    GitHubError,
+    Obj,
+    label_names,
+    obj,
+    string,
+)
 from rotisserie.factory_console.service import (
     baseline,
     catalog,
@@ -371,27 +379,40 @@ def sync(github: GitHub, item: Sync) -> Synced:
     """Merge the default branch into the PR, only if its head is still the planned one.
 
     GitHub refuses the update when the head moved (a worker pushed) or the merge
-    conflicts; either way nothing changes and the reason is reported.
+    conflicts; either way nothing changes and the reason is reported. This is
+    the shared ``factory_branch_sync`` path: a Neon lease where Neon is
+    reachable, otherwise owner labels (and the result says so).
     """
+    from rotisserie.factory_console.service import sync as branch_sync
+
+    plan = branch_sync.Plan((branch_sync.Candidate(item.pr, item.head, item.title, item.why),))
+    pull = None
     try:
-        labels = label_names(obj(github.repo_api(f"issues/{item.pr}")))
-        owner = next((label for label in labels if runtime_owner(label)), "")
-        if owner:
-            return Synced(item.pr, False, f"PR #{item.pr}: {owner} took it; left alone")
-        github.repo_api(
-            f"pulls/{item.pr}/update-branch",
-            method="PUT",
-            fields={"expected_head_sha": item.head},
-        )
+        pull = obj(github.repo_api(f"pulls/{item.pr}"))
     except GitHubError as exc:
-        if "merge conflict" in str(exc).lower():
-            return Synced(
-                item.pr,
-                False,
-                f"PR #{item.pr}: conflicts with main, so it needs merge-conflict work, not a sync",
-            )
         return Synced(item.pr, False, f"PR #{item.pr}: not synced: {exc}")
-    return Synced(item.pr, True, f"PR #{item.pr}: merged main into it; its checks run again")
+    base = string(obj(pull.get("base")), "ref")
+    if not base:
+        try:
+            base = string(obj(github.api(f"repos/{github.repo}")), "default_branch")
+        except GitHubError:
+            base = ""
+    labels: list[JSON] = [*sorted(label_names(pull))]
+    row: Obj = {
+        "number": item.pr,
+        "state": string(pull, "state") or "open",
+        "headRefOid": string(obj(pull.get("head")), "sha") or item.head,
+        "baseRefName": base,
+        "labels": labels,
+        "mergeStateStatus": string(pull, "mergeable_state"),
+    }
+    changes, _ = branch_sync.execute(
+        github, plan, [row], holder=f"console-{item.pr}", limit=1, now=True
+    )
+    if not changes:
+        return Synced(item.pr, False, f"PR #{item.pr}: not synced")
+    change = changes[0]
+    return Synced(item.pr, change.ok, change.text)
 
 
 def runtime_owner(label: str) -> bool:

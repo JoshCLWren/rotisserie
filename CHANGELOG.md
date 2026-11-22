@@ -9,6 +9,19 @@ such change must be called out here and in its release notes.
 
 ## [Unreleased]
 
+### Added
+
+- `rotisserie factory sync` and `rotisserie factory leases`: Rotisserie now owns
+  branch synchronization. A sync takes a short Neon operation lease on the PR's
+  target key, so workers can't be assigned it mid-sync and a held PR is never
+  touched. The write is a compare-and-swap update-branch, and conflicts go to
+  merge-conflict work. Without Neon, the console queues requests
+  (`factory-sync-main` label) for the dispatcher's new leased sync pass, or
+  `--now` syncs on owner labels and says so. `unstick --yes` and `doctor --fix`
+  use the same implementation. The ledger gains `acquire_operation_lease`,
+  `release_operation_lease`, `target_lease`, `list_leases` and
+  `release_expired_leases`. Replaces the retired `sync_watch.py` watcher.
+
 ### Fixed
 
 - `run --take-over` could lose the item to a routine scheduler pass between

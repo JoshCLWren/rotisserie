@@ -2115,9 +2115,15 @@ def test_sync_leaves_a_pr_a_worker_took_since_the_plan(fake: FakeGitHub) -> None
     from rotisserie.factory_console.github import GitHub
     from rotisserie.factory_console.service import unstick
 
-    fake.routes[r"issues/301$"] = {"labels": [{"name": f"factory:{WORKER}"}]}
+    fake.routes[r"pulls/301$"] = {
+        "state": "open",
+        "head": {"sha": "a" * 40},
+        "base": {"ref": "main"},
+        "labels": [{"name": f"factory:{WORKER}"}],
+    }
     result = unstick.sync(GitHub(REPO), unstick.Sync(301, "a" * 40, "t", "w"))
-    assert not result.ok and "took it" in result.text
+    assert not result.ok and f"factory:{WORKER} holds it" in result.text
+    assert "Neon leases were not consulted" in result.text
     assert not any("update-branch" in " ".join(call) for call in fake.calls)
 
 
@@ -2184,7 +2190,12 @@ def test_sync_reports_a_conflict_as_merge_conflict_work(fake: FakeGitHub) -> Non
     from rotisserie.factory_console.github import GitHub, GitHubError
     from rotisserie.factory_console.service import unstick
 
-    fake.routes[r"issues/301$"] = {"labels": [{"name": "factory:unowned"}]}
+    fake.routes[r"pulls/301$"] = {
+        "state": "open",
+        "head": {"sha": "a" * 40},
+        "base": {"ref": "main"},
+        "labels": [{"name": "factory:unowned"}],
+    }
 
     def conflict() -> JSON:
         raise GitHubError("GitHub request failed: gh: merge conflict between base and head")
@@ -2192,3 +2203,120 @@ def test_sync_reports_a_conflict_as_merge_conflict_work(fake: FakeGitHub) -> Non
     fake.routes[r"pulls/301/update-branch"] = conflict
     result = unstick.sync(GitHub(REPO), unstick.Sync(301, "a" * 40, "t", "w"))
     assert not result.ok and "needs merge-conflict work" in result.text
+
+
+# sync / leases -------------------------------------------------------------------------
+
+
+def sync_rows(*specs: tuple[int, str], extra: str = "factory") -> list[JSON]:
+    rows: list[JSON] = []
+    for number, owner in specs:
+        row = factory_pr(number, 900 + number, "factory:review", owner, extra)
+        row["baseRefName"] = "main"
+        rows.append(row)
+    return rows
+
+
+def label_posts(fake: FakeGitHub) -> list[list[str]]:
+    return [call for call in fake.calls if any(part.endswith("/labels") for part in call)]
+
+
+def test_sync_without_neon_queues_for_the_leased_scheduler_pass(fake: FakeGitHub) -> None:
+    fake.routes["pr-list"] = sync_rows((301, "factory:unowned"))
+    code, out = invoke(["--json", "sync", "pr:301", "--yes"])
+    data = json.loads(out)
+    assert code == 0 and data["neon"] is False
+    assert [entry["pr"] for entry in data["queued"]] == [301]
+    [post] = label_posts(fake)
+    assert "POST" in post and "labels[]=factory-sync-main" in post
+    assert not any("update-branch" in " ".join(call) for call in fake.calls)
+
+
+def test_sync_does_not_requeue_an_already_queued_pr(fake: FakeGitHub) -> None:
+    fake.routes["pr-list"] = sync_rows((301, "factory:unowned"), extra="factory-sync-main")
+    code, out = invoke(["sync", "pr:301", "--yes"])
+    assert "already queued" in out and not label_posts(fake)
+
+
+def test_sync_now_uses_one_snapshot_and_compare_and_swap(fake: FakeGitHub) -> None:
+    fake.routes["pr-list"] = sync_rows((301, "factory:unowned"))
+    fake.routes[r"compare/main\.\.\."] = {"status": "behind"}
+    code, out = invoke(["--json", "sync", "pr:301", "--now", "--yes"])
+    data = json.loads(out)
+    assert code == 0 and data["synced"][0]["status"] == "synced"
+    assert data["synced"][0]["neon"] is False
+    api_calls = [call for call in fake.calls if call[0] == "api"]
+    # One list (gh pr list) + one compare + one update-branch; no per-PR re-reads.
+    assert len(api_calls) == 2
+    assert f"expected_head_sha={'d' * 40}" in api_calls[1]
+    assert sum(1 for call in fake.calls if call[:2] == ["pr", "list"]) == 1
+
+
+def test_sync_now_never_touches_a_pr_a_worker_holds(fake: FakeGitHub) -> None:
+    fake.routes["pr-list"] = sync_rows((305, f"factory:{WORKER}"))
+    code, out = invoke(["sync", "pr:305", "--now", "--yes"])
+    assert f"owner label factory:{WORKER} holds it" in out
+    assert "Neon was not consulted" in out
+    assert not any("update-branch" in " ".join(call) for call in fake.calls)
+
+
+def test_sync_refuses_without_targets_or_with_both(fake: FakeGitHub) -> None:
+    assert invoke(["sync"])[0] == 2
+    assert invoke(["sync", "pr:1", "--all-stale"])[0] == 2
+    assert invoke(["sync", "issue:1"])[0] == 2
+
+
+def test_sync_all_stale_plans_from_the_shared_evidence(fake: FakeGitHub) -> None:
+    unstick_routes(fake, FULL_BACKLOG)
+    baseline_routes(fake, {301: "src/a.rs", 305: "src/e.rs"}, changed_at="2026-11-22T13:00:00Z")
+    code, out = invoke(["--json", "sync", "--all-stale", "--dry-run"])
+    data = json.loads(out)
+    assert [(item["pr"], item["head"]) for item in data["candidates"]] == [(301, "d" * 40)]
+    assert [item["pr"] for item in data["held"]] == [305]
+    assert not label_posts(fake)
+    assert not any("update-branch" in " ".join(call) for call in fake.calls)
+
+
+def test_leases_without_neon_explains_and_shows_owner_labels(fake: FakeGitHub) -> None:
+    fake.routes["pr-list"] = sync_rows((301, "factory:unowned"), (305, f"factory:{WORKER}"))
+    code, out = invoke(["--json", "leases"])
+    data = json.loads(out)
+    assert code == 0 and data["source"] == "labels"
+    assert "visible only to the trusted factory runtime" in data["note"]
+    assert [row["target"] for row in data["rows"]] == ["#305"]
+    code, out = invoke(["--json", "leases", "pr:301"])
+    assert json.loads(out)["rows"] == [
+        {"target": "#301", "holder": "free", "active": False, "expires_at": ""}
+    ]
+
+
+def test_leases_release_expired_needs_neon(fake: FakeGitHub) -> None:
+    code, out = invoke(["leases", "--release-expired"])
+    assert code == 3 and "Cannot release leases" in out
+
+
+def test_leases_read_neon_when_configured(
+    fake: FakeGitHub, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import types
+
+    from rotisserie.factory_console.service import sync as branch_sync
+
+    def list_leases(repo: str) -> list[dict[str, object]]:
+        return [
+            {"key": f"factory-lease-v1:{repo}:worker:43", "worker": "43", "claim_id": "abc",
+             "active": True, "expires_at": "2026-11-22T13:00:00+00:00"},
+            {"key": f"factory-lease-v1:{repo}:target:301", "operation": "scheduler-9",
+             "claim_id": "def", "active": False, "expires_at": "2026-11-22T11:00:00+00:00"},
+        ]  # fmt: skip
+
+    ledger = types.SimpleNamespace(list_leases=list_leases)
+    monkeypatch.setattr(branch_sync, "load_ledger", lambda env=None: (ledger, ""))
+    code, out = invoke(["--json", "leases"])
+    data = json.loads(out)
+    assert data["source"] == "neon"
+    assert [(r["target"], r["active"]) for r in data["rows"]] == [
+        ("worker:43", True),
+        ("#301", False),
+    ]
+    assert data["rows"][1]["holder"].startswith("operation scheduler-9")

@@ -459,3 +459,51 @@ def test_trusted_terminal_collector_retries_scoped_reads_and_idempotent_writes()
     operations = (root / ".github/scripts/factory_state_operations.py").read_text()
     assert "INSERT INTO public.factory_runtime_event_keys(repo,run_id)" in operations
     assert "ON CONFLICT DO NOTHING RETURNING run_id" in operations
+
+
+def test_operation_lease_is_noop_without_neon_and_fatal_when_required(monkeypatch):
+    monkeypatch.delenv("FACTORY_STATE_DSN_FILE", raising=False)
+    monkeypatch.delenv("FACTORY_NEON_LEASE_REQUIRED", raising=False)
+    assert ledger.acquire_operation_lease("owner/repo", "sync-1", 5001) == ""
+    assert ledger.release_operation_lease("owner/repo", 5001, "", "done") is False
+    monkeypatch.setenv("FACTORY_NEON_LEASE_REQUIRED", "true")
+    with pytest.raises(RuntimeError):
+        ledger.acquire_operation_lease("owner/repo", "sync-1", 5001)
+
+
+@pytest.mark.parametrize("holder,number,ttl", [
+    ("42", 5001, 300),  # a bare number would read as a worker id
+    ("bad holder", 5001, 300),
+    ("sync-1", 0, 300),
+    ("sync-1", 5001, 10),
+    ("sync-1", 5001, 7200),
+])
+def test_invalid_operation_lease_requests_rejected(holder, number, ttl):
+    with pytest.raises(ValueError):
+        ledger.acquire_operation_lease("owner/repo", holder, number, ttl)
+
+
+def test_operation_lease_uses_the_worker_target_key(monkeypatch, tmp_path):
+    # Same key a worker claim checks, so a held sync blocks worker assignment.
+    assert ledger._target_key("owner/repo", 5001) == ledger._keys("owner/repo", "1", [5001])[1]
+    monkeypatch.setenv("FACTORY_STATE_DSN_FILE", str(tmp_path / "dsn"))
+    seen = {}
+
+    def run(coroutine):
+        seen["name"] = coroutine.cr_code.co_name
+        coroutine.close()
+        return None
+
+    monkeypatch.setattr(ledger.asyncio, "run", run)
+    assert ledger.acquire_operation_lease("owner/repo", "sync-1", 5001) is None
+    assert seen["name"] == "_acquire_operation"
+
+
+def test_lease_rows_describe_workers_and_operations():
+    row = ledger._lease_row(
+        "factory-lease-v1:o/r:target:9",
+        '[{"claim_id": "c", "operation": "sync-1", "targets": [9]}]',
+        "2026-11-22T12:00:00+00:00",
+        True,
+    )
+    assert row["operation"] == "sync-1" and row["targets"] == [9] and row["worker"] == ""

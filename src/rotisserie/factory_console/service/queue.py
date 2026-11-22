@@ -35,7 +35,7 @@ from rotisserie.factory_console.github import (
 ISSUE_FIELDS = "number,title,body,labels,createdAt,updatedAt"
 PR_FIELDS = (
     "number,title,body,labels,headRefName,headRefOid,createdAt,updatedAt,"
-    "isDraft,mergeable,mergeStateStatus,isCrossRepository"
+    "isDraft,mergeable,mergeStateStatus,isCrossRepository,baseRefName"
 )
 CONTROL_PATH = ".github/factory-rotisserie-control.json"
 SHA = re.compile(r"^[0-9a-f]{40}$")
