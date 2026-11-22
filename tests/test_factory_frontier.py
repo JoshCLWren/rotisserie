@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-from dataclasses import replace
 from datetime import UTC, datetime
 from types import SimpleNamespace
 from typing import Any
@@ -57,7 +56,7 @@ def snapshot(
 ) -> frontier.Frontier:
     return frontier.from_snapshot(
         REPO, now=NOW, issues=issues, prs=prs, candidates=candidates,
-        issue_verdicts=verdicts or {
+        issue_verdicts=verdicts if verdicts is not None else {
             int(item["number"]): queue.Verdict("ready", ()) for item in issues
         },
         leases=leases or {}, lease_problem=problem,
@@ -128,12 +127,9 @@ def test_issue_dependency_and_unknown_verdict_hold_closed() -> None:
         [issue(7, body="Depends on #3"), issue(3)],
         [], [candidate("issue", 7)], verdicts={},
     )
-    # The helper's default verdicts are ready, while dependency is still visible.
     assert result.offers[0].blocked_by == ("issue:3",)
-    held = replace(
-        result.offers[0], status="held", hold_reasons=("dependency incomplete",)
-    )
-    assert held.status == "held"
+    assert result.offers[0].status == "held"
+    assert "No complete issue eligibility verdict" in result.offers[0].hold_reasons
     assert result.holds[0]["target"] == "issue:3"
 
 
