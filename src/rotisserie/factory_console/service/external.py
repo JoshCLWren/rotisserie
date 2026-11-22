@@ -187,6 +187,14 @@ def _live_offer(github: GitHub, previous: frontier.Offer) -> tuple[bool, str]:
     return True, ""
 
 
+def _is_known_author(offer: frontier.Offer, *, client: str, actor: str) -> bool:
+    if offer.action != "review":
+        return False
+    identities = offer.provenance.get("head_contributors")
+    contributors = identities if isinstance(identities, (list, tuple, set, frozenset)) else ()
+    return client in contributors or actor in contributors or client == offer.provenance.get("producer")
+
+
 def reserve_next(
     github: GitHub,
     *,
@@ -222,14 +230,7 @@ def reserve_next(
         for o in snapshot.offers
         if o.status == "candidate"
         and o.action in abilities
-        and not (
-            o.action == "review"
-            and (
-                client in o.provenance.get("head_contributors", [])
-                or actor in o.provenance.get("head_contributors", [])
-                or client == o.provenance.get("producer")
-            )
-        )
+        and not _is_known_author(o, client=client, actor=actor)
     ]
     if not candidates:
         return {"status": "held", "reason": "no_eligible_offer", "retry": "refresh_frontier"}
@@ -288,7 +289,17 @@ def reserve_next(
             evidence="post-reservation-revalidation-failed",
         )
         return {"status": "conflict", "reason": str(exc), "retry": "refresh_frontier"}
+    kind, number_text = chosen.target.split(":")
+    target_info = obj(github.repo_api(
+        f"pulls/{number_text}" if kind == "pr" else f"issues/{number_text}"
+    ))
+    issue_body = string(target_info, "body")
+    if kind == "pr" and len(numbers) == 2:
+        linked_issue = next(number for number in numbers if number != int(number_text))
+        issue_body = string(obj(github.repo_api(f"issues/{linked_issue}")), "body")
     outcome["handoff"] = {
+        "acceptance_criteria": issue_body[:12000],
+        "task_title": string(target_info, "title"),
         "repository": github.repo,
         "url": chosen.url,
         "target": chosen.target,
