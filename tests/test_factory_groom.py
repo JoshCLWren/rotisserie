@@ -27,6 +27,8 @@ class Fake:
     def __call__(self, github: GitHub, args: Sequence[str], *, stdin: str | None = None) -> str:
         argv = list(args)
         self.calls.append(argv)
+        if argv[0] != "api":
+            return ""
         path = next(
             item
             for index, item in enumerate(argv[1:], start=1)
@@ -302,3 +304,16 @@ def test_groom_cli_dry_run_and_audit_log(fake: Fake, tmp_path: Path, monkeypatch
     assert code == 0 and not fake.writes()
     [entry] = [json.loads(line) for line in log.read_text().splitlines()]
     assert entry["status"] == "would-apply" and entry["repo"] == REPO
+
+
+def test_transfer_moves_a_runtime_issue_upstream_after_the_same_checks(fake: Fake) -> None:
+    live(fake, 5)
+    actions = plan(
+        {"op": "transfer", "target": "issue:5", "to_repo": "acme/runtime",
+         "why": "it is about the factory runtime", "comment": "Moving upstream."}
+    )  # fmt: skip
+    [result] = groom.apply(GitHub(REPO), actions, write=True)
+    assert result.status == "applied"
+    assert ["issue", "transfer", "5", "acme/runtime", "--repo", REPO] in fake.calls
+    with pytest.raises(groom.PlanError, match="to_repo"):
+        plan({"op": "transfer", "target": "issue:5", "why": "w", "comment": "c"})

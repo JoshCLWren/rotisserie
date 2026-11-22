@@ -325,8 +325,9 @@ are `unknown` until someone checks.
 ```
 
 Operations: `comment`, `edit-body`, `labels`, `close-issue` (`completed` or
-`not_planned`), `duplicate` (posts "Duplicate of #N" and closes), and
-`close-pr`. Every action needs a `why`; closures need a comment; body edits need
+`not_planned`), `duplicate` (posts "Duplicate of #N" and closes), `close-pr`,
+and `transfer` (moves an issue that belongs to another repository, such as a
+factory-runtime ticket filed in the adopter, with its comments; set `to_repo`). Every action needs a `why`; closures need a comment; body edits need
 the hash of the body that was reviewed; closing a PR needs its reviewed head.
 Before each write the item is read again, and the action is **refused** when a
 worker holds it, when its body, labels or head changed since review, or when it

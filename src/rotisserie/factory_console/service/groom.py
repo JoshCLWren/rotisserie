@@ -392,6 +392,7 @@ KINDS = {
     "close-issue": ("issue",),
     "duplicate": ("issue",),
     "close-pr": ("pr",),
+    "transfer": ("issue",),
 }
 OPS = tuple(KINDS)
 REASONS = ("completed", "not_planned")
@@ -409,6 +410,7 @@ class Action:
     remove: tuple[str, ...] = ()
     reason: str = ""  # close-issue: completed | not_planned
     duplicate_of: int | None = None
+    to_repo: str = ""  # transfer: owner/name of the repository that should own the issue
     expect_body_sha256: str = ""
     expect_head: str = ""
     expect_labels: tuple[str, ...] | None = None
@@ -504,6 +506,7 @@ def _action(row: dict[str, object], index: int) -> Action:
         remove=_strings(row, "remove"),
         reason=_text(row, "reason"),
         duplicate_of=duplicate_of,
+        to_repo=_text(row, "to_repo"),
         expect_body_sha256=str(expect.get("body_sha256", "") or ""),
         expect_head=str(expect.get("head", "") or ""),
         expect_labels=tuple(sorted(cast(list[str], labels))) if labels is not None else None,
@@ -518,7 +521,9 @@ def _validate(action: Action, index: int) -> None:
         raise PlanError(f"{where}: {action.op} applies to {' or '.join(KINDS[action.op])}")
     if action.op == "close-issue" and action.reason not in REASONS:
         raise PlanError(f"{where}: close-issue needs reason completed or not_planned")
-    if action.op in ("close-issue", "close-pr", "duplicate", "comment") and not action.comment:
+    if action.op in ("close-issue", "close-pr", "duplicate", "comment", "transfer") and not (
+        action.comment
+    ):
         raise PlanError(f"{where}: {action.op} needs a comment explaining it")
     if action.op == "duplicate" and not action.duplicate_of:
         raise PlanError(f"{where}: duplicate needs duplicate_of")
@@ -527,6 +532,8 @@ def _validate(action: Action, index: int) -> None:
             raise PlanError(f"{where}: edit-body needs the new body")
         if not action.expect_body_sha256:
             raise PlanError(f"{where}: edit-body needs expect.body_sha256 (the body you reviewed)")
+    if action.op == "transfer" and not re.fullmatch(r"[\w.-]+/[\w.-]+", action.to_repo):
+        raise PlanError(f"{where}: transfer needs to_repo as owner/name")
     if action.op == "labels" and not (action.add or action.remove):
         raise PlanError(f"{where}: labels needs add or remove")
     if action.op == "close-pr" and not action.expect_head:
@@ -566,7 +573,7 @@ def check(github: GitHub, action: Action) -> tuple[str, str, Obj]:
         head = string(obj(obj(github.repo_api(f"pulls/{action.number}")).get("head")), "sha")
         if action.expect_head and head != action.expect_head:
             return "refused", f"PR #{action.number}'s head moved since it was reviewed", live
-    if action.op in ("close-issue", "duplicate"):
+    if action.op in ("close-issue", "duplicate", "transfer"):
         blockers = _open_implementing_prs(github, action.number)
         if blockers:
             names = ", ".join(f"#{n}" for n in blockers)
@@ -627,6 +634,11 @@ def _write(github: GitHub, action: Action) -> None:
                     fields={"body": _with_marker(action, text)})  # fmt: skip
     if action.op == "close-pr":
         github.repo_api(f"pulls/{n}", method="PATCH", fields={"state": "closed"})
+        return
+    if action.op == "transfer":
+        # The issue moves with its comments (including the marker); GitHub redirects
+        # the old number, so a second run finds the marker and skips.
+        github.gh("issue", "transfer", str(n), action.to_repo, "--repo", github.repo)
         return
     reason = "not_planned" if action.op == "duplicate" else action.reason
     github.repo_api(f"issues/{n}", method="PATCH",
