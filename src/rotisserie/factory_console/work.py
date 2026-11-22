@@ -168,3 +168,22 @@ def lookup(github: GitHub, kind: str, number: int) -> Item:
     if item.owner:
         item.run = active_worker_runs(github).get(item.owner)
     return item
+
+
+def one_per_worker(work: list[Item]) -> list[Item]:
+    """One entry per worker: a worker holds an issue and its pull request together.
+
+    ``status`` and ``report`` both count work this way, so their numbers agree.
+    """
+    by_worker: dict[str, list[Item]] = {}
+    for item in work:
+        by_worker.setdefault(item.owner, []).append(item)
+    merged: list[Item] = []
+    for held in by_worker.values():
+        pr = next((item for item in held if item.kind == "pr"), None)
+        issue = next((item for item in held if item.kind == "issue"), None)
+        main = pr or held[0]
+        if pr is not None and issue is not None:
+            main.title = f"{issue.title}  (issue #{issue.number})"
+        merged.append(main)
+    return merged

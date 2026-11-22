@@ -66,7 +66,13 @@ from rotisserie.factory_console.tracker import (
     session_started,
 )
 from rotisserie.factory_console.ui import Console, Prompt, duration, local_time, since
-from rotisserie.factory_console.work import Item, current_work, lookup, open_items
+from rotisserie.factory_console.work import (
+    Item,
+    current_work,
+    lookup,
+    one_per_worker,
+    open_items,
+)
 
 EXIT_OK = 0
 EXIT_USAGE = 2
@@ -872,7 +878,7 @@ def cmd_status(context: Context, arguments: argparse.Namespace) -> Outcome:
     console = context.console
     now = context.clock.now()
     work = current_work(context.github)
-    jobs = _one_per_worker(work)
+    jobs = one_per_worker(work)
     rows = [_work_row(item, now) for item in jobs]
     console.heading(f"Working now ({len(jobs)})")
     if not rows:
@@ -905,22 +911,6 @@ def cmd_status(context: Context, arguments: argparse.Namespace) -> Outcome:
         ]
     }
     return Outcome(Result.COMPLETED, EXIT_OK, data)
-
-
-def _one_per_worker(work: list[Item]) -> list[Item]:
-    """A worker holds an issue and its pull request together; show it once."""
-    by_worker: dict[str, list[Item]] = {}
-    for item in work:
-        by_worker.setdefault(item.owner, []).append(item)
-    merged: list[Item] = []
-    for held in by_worker.values():
-        pr = next((item for item in held if item.kind == "pr"), None)
-        issue = next((item for item in held if item.kind == "issue"), None)
-        main = pr or held[0]
-        if pr is not None and issue is not None:
-            main.title = f"{issue.title}  (issue #{issue.number})"
-        merged.append(main)
-    return merged
 
 
 def _work_row(item: Item, now: datetime) -> list[str]:
@@ -1042,7 +1032,7 @@ def cmd_report(context: Context, arguments: argparse.Namespace) -> Outcome:
     )
     last_dispatch = timestamp(dispatches[0], "created_at") if dispatches else None
     workers = _runs_since(github, WORKER_WORKFLOW, iso)
-    coding_now = current_work(github, with_session=False)
+    coding_now = one_per_worker(current_work(github, with_session=False))
     console.line(console.bold("Is it running?"))
     if last_dispatch is None or now - last_dispatch > timedelta(minutes=20):
         console.fail(
@@ -1663,6 +1653,7 @@ GOAL_WORDS = {
     "not-met": "NOT done",
     "pending": "in progress",
     "not-started": "",
+    "closed": "closed",
     "unknown": "?",
 }
 

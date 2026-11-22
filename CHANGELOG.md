@@ -11,6 +11,11 @@ such change must be called out here and in its release notes.
 
 ### Fixed
 
+- `report` counted a worker holding an issue and its PR twice, so it
+  disagreed with `status` (e.g. 12 vs 6). Both now count one entry per worker.
+- `outcomes --all` could not read routine scheduler passes ("finished without
+  recording a decision"). It now lists every worker each pass started, marks
+  cancelled passes, and counts a PR someone closed as overtaken, not missed.
 - `unstick` picked models the provider no longer offers, so every worker it
   started failed at model selection ("not a current zero-price tool-capable Go
   model"). It now checks the live model lists (local OpenCode CLI, published

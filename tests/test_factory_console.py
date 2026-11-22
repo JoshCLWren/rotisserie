@@ -1446,3 +1446,72 @@ def test_unstick_starts_no_more_issues_than_the_limits_leave_room_for(fake: Fake
     ]
     assert issue_tasks == ["issue:41", "issue:42"]
     assert "adds at most 2" in plan["diagnosis"][0]["text"]
+
+
+def test_report_and_status_count_a_worker_on_an_issue_and_its_pr_once(fake: FakeGitHub) -> None:
+    fake.routes[r"issues\?state=open&per_page=100&page=1&"] = [
+        {"number": 11, "title": "The issue", "labels": [{"name": f"factory:{WORKER}"}]},
+        {
+            "number": 12,
+            "title": "Its pull request",
+            "pull_request": {},
+            "labels": [{"name": f"factory:{WORKER}"}],
+        },
+    ]
+    code, out = invoke(["--json", "status"])
+    assert code == 0
+    code, report = invoke(["report", "--since", "1h"])
+    assert "1 item(s) being worked on now" in report
+    code, out = invoke(["status"])
+    assert "Working now (1)" in out
+
+
+def test_routine_scheduler_passes_list_every_worker_they_started() -> None:
+    from rotisserie.factory_console.service.outcomes import routine_assignments
+
+    log = (
+        '2026-11-22T04:09:01Z Factory 1236998703300 assignment: {"kind": "pr", "number": 5662, '
+        '"worker": "1236998703300", "stage": "factory:review"}\n'
+        "2026-11-22T04:09:02Z Starting Factory 1236998703300 (dispatch attempt 1/3)\n"
+        '2026-11-22T04:09:03Z Factory 1078053396700 assignment: {"kind": "issue", "number": 3483, '
+        '"worker": "1078053396700", "stage": "factory:building"}\n'
+        '    echo "Factory ${worker} assignment: ${assignment}"\n'
+    )
+    found = routine_assignments(log, START)
+    assert [(item.kind, item.number, item.worker, item.action) for item in found] == [
+        ("pr", 5662, "1236998703300", "review"),
+        ("issue", 3483, "1078053396700", "implement"),
+    ]
+
+
+def test_outcomes_counts_a_closed_pr_as_overtaken_not_missed(fake: FakeGitHub) -> None:
+    fake.routes["fixed-model-factory-dispatch.yml/runs"] = {
+        "workflow_runs": [
+            {
+                "id": 900,
+                "display_title": "Factory dispatch · pr:3953",
+                "status": "completed",
+                "created_at": "2026-11-21T22:30:00Z",
+            }
+        ]
+    }
+    fake.routes["actions/runs/900/jobs"] = {"jobs": list[JSON](DISPATCH_DONE)}
+    fake.texts["actions/jobs/11/logs"] = dispatched_log(
+        kind="pr", number=3953, action="review", dispatched_at=int(START.timestamp())
+    )
+    fake.routes["free-model-factory-entry.yml/runs"] = {
+        "workflow_runs": [{"id": 950, "display_title": f"Factory {WORKER} · fixed-model entry"}]
+    }
+    fake.routes["actions/runs/950$"] = {"id": 950, "status": "completed"}
+    fake.routes["actions/runs/950/jobs"] = {
+        "jobs": [job("Persist trusted worker outcome in Neon", [step("Classify")], job_id=31)]
+    }
+    fake.texts["actions/jobs/31/logs"] = (
+        "[factory-outcome] failed: Assignment target is no longer owned\n"
+    )
+    fake.routes["pulls/3953$"] = {"state": "closed", "merged": False}
+    code, out = invoke(["--json", "outcomes"])
+    data = json.loads(out)
+    assert data["requests"][0]["goal"] == "closed"
+    code, out = invoke(["outcomes"])
+    assert "Not done" not in out

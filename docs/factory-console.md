@@ -197,7 +197,9 @@ worker reported, and whether the goal holds **now**:
 A failed worker never counts as done, even when later work fixed the item.
 Requests the scheduler deferred count as "not started", not as misses. The
 "Not done" list shows each item whose latest started request missed its goal.
-`--since 2h` sets the window; `--all` includes routine scheduler passes.
+A PR someone closed counts as "closed" (overtaken), not as a miss.
+`--since 2h` sets the window; `--all` also follows routine scheduler passes,
+one row per worker each pass started.
 
 ## Other front ends
 

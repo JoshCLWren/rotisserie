@@ -8,6 +8,7 @@ the target's state now, and judges whether the request's goal is met.
 
 from __future__ import annotations
 
+import json
 import re
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import asdict, dataclass
@@ -26,6 +27,7 @@ from rotisserie.factory_console.github import (
 )
 from rotisserie.factory_console.tracker import (
     DISPATCH_WORKFLOW,
+    Assignment,
     Clock,
     Result,
     Tracker,
@@ -60,7 +62,7 @@ class RequestOutcome:
     worker_run: int | None
     worker_result: str  # Result value, "running", or "" before a worker exists
     worker_message: str
-    goal: str  # met | not-met | pending | not-started | unknown
+    goal: str  # met | not-met | pending | not-started | closed | unknown
     goal_text: str
 
     def to_dict(self) -> dict[str, object]:
@@ -112,35 +114,98 @@ def judge(action: str, kind: str, pr: Obj, worker: WorkerOutcome | None) -> tupl
     return "met", f"{goal} (now {stage.removeprefix('factory:') or 'unlabeled'})"
 
 
-def _follow(github: GitHub, tracker: Tracker, run: Obj) -> RequestOutcome:
+ASSIGNMENT_LINE = re.compile(
+    r"^(?:\S+ )?Factory (?P<worker>[0-9]+) assignment: (?P<json>\{.*\})\s*$", re.M
+)
+STAGE_ACTIONS = {
+    "factory:review": "review",
+    "factory:ci": "ci-repair",
+    "factory:changes-requested": "review-findings",
+    "factory:building": "implement",
+}
+
+
+def routine_assignments(log: str, at: datetime | None) -> list[Assignment]:
+    """Every worker a routine scheduler pass started (``Factory N assignment: {...}``)."""
+    found = []
+    for match in ASSIGNMENT_LINE.finditer(log):
+        try:
+            data = json.loads(match.group("json"))
+        except ValueError:
+            continue
+        if not isinstance(data, dict) or data.get("kind") not in ("issue", "pr"):
+            continue
+        number = data.get("number")
+        if not isinstance(number, int):
+            continue
+        stage = str(data.get("stage") or "")
+        action = STAGE_ACTIONS.get(stage, "implement" if data["kind"] == "issue" else "advance")
+        found.append(
+            Assignment(
+                str(data["kind"]), number, match.group("worker"), action, "", "",
+                dispatched_at=at,
+            )
+        )  # fmt: skip
+    return found
+
+
+def _follow(github: GitHub, tracker: Tracker, run: Obj) -> list[RequestOutcome]:
     run_id = integer(run, "id") or 0
     target = TITLE.match(string(run, "display_title"))
     ref = target.group("target") if target else ""
     requested = timestamp(run, "created_at")
 
-    def early(decision: str, reason: str, goal: str, text: str) -> RequestOutcome:
-        return RequestOutcome(
-            scheduler_run=run_id,
-            requested_at=requested,
-            target=ref,
-            decision=decision,
-            reason=reason,
-            action="",
-            model="",
-            worker="",
-            worker_run=None,
-            worker_result="",
-            worker_message="",
-            goal=goal,
-            goal_text=text,
-        )
+    def early(decision: str, reason: str, goal: str, text: str) -> list[RequestOutcome]:
+        return [
+            RequestOutcome(
+                scheduler_run=run_id,
+                requested_at=requested,
+                target=ref,
+                decision=decision,
+                reason=reason,
+                action="",
+                model="",
+                worker="",
+                worker_run=None,
+                worker_result="",
+                worker_message="",
+                goal=goal,
+                goal_text=text,
+            )
+        ]
 
     if string(run, "status") != "completed":
         return early("running", "", "pending", "the scheduler has not decided yet")
-    decision = tracker.dispatch_outcome(run_id, tracker.jobs(run_id))
+    if string(run, "conclusion") == "cancelled":
+        return early("cancelled", "a newer scheduler pass replaced it", "not-started", "")
+    jobs = tracker.jobs(run_id)
+    if target is None:
+        dispatch = next((job for job in jobs if string(job, "name") == "dispatch"), None)
+        log = tracker.log(integer(dispatch, "id") or 0) if dispatch else ""
+        started = routine_assignments(log, requested)
+        if not started:
+            return early("no_work", "the pass assigned no worker", "not-started", "")
+        return [
+            _follow_assignment(github, tracker, run_id, requested, "", item, "") for item in started
+        ]
+    decision = tracker.dispatch_outcome(run_id, jobs)
     assignment = decision.assignment
     if decision.status != "dispatched" or assignment is None:
         return early(decision.status, decision.reason, "not-started", "no worker was started")
+    return [
+        _follow_assignment(github, tracker, run_id, requested, ref, assignment, decision.reason)
+    ]
+
+
+def _follow_assignment(
+    github: GitHub,
+    tracker: Tracker,
+    run_id: int,
+    requested: datetime | None,
+    ref: str,
+    assignment: Assignment,
+    reason: str,
+) -> RequestOutcome:
     action = assignment.action
     ref = ref or f"{assignment.kind}:{assignment.number}"
     after = assignment.dispatched_at or requested or datetime.now(UTC)
@@ -164,7 +229,10 @@ def _follow(github: GitHub, tracker: Tracker, run: Obj) -> RequestOutcome:
             except GitHubError:
                 pr = {}
         goal, goal_text = judge(action, assignment.kind, pr, worker)
-        if worker is not None and worker.result in (Result.FAILED, Result.UNKNOWN):
+        if pr.get("merged") is not True and string(pr, "state") == "closed":
+            # Closed by a person: the request was overtaken, not missed.
+            goal, goal_text = "closed", "the pull request was closed"
+        elif worker is not None and worker.result in (Result.FAILED, Result.UNKNOWN):
             # The state may hold now through later work; this worker did not get it there.
             later = " (it holds now through later work)" if goal == "met" else ""
             goal, goal_text = "not-met", f"the worker failed: {worker.message}{later}"
@@ -173,7 +241,7 @@ def _follow(github: GitHub, tracker: Tracker, run: Obj) -> RequestOutcome:
         requested_at=requested,
         target=ref,
         decision="dispatched",
-        reason=decision.reason,
+        reason=reason,
         action=action,
         model=assignment.model,
         worker=assignment.worker,
@@ -209,7 +277,11 @@ def request_outcomes(
         runs = [run for run in runs if TITLE.match(string(run, "display_title"))]
     tracker = Tracker(github, clock)
     with ThreadPoolExecutor(max_workers=8) as pool:
-        found = list(pool.map(lambda run: _follow(github, tracker, run), runs[:limit]))
+        found = [
+            item
+            for batch in pool.map(lambda run: _follow(github, tracker, run), runs[:limit])
+            for item in batch
+        ]
     return sorted(
         found, key=lambda item: item.requested_at or datetime.fromtimestamp(0, UTC), reverse=True
     )
