@@ -27,7 +27,7 @@ def test_github_frontier_is_manual_and_read_only() -> None:
     assert "persist-credentials: false" in workflow
     assert "uv tool run --with 'asyncpg>=0.30,<1' --from ./.rotisserie/runtime rotisserie factory" in workflow
     assert 'next --repo "$GITHUB_REPOSITORY" --json' in workflow
-    assert "actions/upload-artifact@v4" in workflow
+    assert "actions/upload-artifact@v7" in workflow
     assert "retention-days: 1" in workflow
     assert "No work is reserved." in workflow
     assert "factory-external-claim" not in workflow
