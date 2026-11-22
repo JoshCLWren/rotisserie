@@ -1650,3 +1650,22 @@ def test_a_ci_repair_goal_is_green_checks_not_a_stage_label(fake: FakeGitHub) ->
     request = json.loads(out)["requests"][0]
     assert request["goal"] == "not-met"
     assert request["goal_text"] == "its checks still fail: rust-roll"
+
+
+def test_outcomes_shows_the_first_error_from_the_published_excerpt(fake: FakeGitHub) -> None:
+    from rotisserie.factory_console.service.outcomes import validation_failure
+    from rotisserie.factory_console.tracker import Tracker
+
+    fake.texts["actions/jobs/41/logs"] = (
+        "x factory fast checks failed: frontend typecheck (log: /tmp/f.log)\n"
+        "=== factory fast check failure output ===\n"
+        "### frontend typecheck\n"
+        "src/api.ts(3,1): error TS2322: Type 'string' is not assignable to type 'number'.\n"
+        "[exit 2]\n"
+        "=== end factory fast check failure output ===\n"
+    )
+    tracker = Tracker(GitHub(REPO, executable="sh"))
+    assert validation_failure(tracker, [job("run / factory", [], job_id=41)]) == (
+        "factory fast checks failed: frontend typecheck "
+        "(src/api.ts(3,1): error TS2322: Type 'string' is not assignable to type 'number'.)"
+    )

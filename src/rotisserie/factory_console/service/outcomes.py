@@ -115,6 +115,8 @@ def judge(action: str, kind: str, pr: Obj, worker: WorkerOutcome | None) -> tupl
     return "met", f"{goal} (now {stage.removeprefix('factory:') or 'unlabeled'})"
 
 
+EXCERPT_START = "=== factory fast check failure output ==="
+EXCERPT_END = "=== end factory fast check failure output ==="
 FAST_CHECK_LINE = re.compile(r"factory fast checks failed: (?P<what>.+?) \(log: ")
 
 
@@ -131,7 +133,24 @@ def validation_failure(tracker: Tracker, jobs: list[Obj]) -> str:
     except GitHubError:
         return ""
     found = list(FAST_CHECK_LINE.finditer(log))
-    return f"factory fast checks failed: {found[-1].group('what')}" if found else ""
+    if not found:
+        return ""
+    text = f"factory fast checks failed: {found[-1].group('what')}"
+    # Workers publish each failed step's output between these markers.
+    excerpt = (
+        log.rsplit(EXCERPT_START, 1)[1].split(EXCERPT_END, 1)[0] if EXCERPT_START in log else ""
+    )
+    if excerpt:
+        kind, summary, _ = checks.summarize_log(excerpt)
+        if not summary.startswith("the check failed"):
+            text += f" ({summary})"
+        else:
+            first = next(
+                (line.strip() for line in excerpt.splitlines() if "error" in line.lower()), ""
+            )
+            if first:
+                text += f" ({first[:200]})"
+    return text
 
 
 ASSIGNMENT_LINE = re.compile(
