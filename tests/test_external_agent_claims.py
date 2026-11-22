@@ -243,3 +243,94 @@ def test_handoff_evidence_is_repo_bound(setup: LedgerDouble) -> None:
             environment={},
             evidence="https://evil.example/exfiltrate?token=123",
         )
+
+
+def test_unknown_neon_liveness_holds_all_work(
+    setup: LedgerDouble, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    bad = make_frontier(make_offer())
+    bad = frontier.Frontier(
+        schema_version=bad.schema_version,
+        repository=bad.repository,
+        generated_at=bad.generated_at,
+        expires_at=bad.expires_at,
+        authoritative_claim_available=False,
+        authority_note="Neon observation unavailable",
+        offers=bad.offers,
+        holds=bad.holds,
+    )
+    monkeypatch.setattr(external.frontier, "capture", lambda *a, **k: bad)
+    result = external.reserve_next(cast(GitHub, GitHubDouble()), client="chatgpt", environment={})
+    assert result["status"] == "held"
+    assert "Neon" in str(result["reason"])
+    assert setup.calls == 0
+
+
+def test_changed_pr_head_rejected_before_neon_claim(setup: LedgerDouble, monkeypatch: pytest.MonkeyPatch) -> None:
+    offer = frontier.Offer(
+        **{
+            **make_offer().__dict__,
+            "target": "pr:44",
+            "url": f"https://github.com/{REPO}/pull/44",
+            "action": "review",
+            "head_sha": "a" * 40,
+        }
+    )
+    monkeypatch.setattr(external.frontier, "capture", lambda *a, **k: make_frontier(offer))
+    monkeypatch.setattr(external, "_linked_targets", lambda g, o: [44] if g.head == "a" * 40 else (_ for _ in ()).throw(ValueError("head changed")))
+    with pytest.raises(ValueError, match="head changed"):
+        external.reserve_next(
+            cast(GitHub, GitHubDouble(head="b" * 40)),
+            client="codebuff",
+            environment={},
+        )
+    assert setup.calls == 0
+
+
+def test_dependency_change_holds_issue_before_claim(monkeypatch: pytest.MonkeyPatch) -> None:
+    snapshot = make_frontier(make_offer())
+    monkeypatch.setattr(external.frontier, "capture", lambda *a, **k: snapshot)
+    monkeypatch.setattr(external.queue, "open_blocker", lambda *a, **k: (True, "New blocker"))
+    ok, reason = external._live_offer(cast(GitHub, GitHubDouble()), snapshot.offers[0])
+    assert not ok
+    assert reason == "New blocker"
+
+
+def test_review_waits_for_required_ci(monkeypatch: pytest.MonkeyPatch) -> None:
+    offered = frontier.Offer(
+        **{
+            **make_offer().__dict__,
+            "target": "pr:44",
+            "action": "review",
+            "head_sha": "a" * 40,
+            "url": f"https://github.com/{REPO}/pull/44",
+        }
+    )
+    monkeypatch.setattr(external.frontier, "capture", lambda *a, **k: make_frontier(offered))
+    monkeypatch.setattr(external, "_required_checks_outcome", lambda *a, **k: "waiting")
+    ok, reason = external._live_offer(cast(GitHub, GitHubDouble()), offered)
+    assert not ok
+    assert "required CI" in reason
+
+
+def test_known_external_code_author_cannot_reserve_own_review(
+    setup: LedgerDouble, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    review = frontier.Offer(
+        **{
+            **make_offer().__dict__,
+            "target": "pr:44",
+            "action": "review",
+            "head_sha": "a" * 40,
+            "url": f"https://github.com/{REPO}/pull/44",
+        }
+    )
+    second = frontier.Offer(**{**make_offer(number=8).__dict__, "rank": 2})
+    monkeypatch.setattr(external.frontier, "capture", lambda *a, **k: make_frontier(review, second))
+    monkeypatch.setattr(external, "_linked_targets", lambda g, o: [44] if o.action == "review" else [8])
+    setup.external_code_authors = lambda repo, nums: {"chatgpt"}  # type: ignore[attr-defined]
+    result = external.reserve_next(cast(GitHub, GitHubDouble()), client="chatgpt", environment={})
+    assert result["status"] == "reserved"
+    handoff = result["handoff"]
+    assert isinstance(handoff, dict)
+    assert handoff["target"] == "issue:8"
