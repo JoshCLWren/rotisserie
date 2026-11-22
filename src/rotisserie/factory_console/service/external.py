@@ -418,6 +418,94 @@ def reserve_next(
     return outcome
 
 
+def _verify_and_project_handoff(
+    github: GitHub, claim: dict[str, Any], evidence: str
+) -> None:
+    """Validate evidence against the fenced task before factory-stage projection.
+
+    Only this authorized controller adds review-stage labels to the PR it
+    verified as implementing the issue. The labels are projections, not locks;
+    the original external Neon claim remains held until the final ledger event
+    and identity-fenced release succeed.
+    """
+    prefix = f"https://github.com/{github.repo}/"
+    if not evidence.startswith(prefix) or not EVIDENCE.fullmatch(evidence):
+        raise ValueError("handoff evidence must be a same-repository GitHub URL")
+    route = evidence[len(prefix) :].split("#", 1)[0]
+    target = str(claim["target"])
+    action = str(claim["action"])
+    kind, number_str = target.split(":")
+    number = int(number_str)
+    core = runtime.module("factory_work_policy")
+    if route.startswith("pull/"):
+        pr_number = int(route.split("/")[1])
+        pr = obj(github.repo_api(f"pulls/{pr_number}"))
+        if string(pr, "state") != "open":
+            raise ValueError("handoff PR is not open")
+        if action == "implement":
+            if kind != "issue":
+                raise ValueError("implementation handoff must originate from an issue")
+            linked_issue = core.linked_issue_from_pr(
+                {
+                    "number": pr_number,
+                    "headRefName": string(obj(pr.get("head")), "ref"),
+                    "body": string(pr, "body"),
+                    "title": string(pr, "title"),
+                }
+            )
+            if linked_issue != number:
+                raise ValueError("PR must explicitly close or link the claimed issue")
+            if pr.get("draft") is True or not string(obj(pr.get("head")), "sha"):
+                raise ValueError("implementation PR is draft or lacks an exact head")
+            labels = core.labels_of(pr)
+            if core.owner_of(labels) not in (None, "factory:unowned"):
+                raise ValueError("handoff PR is owned by another worker")
+            if core.stage_of(labels) not in (None, "factory:review"):
+                raise ValueError("handoff PR is already in a different factory stage")
+            # A newly opened external PR is brought into the existing factory
+            # review queue, never approved or merged. This is the existing
+            # stage projection, not a new independent scheduler.
+            github.gh(
+                "api",
+                f"repos/{github.repo}/issues/{pr_number}/labels",
+                "--method",
+                "POST",
+                "-f",
+                "labels[]=factory",
+                "-f",
+                "labels[]=factory:review",
+                "-f",
+                "labels[]=factory:unowned",
+            )
+            updated = obj(github.repo_api(f"pulls/{pr_number}"))
+            actual = core.labels_of(updated)
+            if not {"factory", "factory:review", "factory:unowned"} <= actual:
+                raise RuntimeError("review handoff labels could not be verified")
+        elif kind != "pr" or pr_number != number:
+            raise ValueError("handoff evidence points to a different PR")
+        return
+    if route.startswith("issues/"):
+        issue_number = int(route.split("/")[1])
+        if kind != "issue" or issue_number != number or action == "implement":
+            raise ValueError("issue link is not sufficient implementation evidence")
+        if string(obj(github.repo_api(f"issues/{issue_number}")), "state") != "open":
+            raise ValueError("handoff evidence issue is not open")
+        return
+    if route.startswith("actions/runs/"):
+        run_number = int(route.split("/")[2])
+        run = obj(github.repo_api(f"actions/runs/{run_number}"))
+        if string(run, "repository") and string(run, "repository") != github.repo:
+            raise ValueError("workflow evidence has another repository")
+        if kind == "pr" and string(run, "head_sha") != claim.get("head"):
+            raise ValueError("workflow evidence does not match reserved PR head")
+        if action == "implement":
+            raise ValueError("an implementation must hand off a linked pull request")
+        if string(run, "status") != "completed":
+            raise ValueError("workflow evidence is not terminal")
+        return
+    raise ValueError("unsupported handoff evidence")
+
+
 def claim_action(
     github: GitHub,
     *,
@@ -436,6 +524,11 @@ def claim_action(
         raise ValueError("handoff evidence must be a same-repository GitHub URL")
     actor = principal(github, environment)
     store = ledger()
+    if operation == "handoff":
+        claim: dict[str, Any] = store.external_claim_details(
+            github.repo, actor, client, claim_id
+        )
+        _verify_and_project_handoff(github, claim, evidence)
     result: dict[str, object] = store.external_lease_action(
         github.repo, actor, client, claim_id, operation=operation, evidence=evidence
     )
