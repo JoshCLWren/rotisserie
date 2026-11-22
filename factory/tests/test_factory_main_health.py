@@ -114,20 +114,6 @@ def test_duplicate_paginated_runs_are_counted_once() -> None:
     }
 
 
-def test_all_main_health_gates_use_product_ci_workflow_runs() -> None:
-    """Every merge-blocking health gate uses the shared exact-SHA helper."""
-    names = (
-        "factory-ready-merge-drain.yml",
-        "fixed-model-factory-dispatch.yml",
-    )
-    for name in names:
-        source = (WORKFLOWS / name).read_text(encoding="utf-8")
-        assert "actions/workflows/ci.yml/runs?head_sha=${sha}&event=push&per_page=100" in source
-        assert "gh api --paginate --slurp" in source
-        assert "factory_main_health.py --sha \"$sha\"" in source
-        assert "commits/${sha}/check-runs?per_page=100" not in source
-
-
 def test_held_workflow_recovery_is_unbounded_and_observable() -> None:
     """Held PR workflows remain recoverable after their first hour."""
     drain = (WORKFLOWS / "factory-ready-merge-drain.yml").read_text(encoding="utf-8")

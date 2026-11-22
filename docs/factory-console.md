@@ -349,13 +349,45 @@ found by hand. It exits 4 when any check fails.
 | scheduler | no scheduler run in 20 minutes |
 | rotisserie intake | the intake decision cannot be made, so no fresh issue is admitted |
 | worker rejections | one factory gate rejected at least half (and 3+) of recent finished workers; that points at the gate or the repository, not the models |
+| main verification | the exact default-branch commit failed product CI (fail), or has no product CI run yet (warn: *unverified*, never green) |
 
 A check that cannot reach GitHub says so instead of failing.
 
-`doctor --fix` makes the safe repairs it finds. Today that is re-running the
-stats publisher (`factory-status-pages.yml`) when the snapshot is missing or
-stale; GitHub's 15-minute schedule can lag by hours. Without `--fix` it only
-says a repair is available.
+`doctor --fix` makes the safe repairs it finds: re-running the stats publisher
+(`factory-status-pages.yml`) when the snapshot is missing or stale (GitHub's
+15-minute schedule can lag by hours), and dispatching product CI on an
+unverified main. That re-reads main first, so it never stacks a second run.
+Without `--fix` it only says a repair is available.
+
+### Serialized merges
+
+Workers build and review concurrently, but merges are serialized:
+
+1. Only the Factory Ready Merge Drain merges ready PRs, at most one per run.
+   The dispatcher triggers it each tick and never merges itself. A worker's
+   canonical merge route goes through the same gate.
+2. A merge lands only onto a main commit whose product CI passed (`green`).
+   `pending` waits. `unverified` (no run) waits too, and gets CI dispatched,
+   because factory merges use `GITHUB_TOKEN`, which fires no push event.
+3. Before merging, the route takes an exclusive claim on main's exact SHA (an
+   annotated tag `factory-merge-claim/<sha>`; GitHub refuses a second create).
+   Two actors that both saw the same green main cannot both merge. A claim older
+   than 15 minutes belongs to a crashed run and is reclaimed. Claims are
+   deleted after the merge.
+4. After a merge, the route dispatches product CI on the new main. The next
+   merge waits for that verdict.
+5. A `red` main admits only the main-repair lane: ready PRs labelled
+   `main-breakage`, still under every normal authorization and exact-head
+   gate. A broken main can't deadlock merging.
+
+Product CI defaults to `ci.yml`. Set `FACTORY_MAIN_CI_WORKFLOWS` (comma list
+of workflow files) to require more. Each must accept `workflow_dispatch`. A
+path-filtered workflow still runs when dispatched. Per workflow, the newest
+run on the commit is the verdict, so a re-dispatched run supersedes a flaky one.
+Cancelled counts as failed.
+
+The service behind this (`rotisserie.factory_console.service.main_health`)
+accepts already-fetched data, so one snapshot can serve several checks.
 
 ## Other front ends
 

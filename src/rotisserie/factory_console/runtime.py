@@ -30,6 +30,7 @@ RUNTIME_MODULES = (
     "factory_published_model_catalog",
     "factory_work_policy",
     "factory_rotisserie_adopter",
+    "factory_main_health",
 )
 
 # Every file the wheel must carry, keyed by module name, with its checkout path.

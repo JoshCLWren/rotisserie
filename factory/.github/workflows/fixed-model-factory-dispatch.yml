@@ -438,38 +438,21 @@ jobs:
       - name: Check main health (block merges onto red main)
         if: steps.api_budget.outputs.allow == 'true' && !(inputs.target || inputs.provider)
         id: main_health
+        continue-on-error: true
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
+          FACTORY_MAIN_CI_WORKFLOWS: ${{ vars.FACTORY_MAIN_CI_WORKFLOWS }}
         run: |
           set -Eeuo pipefail
-          sha="$(git rev-parse origin/main)"
-          runs_file="$RUNNER_TEMP/main-ci-workflow-runs.json"
-          if ! gh api --paginate --slurp \
-            "repos/${GITHUB_REPOSITORY}/actions/workflows/ci.yml/runs?head_sha=${sha}&event=push&per_page=100" \
-            > "$runs_file"; then
-            echo "GitHub API unavailable proving product CI health at ${sha}; failing closed" >&2
-            echo "main_red=true" >> "$GITHUB_OUTPUT"
-            exit 0
-          fi
-          if ! health="$(python3 .github/scripts/factory_main_health.py --sha "$sha" < "$runs_file")"; then
-            echo "GitHub returned invalid product CI health data at ${sha}; failing closed" >&2
-            echo "main_red=true" >> "$GITHUB_OUTPUT"
-            exit 0
-          fi
-          total="$(jq -r '.total' <<< "$health")"
-          failing="$(jq -r '.failing' <<< "$health")"
-          echo "Main health API result: sha=${sha} total_count=${total} failing=${failing}"
-          if [[ "${total:-0}" != "0" && "${failing:-0}" != "0" ]]; then
-            echo "Main $sha has $failing failed product CI run(s) out of $total - drain will pause merges"
-            echo "failing=$failing" >> "$GITHUB_OUTPUT"
-            echo "main_red=true" >> "$GITHUB_OUTPUT"
-            # Signal only: do not manufacture an issue for a failing CI run.
-            # Existing CI check/run evidence and main_red=true gate merges.
-          else
-            echo "Main $sha is green (total=$total failing=$failing)"
-            echo "main_red=false" >> "$GITHUB_OUTPUT"
-          fi
+          # Merges happen only in the serialized Factory Ready Merge Drain,
+          # which admits one merge onto a verified green main. This tick only
+          # starts verification of an unverified main (no product CI run yet).
+          result="$(python3 .github/scripts/factory_main_health.py ensure-verification --repo "$GITHUB_REPOSITORY")"
+          jq -r '.main.explanation' <<< "$result"
+          dispatched="$(jq -r '.dispatched | join(", ")' <<< "$result")"
+          [[ -z "$dispatched" ]] || echo "Dispatched product CI on main: ${dispatched}"
+          echo "state=$(jq -r '.main.state' <<< "$result")" >> "$GITHUB_OUTPUT"
 
       - name: Reconcile unowned factory CI PRs
         if: steps.api_budget.outputs.allow == 'true' && !(inputs.target || inputs.provider)
@@ -479,101 +462,6 @@ jobs:
         run: |
           set -Eeuo pipefail
           python3 .github/scripts/factory-review-controller.py reconcile-ci
-
-      - name: Drain exact-head ready factory PRs
-        if: steps.api_budget.outputs.allow == 'true' && !(inputs.target || inputs.provider) && steps.main_health.outputs.main_red != 'true'
-        continue-on-error: true
-        shell: bash
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          set -Eeuo pipefail
-          review_controller='.github/scripts/factory-review-controller.py'
-
-          ready_file="$RUNNER_TEMP/factory-ready-prs.tsv"
-          if ! gh pr list --repo "$GITHUB_REPOSITORY" --state open --limit 100 \
-            --label 'factory:ready' \
-            --json number,headRefOid,labels \
-            --jq '.[] | [.number, .headRefOid, ([.labels[].name] | join(","))] | @tsv' \
-            > "$ready_file"; then
-            echo 'Unable to enumerate factory:ready PRs; merge drain will retry on the next dispatcher tick' >&2
-            exit 1
-          fi
-          # shellcheck source=/dev/null
-          source .github/scripts/factory-dispatch-production-deploy.sh
-          # GITHUB_TOKEN merges fire no push event, so dispatch Deploy
-          # Production once, after the last merge of this run (EXIT trap so a
-          # later failure in the loop cannot skip it).
-          merged_count=0
-          dispatch_deploy_after_merges() {
-            if (( merged_count > 0 )); then
-              factory_dispatch_production_deploy "Fixed Model Factory Dispatcher drain merged ${merged_count} PR(s)"
-            fi
-          }
-          trap dispatch_deploy_after_merges EXIT
-          mapfile -t ready_prs < "$ready_file"
-
-          if (( ${#ready_prs[@]} == 0 )); then
-            echo 'No factory:ready PRs to drain'
-            exit 0
-          fi
-
-          for candidate in "${ready_prs[@]}"; do
-            IFS=$'\t' read -r pr head _ <<< "$candidate"
-            [[ -n "$pr" && -n "$head" ]] || continue
-            if ! authorization="$(python3 "$review_controller" authorized --pr "$pr")"; then
-              echo "Unable to verify semantic authorization for PR #${pr}; leaving it open" >&2
-              continue
-            fi
-            authorized="$(jq -r '.authorized // false' <<< "$authorization")"
-            authorized_head="$(jq -r '.head // empty' <<< "$authorization")"
-            if [[ "$authorized" != 'true' || "$authorized_head" != "$head" ]]; then
-              echo "PR #${pr} lacks semantic authorization for ready head ${head}; leaving it open"
-              continue
-            fi
-
-            if ! gate="$(python3 "$review_controller" gates --pr "$pr" --expected-head "$head")"; then
-              echo "Unable to evaluate mechanical gates for PR #${pr}; leaving it open" >&2
-              continue
-            fi
-            gate_decision="$(jq -r '.decision // "retry"' <<< "$gate")"
-            gate_reason="$(jq -r '.reason // "mechanical gate result unavailable"' <<< "$gate")"
-            case "$gate_decision" in
-              pass) ;;
-              retry)
-                echo "PR #${pr} mechanical gates are retry-later: ${gate_reason}"
-                continue
-                ;;
-              deny)
-                echo "PR #${pr} mechanical gates deny merge: ${gate_reason}"
-                python3 "$review_controller" demote-ready --pr "$pr" || echo "Unable to demote ready PR #${pr}; retrying next tick" >&2
-                continue
-                ;;
-              *)
-                echo "PR #${pr} returned an unknown mechanical gate decision; leaving it open" >&2
-                continue
-                ;;
-            esac
-
-            echo "Merging semantically authorized ready PR #${pr} at ${head}"
-            if gh pr merge "$pr" --repo "$GITHUB_REPOSITORY" \
-              --merge --match-head-commit "$head"; then
-              echo "Merged ready PR #${pr}"
-              merged_count=$((merged_count + 1))
-              continue
-            fi
-
-            state="$(gh pr view "$pr" --repo "$GITHUB_REPOSITORY" --json state --jq .state 2>/dev/null || true)"
-            if [[ "$state" == "MERGED" ]]; then
-              echo "PR #${pr} was merged concurrently"
-              # The merge may have landed even though gh errored (or another
-              # GITHUB_TOKEN actor merged it); count it so the deploy is still
-              # dispatched. Deploy Production dedupes an already-READY SHA.
-              merged_count=$((merged_count + 1))
-            else
-              echo "Unable to merge ready PR #${pr}; it will be retried on the next dispatcher tick" >&2
-            fi
-          done
 
       - name: Trigger merge drain on dispatcher cadence
         if: steps.api_budget.outputs.allow == 'true' && !(inputs.target || inputs.provider)
