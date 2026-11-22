@@ -15,6 +15,7 @@ rotisserie factory unstick     # start the workers that clear the bottleneck
 rotisserie factory outcomes    # did the requested work actually happen
 rotisserie factory close pr:N --reason TEXT  # close work that should not be done
 rotisserie factory checks pr:N # why its checks fail, in one line each
+rotisserie factory doctor      # is the factory itself healthy
 ```
 
 The repository is taken from `--repo owner/name`, `FACTORY_REPO`, the nearest
@@ -225,6 +226,21 @@ instead of review work for such PRs, and for one a worker already holds it
 says to take it over (`run … --action ci-repair --take-over`).
 `--since 2h` sets the window; `--all` also follows routine scheduler passes,
 one row per worker each pass started.
+
+## Is the factory itself healthy?
+
+`rotisserie factory doctor` runs the checks behind problems that were first
+found by hand. It exits 4 when any check fails.
+
+| Check | Fails when |
+|---|---|
+| reliability snapshot | `factory-stats.json` was never published, or is over an hour old |
+| dashboard publisher | the last `factory-status-pages.yml` run failed; names the step and error |
+| scheduler | no scheduler run in 20 minutes |
+| rotisserie intake | the intake decision cannot be made, so no fresh issue is admitted |
+| worker rejections | one factory gate rejected at least half (and 3+) of recent finished workers; that points at the gate or the repository, not the models |
+
+A check that cannot reach GitHub says so instead of failing.
 
 ## Other front ends
 

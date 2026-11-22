@@ -30,6 +30,9 @@ such change must be called out here and in its release notes.
 
 ### Added
 
+- `rotisserie factory doctor`: reliability snapshot missing or stale, the
+  dashboard publisher's last failure (step and error), scheduler stopped,
+  intake undecidable, and one factory gate rejecting most workers.
 - `unstick --skip ITEM` and `--only ITEM` scope a plan to what the operator
   wants; runs plan again from live state, so `--only` starts exactly what a
   dry run showed.

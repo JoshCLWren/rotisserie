@@ -45,6 +45,7 @@ from rotisserie.factory_console.service import (
     checks,
     close,
     dispatch,
+    doctor,
     outcomes,
     providers,
     queue,
@@ -304,6 +305,11 @@ def add_parser(subcommands: argparse._SubParsersAction[argparse.ArgumentParser])
     shut.add_argument("--yes", "-y", action="store_true", help="do not ask first")
     _common(shut)
 
+    health = commands.add_parser(
+        "doctor", help="is the factory itself healthy (stats, dashboard, scheduler, gates)"
+    )
+    _common(health)
+
     red = commands.add_parser("checks", help="why a pull request's checks fail, in one line each")
     red.add_argument("what", help="pr:N")
     _common(red)
@@ -423,6 +429,7 @@ def _help_text() -> str:
             "  rotisserie factory unstick       start the workers that clear the bottleneck",
             "  rotisserie factory outcomes      did the requested work actually happen",
             "  rotisserie factory checks pr:N   why its checks fail",
+            "  rotisserie factory doctor        is the factory itself healthy",
             "  rotisserie factory close pr:N --reason TEXT   close work that should not be done",
             "  rotisserie factory cancel issue:N",
             "  rotisserie factory watch RUN",
@@ -1774,6 +1781,28 @@ def _show_by_item(
     )
 
 
+# doctor ---------------------------------------------------------------------------------
+
+
+def cmd_doctor(context: Context, arguments: argparse.Namespace) -> Outcome:
+    console = context.console
+    console.heading("Factory health")
+    findings = doctor.run_checks(context.github, now=context.clock.now(), clock=context.clock)
+    for item in findings:
+        line = f"{item.check}: {item.text}"
+        if item.status == "ok":
+            console.ok(line)
+        elif item.status == "warn":
+            console.warn(line)
+        else:
+            console.fail(line)
+        if item.hint and item.status != "ok":
+            console.line(f"    {item.hint}")
+    worst = "fail" if any(i.status == "fail" for i in findings) else "ok"
+    result = Result.FAILED if worst == "fail" else Result.COMPLETED
+    return Outcome(result, EXIT_CODES[result], {"findings": [i.to_dict() for i in findings]})
+
+
 # checks ---------------------------------------------------------------------------------
 
 
@@ -2067,6 +2096,7 @@ HANDLERS = {
     "outcomes": cmd_outcomes,
     "close": cmd_close,
     "checks": cmd_checks,
+    "doctor": cmd_doctor,
     "explain": cmd_why,
     "providers": cmd_providers,
     "models": cmd_models,

@@ -1681,3 +1681,70 @@ def test_unstick_skip_and_only_scope_the_plan(fake: FakeGitHub) -> None:
     assert targets == ["pr:302"]
     code, out = invoke(["unstick", "--dry-run", "--skip", "5656"])
     assert code == 2 and "--skip/--only take pr:N or issue:N" in out
+
+
+# doctor ---------------------------------------------------------------------------------
+
+
+def _finished(run: int, message: str, result: str = "failed") -> object:
+    from rotisserie.factory_console.service.outcomes import RequestOutcome
+
+    return RequestOutcome(
+        run, START, f"pr:{run}", "dispatched", "", "ci-repair", "m", "w", run, result,
+        message, "not-met", "",
+    )  # fmt: skip
+
+
+def test_doctor_flags_one_gate_rejecting_most_workers() -> None:
+    """The fast checks ran tests main had deleted: every Rust worker 'failed'."""
+    from rotisserie.factory_console.service.doctor import systemic_rejection
+
+    gate = (
+        "Code saved; validation incomplete; factory fast checks failed: "
+        "native ingress/deployment/write guard tests"
+    )
+    found = [_finished(n, gate) for n in range(4)] + [_finished(9, "model gave up")]
+    finding = systemic_rejection(found)  # type: ignore[arg-type]
+    assert finding.status == "fail"
+    assert "4 of 5 recent workers were rejected by the same factory gate" in finding.text
+    assert "native ingress/deployment/write guard tests" in finding.text
+    healthy = systemic_rejection([_finished(1, "model gave up")])  # type: ignore[list-item]
+    assert healthy.status == "ok"
+
+
+def test_doctor_reports_a_missing_stats_snapshot_and_a_failed_publisher(
+    fake: FakeGitHub,
+) -> None:
+    fake.routes["contents/factory-stats.json"] = lambda: (_ for _ in ()).throw(
+        GitHubNotFoundError("missing")
+    )
+    fake.routes["factory-status-pages.yml/runs"] = {
+        "workflow_runs": [{"id": 77, "status": "completed", "conclusion": "failure"}]
+    }
+    fake.routes[r"actions/runs/77/jobs"] = {
+        "jobs": [
+            job(
+                "publish-live-dashboard",
+                [step("Generate factory dashboard", conclusion="failure")],
+                conclusion="failure",
+                job_id=78,
+            )
+        ]
+    }
+    fake.routes[r"check-runs/78/annotations"] = [
+        {"annotation_level": "failure", "message": "Process completed with exit code 1."}
+    ]
+    fake.texts["actions/jobs/78/logs"] = (
+        "Traceback (most recent call last):\n"
+        "ValueError: factory slot capacity must be a positive integer\n"
+    )
+    fake.routes["fixed-model-factory-dispatch.yml/runs"] = {
+        "workflow_runs": [{"id": 1, "created_at": "2026-11-21T22:59:00Z"}]
+    }
+    why_routes(fake, [])
+    code, out = invoke(["doctor"])
+    assert code == 4
+    assert "reliability snapshot: factory-stats.json has never been published" in out
+    assert "dashboard publisher: last run failure at step 'Generate factory dashboard'" in out
+    assert "factory slot capacity must be a positive integer" in out
+    assert "✓ scheduler: running" in out
