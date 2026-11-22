@@ -264,7 +264,10 @@ def add_parser(subcommands: argparse._SubParsersAction[argparse.ArgumentParser])
         "--advertised-at", default="", help="optional timestamp from a frontier manifest"
     )
     reserve.add_argument(
-        "--can", action="append", choices=sorted(external.ACTIONS), default=[],
+        "--can",
+        action="append",
+        choices=sorted(external.ACTIONS),
+        default=[],
         help="action the agent can perform (repeat; default all supported actions)",
     )
     _common(reserve)
@@ -1832,7 +1835,8 @@ def cmd_external(context: Context, arguments: argparse.Namespace) -> Outcome:
     except (RuntimeError, ValueError) as exc:
         context.console.fail(f"External claim refused: {exc}")
         return Outcome(
-            Result.FAILED, 4,
+            Result.FAILED,
+            4,
             {"status": "held", "reason": str(exc), "retry": "refresh_frontier"},
         )
     state = str(outcome.get("status"))
