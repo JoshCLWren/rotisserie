@@ -7,7 +7,6 @@ import os
 import re
 import subprocess
 import sys
-import tempfile
 import time
 from collections.abc import Callable
 from dataclasses import replace
@@ -22,7 +21,7 @@ from factory_capacity_policy import (
     omniroute_enabled,
     remaining_omniroute_free_entry_slots,
 )
-from factory_work_policy import (BLOCKED_LABELS, FACTORY_NO_DIFF_RETRY_LIMIT, FACTORY_NO_DIFF_RETRY_RESET_SECONDS, FACTORY_PR_WIP_LIMIT, FACTORY_REVIEW_BACKLOG_LIMIT, FIXED_LEASE_TTL_SECONDS, LOCAL_LEASE_TTL_SECONDS, FIXED_OWNER_RE, NoDiffAttempt, NON_EXECUTABLE_ISSUES, OWNER_RE, REQUIRED_CHECK_FAILURE_STATES, STAGE_LABELS, STAGE_PRECEDENCE, Candidate, build_candidates, comment_is_trusted, eligibility, provenance_lane, env_positive_int, factory_pr_wip_count, factory_review_backlog_count, is_manual_only, item_is_unowned, issue_bypasses_wip_limit, issue_explicitly_closed_by_pr, labels_of, lease_is_stale, linked_issue_from_branch, linked_issue_from_pr, order_candidates_for_worker, owner_of, parse_no_diff_attempts_from_comments, plan_distinct_assignments, pr_suppresses_issue_candidate, stage_of)
+from factory_work_policy import (BLOCKED_LABELS, FACTORY_NO_DIFF_RETRY_LIMIT, FACTORY_NO_DIFF_RETRY_RESET_SECONDS, FACTORY_PR_WIP_LIMIT, FACTORY_REVIEW_BACKLOG_LIMIT, FIXED_LEASE_TTL_SECONDS, LOCAL_LEASE_TTL_SECONDS, FIXED_OWNER_RE, NoDiffAttempt, NON_EXECUTABLE_ISSUES, OWNER_RE, REQUIRED_CHECK_FAILURE_STATES, STAGE_LABELS, STAGE_PRECEDENCE, Candidate, build_candidates, comment_is_trusted, eligibility, explain_issue_report, provenance_lane, env_positive_int, factory_pr_wip_count, factory_review_backlog_count, is_manual_only, item_is_unowned, issue_bypasses_wip_limit, issue_explicitly_closed_by_pr, labels_of, lease_is_stale, linked_issue_from_branch, linked_issue_from_pr, order_candidates_for_worker, owner_of, parse_no_diff_attempts_from_comments, plan_distinct_assignments, pr_suppresses_issue_candidate, stage_of)
 from factory_jev_shadow import apply_completion_ranking, apply_jev_ranking
 from stale_pr_decay import StalePRGuard, list_factory_prs
 from factory_review_policy import recorded_pr_contributors, trusted_comment_bodies
@@ -119,80 +118,24 @@ def rotisserie_issue_intake(issues: list[dict[str, Any]], prs: list[dict[str, An
     """
     try:
         control = json.loads(ROTISSERIE_CONTROL_PATH.read_text(encoding="utf-8"))
-        stage = control.get("stage")
-        if stage == "legacy":
+        if isinstance(control, dict) and control.get("stage") == "legacy":
             return None
-        if stage not in {"canary", "expanded"}:
-            raise ValueError("unsupported adopter stage")
-        if control.get("lane") != {
-            "name": "issue-intake",
-            "subjects": ["label:factory:unowned"],
-        }:
-            raise ValueError("adopter control is outside the issue-intake lane")
-
-        from factory_rotisserie_adopter import (
-            FACTORY_PR_WIP_LIMIT,
-            FACTORY_REVIEW_BACKLOG_LIMIT,
-            factory_pr_wip_count,
-            factory_review_backlog_count,
-            graph_snapshot,
-        )
+        from factory_rotisserie_adopter import issue_intake
 
         revision = os.environ.get("GITHUB_SHA", "").strip().lower()
         if not re.fullmatch(r"[0-9a-f]{40}", revision):
             revision = subprocess.run(
                 ["git", "rev-parse", "HEAD"], check=True, capture_output=True, text=True
             ).stdout.strip().lower()
-        now = int(time.time())
-        snapshot = graph_snapshot(
-            {
-                "schema_version": 1,
-                "repository": REPO,
-                "revision": revision,
-                "captured_at": now,
-                "issues": issues,
-                "pull_requests": prs,
-            }
+        return issue_intake(
+            control,
+            issues,
+            prs,
+            revision=revision,
+            now=int(time.time()),
+            command=[os.environ.get("FACTORY_ROTISSERIE_COMMAND", "rotisserie")],
+            operator_force=operator_force,
         )
-        with tempfile.TemporaryDirectory(prefix="comic-pile-rotisserie-intake-") as directory:
-            root = Path(directory)
-            snapshot_path = root / "snapshot.json"
-            config_path = root / "operator.toml"
-            snapshot_path.write_text(json.dumps(snapshot), encoding="utf-8")
-            owner, name = REPO.split("/", 1)
-            config_path.write_text(
-                'schema_version = 1\n[repository]\nhost = "github.com"\n'
-                f'owner = "{owner}"\nname = "{name}"\n[repositories]\n'
-                f'allow = [{{ host = "github.com", owner = "{owner}", name = "{name}" }}]\n'
-                '[local]\nsnapshot = "snapshot.json"\nstate_directory = "state"\n'
-                'mutations_enabled = false\n',
-                encoding="utf-8",
-            )
-            completed = subprocess.run(
-                [
-                    os.environ.get("FACTORY_ROTISSERIE_COMMAND", "rotisserie"),
-                    "--config", str(config_path), "decide", "--snapshot", str(snapshot_path),
-                    "--revision", revision, "--at", str(now),
-                    "--completion-backlog", str(0 if operator_force else factory_review_backlog_count(prs)),
-                    "--backlog-limit", str(FACTORY_REVIEW_BACKLOG_LIMIT),
-                    "--active-changes", str(0 if operator_force else factory_pr_wip_count(prs)),
-                    "--wip-limit", str(FACTORY_PR_WIP_LIMIT),
-                ],
-                check=True,
-                capture_output=True,
-                text=True,
-            )
-        envelope = json.loads(completed.stdout)
-        if envelope.get("status") != "ok":
-            raise ValueError("Rotisserie decision was not successful")
-        observations = envelope["evidence"]["decisions"]["observations"]
-        return {
-            int(item["subject"].removeprefix("work:"))
-            for item in observations
-            if item.get("dimension") == "eligibility"
-            and item.get("outcome") == "eligible"
-            and str(item.get("subject", "")).startswith("work:")
-        }
     except (KeyError, OSError, RuntimeError, ValueError, json.JSONDecodeError, subprocess.SubprocessError) as error:
         print(f"[factory-controller] Rotisserie issue intake unavailable; holding fresh issues: {error}", file=sys.stderr)
         return set()
@@ -2316,76 +2259,18 @@ def explain_issue(
     if payload is None:
         payload = target_json(number)
         issue_rows = [*issue_rows, payload]
-    issue_map = {int(row['number']): row for row in issue_rows}
-    suppressing = {
-        linked
-        for pr in pr_rows
-        if (linked := linked_issue_from_pr(pr)) is not None
-        and pr_suppresses_issue_candidate(pr, issue_map)
-    }
-    non_executable = set(NON_EXECUTABLE_ISSUES)
-    intake = rotisserie_issue_intake(issue_rows, pr_rows)
-    rotisserie_unauthorized: set[int] = set()
-    if intake is not None:
-        rotisserie_unauthorized = {int(row['number']) for row in issue_rows} - intake
-        non_executable |= rotisserie_unauthorized
     counts = (
         load_no_diff_attempts() if no_diff_attempts_by_issue is None else no_diff_attempts_by_issue
     )
-    verdict = eligibility.explain_issue_eligibility(
-        number=number,
-        state=str(payload.get('state') or 'OPEN'),
-        labels=labels_of(payload),
-        body=str(payload.get('body') or ''),
-        open_numbers={int(row['number']) for row in issue_rows},
-        suppressing_issue_numbers=suppressing,
-        non_executable_numbers=non_executable,
-        no_diff_attempts=counts.get(number, 0),
-        no_diff_limit=FACTORY_NO_DIFF_RETRY_LIMIT,
+    return explain_issue_report(
+        number,
+        payload,
+        issues=issue_rows,
+        prs=pr_rows,
+        no_diff_attempts=counts,
+        intake=rotisserie_issue_intake(issue_rows, pr_rows),
+        open_blocker=issue_has_open_blocker(number) if include_dynamic_gates else None,
     )
-    owning_prs = sorted(
-        int(pr['number'])
-        for pr in pr_rows
-        if linked_issue_from_pr(pr) == number and pr_suppresses_issue_candidate(pr, issue_map)
-    )
-    pr_wip = factory_pr_wip_count(pr_rows)
-    review_backlog = factory_review_backlog_count(pr_rows)
-    gates: dict[str, Any] = {
-        'factory_pr_wip': pr_wip,
-        'factory_pr_wip_limit': FACTORY_PR_WIP_LIMIT,
-        'review_backlog': review_backlog,
-        'review_backlog_limit': FACTORY_REVIEW_BACKLOG_LIMIT,
-        'bypasses_wip_limit': issue_bypasses_wip_limit(payload),
-        'bypasses_saturated_review_backlog': issue_bypasses_wip_limit(
-            payload, review_backlog_saturated=True
-        ),
-        'rotisserie_intake': (
-            'legacy-unrestricted'
-            if intake is None
-            else ('authorized' if number not in rotisserie_unauthorized else 'not-authorized')
-        ),
-    }
-    if include_dynamic_gates:
-        gates['open_dependency_blocker'] = issue_has_open_blocker(number)
-        gates['worker_specific_note'] = (
-            'strike-retry producer exclusion is per worker and evaluated at assignment'
-        )
-    report: dict[str, Any] = {
-        'issue': number,
-        'eligible': verdict.eligible,
-        'reasons': list(verdict.reasons),
-        'labels': sorted(labels_of(payload)),
-        'open_canonical_prs': owning_prs,
-        'dynamic_gates': gates,
-    }
-    if verdict.eligible and include_dynamic_gates and gates['open_dependency_blocker']:
-        report['eligible'] = False
-        report['reasons'] = [
-            reason
-            for reason in verdict.reasons
-            if not reason.startswith('eligible: ')
-        ] + ['a live open dependency blocker is reported by GitHub']
-    return report
 
 
 def render_explain_report(report: dict[str, Any]) -> str:

@@ -11,6 +11,15 @@ such change must be called out here and in its release notes.
 
 ### Added
 
+- `rotisserie factory why [issue:N]` explains why the factory is or is not
+  picking up an issue: blocked or manual-only labels, open dependencies, an
+  existing pull request, a worker already on it, Rotisserie intake, or the
+  open-PR and review-backlog limits (with the live numbers and the setting to
+  change). With no argument it summarizes every open issue. Answers come from
+  the dispatcher's own rules: the controller's `explain` core
+  (`explain_issue_report`) and Rotisserie intake decision (`intake_verdicts`)
+  now live in shared modules the console ships. A run that assigns no work
+  now points at `why`.
 - `rotisserie factory`, the factory operator console (moved from ComicPile's
   `scripts/factory-run`): `run`, `watch`, `status`, `cancel`, `report`,
   `stats`, `settings`, `prioritize`, `providers` and `models`. Progress is

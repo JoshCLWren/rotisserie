@@ -10,6 +10,7 @@ rotisserie factory status      # who is working on what, and for how long
 rotisserie factory report      # what merged, what failed and why, is it running
 rotisserie factory stats       # which providers and models actually deliver
 rotisserie factory settings    # limits, worker counts and priority order
+rotisserie factory why issue:N # why an issue is or is not being picked up
 ```
 
 The repository is taken from `--repo owner/name`, `FACTORY_REPO`, the nearest
@@ -94,6 +95,36 @@ its checks, review and merge state, because an open PR is not finished work.
 
 Ctrl+C stops watching only. The request keeps running on GitHub. Resume with
 `rotisserie factory watch RUN`, or stop it with `rotisserie factory cancel issue:N`.
+
+## Why isn't it picking that up?
+
+`rotisserie factory why issue:N` answers from the dispatcher's own rules, run
+over the same GitHub rows the controller reads:
+
+```
+#5612  Closing a dirty Add Series draft does not ask to discard
+
+! Eligible, but held back by the factory's limits
+  • 8 pull requests are waiting on review or checks (limit 6,
+    FACTORY_REVIEW_BACKLOG_LIMIT). Only main-breakage issues start new work
+    until that drains.
+
+Raise the limit:  rotisserie factory settings FACTORY_REVIEW_BACKLOG_LIMIT N
+Start it anyway: rotisserie factory run PROVIDER MODEL --target issue:5612 --force
+```
+
+It reports blocked, terminal and epic labels, the manual-only marker, open
+dependencies (declared in the body and GitHub's dependency links), an existing
+pull request, a worker already holding it, the Rotisserie intake decision, and
+the open-PR and review-backlog limits. `why` with no argument summarizes every
+open issue: how many can start now, and how many are held back for each
+reason. `--verbose` adds the dispatcher's reasons verbatim; `--json` prints
+them all.
+
+The intake decision runs the installed Rotisserie, which may be newer or older
+than the one the factory workflow uses. A specific worker may still skip an
+eligible issue it failed on before (strike retry); that is decided at
+assignment.
 
 ## Exit codes
 

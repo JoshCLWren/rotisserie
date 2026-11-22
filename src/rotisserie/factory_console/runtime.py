@@ -11,7 +11,12 @@ from __future__ import annotations
 
 import functools
 import importlib
+import json
+import os
+import subprocess
 import sys
+from collections.abc import Iterator, Mapping
+from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
 from types import ModuleType
@@ -23,7 +28,18 @@ RUNTIME_MODULES = (
     "factory_settings",
     "factory_dispatch_credential_filter",
     "factory_published_model_catalog",
+    "factory_work_policy",
+    "factory_rotisserie_adopter",
 )
+
+# Every file the wheel must carry, keyed by module name, with its checkout path.
+# The last three are not loaded by name; the modules above import them.
+RUNTIME_SOURCES = {
+    **{name: f"factory/.github/scripts/{name}.py" for name in RUNTIME_MODULES},
+    "factory_review_policy": "factory/.github/scripts/factory_review_policy.py",
+    "factory_adopter": "factory/.github/scripts/factory_adopter.py",
+    "factory_eligibility": "factory/scripts/factory_eligibility.py",
+}
 
 # Factory provider keys that the GitHub dispatch accepts under another name.
 PROVIDER_ALIASES = {"opencode-go": "opencode-free", "opencode-free": "opencode-free"}
@@ -223,3 +239,137 @@ def published_models(provider: Provider) -> list[str]:
         return []
     payload = catalog.published_catalog(provider.source, timeout=10)
     return [str(item) for item in catalog.catalog_model_ids(provider.source, payload)]
+
+
+# Queue eligibility ("why") -------------------------------------------------------
+
+type Row = Mapping[str, object]
+
+
+def setting_integer(name: str, variables: Mapping[str, str]) -> int:
+    """A numeric setting as the factory workflows see it (repository variables only)."""
+    registry = module("factory_settings")
+    env = {registry.REPO_VARS_ENV: json.dumps(dict(variables))}
+    return int(registry.integer(name, env=env))
+
+
+@contextmanager
+def _adopter_repository(repository: str) -> Iterator[None]:
+    """The adopter modules name their repository from GITHUB_REPOSITORY, as in a workflow."""
+    previous = os.environ.get("GITHUB_REPOSITORY")
+    os.environ["GITHUB_REPOSITORY"] = repository
+    try:
+        yield
+    finally:
+        if previous is None:
+            os.environ.pop("GITHUB_REPOSITORY", None)
+        else:
+            os.environ["GITHUB_REPOSITORY"] = previous
+
+
+# The failures the controller treats as "intake unavailable; hold fresh issues".
+INTAKE_ERRORS: tuple[type[Exception], ...] = (
+    KeyError,
+    OSError,
+    RuntimeError,
+    ValueError,
+    json.JSONDecodeError,
+    subprocess.SubprocessError,
+)
+
+
+def intake_verdicts(
+    control: object,
+    issues: list[Row],
+    prs: list[Row],
+    *,
+    repository: str,
+    revision: str,
+    now: int,
+    pr_wip_limit: int,
+    review_backlog_limit: int,
+) -> dict[int, tuple[bool, tuple[str, ...]]] | None:
+    """Rotisserie's issue-intake verdicts, computed exactly as the controller does.
+
+    Returns None while the adopter lane is legacy (no intake restriction).
+    Raises one of ``INTAKE_ERRORS`` when the
+    decision cannot be made; the controller then admits no fresh issue.
+    """
+    adopter = module("factory_rotisserie_adopter")
+    with _adopter_repository(repository):
+        raw = adopter.intake_verdicts(
+            control,
+            [dict(row) for row in issues],
+            [dict(row) for row in prs],
+            revision=revision,
+            now=now,
+            command=[sys.executable, "-m", "rotisserie"],
+            pr_wip_limit=pr_wip_limit,
+            review_backlog_limit=review_backlog_limit,
+        )
+    if raw is None:
+        return None
+    return {
+        int(number): (bool(eligible), tuple(str(reason) for reason in reasons))
+        for number, (eligible, reasons) in raw.items()
+    }
+
+
+@dataclass(frozen=True)
+class Explanation:
+    """Why one issue is or is not queue-eligible, from the dispatcher's own rules."""
+
+    issue: int
+    eligible: bool
+    reasons: tuple[str, ...]
+    labels: tuple[str, ...]
+    owning_prs: tuple[int, ...]
+    pr_wip: int
+    pr_wip_limit: int
+    review_backlog: int
+    review_backlog_limit: int
+    bypasses_wip_limit: bool
+    bypasses_saturated_review_backlog: bool
+    intake: str  # legacy-unrestricted | authorized | not-authorized
+    open_blocker: bool | None
+
+
+def explain_issue(
+    number: int,
+    payload: Row,
+    *,
+    issues: list[Row],
+    prs: list[Row],
+    intake: set[int] | None,
+    open_blocker: bool | None,
+    pr_wip_limit: int,
+    review_backlog_limit: int,
+) -> Explanation:
+    report = module("factory_work_policy").explain_issue_report(
+        number,
+        dict(payload),
+        issues=[dict(row) for row in issues],
+        prs=[dict(row) for row in prs],
+        no_diff_attempts={},  # no-diff retries never gate intake (#90)
+        intake=intake,
+        open_blocker=open_blocker,
+        pr_wip_limit=pr_wip_limit,
+        review_backlog_limit=review_backlog_limit,
+    )
+    gates = report["dynamic_gates"]
+    blocker = gates.get("open_dependency_blocker")
+    return Explanation(
+        issue=int(report["issue"]),
+        eligible=bool(report["eligible"]),
+        reasons=tuple(str(item) for item in report["reasons"]),
+        labels=tuple(str(item) for item in report["labels"]),
+        owning_prs=tuple(int(item) for item in report["open_canonical_prs"]),
+        pr_wip=int(gates["factory_pr_wip"]),
+        pr_wip_limit=int(gates["factory_pr_wip_limit"]),
+        review_backlog=int(gates["review_backlog"]),
+        review_backlog_limit=int(gates["review_backlog_limit"]),
+        bypasses_wip_limit=bool(gates["bypasses_wip_limit"]),
+        bypasses_saturated_review_backlog=bool(gates["bypasses_saturated_review_backlog"]),
+        intake=str(gates["rotisserie_intake"]),
+        open_blocker=None if blocker is None else bool(blocker),
+    )

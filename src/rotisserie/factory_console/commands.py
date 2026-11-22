@@ -30,7 +30,7 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import TextIO
 
-from rotisserie.factory_console import runtime
+from rotisserie.factory_console import runtime, why
 from rotisserie.factory_console.context import Context, UsageError, find_repository
 from rotisserie.factory_console.github import (
     JSON,
@@ -209,6 +209,18 @@ def add_parser(subcommands: argparse._SubParsersAction[argparse.ArgumentParser])
     )
     _common(prioritize)
 
+    explain = commands.add_parser(
+        "why",
+        aliases=["explain"],
+        help="why the factory is or is not picking up an issue",
+        description=(
+            "Explain, from the dispatcher's own rules, why an issue would or would not be "
+            "picked up right now. With no argument, summarize every open issue."
+        ),
+    )
+    explain.add_argument("what", nargs="?", help="issue:N (or just N); omit for every open issue")
+    _common(explain)
+
     providers = commands.add_parser(
         "providers", help="providers the factory can use and whether they are set up"
     )
@@ -320,6 +332,7 @@ def _help_text() -> str:
             "  rotisserie factory report        what merged, failed and is stuck",
             "  rotisserie factory stats         reliable providers and models",
             "  rotisserie factory settings      limits, worker counts, priorities",
+            "  rotisserie factory why [issue:N] why work is or is not being picked up",
             "  rotisserie factory cancel issue:N",
             "  rotisserie factory watch RUN",
             "  rotisserie factory providers | models PROVIDER | prioritize issue:N",
@@ -614,6 +627,10 @@ def _report_dispatch(
                 "Add --force to ignore the factory's own limits "
                 "(queue size, cooldowns, worker counts)."
             )
+        explain_target = (
+            request.target if request is not None and request.target.startswith("issue:") else ""
+        )
+        console.line(f"See why: rotisserie factory why {explain_target}".rstrip())
         console.link("Scheduler", scheduler_url)
         return Outcome(Result.NO_WORK, EXIT_CODES[Result.NO_WORK], data)
     if outcome.status == "failed":
@@ -1434,6 +1451,151 @@ def cmd_prioritize(context: Context, arguments: argparse.Namespace) -> Outcome:
     return Outcome(Result.COMPLETED, EXIT_OK, {"ref": arguments.what, "level": arguments.level})
 
 
+# why ------------------------------------------------------------------------------------
+
+
+def cmd_why(context: Context, arguments: argparse.Namespace) -> Outcome:
+    console = context.console
+    number: int | None = None
+    if arguments.what:
+        if arguments.what.isdecimal():
+            number = int(arguments.what)
+        else:
+            kind, number = _split_target(arguments.what)
+            if kind != "issue":
+                raise UsageError(
+                    "'why' explains issues. For pull requests, see 'rotisserie factory status'."
+                )
+    now = int(context.clock.now().timestamp())
+    board = why.read_board(context.github, _variables(context.github), now)
+    if number is None:
+        return _why_everything(context, board)
+    row = why.issue_row(context.github, board, number)
+    blocked, detail = why.open_blocker(context.github, number)
+    explanation = why.explain(board, row, blocker=blocked)
+    answer = why.verdict(explanation, board, blocker_detail=detail)
+    title = string(row, "title")
+    console.heading(f"#{number}  {title}" if title else f"#{number}")
+    if answer.status == "ready":
+        console.ok("Eligible now", "the next free worker can pick it up")
+        console.line(
+            "  Order among eligible work follows the priority settings; "
+            f"to move it up: rotisserie factory prioritize issue:{number}"
+        )
+    elif answer.status == "waiting":
+        console.warn("Eligible, but held back by the factory's limits")
+    else:
+        console.fail("Not picked up automatically")
+    for line in answer.reasons:
+        console.line(f"  {console.dot} {line}")
+    if answer.status != "ready":
+        console.line()
+        for hint in _why_hints(answer, number):
+            console.line(hint)
+    if board.intake_problem and answer.category != "intake":
+        console.warn(f"Rotisserie intake problem: {board.intake_problem}")
+    if console.verbose:
+        console.line()
+        console.line("Dispatcher reasons, verbatim:")
+        for reason in explanation.reasons:
+            console.line(f"  {reason}")
+        console.line(
+            f"  open PRs with a worker {explanation.pr_wip}/{explanation.pr_wip_limit}, "
+            f"review backlog {explanation.review_backlog}/{explanation.review_backlog_limit}, "
+            f"intake {explanation.intake}"
+        )
+    console.link("Issue", context.url(f"/issues/{number}"))
+    return Outcome(
+        Result.COMPLETED,
+        EXIT_OK,
+        {
+            "ref": f"issue:{number}",
+            "status": answer.status,
+            "reasons": list(answer.reasons),
+            "explanation": asdict(explanation),
+            "intake_problem": board.intake_problem or None,
+        },
+    )
+
+
+def _why_hints(answer: why.Verdict, number: int) -> list[str]:
+    if answer.category in ("closed", "finished", "manual-only"):
+        return []
+    if answer.category == "held":
+        return [
+            f"Take it over: rotisserie factory run PROVIDER MODEL --target issue:{number} "
+            "--take-over",
+            f"Stop it:      rotisserie factory cancel issue:{number}",
+        ]
+    if answer.category == "has-pr":
+        return ["The pull request moves on through review, checks and repair."]
+    limit = {
+        "wip-limit": "FACTORY_PR_WIP_LIMIT",
+        "review-limit": "FACTORY_REVIEW_BACKLOG_LIMIT",
+    }.get(answer.category)
+    if limit:
+        return [
+            f"Raise the limit:  rotisserie factory settings {limit} N",
+            f"Start it anyway: rotisserie factory run PROVIDER MODEL --target issue:{number} "
+            "--force",
+        ]
+    return [
+        f"Start it anyway: rotisserie factory run PROVIDER MODEL --target issue:{number} --force",
+        "  (--force ignores the factory's limits and blocked/dependency labels)",
+    ]
+
+
+def _why_everything(context: Context, board: why.Board) -> Outcome:
+    console = context.console
+    verdicts = why.sweep(context.github, board)
+    ready = sorted(
+        (row for row, item in verdicts if item.status == "ready"),
+        key=lambda row: integer(row, "number") or 0,
+    )
+    held = why.summarize(verdicts)
+    console.heading(f"Open issues ({len(verdicts)})")
+    console.line(f"{len(ready)} can start now.")
+    if ready:
+        rows = []
+        for row in ready[:15]:
+            title = string(row, "title")
+            rows.append(
+                [f"#{integer(row, 'number')}", title if len(title) <= 70 else title[:69] + "…"]
+            )
+        console.table(["Issue", "Title"], rows)
+        if len(ready) > 15:
+            console.line(f"  …and {len(ready) - 15} more")
+    if held:
+        console.line()
+        console.line("Not starting:")
+        for category, count in held.most_common():
+            console.line(f"  {count:>4}  {why.CATEGORY_WORDS.get(category, category)}")
+    if board.intake_problem:
+        console.line()
+        console.warn(f"Rotisserie intake admits nothing: {board.intake_problem}")
+    console.line()
+    console.line("Ask about one: rotisserie factory why issue:N")
+    return Outcome(
+        Result.COMPLETED,
+        EXIT_OK,
+        {
+            "open_issues": len(verdicts),
+            "ready": [integer(row, "number") for row in ready],
+            "not_starting": dict(held),
+            "issues": [
+                {
+                    "issue": integer(row, "number"),
+                    "status": item.status,
+                    "category": item.category,
+                    "reasons": list(item.reasons),
+                }
+                for row, item in verdicts
+            ],
+            "intake_problem": board.intake_problem or None,
+        },
+    )
+
+
 # providers / models --------------------------------------------------------------------
 
 
@@ -1704,6 +1866,8 @@ HANDLERS = {
     "stats": cmd_stats,
     "settings": cmd_settings,
     "prioritize": cmd_prioritize,
+    "why": cmd_why,
+    "explain": cmd_why,
     "providers": cmd_providers,
     "models": cmd_models,
 }

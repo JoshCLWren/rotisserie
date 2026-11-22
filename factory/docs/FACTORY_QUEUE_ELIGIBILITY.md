@@ -53,8 +53,10 @@ Static exclusions, in evaluation order:
 7. An active factory lease (`factory:<worker>` / `factory:local`).
 8. Unresolved explicit dependencies (declared target still open).
 9. An open canonical PR already owning the issue (controller only).
-10. No-diff retry budget exhausted (fixed-model controller's rolling window;
-    not a Ralph selector input).
+
+No-diff retries no longer suppress an issue (#90): a model that finds no
+change does not cap the issue's future attempts. Retry history is never an
+intake gate.
 
 An issue that passes the common static checks may still fail either selector's
 additional gates. `factory:unowned` means no active factory owner, not that
@@ -139,7 +141,7 @@ python3 scripts/next_task.py explain 3039
 Both commands are read-only and use `explain_issue_eligibility` for the inputs
 they share. **Their top-level `eligible` values are not interchangeable**:
 the controller also checks open canonical PRs, Rotisserie authorization,
-remote no-diff retry history, and live dependency blockers; worker capacities
+and live dependency blockers; worker capacities
 and some lease/strike checks apply when it actually assigns work. The Ralph
 report lists these omitted checks under `not_evaluated`. In particular,
 `Ralph eligible: true` alongside `controller eligible: false` does not
