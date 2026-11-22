@@ -102,7 +102,9 @@ def parser() -> argparse.ArgumentParser:
     web = subcommands.add_parser("web", help="open the local Rotisserie factory control room")
     web.add_argument("--repo", help="adopter repository (owner/name)")
     web.add_argument("--port", type=int, default=8765, help="local port (default 8765)")
-    web.add_argument("--no-browser", action="store_true", help="do not open a browser automatically")
+    web.add_argument(
+        "--no-browser", action="store_true", help="do not open a browser automatically"
+    )
 
     subcommands.add_parser("inspect", help="inspect the configured graph")
     plan = subcommands.add_parser("plan", help="plan deterministic work selection")
