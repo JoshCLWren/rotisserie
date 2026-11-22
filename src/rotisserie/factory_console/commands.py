@@ -56,6 +56,7 @@ from rotisserie.factory_console.service import (
     review,
     unstick,
 )
+from rotisserie.factory_console.service import sync as branch_sync
 from rotisserie.factory_console.tracker import (
     DISPATCH_WORKFLOW,
     EXIT_CODES,
@@ -326,6 +327,51 @@ def add_parser(subcommands: argparse._SubParsersAction[argparse.ArgumentParser])
     clash.add_argument("what", help="pr:N")
     _common(clash)
 
+    syncer = commands.add_parser(
+        "sync",
+        help="merge main into factory PRs, only while no worker holds them",
+        description=(
+            "Merge the default branch into each pull request with GitHub's update-branch, "
+            "refusing when its head moved (so a worker's push is never overwritten) and while "
+            "a worker holds it. Neon leases decide ownership where Neon is configured; "
+            "otherwise owner labels do, and the output says Neon was not consulted. A PR that "
+            "conflicts with main is reported and left to merge-conflict work."
+        ),
+    )
+    syncer.add_argument("what", nargs="*", help="pr:N (one or more)")
+    syncer.add_argument(
+        "--all-stale",
+        action="store_true",
+        help="every factory PR that is red only because main has since moved past the failure",
+    )
+    syncer.add_argument(
+        "--contains", default="", metavar="SHA", help="done once the head contains this commit"
+    )
+    syncer.add_argument("--max", type=int, default=5, help="sync at most N PRs (default 5)")
+    syncer.add_argument(
+        "--now",
+        action="store_true",
+        help=(
+            "without Neon, sync right away on owner labels instead of queueing for the "
+            "scheduler's leased sync (a worker assigned mid-sync is possible)"
+        ),
+    )
+    syncer.add_argument("--dry-run", action="store_true", help="show the plan; change nothing")
+    syncer.add_argument("--yes", "-y", action="store_true", help="sync without asking")
+    _common(syncer)
+
+    holds = commands.add_parser(
+        "leases",
+        help="who holds which factory item (Neon leases, or owner labels without Neon)",
+    )
+    holds.add_argument("what", nargs="*", help="pr:N or issue:N (default: every lease)")
+    holds.add_argument(
+        "--release-expired",
+        action="store_true",
+        help="delete lease rows that expired over an hour ago (never an active claim)",
+    )
+    _common(holds)
+
     groom = commands.add_parser(
         "groom",
         help="inventory the whole open backlog, then apply reviewed corrections",
@@ -488,6 +534,8 @@ def _help_text() -> str:
             "  rotisserie factory outcomes      did the requested work actually happen",
             "  rotisserie factory checks pr:N   why its checks fail",
             "  rotisserie factory conflicts pr:N  what main changed under it",
+            "  rotisserie factory sync pr:N     merge main in (never while a worker holds it)",
+            "  rotisserie factory leases        who holds which item",
             "  rotisserie factory doctor        is the factory itself healthy",
             "  rotisserie factory close pr:N --reason TEXT   close work that should not be done",
             "  rotisserie factory cancel issue:N",
@@ -1986,6 +2034,109 @@ def cmd_conflicts(context: Context, arguments: argparse.Namespace) -> Outcome:
     return Outcome(Result.COMPLETED, EXIT_OK, report.to_dict())
 
 
+# sync -----------------------------------------------------------------------------------
+
+
+def _pr_numbers(values: Sequence[str], command: str) -> list[int]:
+    numbers: list[int] = []
+    for value in values:
+        kind, number = _split_target(value)
+        if kind != "pr":
+            raise UsageError(f"{command} takes pull requests: pr:N")
+        numbers.append(number)
+    return numbers
+
+
+def cmd_sync(context: Context, arguments: argparse.Namespace) -> Outcome:
+    console = context.console
+    numbers = _pr_numbers(arguments.what, "sync")
+    if bool(numbers) == bool(arguments.all_stale):
+        raise UsageError("Name pull requests (pr:N) or pass --all-stale, not both.")
+    if arguments.max < 1:
+        raise UsageError("--max must be 1 or more.")
+    if arguments.contains and not re.fullmatch(r"[0-9a-f]{40}", arguments.contains):
+        raise UsageError("--contains takes a full 40-character commit SHA.")
+    rows = branch_sync.open_pull_rows(context.github)  # the one PR read this pass shares
+    plan = (
+        branch_sync.stale_plan(context.github, rows)
+        if arguments.all_stale
+        else branch_sync.explicit_plan(numbers, target=arguments.contains)
+    )
+    data: dict[str, object] = plan.to_dict()
+    console.heading(f"Sync with main ({len(plan.candidates)})")
+    for item in plan.candidates:
+        console.line(f"  {console.dot} PR #{item.pr}: {item.why}")
+    for held in plan.held:
+        console.line(f"  {console.dot} {held.text}")
+    for problem in plan.problems:
+        console.warn(problem)
+    if not plan.candidates:
+        console.line("Nothing needs a sync.")
+        return Outcome(Result.NO_WORK, EXIT_CODES[Result.NO_WORK], data)
+    if arguments.dry_run:
+        console.line("Dry run: nothing was changed.")
+        return Outcome(Result.COMPLETED, EXIT_OK, data)
+    if not arguments.yes:
+        if not context.interactive:
+            console.line("Nothing was changed. Add --yes to sync these pull requests.")
+            return Outcome(Result.NO_WORK, EXIT_CODES[Result.NO_WORK], data)
+        if not context.prompt.confirm(f"Sync {len(plan.candidates)} PR(s) with main?"):
+            console.line("Nothing was changed.")
+            return Outcome(Result.NO_WORK, EXIT_CODES[Result.NO_WORK], data)
+    ledger, why = branch_sync.load_ledger()
+    if ledger is None and not arguments.now:
+        console.line(f"Neon is not reachable from here: {why}.")
+        console.line("Queueing instead: the scheduler syncs each one under a Neon lease.")
+        queued = branch_sync.queue(context.github, plan, rows)
+        for entry in queued:
+            (console.ok if entry.ok else console.warn)(entry.text)
+        data["queued"] = [asdict(entry) for entry in queued]
+        data["neon"] = False
+        result = Result.SUBMITTED if any(entry.ok for entry in queued) else Result.NO_WORK
+        return Outcome(result, EXIT_CODES[result], data)
+    holder = f"console-{os.environ.get('GITHUB_RUN_ID') or os.getpid()}"
+    changes, note = branch_sync.execute(
+        context.github, plan, rows, holder=holder, limit=arguments.max, now=arguments.now
+    )
+    if note:
+        console.warn(f"Neon was not consulted: {note}. Owner labels decided who holds each PR.")
+    for change in changes:
+        (console.ok if change.ok else console.warn)(change.text)
+    data["synced"] = [change.to_dict() for change in changes]
+    data["neon"] = not note
+    if any(change.status == "error" for change in changes):
+        return Outcome(Result.FAILED, EXIT_CODES[Result.FAILED], data)
+    result = Result.SUBMITTED if any(change.ok for change in changes) else Result.NO_WORK
+    return Outcome(result, EXIT_CODES[result], data)
+
+
+def cmd_leases(context: Context, arguments: argparse.Namespace) -> Outcome:
+    console = context.console
+    numbers = [_split_target(value)[1] for value in arguments.what]
+    if arguments.release_expired:
+        purged, why = branch_sync.release_expired(context.github)
+        if purged is None:
+            console.fail(f"Cannot release leases: {why}.")
+            return Outcome(Result.NO_WORK, EXIT_CODES[Result.NO_WORK], {"note": why})
+        console.ok(f"Removed {purged} lease row(s) that expired over an hour ago.")
+        return Outcome(Result.COMPLETED, EXIT_OK, {"released": purged})
+    report = branch_sync.lease_report(context.github, numbers=numbers)
+    if report.note:
+        console.warn(f"{report.note}. Showing owner labels instead.")
+    console.heading(f"Leases ({'Neon' if report.source == 'neon' else 'owner labels'})")
+    if not report.rows:
+        console.line("Nothing is held.")
+    else:
+        console.table(
+            ["Item", "Held by", "State", "Expires"],
+            [
+                [row.target, row.holder, "active" if row.active else "expired", row.expires_at]
+                for row in report.rows
+            ],
+        )
+    return Outcome(Result.COMPLETED, EXIT_OK, report.to_dict())
+
+
 # checks ---------------------------------------------------------------------------------
 
 
@@ -2454,6 +2605,8 @@ HANDLERS = {
     "review": cmd_review,
     "groom": cmd_groom,
     "conflicts": cmd_conflicts,
+    "sync": cmd_sync,
+    "leases": cmd_leases,
     "doctor": cmd_doctor,
     "explain": cmd_why,
     "providers": cmd_providers,

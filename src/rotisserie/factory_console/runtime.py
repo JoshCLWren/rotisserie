@@ -30,6 +30,7 @@ RUNTIME_MODULES = (
     "factory_published_model_catalog",
     "factory_work_policy",
     "factory_rotisserie_adopter",
+    "factory_branch_sync",
     "factory_main_health",
     "factory_review_policy",
 )

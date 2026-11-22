@@ -463,6 +463,26 @@ jobs:
           set -Eeuo pipefail
           python3 .github/scripts/factory-review-controller.py reconcile-ci
 
+      # Rotisserie owns branch synchronization: `rotisserie factory sync` (or an
+      # operator) queues a PR with the factory-sync-main label, and this pass
+      # merges main into it only while it holds the PR's Neon target lease, so
+      # no worker can be assigned mid-sync and a held PR is never touched. The
+      # update is a compare-and-swap on the head, never a force push. Cost: one
+      # open-PR list, then one compare per queued PR and one update-branch
+      # (plus one label removal) per PR it finishes. Bounded to 5 writes.
+      - name: Sync queued factory PRs with main under Neon leases
+        if: steps.api_budget.outputs.allow == 'true' && !(inputs.target || inputs.provider) && steps.main_health.outputs.state != 'red'
+        continue-on-error: true
+        shell: bash
+        env:
+          # A PAT-made merge commit starts the PR's CI; a GITHUB_TOKEN one does
+          # not, and the drain then dispatches recovery CI for the new head.
+          GH_TOKEN: ${{ secrets.PR_REBASE_TOKEN || github.token }}
+        run: |
+          set -Eeuo pipefail
+          python3 .github/scripts/factory_branch_sync.py --queued --max 5 \
+            --holder "scheduler-${GITHUB_RUN_ID}"
+
       - name: Trigger merge drain on dispatcher cadence
         if: steps.api_budget.outputs.allow == 'true' && !(inputs.target || inputs.provider)
         continue-on-error: true
