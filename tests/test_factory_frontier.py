@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 from types import SimpleNamespace
-from typing import Any
+from typing import Any, cast
 
 import pytest
 
@@ -268,7 +268,7 @@ def test_capture_passes_repository_capacity_to_shared_policy(
             queue, "summarize_queue", lambda gh, *, now, variables, summary=summary: summary
         )
         github = SimpleNamespace(repo=REPO)
-        result = frontier.capture(github, now=NOW)
+        result = frontier.capture(cast(frontier.GitHub, github), now=NOW)
         assert len(result.offers) == 1
         assert result.offers[0].capacity["review_limit"] == backlog
     assert settings == [(8, 6), (14, 12)]
