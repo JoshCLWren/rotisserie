@@ -81,6 +81,7 @@ The intended result is a system that can:
 | `src/rotisserie/operator/` | Versioned local configuration, durable simulation state, records, metrics, and diagnostics |
 | `src/rotisserie/cli.py` | One-operation CLI with dry-run mutation plans and stable JSON output |
 | `src/rotisserie/factory_console/` | `rotisserie factory` operator console ([docs](docs/factory-console.md)) |
+| `src/rotisserie/web.py` + `web_ui.html` | Local-only browser control room over the same factory CLI (`rotisserie web`) |
 | `prototype/` | Dependency and eligibility migration evidence with domain compatibility tests |
 | `tests/` | Rotisserie repository-safety guards |
 | `reference/legacy-factory/` | Archived migration evidence, code, tests, prompts, and disabled workflows |
@@ -120,6 +121,16 @@ Build the source and wheel distributions with `uv build`. The package is still
 pre-release and does not yet expose the prototype as a supported public API.
 Version history and release-note conventions live in
 [CHANGELOG.md](CHANGELOG.md).
+
+### Factory web control room
+
+From an adopter checkout, or by naming the repository explicitly, launch the authenticated local browser UI:
+
+```bash
+rotisserie web --repo JoshCLWren/comic-pile
+```
+
+It reuses the existing `rotisserie factory ... --json` read/write commands and your authenticated `gh` CLI. It neither hosts a public service nor starts a separate scheduler. See [Factory operator console](docs/factory-console.md#local-web-control-room) for controls and safety boundaries.
 
 ### Local operator quickstart
 

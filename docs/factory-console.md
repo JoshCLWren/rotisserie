@@ -1,5 +1,41 @@
 # Factory operator console
 
+## Local web control room
+
+The browser interface uses the same `rotisserie factory` commands and your existing `gh`
+authentication. It does **not** install or start an additional controller:
+
+```bash
+rotisserie web --repo JoshCLWren/comic-pile
+```
+
+This opens `http://127.0.0.1:8765/`. Omit `--repo` from a checkout containing
+`.rotisserie/config.toml` or a GitHub `origin` remote. Use `--port 0` to
+choose an available local port, or `--no-browser` to suppress automatic opening.
+
+The dashboard shows current workers, merges, queue eligibility, health,
+provider/model discovery, reliability, outcomes, leases and settings.
+The launch form supports next eligible work, a chosen issue or PR, exact model
+IDs, normal/forced scheduling, explicit takeover and optional worker slots.
+PR actions include independent review, CI repair, review feedback and conflicts.
+
+**Operator actions are real**: Launch, Cancel, Prioritize, Sync, Unstick,
+Update Setting, Doctor Fix and Release Expired Leases call the existing
+CLI under a bounded allowlist. The browser explicitly asks for confirmation;
+the factory remains responsible for lease, authorization and CI guards.
+Launch uses `--no-wait`, so *submitted* means GitHub accepted the request,
+**not** that the model started; use the linked Actions run or Workers page
+to follow it. Sync defaults to leased/queued mode, never `--now`.
+Unstick previews from live state, then replans when executed.
+
+The server only binds IPv4 loopback, checks the localhost Host/Origin, requires
+a per-process session token for every API request, does not accept shell
+commands, and never sends `gh` credentials to the browser. It is a single-user
+local operator tool, not a public, remotely hosted multi-user dashboard.
+Stop it with Ctrl+C. If GitHub or the installed factory is unavailable,
+panels show a failure instead of inventing state.
+
+
 `rotisserie factory` operates a software factory installed from `factory/`
 (for example ComicPile). It replaces adopter-local scripts such as
 ComicPile's old `scripts/factory-run`.
