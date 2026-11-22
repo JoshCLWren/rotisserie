@@ -33,6 +33,10 @@ such change must be called out here and in its release notes.
 
 ### Added
 
+- `rotisserie factory conflicts pr:N`: the PR's files that main also changed
+  since its merge base, and the merged PR behind each. `unstick` shows the
+  overlap on merge-conflict tasks and hands an item to a person after three
+  models fail its conflicts.
 - `doctor --fix` re-runs the stats publisher when the snapshot is missing or
   stale (GitHub's schedule lagged by over an hour tonight).
 - `rotisserie factory doctor`: reliability snapshot missing or stale, the

@@ -44,6 +44,7 @@ from rotisserie.factory_console.service import (
     catalog,
     checks,
     close,
+    conflicts,
     dispatch,
     doctor,
     outcomes,
@@ -316,6 +317,12 @@ def add_parser(subcommands: argparse._SubParsersAction[argparse.ArgumentParser])
     )
     _common(health)
 
+    clash = commands.add_parser(
+        "conflicts", help="which of a pull request's files main also changed, and where"
+    )
+    clash.add_argument("what", help="pr:N")
+    _common(clash)
+
     red = commands.add_parser("checks", help="why a pull request's checks fail, in one line each")
     red.add_argument("what", help="pr:N")
     _common(red)
@@ -435,6 +442,7 @@ def _help_text() -> str:
             "  rotisserie factory unstick       start the workers that clear the bottleneck",
             "  rotisserie factory outcomes      did the requested work actually happen",
             "  rotisserie factory checks pr:N   why its checks fail",
+            "  rotisserie factory conflicts pr:N  what main changed under it",
             "  rotisserie factory doctor        is the factory itself healthy",
             "  rotisserie factory close pr:N --reason TEXT   close work that should not be done",
             "  rotisserie factory cancel issue:N",
@@ -1704,6 +1712,11 @@ def _show_plan(console: Console, found: unstick.Plan) -> None:
             "  No worker is sent to these. Closing them frees their review-backlog slots: "
             "gh pr close N --comment REASON"
         )
+    if found.needs_person:
+        console.line()
+        console.heading(f"Needs you: models keep failing ({len(found.needs_person)})")
+        for reason in found.needs_person:
+            console.line(f"  {console.dot} {reason.text}")
     if not found.assignments:
         return
     first = found.assignments[0]
@@ -1865,6 +1878,32 @@ def cmd_doctor(context: Context, arguments: argparse.Namespace) -> Outcome:
     worst = "fail" if any(i.status == "fail" for i in findings) else "ok"
     result = Result.FAILED if worst == "fail" else Result.COMPLETED
     return Outcome(result, EXIT_CODES[result], data)
+
+
+# conflicts ------------------------------------------------------------------------------
+
+
+def cmd_conflicts(context: Context, arguments: argparse.Namespace) -> Outcome:
+    kind, number = _split_target(arguments.what)
+    if kind != "pr":
+        raise UsageError("conflicts takes a pull request: pr:N")
+    console = context.console
+    report = conflicts.pr_conflicts(context.github, number)
+    if not report.overlaps:
+        console.ok(report.text)
+    else:
+        console.warn(report.text)
+        for item in report.overlaps:
+            gone = " (deleted on main)" if item.deleted else ""
+            console.line(f"  {console.dot} {item.path}{gone}: {item.change or 'unknown change'}")
+        console.line()
+        if report.prs:
+            console.line(
+                "Both sides changed these files. If the merged change already did this PR's "
+                "work, close it: rotisserie factory close pr:"
+                f"{number} --reason TEXT. Otherwise a person may need to merge by hand."
+            )
+    return Outcome(Result.COMPLETED, EXIT_OK, report.to_dict())
 
 
 # checks ---------------------------------------------------------------------------------
@@ -2160,6 +2199,7 @@ HANDLERS = {
     "outcomes": cmd_outcomes,
     "close": cmd_close,
     "checks": cmd_checks,
+    "conflicts": cmd_conflicts,
     "doctor": cmd_doctor,
     "explain": cmd_why,
     "providers": cmd_providers,

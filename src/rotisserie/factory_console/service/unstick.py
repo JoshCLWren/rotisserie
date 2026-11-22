@@ -25,6 +25,7 @@ from rotisserie.factory_console.service import (
     queue,
     reliability,
 )
+from rotisserie.factory_console.service import conflicts as conflict_check
 from rotisserie.factory_console.service import obsolete as obsolete_check
 from rotisserie.factory_console.tracker import Clock
 
@@ -87,6 +88,8 @@ class Plan:
     problems: tuple[str, ...] = field(default=())  # why nothing can be started
     # Backlog PRs main has moved past (their files are gone): a person should close them.
     obsolete: tuple[queue.Reason, ...] = field(default=())
+    # Items several models already failed on; another round is unlikely to help.
+    needs_person: tuple[queue.Reason, ...] = field(default=())
 
     def to_dict(self) -> dict[str, object]:
         from dataclasses import asdict
@@ -231,8 +234,32 @@ def plan(
         task for task in tasks if task.target not in skip and (not only or task.target in only)
     ]
     capped = tasks if max_workers is None else tasks[:max_workers]
+    left_out = len(tasks) - len(capped)
     choice_text, ranked, problems = _choose_models(github, variables, now, provider, model)
     missed = _recent_misses(github, now) if ranked and len(ranked) > 1 else {}
+    needs_person: list[queue.Reason] = []
+    keep: list[Task] = []
+    for task in capped:
+        tried = missed.get(task.target, set())
+        if task.action == "merge-conflict" and len(tried) >= GIVE_UP_AFTER:
+            overlap = _overlap_text(github, task.target)
+            needs_person.append(
+                queue.Reason(
+                    "needs-person",
+                    f"{task.target}: {len(tried)} models failed to resolve its conflicts"
+                    f"{'; ' + overlap if overlap else ''}. Merge it by hand, or close it if "
+                    "main already did this work (rotisserie factory conflicts "
+                    f"{task.target}).",
+                    prs=(int(task.target.split(":")[1]),),
+                )
+            )
+            continue
+        if task.action == "merge-conflict":
+            overlap = _overlap_text(github, task.target)
+            if overlap:
+                task = replace(task, why=f"{task.why}; {overlap}")
+        keep.append(task)
+    capped = keep
     assignments = tuple(_assign(task, ranked, missed) for task in capped) if ranked else ()
     if not tasks:
         problems = (*problems, "nothing is waiting that a new worker could take")
@@ -240,12 +267,25 @@ def plan(
         tuple(diagnosis),
         assignments,
         tuple(held),
-        len(tasks) - len(capped),
+        left_out,
         needed,
         choice_text,
         tuple(problems),
         tuple(obsolete),
+        tuple(needs_person),
     )
+
+
+# Distinct models that must have missed a merge conflict before a person is asked.
+GIVE_UP_AFTER = 3
+
+
+def _overlap_text(github: GitHub, target: str) -> str:
+    try:
+        report = conflict_check.pr_conflicts(github, int(target.split(":")[1]))
+    except GitHubError:
+        return ""
+    return report.text.split(": ", 1)[1] if report.overlaps else ""
 
 
 def _gone(stale: dict[int, obsolete_check.Staleness | None], item: runtime.BacklogPR) -> bool:

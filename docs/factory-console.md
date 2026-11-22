@@ -16,6 +16,7 @@ rotisserie factory outcomes    # did the requested work actually happen
 rotisserie factory close pr:N --reason TEXT  # close work that should not be done
 rotisserie factory checks pr:N # why its checks fail, in one line each
 rotisserie factory doctor      # is the factory itself healthy
+rotisserie factory conflicts pr:N  # which of its files main also changed, and where
 ```
 
 The repository is taken from `--repo owner/name`, `FACTORY_REPO`, the nearest
@@ -226,6 +227,19 @@ instead of review work for such PRs, and for one a worker already holds it
 says to take it over (`run … --action ci-repair --take-over`).
 `--since 2h` sets the window; `--all` also follows routine scheduler passes,
 one row per worker each pass started.
+
+## What does it conflict with?
+
+`rotisserie factory conflicts pr:N` compares each file the PR changes (files it
+added are skipped) at the PR's merge base with the default branch, and names
+the merged PR behind each difference. It is exact for any branch age; the
+compare API's file list stops at 300 files, and commit `since` filters miss
+merged commits that keep older dates.
+
+`unstick` adds this overlap to every merge-conflict task. Once three different
+models have failed an item's conflicts in the last 6 hours, it stops planning
+workers for it and lists it under **Needs you: models keep failing**: merge it
+by hand, or close it if the overlapping merged PR already did the work.
 
 ## Is the factory itself healthy?
 

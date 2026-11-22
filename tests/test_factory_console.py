@@ -1834,3 +1834,73 @@ def test_take_over_retries_when_a_routine_pass_reclaims_the_item(fake: FakeGitHu
     cancels = [call[2] for call in fake.calls if call[:2] == ["run", "cancel"]]
     assert cancels == ["777", "778"]
     assert sum(1 for call in fake.calls if call[0] == "workflow") == 2
+
+
+# conflicts ------------------------------------------------------------------------------
+
+
+def conflict_routes(fake: FakeGitHub) -> None:
+    fake.routes[r"pulls/5660$"] = {"head": {"ref": "feature"}, "base": {"ref": "main"}}
+    fake.routes[r"compare/main\.\.\.feature"] = {
+        "merge_base_commit": {"sha": "base1"},
+        "behind_by": 14,
+    }
+    fake.routes[r"pulls/5660/files"] = [
+        {"filename": "src/shared.rs", "status": "modified"},
+        {"filename": "src/untouched.rs", "status": "modified"},
+        {"filename": "src/new.rs", "status": "added"},
+    ]
+    fake.routes[r"contents/src/shared\.rs\?ref=base1"] = {"sha": "old"}
+    fake.routes[r"contents/src/shared\.rs\?ref=main"] = {"sha": "new"}
+    fake.routes[r"contents/src/untouched\.rs\?ref="] = {"sha": "same"}
+    fake.routes[r"commits\?path=src/shared\.rs"] = [
+        {"sha": "6dcf97e6aa", "commit": {"message": "checkpoint(factory): issue #5624"}}
+    ]
+    fake.routes[r"commits/6dcf97e6aa/pulls"] = [{"number": 5629, "merged_at": "2026-11-22"}]
+
+
+def test_conflicts_names_files_main_also_changed_and_the_merged_pr(fake: FakeGitHub) -> None:
+    conflict_routes(fake)
+    code, out = invoke(["--json", "conflicts", "pr:5660"])
+    data = json.loads(out)
+    assert code == 0
+    assert data["checked"] == 2  # added files cannot conflict
+    assert [item["path"] for item in data["overlaps"]] == ["src/shared.rs"]
+    assert data["prs"] == [5629]
+    assert data["text"] == "PR #5660: main also changed shared.rs (in #5629)"
+
+
+def test_unstick_hands_repeated_conflict_failures_to_a_person(fake: FakeGitHub) -> None:
+    from rotisserie.factory_console.service import outcomes
+
+    unstick_routes(fake, FULL_BACKLOG)
+
+    def missed(_github: GitHub, *, since: object, **_: object) -> list[object]:
+        return [
+            outcomes.RequestOutcome(
+                n,
+                START,
+                "pr:304",
+                "dispatched",
+                "",
+                "merge-conflict",
+                model,
+                "w",
+                n,
+                "failed",
+                "",
+                "not-met",
+                "",
+            )  # fmt: skip
+            for n, model in enumerate(["a/x", "b/y", "opencode-go/hy4-flash-free"])
+        ]
+
+    import pytest as _pytest
+
+    with _pytest.MonkeyPatch.context() as patch:
+        patch.setattr(outcomes, "request_outcomes", missed)
+        code, out = invoke(["--json", "unstick", "--dry-run"])
+    plan = json.loads(out)["plan"]
+    assert "pr:304" not in [item["task"]["target"] for item in plan["assignments"]]
+    assert plan["needs_person"][0]["prs"] == [304]
+    assert "3 models failed to resolve its conflicts" in plan["needs_person"][0]["text"]
