@@ -643,12 +643,22 @@ def test_hard_killed_operator_leaves_bridge_lock_and_durable_process_identity(
     )
     group: int | None = None
     try:
+        # The child writes the marker once it runs; the operator records its
+        # process group right after spawning it. Either can happen first, so
+        # wait until both hold instead of reading the receipt on the marker.
+        raw: dict[str, object] = {}
         deadline = time.monotonic() + 5
-        while not marker.exists() and time.monotonic() < deadline:
+        while time.monotonic() < deadline:
+            receipts = list((tmp_path / "state" / "executions").glob("*.json"))
+            if receipts:
+                try:
+                    raw = json.loads(receipts[0].read_text())
+                except ValueError:  # caught mid-write
+                    raw = {}
+                if isinstance(raw.get("process_group"), int) and marker.exists():
+                    break
             time.sleep(0.01)
         assert marker.exists()
-        receipt = next((tmp_path / "state" / "executions").glob("*.json"))
-        raw = json.loads(receipt.read_text())
         assert raw["status"] == "started" and isinstance(raw["process_group"], int)
         group = raw["process_group"]
         process.kill()
