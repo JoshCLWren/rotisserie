@@ -15,6 +15,7 @@ rotisserie factory unstick     # start the workers that clear the bottleneck
 rotisserie factory outcomes    # did the requested work actually happen
 rotisserie factory close pr:N --reason TEXT  # close work that should not be done
 rotisserie factory checks pr:N # why its checks fail, in one line each
+rotisserie factory review pr:N # whose approval counts: known self-review vs missing metadata
 rotisserie factory doctor      # is the factory itself healthy
 rotisserie factory conflicts pr:N  # which of its files main also changed, and where
 ```
@@ -215,6 +216,36 @@ latest result, most-missed first. An item that missed twice or more with
 nothing done is marked "going in circles": another round on the same models
 is unlikely to help. `--limit N` reads more scheduler passes (default 40,
 newest first) for long windows.
+
+## Whose review counts?
+
+The owner's rule is narrow: **a model known to have authored a PR must not
+approve it.** One eligible approval is always enough.
+
+- Known authorship comes only from the controller's author records (what the
+  runtime actually executed), across every head of the PR, so a sync or merge
+  without a new author record never launders an earlier author away.
+- The reviewer's model is the controller's record of what the runtime executed
+  for that approval, never a worker's historical roster slot. A worker that
+  switched models may review its own earlier PR with the new model.
+- Models are compared by canonical identity: provider, route and pricing-tier
+  spellings of the same weights (`opencode-go/hy4-flash-free`, `zen/hy4-flash`)
+  are one model; `glm-4.6` and `glm-4.5` are different models.
+- No recorded author (a human, an external tool such as ChatGPT or Claude Code,
+  an unattributed head): any model may review. Missing metadata is reported,
+  never a blocker.
+- A known self-review, or an approval whose model was not recorded while the
+  PR has known authors, sends the PR back to `factory:review` for a different
+  model. The dispatcher also refuses to start a review on an author model: it
+  re-picks across the fleet before the session starts.
+
+`rotisserie factory review pr:N` shows the known author models, whether the
+current head has its own author record, the approvals and their recorded
+models, and the verdict. `--blocked` checks every open factory PR parked in
+`factory:blocked`. `--requeue` (confirm, or `--yes`) moves PRs the retired
+review gate parked there back to review, together with their linked issue. It
+refuses a PR blocked for any other reason, one a worker holds, or one whose
+head moved since it was inspected, and it never writes authorship markers.
 
 ## Why are its checks failing?
 

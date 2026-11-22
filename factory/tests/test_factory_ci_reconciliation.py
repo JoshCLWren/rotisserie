@@ -262,7 +262,6 @@ def test_passing_checks_continue_through_authorization_and_mechanical_gates(
 
     monkeypatch.setattr(module, "mechanical_merge_gate", mechanical_gate)
     monkeypatch.setattr(module, "model_comment_bodies", lambda _pr: [])
-    monkeypatch.setattr(module, "head_has_cross_model_review", lambda *_a, **_kw: True)
     monkeypatch.setattr(
         module,
         "replace_factory_labels",
@@ -277,15 +276,24 @@ def test_passing_checks_continue_through_authorization_and_mechanical_gates(
     assert transitions == [(PR_NUMBER, "factory:unowned", "factory:ready")]
 
 
-def test_green_ci_does_not_promote_without_cross_model_identity(
+def test_green_ci_returns_known_self_review_to_review(
     monkeypatch: MonkeyPatch,
 ) -> None:
-    """A missing trusted model marker blocks promotion, not another review loop."""
+    """Green CI cannot promote an approval by the PR's own author model.
+
+    It goes back to review for another model; it is never parked in blocked.
+    """
     module = load_review_controller()
     recorded: list[tuple[int, str, str]] = []
     semantic = module.review_marker(
         pr=PR_NUMBER, head=HEAD, reviewer="17", producer="43", verdict="approve"
     )
+    model_records = [
+        module.agent_model_author_marker(pr=PR_NUMBER, head=HEAD, model="glm-4.6", agent="43"),
+        module.reviewer_model_marker(
+            pr=PR_NUMBER, head=HEAD, reviewer_model="zai/glm-4.6", reviewer_agent="17"
+        ),
+    ]
     monkeypatch.setattr(module, "pr_json", lambda _pr: ci_pr_payload())
     monkeypatch.setattr(
         module,
@@ -300,11 +308,11 @@ def test_green_ci_does_not_promote_without_cross_model_identity(
             semantic,
         ],
     )
-    monkeypatch.setattr(module, "model_comment_bodies", lambda _pr: [])
+    monkeypatch.setattr(module, "model_comment_bodies", lambda _pr: model_records)
     monkeypatch.setattr(
         module,
         "mechanical_merge_gate",
-        lambda *_args: pytest.fail("missing model provenance must gate before merge checks"),
+        lambda *_args: pytest.fail("self-review must gate before merge checks"),
     )
     monkeypatch.setattr(
         module,
@@ -313,5 +321,5 @@ def test_green_ci_does_not_promote_without_cross_model_identity(
     )
 
     result = module.reconcile_ci_pr(PR_NUMBER)
-    assert result["status"] == "cross-model-provenance-blocked"
-    assert recorded == [(PR_NUMBER, "factory:unowned", "factory:blocked")]
+    assert result["status"] == "self-review"
+    assert recorded == [(PR_NUMBER, "factory:unowned", "factory:review")]

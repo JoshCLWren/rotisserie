@@ -37,6 +37,8 @@ head_contributor_marker = _review_policy.head_contributor_marker
 head_has_authorized_approval = _review_policy.head_has_authorized_approval
 head_contributor_provenance = _review_policy.head_contributor_provenance
 head_has_cross_model_review = _review_policy.head_has_cross_model_review
+evaluate_review_eligibility = _review_policy.evaluate_review_eligibility
+reviewer_model_marker = _review_policy.reviewer_model_marker
 agent_model_author_marker = _review_policy.agent_model_author_marker
 agent_model_review_marker = _review_policy.agent_model_review_marker
 controller_comment_bodies = _review_policy.controller_comment_bodies
@@ -137,6 +139,9 @@ def run_gh(
     check: bool = True,
 ) -> subprocess.CompletedProcess[str]:
     """Run one bounded GitHub CLI command."""
+    if _mutates(args):
+        # Anything this process writes may change the comment stream it reads.
+        _COMMENT_RECORDS.clear()
     command = ["gh", *args]
     try:
         proc = subprocess.run(
@@ -389,8 +394,72 @@ def flatten_pages(value: object | None) -> list[dict[str, Any]]:
     return result
 
 
+# One controller invocation reads a PR's comments for several trust streams
+# (review markers, model markers, provenance). They are one endpoint, so fetch
+# it once and pass the state along; any write this process makes drops it.
+_COMMENT_RECORDS: dict[int, list[dict[str, Any]]] = {}
+_READ_ONLY_COMMANDS = frozenset({
+    ("pr", "view"), ("pr", "diff"), ("pr", "list"), ("pr", "checks"),
+    ("issue", "view"), ("issue", "list"), ("run", "list"), ("run", "view"),
+})
+_READ_ONLY_FLAGS = frozenset({"--paginate", "--slurp", "--jq", "-q", "--cache", "-H", "--header"})
+
+
+def _mutates(args: list[str]) -> bool:
+    """Whether a gh invocation can write (anything but a plain ``gh api`` GET)."""
+    if len(args) >= 2 and (args[0], args[1]) in _READ_ONLY_COMMANDS:
+        return False
+    if not args or args[0] != "api":
+        return True
+    return any(
+        flag in ("-X", "--method", "-f", "-F", "--field", "--raw-field", "--input")
+        or flag.startswith(("--method=", "-X"))
+        for flag in args[1:]
+        if flag.startswith("-") and flag not in _READ_ONLY_FLAGS
+    )
+
+
+_COMMENT_SCOPE: list[bool] = []
+
+
+def comment_snapshot(func: Any) -> Any:
+    """Share one comment read across a top-level controller command.
+
+    Outside such a command every read is fresh. Inside it, the PR's comments
+    are fetched once and passed along until this process writes anything.
+    """
+    import functools
+
+    @functools.wraps(func)
+    def wrapper(*args: Any, **kwargs: Any) -> Any:
+        _COMMENT_SCOPE.append(True)
+        try:
+            return func(*args, **kwargs)
+        finally:
+            _COMMENT_SCOPE.pop()
+            if not _COMMENT_SCOPE:
+                _COMMENT_RECORDS.clear()
+
+    return wrapper
+
+
 def issue_comment_records(pr_number: int) -> list[dict[str, Any]]:
-    """Return raw issue-comment payloads for one pull request."""
+    """Return raw issue-comment payloads for one pull request.
+
+    Reads go to ``repos/{repo}/issues/{n}/comments``; inside a
+    :func:`comment_snapshot` command they are memoized until a write.
+    """
+    if not _COMMENT_SCOPE:
+        return _fetch_issue_comment_records(pr_number)
+    cached = _COMMENT_RECORDS.get(pr_number)
+    if cached is not None:
+        return list(cached)
+    records = _fetch_issue_comment_records(pr_number)
+    _COMMENT_RECORDS[pr_number] = records
+    return list(records)
+
+
+def _fetch_issue_comment_records(pr_number: int) -> list[dict[str, Any]]:
     pages = gh_json(
         [
             "api",
@@ -547,27 +616,22 @@ MAX_BASE_MERGE_FILES = 300
 MAX_BASE_MERGE_CHAIN = 5
 
 
-def _blob_at(path: str, ref: str) -> str | None:
-    """Blob SHA of ``path`` at ``ref``, or ``None`` when it does not exist there."""
-    proc = run_gh(["api", f"repos/{REPO}/contents/{path}?ref={ref}"], check=False)
-    if proc.returncode:
-        if "Not Found" in proc.stderr or "404" in proc.stderr:
-            return None
-        raise RuntimeError(f"could not read {path} at {ref}: {proc.stderr.strip()}")
-    payload = json_object(json.loads(proc.stdout or "null"))
-    return str(payload.get("sha") or "") if payload is not None else None
+def _compare(base: str, head: str) -> dict[str, Any] | None:
+    return json_object(gh_json(["api", f"repos/{REPO}/compare/{base}...{head}"]))
 
 
-def clean_base_merge_parent(head: str) -> str | None:
+def clean_base_merge_parent(head: str, *, base_branch: str) -> str | None:
     """The PR-side parent when ``head`` only merged the default branch in, else ``None``.
 
-    "Update branch" (or an operator sync) adds a merge commit authored by whoever
-    clicked it, so the head loses its attested author although it contributes no
-    code of its own. That is provable from GitHub alone: the head has exactly two
-    parents, the second is already on the default branch, and every file the merge
-    changes relative to the PR's previous head is byte-identical to the default
-    branch's version (deleted files are absent there too). A conflict resolution or
-    any extra edit breaks that, and the function fails closed.
+    "Update branch" (or an operator or Rotisserie sync) adds a merge commit
+    authored by whoever ran it, so the head loses its attested author although
+    it contributes no code of its own. That is provable from GitHub with three
+    reads: the head commit (two parents), ``theirs...base`` (the second parent
+    is on the default branch), and ``theirs...head``. Because ``theirs`` is an
+    ancestor of ``head``, that last diff is exactly what the head adds on top of
+    the default branch; ``ours...head`` is what the merge brought in. A file in
+    both was changed by the merge relative to the default branch's version: a
+    conflict resolution or an extra edit. Any such overlap fails closed.
     """
     commit = json_object(gh_json(["api", f"repos/{REPO}/commits/{head}"]))
     if commit is None or str(commit.get("sha") or "") != head:
@@ -580,43 +644,40 @@ def clean_base_merge_parent(head: str) -> str | None:
     if len(parents) != 2 or not all(HEAD_RE.fullmatch(sha) for sha in parents):
         return None
     ours, theirs = parents
-    repo = json_object(gh_json(["api", f"repos/{REPO}"]))
-    base = str(repo.get("default_branch") or "") if repo is not None else ""
-    if not base:
+    if not base_branch:
         return None
-    on_base = json_object(gh_json(["api", f"repos/{REPO}/compare/{theirs}...{base}"]))
+    on_base = _compare(theirs, base_branch)
     if on_base is None or on_base.get("status") not in ("ahead", "identical"):
         return None
-    diff = json_object(gh_json(["api", f"repos/{REPO}/compare/{ours}...{head}"]))
-    files = json_array(diff.get("files")) if diff is not None else None
-    if files is None or len(files) >= MAX_BASE_MERGE_FILES:
-        return None
-    for raw in files:
-        row = json_object(raw)
-        if row is None:
+
+    def changed(diff: dict[str, Any] | None) -> set[str] | None:
+        files = json_array(diff.get("files")) if diff is not None else None
+        if files is None or len(files) >= MAX_BASE_MERGE_FILES:
             return None
-        path = str(row.get("filename") or "")
-        status = str(row.get("status") or "")
-        if not path:
-            return None
-        if status == "removed":
-            if _blob_at(path, theirs) is not None:
+        paths: set[str] = set()
+        for raw in files:
+            row = json_object(raw)
+            if row is None or not row.get("filename"):
                 return None
-            continue
-        if not row.get("sha") or _blob_at(path, theirs) != str(row["sha"]):
-            return None
-        previous = str(row.get("previous_filename") or "")
-        if status == "renamed" and previous and _blob_at(previous, theirs) is not None:
-            return None
+            paths.add(str(row["filename"]))
+            if row.get("previous_filename"):
+                paths.add(str(row["previous_filename"]))
+        return paths
+
+    brought_in = changed(_compare(ours, head))
+    beyond_base = changed(_compare(theirs, head))
+    if brought_in is None or beyond_base is None or brought_in & beyond_base:
+        return None
     return ours
 
 
-def inherited_base_merge_identity(pr_number: int, head: str) -> tuple[str, str] | None:
+def inherited_base_merge_identity(
+    pr_number: int, head: str, *, base_branch: str, comments: list[str]
+) -> tuple[str, str] | None:
     """The attested author of the code under a chain of clean default-branch merges."""
-    comments = model_comment_bodies(pr_number)
     current = head
     for _ in range(MAX_BASE_MERGE_CHAIN):
-        parent = clean_base_merge_parent(current)
+        parent = clean_base_merge_parent(current, base_branch=base_branch)
         if parent is None:
             return None
         identity = current_head_author_identity(comments, pr=pr_number, head=parent)
@@ -627,7 +688,11 @@ def inherited_base_merge_identity(pr_number: int, head: str) -> tuple[str, str] 
 
 
 def attest_exact_head_author(
-    *, pr_number: int, head: str, pr: dict[str, Any]
+    *,
+    pr_number: int,
+    head: str,
+    pr: dict[str, Any],
+    model_comments: list[str] | None = None,
 ) -> tuple[str, str] | None:
     """Write the missing controller author attestation for one exact head.
 
@@ -666,11 +731,10 @@ def attest_exact_head_author(
     """
     if "factory" not in labels_of(pr):
         return None
-    if current_head_author_identity(
-        model_comment_bodies(pr_number), pr=pr_number, head=head
-    ) is not None:
+    comments = model_comment_bodies(pr_number) if model_comments is None else model_comments
+    if current_head_author_identity(comments, pr=pr_number, head=head) is not None:
         return None
-    contributors = wrapper_recorded_contributors(pr_number, head=head)
+    contributors = current_head_contributors(comments, pr=pr_number, head=head)
     if len(contributors) == 1:
         worker = next(iter(contributors))
         try:
@@ -690,7 +754,12 @@ def attest_exact_head_author(
     if len(contributors) > 1:
         return None
     # A merge that only brought the default branch in keeps the PR's author.
-    inherited = inherited_base_merge_identity(pr_number, head)
+    inherited = inherited_base_merge_identity(
+        pr_number,
+        head,
+        base_branch=str(pr.get("baseRefName") or ""),
+        comments=comments,
+    )
     if inherited is not None:
         model, agent = inherited
         marker = agent_model_author_marker(pr=pr_number, head=head, model=model, agent=agent)
@@ -792,14 +861,18 @@ def reconcile_provenance(
         return {"pr": pr_number, "status": "already-attested", "head": head}
     identity = attest_exact_head_author(pr_number=pr_number, head=head, pr=pr)
     if identity is None:
+        # Missing attribution is a diagnostic, not a blocker: known authors from
+        # earlier heads still bind the review gate, and nothing is invented.
+        replace_factory_labels(pr_number, "factory:unowned", "factory:review")
         return {
             "pr": pr_number,
-            "status": "unattested",
+            "status": "released-unattested",
             "head": head,
             "reason": (
-                "no owner-attested exact-head identity: the pull-request author, "
-                "the head commit identity, or the Model trailer is untrusted; "
-                "repair the head through a numbered worker wrapper instead"
+                "no trusted exact-head author identity (the pull-request author, "
+                "the head commit identity, or the Model trailer is untrusted); "
+                "released to review anyway: authors recorded on earlier heads "
+                "still may not approve it"
             ),
         }
     model, agent = identity
@@ -849,12 +922,12 @@ def persist_cross_model_review_marker(
     head: str,
     reviewer: str,
 ) -> str | None:
-    """Write the controller review-model marker when identities and families differ.
+    """Record which model the trusted runtime executed for one approval.
 
-    The reviewer cannot declare the author's model: that identity is read from
-    the controller-authored author marker recorded at push time. Same-family
-    models and same-agent reviews are skipped so the merge gate stays fail
-    closed.
+    The record is written for every approval whose executed model is known,
+    including one that turns out to be self-review, so the gate can tell known
+    self-review apart from a missing record. The reviewer cannot declare its
+    own model: it comes from the trusted Entry job's runtime selection.
 
     Args:
         pr_number: Pull request number.
@@ -862,55 +935,32 @@ def persist_cross_model_review_marker(
         reviewer: Factory worker the controller launched for this review.
 
     Returns:
-        Marker text when a qualifying cross-model review was recorded.
+        Marker text when the executed reviewer model is known.
     """
-    recorded = current_head_author_identity(
-        model_comment_bodies(pr_number),
-        pr=pr_number,
-        head=head,
-    )
     reviewer_model = model_for_trusted_review_session(reviewer)
-    if recorded is None or reviewer_model is None:
+    if not reviewer_model:
         return None
-    author_model, author_agent = recorded
-    if marker_model_token(author_agent) == marker_model_token(reviewer):
-        return None
-    if normalize_model_family(author_model) == normalize_model_family(reviewer_model):
-        return None
-    marker = agent_model_review_marker(
-        pr=pr_number,
-        head=head,
-        author_model=author_model,
-        reviewer_model=reviewer_model,
-        author_agent=author_agent,
-        reviewer_agent=reviewer,
+    marker = reviewer_model_marker(
+        pr=pr_number, head=head, reviewer_model=reviewer_model, reviewer_agent=reviewer
     )
     run_gh(["issue", "comment", str(pr_number), "--repo", REPO, "--body", marker])
     return marker
 
 
-def same_model_review(*, pr_number: int, head: str, reviewer: str) -> tuple[str, str] | None:
-    """(author model, reviewer model) when the head's author is attested but this
-    reviewer shares its agent or model family, so its approval cannot count.
+def review_eligibility(
+    pr_number: int,
+    head: str,
+    *,
+    approvers: set[str] | list[str] | tuple[str, ...],
+    model_comments: list[str] | None = None,
+) -> Any:
+    """The owner's review rule for one exact head, from trusted controller records.
 
-    Returns ``None`` when the author is unknown or the reviewer model cannot be
-    established: those are real provenance gaps and stay fail closed.
+    Every promoter (review callback, CI reconciliation, merge authorization)
+    calls this one function, so they cannot disagree about self-review.
     """
-    recorded = current_head_author_identity(
-        model_comment_bodies(pr_number), pr=pr_number, head=head
-    )
-    try:
-        reviewer_model = model_for_trusted_review_session(reviewer)
-    except RuntimeError:
-        return None
-    if recorded is None or not reviewer_model:
-        return None
-    author_model, author_agent = recorded
-    if marker_model_token(author_agent) == marker_model_token(reviewer) or (
-        normalize_model_family(author_model) == normalize_model_family(reviewer_model)
-    ):
-        return author_model, reviewer_model
-    return None
+    comments = model_comments if model_comments is not None else model_comment_bodies(pr_number)
+    return evaluate_review_eligibility(comments, pr=pr_number, head=head, approvers=approvers)
 
 
 def redact_review_text(text: str) -> str:
@@ -1315,6 +1365,7 @@ def persist_repair_handoff(
         replace_factory_labels(pr_number, "factory:unowned", "factory:changes-requested")
 
 
+@comment_snapshot
 def reconcile_ci_pr(pr_number: int) -> dict[str, Any]:
     """Reconcile one CI PR using exact-head controller authorities."""
     pr = pr_json(pr_number)
@@ -1375,34 +1426,29 @@ def reconcile_ci_pr(pr_number: int) -> dict[str, Any]:
             "status": "retry-ci",
             "reason": f"semantic authorization could not be determined: {exc}",
         }
+    # CI reconciliation is also a ready-promoter, not just the review callback.
+    # Both enforce the same rule: a model known to have authored this PR cannot
+    # approve it. Anything short of an eligible approval returns to review for
+    # another model; it never parks the PR in factory:blocked.
+    review_gate = review_eligibility(
+        pr_number, head, approvers=approvers, model_comments=model_comments
+    )
     authorized = head_has_authorized_approval(
         contributors=contributors,
         approvers=approvers,
         provenance_complete=provenance_complete,
+        model_cleared=review_gate.cleared_agents,
     )
     if not authorized:
         replace_factory_labels(pr_number, "factory:unowned", "factory:review")
         return {"pr": pr_number, "status": "review", "head": head}
-
-    # CI reconciliation is also a ready-promoter, not just the review callback.
-    # Both must enforce the same trusted exact-head cross-model identity gate.
-    try:
-        cross_model = head_has_cross_model_review(
-            model_comment_bodies(pr_number), pr=pr_number, head=head
-        )
-    except (RuntimeError, json.JSONDecodeError) as exc:
+    if not review_gate.eligible:
+        replace_factory_labels(pr_number, "factory:unowned", "factory:review")
         return {
             "pr": pr_number,
-            "status": "retry-ci",
-            "reason": f"cross-model provenance could not be inspected: {exc}",
-        }
-    if not cross_model:
-        replace_factory_labels(pr_number, "factory:unowned", "factory:blocked")
-        return {
-            "pr": pr_number,
-            "status": "cross-model-provenance-blocked",
+            "status": review_gate.status,
             "head": head,
-            "reason": "trusted exact-head author/reviewer model markers are missing",
+            "reason": review_gate.reason,
         }
 
     mechanical = mechanical_merge_gate(pr_number, head)
@@ -1936,6 +1982,7 @@ def return_to_review(
     return {"status": status, "head": head, "producer": producer}
 
 
+@comment_snapshot
 def handle_review(
     *,
     worker: str,
@@ -2331,38 +2378,18 @@ def handle_review(
             stage="factory:blocked",
         )
 
-    # A semantic approval alone cannot make this head mergeable. If an agent
-    # bypassed the wrapper's trusted contribution record, the cross-model
-    # gate cannot establish the author and MUST fail closed instead of sending
-    # the same unchanged head through another costly reviewer session.
-    if not head_has_cross_model_review(
-        model_comment_bodies(pr_number), pr=pr_number, head=reviewed_head
-    ):
-        same = same_model_review(pr_number=pr_number, head=reviewed_head, reviewer=worker)
-        if same is not None:
-            # The author is known; this reviewer just cannot count for it. That is
-            # not a provenance fault, and parking the PR in factory:blocked strands
-            # an approvable head forever. Send it back for a different model.
-            author_model, reviewer_model = same
-            return return_to_review(
-                pr_number=pr_number,
-                branch=branch,
-                worker=worker,
-                reviewer=worker,
-                verdict=verdict,
-                excerpt="",
-                note=(
-                    f"This approval came from `{reviewer_model}`, the same model family as "
-                    f"the head's author (`{author_model}`), so it cannot satisfy the "
-                    "cross-model review gate. The unchanged head returns to review for a "
-                    "reviewer from a different model family; no code change is needed."
-                ),
-                status="same-model-review",
-                head=reviewed_head,
-                producer=producer,
-                marker=marker,
-                stage="factory:review",
-            )
+    # A semantic approval alone cannot make this head mergeable: a model known
+    # to have authored this PR must not approve it. That is the only model rule.
+    # Missing attribution does not block, and a wrong reviewer never strands
+    # the PR: it returns to review so a different model is selected.
+    review_gate = review_eligibility(
+        pr_number,
+        reviewed_head,
+        # This verdict is the approval under evaluation; promotion below
+        # re-reads the comment stream for the full approver set.
+        approvers={worker},
+    )
+    if not review_gate.eligible:
         return return_to_review(
             pr_number=pr_number,
             branch=branch,
@@ -2371,22 +2398,14 @@ def handle_review(
             verdict=verdict,
             excerpt="",
             note=(
-                "Blocked: exact-head cross-model author/reviewer provenance is "
-                "missing or invalid. Exact-head authorship is attested "
-                "automatically when the head commit identity is trusted, so this "
-                "head has no attributable author: verify the trusted wrapper's "
-                "contributor recording, or whether the head commit is attributed "
-                "to a foreign account or carries conflicting `Model:` trailers. "
-                "Do not re-review this unchanged head; an owner-authored head "
-                "that can be reconciled explicitly may be attested from trusted "
-                "main with `factory-review-controller.py reconcile-provenance "
-                f"--pr {pr_number}`."
+                f"{review_gate.reason} The unchanged head returns to review for an "
+                "eligible model; no code change is needed."
             ),
-            status="cross-model-provenance-blocked",
+            status=review_gate.status,
             head=reviewed_head,
             producer=producer,
             marker=marker,
-            stage="factory:blocked",
+            stage="factory:review",
         )
 
     mechanical = mechanical_merge_gate(pr_number, reviewed_head)
@@ -2462,6 +2481,7 @@ def handle_review(
     authorized = approval_can_promote(
         contributors=contributors,
         provenance_complete=provenance_complete,
+        model_cleared=review_gate.cleared_agents,
         reviewer=worker,
         reviewed_head=reviewed_head,
         current_head=latest_head,
@@ -2471,9 +2491,8 @@ def handle_review(
     )
     if not authorized:
         note = (
-            "Contributor provenance is not recorded for this head, so two distinct "
-            "independent factory approvals are required before it can be ready."
-            if not provenance_complete
+            "No approval of this head is independent of its contributors yet."
+            if mechanical_passed
             else f"Approval was denied by controller-side gates: {mechanical['reason']}."
         )
         result = return_to_review(
@@ -2608,6 +2627,7 @@ def reconcile_terminal_pr(pr_number: int) -> dict[str, Any]:
         return {"pr": pr_number, "status": "reconciliation-failed", "error": str(exc)}
 
 
+@comment_snapshot
 def authorize_ready(pr_number: int) -> dict[str, Any]:
     """Validate that a ready PR still has authorization for its current head."""
     pr = pr_json(pr_number)
@@ -2624,11 +2644,10 @@ def authorize_ready(pr_number: int) -> dict[str, Any]:
         head=head,
         producer=producer,
     )
-    cross_model = head_has_cross_model_review(
-        model_comments,
-        pr=pr_number,
-        head=head,
+    review_gate = review_eligibility(
+        pr_number, head, approvers=approvers, model_comments=model_comments
     )
+    cross_model = review_gate.eligible
     authorized = (
         str(pr.get("state")) == "OPEN"
         and "factory:ready" in labels_of(pr)
@@ -2637,6 +2656,7 @@ def authorize_ready(pr_number: int) -> dict[str, Any]:
             contributors=contributors,
             approvers=approvers,
             provenance_complete=provenance_complete,
+            model_cleared=review_gate.cleared_agents,
         )
         and cross_model
         and issue_acceptance_gate(pr_number, head)["decision"] == "pass"

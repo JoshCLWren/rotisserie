@@ -67,6 +67,7 @@
 .github/scripts/factory_provider_registry.py
 .github/scripts/factory_published_model_catalog.py
 .github/scripts/factory_quota_pause.py
+.github/scripts/factory_review_model_guard.py
 .github/scripts/factory_review_policy.py
 .github/scripts/factory_rotisserie_adopter.py
 .github/scripts/factory_rotisserie_capture.py

@@ -76,6 +76,19 @@ def pr_payload(
     }
 
 
+def review_gate_fixture(status: str = "eligible") -> object:
+    """A typed review-eligibility verdict for controller tests."""
+    return _review_policy.ReviewEligibility(
+        eligible=status == "eligible",
+        status=status,
+        author_models=("opencode-go-hy4-flash-free",),
+        qualifying=("glm-4.6",) if status == "eligible" else (),
+        self_reviews=("opencode-go-hy4-flash-free",) if status == "self-review" else (),
+        cleared_agents=(),
+        reason=f"fixture {status}",
+    )
+
+
 def wire_controller(
     monkeypatch: MonkeyPatch,
     module: ModuleType,
@@ -109,7 +122,7 @@ def wire_controller(
     monkeypatch.setattr(module, "model_comment_bodies", lambda _pr: list(comments))
     # Most tests exercise existing semantic/mechanical behavior; independently
     # test the fail-closed cross-model gate with an explicit override below.
-    monkeypatch.setattr(module, "head_has_cross_model_review", lambda *_a, **_kw: True)
+    monkeypatch.setattr(module, "review_eligibility", lambda *_a, **_kw: review_gate_fixture())
     monkeypatch.setattr(
         module,
         "roster_model_for_worker",
@@ -250,10 +263,10 @@ def test_repair_and_reject_verdicts_never_authorize_ready() -> None:
         )
 
 
-def test_unknown_historical_producer_requires_two_distinct_reviewers() -> None:
-    """Backlog PRs without provenance can move safely without fabricated history."""
-    assert not head_has_authorized_approval(approvers={"17"})
-    assert head_has_authorized_approval(approvers={"17", "21"})
+def test_unknown_historical_producer_needs_one_independent_reviewer() -> None:
+    """Missing provenance is a diagnostic, not a second-approval requirement."""
+    assert head_has_authorized_approval(approvers={"17"})
+    assert not head_has_authorized_approval(approvers=set())
 
 
 def test_review_text_redacts_common_secrets() -> None:
@@ -396,10 +409,10 @@ def test_controller_promotes_independent_green_review(monkeypatch: MonkeyPatch) 
     assert transitions[-1]["pr_stage"] == "factory:ready"
 
 
-def test_approved_head_without_cross_model_provenance_is_blocked(
+def test_unverifiable_approval_returns_to_review_never_blocks(
     monkeypatch: MonkeyPatch,
 ) -> None:
-    """A semantic APPROVE cannot loop reviews or become ready without author identity."""
+    """An approval the gate cannot count goes back to review; it never parks the PR."""
     module = load_review_controller()
     payload = pr_payload(worker="17", branch_worker="43")
     transitions, posted, _commands = wire_controller(
@@ -409,7 +422,11 @@ def test_approved_head_without_cross_model_provenance_is_blocked(
         comments=producer_contribution(),
         mechanical=True,
     )
-    monkeypatch.setattr(module, "head_has_cross_model_review", lambda *_a, **_kw: False)
+    monkeypatch.setattr(
+        module,
+        "review_eligibility",
+        lambda *_a, **_kw: review_gate_fixture("reviewer-model-unrecorded"),
+    )
     result = module.handle_review(
         worker="17",
         pr_number=1390,
@@ -417,35 +434,44 @@ def test_approved_head_without_cross_model_provenance_is_blocked(
         reviewed_head=REVIEWED_HEAD,
         review_log="/tmp/model.log",
     )
-    assert result["status"] == "cross-model-provenance-blocked"
-    assert transitions[-1]["pr_stage"] == "factory:blocked"
-    assert all(item["pr_stage"] != "factory:ready" for item in transitions)
-    assert "cross-model" in str(posted[-1]["note"])
+    assert result["status"] == "reviewer-model-unrecorded"
+    assert transitions[-1]["pr_stage"] == "factory:review"
+    assert all(item["pr_stage"] not in ("factory:blocked", "factory:ready") for item in transitions)
+    assert "fixture reviewer-model-unrecorded" in str(posted[-1]["note"])
+
+
+def _gate_comments(*, author_model: str, reviewer_model: str, reviewer_agent: str = "17") -> list[str]:
+    comments = producer_contribution()
+    comments.append(
+        agent_model_author_marker(pr=1390, head=REVIEWED_HEAD, model=author_model, agent="43")
+    )
+    comments.append(
+        _review_policy.reviewer_model_marker(
+            pr=1390, head=REVIEWED_HEAD, reviewer_model=reviewer_model, reviewer_agent=reviewer_agent
+        )
+    )
+    return comments
+
 
 def test_same_model_approval_returns_to_review_instead_of_blocking(
     monkeypatch: MonkeyPatch,
 ) -> None:
-    """A reviewer from the author's model family cannot count, but the head is fine.
+    """Known self-review cannot count, but the head is fine: it goes back to review.
 
     Regression: hy4-flash-free approved its own hy4-flash-free head; the PR was
     parked in factory:blocked as "provenance missing" and never reviewed again.
+    The reviewer ran through another provider spelling of the same weights.
     """
     module = load_review_controller()
+    real_gate = module.review_eligibility
     payload = pr_payload(worker="17", branch_worker="43")
+    comments = _gate_comments(
+        author_model="opencode-go/hy4-flash-free", reviewer_model="vendor/hy4-flash:free"
+    )
     transitions, posted, _commands = wire_controller(
-        monkeypatch,
-        module,
-        [payload],
-        comments=producer_contribution(),
-        mechanical=True,
+        monkeypatch, module, [payload, payload, payload], comments=comments, mechanical=True
     )
-    monkeypatch.setattr(module, "head_has_cross_model_review", lambda *_a, **_kw: False)
-    monkeypatch.setattr(
-        module,
-        "current_head_author_identity",
-        lambda *_a, **_kw: ("opencode-go-hy4-flash-free", "43"),
-    )
-    monkeypatch.setattr(module, "roster_model_for_worker", lambda _w: "opencode-go/hy4-flash-free")
+    monkeypatch.setattr(module, "review_eligibility", real_gate)
     result = module.handle_review(
         worker="17",
         pr_number=1390,
@@ -453,28 +479,49 @@ def test_same_model_approval_returns_to_review_instead_of_blocking(
         reviewed_head=REVIEWED_HEAD,
         review_log="/tmp/model.log",
     )
-    assert result["status"] == "same-model-review"
+    assert result["status"] == "self-review"
     assert transitions[-1]["pr_stage"] == "factory:review"
     assert all(item["pr_stage"] not in ("factory:blocked", "factory:ready") for item in transitions)
-    assert "same model family" in str(posted[-1]["note"])
+    assert "Self-review" in str(posted[-1]["note"])
 
 
-def test_unknown_author_still_blocks_even_with_a_reviewer_model(
-    monkeypatch: MonkeyPatch,
-) -> None:
+def test_same_family_different_model_approval_promotes(monkeypatch: MonkeyPatch) -> None:
+    """glm-4.6 reviewing glm-4.5's PR is a different actual model: it counts."""
     module = load_review_controller()
+    real_gate = module.review_eligibility
     payload = pr_payload(worker="17", branch_worker="43")
+    comments = _gate_comments(author_model="zai/glm-4.5", reviewer_model="zai/glm-4.6")
     transitions, _posted, _commands = wire_controller(
-        monkeypatch, module, [payload], comments=producer_contribution(), mechanical=True
+        monkeypatch, module, [payload, payload, payload], comments=comments, mechanical=True
     )
-    monkeypatch.setattr(module, "head_has_cross_model_review", lambda *_a, **_kw: False)
-    monkeypatch.setattr(module, "current_head_author_identity", lambda *_a, **_kw: None)
+    monkeypatch.setattr(module, "review_eligibility", real_gate)
     result = module.handle_review(
         worker="17", pr_number=1390, verdict="approve",
         reviewed_head=REVIEWED_HEAD, review_log="/tmp/model.log",
     )  # fmt: skip
-    assert result["status"] == "cross-model-provenance-blocked"
-    assert transitions[-1]["pr_stage"] == "factory:blocked"
+    assert result["status"] == "ready"
+    assert transitions[-1]["pr_stage"] == "factory:ready"
+
+
+def test_unknown_author_does_not_block_a_trusted_approval(
+    monkeypatch: MonkeyPatch,
+) -> None:
+    """No recorded author model (human, external, unattributed sync) is not a blocker."""
+    module = load_review_controller()
+    real_gate = module.review_eligibility
+    payload = pr_payload(worker="17", branch_worker="43")
+    unattributed = [contributor_comment(pr=1390, head=REVIEWED_HEAD, worker="43", epoch=1)]
+    transitions, _posted, _commands = wire_controller(
+        monkeypatch, module, [payload, payload, payload], comments=unattributed, mechanical=True
+    )
+    monkeypatch.setattr(module, "review_eligibility", real_gate)
+    monkeypatch.setattr(module, "attest_exact_head_author", lambda **_kw: None)
+    result = module.handle_review(
+        worker="17", pr_number=1390, verdict="approve",
+        reviewed_head=REVIEWED_HEAD, review_log="/tmp/model.log",
+    )  # fmt: skip
+    assert result["status"] == "ready"
+    assert all(item["pr_stage"] != "factory:blocked" for item in transitions)
 
 
 def test_controller_mechanical_failure_routes_to_repair(
@@ -1021,9 +1068,8 @@ def test_head_has_authorized_approval_with_contributors() -> None:
         contributors={"42"},
         provenance_complete=True,
     )
-    # No provenance (historical PR) still requires two distinct reviewers.
-    assert not head_has_authorized_approval(approvers={"17"})
-    assert head_has_authorized_approval(approvers={"17", "42"})
+    # No provenance (historical PR): one approval suffices; missing records don't block.
+    assert head_has_authorized_approval(approvers={"17"})
 
 
 def test_approval_can_promote_blocks_contributors() -> None:
@@ -1198,9 +1244,11 @@ def test_superseded_record_still_fails_closed_for_its_own_head() -> None:
     )
     assert contributors == {"29", "59", "77"}
     assert provenance_complete is False
-    # Without a record for its own head, one eligible reviewer is never enough,
-    # however many disqualified workers are stacked in the approver list.
+    # Recorded lineage stays excluded; the one independent reviewer counts.
     assert not head_has_authorized_approval(
+        approvers={"29", "59", "77"}, contributors=contributors
+    )
+    assert head_has_authorized_approval(
         approvers={"17", "29", "59", "77"}, contributors=contributors
     )
     assert head_has_authorized_approval(
@@ -1319,8 +1367,8 @@ def test_multiple_repairers_are_all_excluded() -> None:
     )
 
 
-def test_missing_provenance_fails_closed_instead_of_assuming_independence() -> None:
-    """A head with no controller provenance needs two distinct eligible reviewers."""
+def test_missing_provenance_still_excludes_the_known_producer() -> None:
+    """A head with no controller provenance: the producer still cannot approve it."""
     head = "d" * 40
     contributors, provenance_complete = head_contributor_provenance(
         [], pr=123, head=head, producer="29"
@@ -1328,8 +1376,9 @@ def test_missing_provenance_fails_closed_instead_of_assuming_independence() -> N
     assert contributors == {"29"}
     assert provenance_complete is False
 
-    # The producer plus one other reviewer is not enough to assume independence.
-    assert not head_has_authorized_approval(
+    # The producer cannot approve; one other reviewer is independent.
+    assert not head_has_authorized_approval(approvers={"29"}, contributors=contributors)
+    assert head_has_authorized_approval(
         approvers={"29", "17"},
         contributors=contributors,
     )
@@ -1338,8 +1387,8 @@ def test_missing_provenance_fails_closed_instead_of_assuming_independence() -> N
         approvers={"17", "21"},
         contributors=contributors,
     )
-    # The same fail-closed rule applies to a head with no provenance at all.
-    assert not head_has_authorized_approval(approvers={"17"}, contributors=set())
+    # A head with no provenance at all: one independent approval counts.
+    assert head_has_authorized_approval(approvers={"17"}, contributors=set())
     assert head_has_authorized_approval(approvers={"17", "21"}, contributors=set())
 
 
@@ -1505,10 +1554,10 @@ def test_controller_blocks_a_repairer_from_attesting_its_own_repair(
     assert not any(item.get("marker") for item in posted)
 
 
-def test_controller_fails_closed_without_recorded_contributors(
+def test_controller_promotes_without_recorded_contributors(
     monkeypatch: MonkeyPatch,
 ) -> None:
-    """One reviewer cannot promote a head whose contributor record is missing."""
+    """A missing contributor record does not demand a second independent approval."""
     module = load_review_controller()
     payload = pr_payload(worker="17", branch_worker="43")
     transitions, _posted, _commands = wire_controller(
@@ -1523,9 +1572,8 @@ def test_controller_fails_closed_without_recorded_contributors(
         review_log="/tmp/model.log",
     )
 
-    assert result["status"] == "approved-not-ready"
-    assert transitions[-1]["pr_stage"] == "factory:review"
-    assert all(item["pr_stage"] != "factory:ready" for item in transitions)
+    assert result["status"] == "ready"
+    assert transitions[-1]["pr_stage"] == "factory:ready"
 
 
 def test_controller_promotes_once_provenance_is_recorded(
@@ -2032,14 +2080,18 @@ def test_required_checks_gate_denies_red_ci() -> None:
     assert passed["decision"] == "pass"
 
 
-def test_missing_author_marker_fails_closed() -> None:
-    """A review that names the author model cannot stand in for a missing author record."""
+def test_missing_author_marker_does_not_block() -> None:
+    """No recorded factory author: any trusted approval may count (owner policy)."""
     comments = _cross_model_comments(include_author=False)
-    assert not head_has_cross_model_review(comments, pr=1390, head=REVIEWED_HEAD)
+    verdict = _review_policy.evaluate_review_eligibility(comments, pr=1390, head=REVIEWED_HEAD)
+    assert verdict.eligible and verdict.author_models == ()
+    assert head_has_cross_model_review(comments, pr=1390, head=REVIEWED_HEAD)
+    # The review marker's own author claim is not authorship evidence.
+    assert verdict.qualifying == ("claude-opus-5-5",)
 
 
-def test_conflicting_author_markers_fail_closed() -> None:
-    """Two disagreeing author markers deny the head instead of trusting the review."""
+def test_every_recorded_author_is_excluded() -> None:
+    """With two known authors, neither may approve; the reviewer here is one of them."""
     comments = _cross_model_comments(author_model="grok-4.6")
     comments.append(
         agent_model_author_marker(
@@ -2064,15 +2116,20 @@ def test_effort_suffixes_are_the_same_model_family() -> None:
     assert not head_has_cross_model_review(comments, pr=1390, head=REVIEWED_HEAD)
 
 
-def test_same_agent_review_fails_even_when_models_differ() -> None:
-    """The authoring agent cannot attest a different-model review of its own head."""
+def test_worker_that_switched_models_may_review() -> None:
+    """Identity is the executed model, not the worker id's history."""
     comments = _cross_model_comments(
         author_model="grok-4.6",
         reviewer_model="claude-opus-5-5",
         author_agent="43",
         reviewer_agent="43",
     )
-    assert not head_has_cross_model_review(comments, pr=1390, head=REVIEWED_HEAD)
+    verdict = _review_policy.evaluate_review_eligibility(comments, pr=1390, head=REVIEWED_HEAD)
+    assert verdict.eligible
+    assert verdict.cleared_agents == ("43",)
+    assert _review_policy.head_has_authorized_approval(
+        approvers={"43"}, contributors={"43"}, model_cleared=verdict.cleared_agents
+    )
 
 
 def test_owner_posted_model_markers_are_ignored() -> None:
@@ -2130,7 +2187,7 @@ def test_cursor_footer_agent_ids_are_distinct_identities() -> None:
 def test_controller_writes_review_model_marker_on_approve(
     monkeypatch: MonkeyPatch,
 ) -> None:
-    """Independent approve records a controller-authored cross-model review marker."""
+    """An approval records which model the trusted runtime executed for it."""
     module = load_review_controller()
     payload = pr_payload(worker="17", branch_worker="43")
     comments = producer_contribution()
@@ -2149,13 +2206,8 @@ def test_controller_writes_review_model_marker_on_approve(
         review_log="/tmp/model.log",
     )
     assert result["status"] == "ready"
-    expected = agent_model_review_marker(
-        pr=1390,
-        head=REVIEWED_HEAD,
-        author_model="grok-4.6",
-        reviewer_model="roster-model-17",
-        author_agent="43",
-        reviewer_agent="17",
+    expected = _review_policy.reviewer_model_marker(
+        pr=1390, head=REVIEWED_HEAD, reviewer_model="roster-model-17", reviewer_agent="17"
     )
     assert ["issue", "comment", "1390", "--repo", module.REPO, "--body", expected] in commands
 
@@ -2338,7 +2390,7 @@ def test_attest_exact_head_author_repairs_from_worker_record(
         pr_number=1390, head=REVIEWED_HEAD, pr=payload
     ) == ("z-ai-glm-4.7-flash", "58")
     assert sent[-1][-1] == agent_model_author_marker(
-        pr=1390, head=REVIEWED_HEAD, model="z-ai-glm-4.7-flash", agent="58"
+        pr=1390, head=REVIEWED_HEAD, model="z-ai/glm-4.7-flash", agent="58"
     )
 
 
@@ -2538,7 +2590,7 @@ def test_handmade_head_is_promotable_by_one_independent_review(
     assert agent_model_author_marker(
         pr=1390, head=REVIEWED_HEAD, model="gpt-6", agent="interactive-JoshCLWren"
     ) in bodies
-    assert any(body.startswith("<!-- comic-pile-agent-model-review-v1:") for body in bodies)
+    assert any(body.startswith("<!-- comic-pile-agent-model-review-v2:") for body in bodies)
     assert head_has_cross_model_review(bodies, pr=1390, head=REVIEWED_HEAD) is True
 
 
@@ -2844,7 +2896,11 @@ def test_reconcile_provenance_is_idempotent_for_attested_head(
 def test_reconcile_provenance_fails_closed_without_mutation(
     monkeypatch: MonkeyPatch,
 ) -> None:
-    """Mismatched authors, moved heads, and foreign commits never get attested."""
+    """Mismatched authors, moved heads, and foreign commits never get attested.
+
+    An unattestable head is still released to review (missing attribution is
+    not a blocker); nothing is invented for it.
+    """
     module = load_review_controller()
     sent, transitions = reconcile_harness(
         monkeypatch,
@@ -2857,9 +2913,9 @@ def test_reconcile_provenance_fails_closed_without_mutation(
         },
     )
     result = module.reconcile_provenance(3747, REVIEWED_HEAD)
-    assert result["status"] == "unattested"
+    assert result["status"] == "released-unattested"
     assert sent == []
-    assert transitions == []
+    assert transitions == [(3747, "factory:unowned", "factory:review")]
 
     sent, transitions = reconcile_harness(
         monkeypatch,
@@ -2882,9 +2938,9 @@ def test_reconcile_provenance_fails_closed_without_mutation(
             "commit": {"message": "Merge branch 'main'"},
         },
     )
-    assert module.reconcile_provenance(3747, None)["status"] == "unattested"
+    assert module.reconcile_provenance(3747, None)["status"] == "released-unattested"
     assert sent == []
-    assert transitions == []
+    assert transitions == [(3747, "factory:unowned", "factory:review")]
 
 
 def test_attestation_is_idempotent_and_never_rewrites_a_recorded_head(
@@ -3549,13 +3605,13 @@ def test_controller_never_projects_unverified_approval(
         module, "set_review_approval_visibility",
         lambda number, head: projections.append((number, head)),
     )
-    monkeypatch.setattr(module, "head_has_cross_model_review", lambda *_a, **_kw: False)
+    monkeypatch.setattr(module, "review_eligibility", lambda *_a, **_kw: review_gate_fixture("self-review"))
     result = module.handle_review(
         worker="17", pr_number=1390, verdict="approve",
         reviewed_head=REVIEWED_HEAD, review_log="/tmp/model.log",
     )
-    assert result["status"] == "cross-model-provenance-blocked"
-    assert transitions[-1]["pr_stage"] == "factory:blocked"
+    assert result["status"] == "self-review"
+    assert transitions[-1]["pr_stage"] == "factory:review"
     assert projections == []
 
 
@@ -3640,8 +3696,7 @@ def test_review_route_provenance_records_executed_openrouter_composite(
         pr_number=4922, head=REVIEWED_HEAD, reviewer="52"
     )
     assert marker is not None
-    assert "reviewer-openrouter-free:" in marker
-    assert "author-thinkingmachines-inkling-free:" in marker
+    assert "reviewer-openrouter+free:" in marker
     assert sent and sent[-1][-1] == marker
 
 
@@ -3702,69 +3757,70 @@ def _merge_world(
     module: Any,
     monkeypatch: MonkeyPatch,
     *,
-    files: list[dict[str, object]],
-    blobs: dict[str, str | None],
+    brought_in: list[str],
+    beyond_base: list[str],
     parents: list[str] | None = None,
     on_base: str = "ahead",
-) -> None:
+) -> list[str]:
+    """Fake the three reads the clean-merge proof needs; returns the paths read."""
     payloads: dict[str, object] = {
         f"repos/{module.REPO}/commits/{MERGE_HEAD}": {
             "sha": MERGE_HEAD,
             "parents": [{"sha": sha} for sha in (parents or [OURS, THEIRS])],
         },
-        f"repos/{module.REPO}": {"default_branch": "main"},
         f"repos/{module.REPO}/compare/{THEIRS}...main": {"status": on_base},
-        f"repos/{module.REPO}/compare/{OURS}...{MERGE_HEAD}": {"files": files},
+        f"repos/{module.REPO}/compare/{OURS}...{MERGE_HEAD}": {
+            "files": [{"filename": name} for name in brought_in]
+        },
+        f"repos/{module.REPO}/compare/{THEIRS}...{MERGE_HEAD}": {
+            "files": [{"filename": name} for name in beyond_base]
+        },
     }
-    monkeypatch.setattr(module, "gh_json", lambda args, **_kw: payloads.get(args[1]))
+    reads: list[str] = []
 
-    def run_gh(args: list[str], **_kw: object) -> subprocess.CompletedProcess[str]:
-        path = args[1].split("/contents/", 1)[1].split("?", 1)[0]
-        blob = blobs.get(path)
-        if blob is None:
-            return subprocess.CompletedProcess(args, 1, "", "gh: Not Found (HTTP 404)")
-        return subprocess.CompletedProcess(args, 0, json.dumps({"sha": blob}), "")
+    def gh_json(args: list[str], **_kw: object) -> object:
+        reads.append(args[1])
+        return payloads.get(args[1])
 
-    monkeypatch.setattr(module, "run_gh", run_gh)
+    monkeypatch.setattr(module, "gh_json", gh_json)
+    return reads
 
 
 def test_update_branch_merge_keeps_the_pr_side_parent(monkeypatch: MonkeyPatch) -> None:
     module = load_review_controller()
-    _merge_world(
-        module, monkeypatch,
-        files=[
-            {"filename": "a.rs", "status": "modified", "sha": "b1"},
-            {"filename": "gone.rs", "status": "removed", "sha": ""},
-        ],
-        blobs={"a.rs": "b1", "gone.rs": None},
-    )  # fmt: skip
-    assert module.clean_base_merge_parent(MERGE_HEAD) == OURS
+    reads = _merge_world(
+        module, monkeypatch, brought_in=["a.rs", "gone.rs"], beyond_base=["pr_only.rs"]
+    )
+    assert module.clean_base_merge_parent(MERGE_HEAD, base_branch="main") == OURS
+    # Four reads in total, independent of how many files the merge touched.
+    assert len(reads) == 4
 
 
 @pytest.mark.parametrize(
-    ("files", "blobs", "parents", "on_base"),
+    ("brought_in", "beyond_base", "parents", "on_base"),
     [
-        # A file the merge changed differs from main's: conflict resolution or an edit.
-        ([{"filename": "a.rs", "status": "modified", "sha": "mine"}], {"a.rs": "main"}, None,
-         "ahead"),
-        # A file the merge deleted still exists on main.
-        ([{"filename": "a.rs", "status": "removed", "sha": ""}], {"a.rs": "x"}, None, "ahead"),
+        # A file the merge changed also differs from main: conflict resolution or an edit.
+        (["a.rs"], ["a.rs"], None, "ahead"),
         # Not a merge.
-        ([], {}, [OURS], "ahead"),
+        ([], [], [OURS], "ahead"),
         # The other parent is not on the default branch.
-        ([], {}, None, "diverged"),
+        ([], [], None, "diverged"),
     ],
 )  # fmt: skip
 def test_anything_but_a_clean_base_merge_fails_closed(
     monkeypatch: MonkeyPatch,
-    files: list[dict[str, object]],
-    blobs: dict[str, str | None],
+    brought_in: list[str],
+    beyond_base: list[str],
     parents: list[str] | None,
     on_base: str,
 ) -> None:
     module = load_review_controller()
-    _merge_world(module, monkeypatch, files=files, blobs=blobs, parents=parents, on_base=on_base)
-    assert module.clean_base_merge_parent(MERGE_HEAD) is None
+    _merge_world(
+        module, monkeypatch, brought_in=brought_in, beyond_base=beyond_base,
+        parents=parents, on_base=on_base,
+    )  # fmt: skip
+    assert module.clean_base_merge_parent(MERGE_HEAD, base_branch="main") is None
+    assert module.clean_base_merge_parent(MERGE_HEAD, base_branch="") is None
 
 
 def test_attestation_inherits_the_author_through_a_clean_base_merge(
@@ -3773,16 +3829,21 @@ def test_attestation_inherits_the_author_through_a_clean_base_merge(
     module = load_review_controller()
     monkeypatch.setattr(module, "labels_of", lambda _pr: {"factory"})
     monkeypatch.setattr(module, "model_comment_bodies", lambda _pr: [])
-    monkeypatch.setattr(module, "wrapper_recorded_contributors", lambda *_a, **_kw: set())
     monkeypatch.setattr(
         module,
         "current_head_author_identity",
         lambda _c, *, pr, head: ("opencode-go-hy4-flash-free", "43") if head == OURS else None,
     )
-    monkeypatch.setattr(module, "clean_base_merge_parent", lambda head: OURS if head == MERGE_HEAD else None)
+    monkeypatch.setattr(
+        module,
+        "clean_base_merge_parent",
+        lambda head, *, base_branch: OURS if head == MERGE_HEAD and base_branch == "main" else None,
+    )
     posted: list[list[str]] = []
     monkeypatch.setattr(module, "run_gh", lambda args, **_kw: posted.append(args))
-    identity = module.attest_exact_head_author(pr_number=7, head=MERGE_HEAD, pr={})
+    identity = module.attest_exact_head_author(
+        pr_number=7, head=MERGE_HEAD, pr={"baseRefName": "main"}
+    )
     assert identity == ("opencode-go-hy4-flash-free", "43")
     [comment] = posted
     assert f"head-{MERGE_HEAD}" in comment[-1] and "agent-43" in comment[-1]

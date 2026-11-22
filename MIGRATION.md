@@ -331,12 +331,12 @@ the head-contributor provenance it consumes) now live as a pure domain rule in
 `src/rotisserie/domain/review.py`. A reviewer is eligible only when absent from
 the exact-head contributor set — the recorded change lineage unioned with the
 attested producer, because a repair stacks commits onto the prior head rather
-than rewriting it. A trusted record for the exact head authorizes one
-independent reviewer only when the producer is attested by exact-head evidence;
-an unattested or unknown producer, or a missing or ambiguous record, fails
-closed to two distinct eligible reviewers under distinct stable block codes. A
-caller-supplied producer may cross-check the attestation (a mismatch fails
-closed) but never authorizes single review by itself. The rule generalizes the
+than rewriting it. One independent approval authorizes the head. (Until
+2026-11-22 a missing record or unattested producer demanded two approvals; the
+owner retired that: missing attribution is a diagnostic, never a blocker.) The
+only model rule is that a model known from trusted records to have authored
+the PR must not approve it; see `evaluate_review_eligibility` in
+`factory/.github/scripts/factory_review_policy.py`. The rule generalizes the
 existing single-producer
 `reviewer_is_independent`; `readiness_decision` is intentionally left on the
 legacy check, and wiring the new rule into readiness is a later, additive step.

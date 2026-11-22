@@ -88,12 +88,17 @@ class AppIdentityContractTest(unittest.TestCase):
         self.assertTrue(comment_is_trusted(owner))
         self.assertEqual(trusted_comment_bodies([owner]), ["owner comment"])
 
-    def test_native_approve_without_controller_marker_provenance_needs_two_reviewers(self) -> None:
-        # No contributor markers recorded -> provenance_complete = False
-        # Even with two approvers, producer cannot self-approve
+    def test_native_approve_without_controller_marker_provenance_needs_one_independent(self) -> None:
+        # No contributor markers recorded -> provenance_complete = False.
+        # Missing provenance is not a blocker; the producer still cannot self-approve.
         producer = "48"
-        # Producer is in the excluded set
         self.assertFalse(head_has_authorized_approval(
+            approvers={producer},
+            contributors=set(),
+            producer=producer,
+            provenance_complete=False,
+        ))
+        self.assertTrue(head_has_authorized_approval(
             approvers={producer, "17"},
             contributors=set(),
             producer=producer,
@@ -117,9 +122,8 @@ class AppIdentityContractTest(unittest.TestCase):
     def test_approval_can_promote_requires_controller_provenance(self) -> None:
         head = "a" * 40
         contributors = {"48"}
-        # Without provenance_complete, approval_can_promote fails even with two eligible
-        # because head_has_authorized_approval requires two when provenance incomplete
-        self.assertFalse(approval_can_promote(
+        # Missing provenance no longer requires a second approval
+        self.assertTrue(approval_can_promote(
             reviewer="17",
             reviewed_head=head,
             current_head=head,
