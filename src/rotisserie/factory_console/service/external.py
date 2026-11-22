@@ -261,7 +261,11 @@ def reserve_next(
         chosen = offered
         break
     if chosen is None:
-        return {"status": "held", "reason": "no_eligible_offer", "retry": "refresh_frontier"}
+        return {
+            "status": "conflict" if expected else "held",
+            "reason": "expected_offer_no_longer_eligible" if expected else "no_eligible_offer",
+            "retry": "refresh_frontier",
+        }
     if expected and chosen.target != expected:
         return {
             "status": "conflict",
