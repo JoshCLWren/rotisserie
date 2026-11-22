@@ -24,11 +24,12 @@ eligible only when absent from that set. This is a worker-identity boundary,
 not a model or provider boundary: two workers routed through the same upstream
 model are still distinct contributors.
 
-The evaluation is pure, deterministic, and fails closed. When a trusted record
-exists for the exact revision (``provenance_recorded``), one eligible reviewer
-authorizes it. When no such record exists, the evidence is missing or ambiguous
-and the rule refuses to assume the apparent reviewer never touched the head: it
-requires two distinct eligible reviewers instead.
+The evaluation is pure and deterministic. One eligible reviewer authorizes the
+revision. Missing provenance (``provenance_recorded``) or an unattested producer
+is reported but does not demand a second approval: the owner's rule is that a
+*known* author must not approve its own work, and missing attribution is not
+grounds to block. Known self-review by model identity is enforced by the
+adopter's review-eligibility rule (``factory_review_policy``).
 
 This rule is additive: :func:`rotisserie.domain.policy.readiness_decision` is
 not yet wired to it and still consumes the legacy single-producer
@@ -41,16 +42,15 @@ Invariants (the fail-closed contract this module owns)
 
 * **Always excluded** from the eligible reviewer set: every recorded
   ``contributor`` of the exact head, unioned with the ``producer``.
-* **Single review is allowed only when all three hold:** provenance is recorded
-  for the exact head, the producer is attested by exact-head evidence
-  (``producer_attested``), and the ``producer`` identity is actually present.
-  Any other state requires two distinct eligible reviewers.
+* **One eligible reviewer suffices.** Unrecorded provenance and an unattested
+  producer are diagnostics only; ``INDEPENDENT_REVIEW_UNRECORDED`` and
+  ``INDEPENDENT_REVIEW_PRODUCER_UNKNOWN`` are retained for compatibility and
+  are no longer emitted.
 * **Illegal signals fail closed at construction:** ``producer_attested=True``
   with ``producer=None`` is rejected by :class:`ReviewIndependenceSignals`, so a
   translator cannot grant single-review authority with nothing excluded.
-* **Fail-closed inputs:** unrecorded provenance, an unattested or absent
-  producer, and the absence of any independent approver each hold the head to
-  dual review or block it outright; none can silently satisfy single review.
+* **Fail-closed input:** the absence of any independent approver blocks the
+  head.
 """
 
 from __future__ import annotations
@@ -181,28 +181,16 @@ def evaluate_review_independence(
     """
 
     eligible = signals.eligible_reviewers()
-    single_reviewer_authorized = (
-        signals.provenance_recorded and signals.producer_attested and signals.producer is not None
-    )
-    required = SINGLE_REVIEWER if single_reviewer_authorized else DUAL_REVIEWER
+    # Owner policy (2026-11-22): missing provenance or an unattested producer is
+    # a diagnostic, not grounds to demand a second approval. Known contributors
+    # and the producer stay excluded; one independent approval suffices.
+    required = SINGLE_REVIEWER
     exclusions: list[ReviewIndependenceBlock] = []
     reasons: list[str] = []
 
     if not eligible:
         exclusions.append(ReviewIndependenceBlock.NO_ELIGIBLE_REVIEWER)
         reasons.append("no approver is independent of the exact-head contributor set")
-    elif len(eligible) < required:
-        if not signals.provenance_recorded:
-            code = ReviewIndependenceBlock.INDEPENDENT_REVIEW_UNRECORDED
-            detail = "exact-head provenance is unrecorded"
-        else:
-            code = ReviewIndependenceBlock.INDEPENDENT_REVIEW_PRODUCER_UNKNOWN
-            detail = "the exact-head producer is unattested"
-        exclusions.append(code)
-        reasons.append(
-            f"{detail}: two distinct independent reviewers are required but only "
-            f"{len(eligible)} of the approvers are independent"
-        )
 
     satisfied = not exclusions
     if satisfied:

@@ -67,8 +67,9 @@ def test_approval_remains_scoped_to_exact_head() -> None:
     )
 
 
-def test_unknown_producer_still_requires_two_distinct_approvers() -> None:
-    assert not head_has_authorized_approval(approvers={"19"})
+def test_unknown_producer_needs_one_independent_approver() -> None:
+    assert head_has_authorized_approval(approvers={"19"})
+    assert not head_has_authorized_approval(approvers=set())
     assert head_has_authorized_approval(approvers={"19", "20"})
 
 
@@ -109,7 +110,8 @@ def test_missing_provenance_fails_closed_for_a_known_producer() -> None:
     )
     assert contributors == {"29"}
     assert not provenance_complete
-    assert not head_has_authorized_approval(
+    assert not head_has_authorized_approval(contributors=contributors, approvers={"29"})
+    assert head_has_authorized_approval(
         contributors=contributors,
         approvers={"29", "17"},
     )
