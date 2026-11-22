@@ -11,6 +11,11 @@ such change must be called out here and in its release notes.
 
 ### Fixed
 
+- `outcomes` judged ci-repair by the PR's stage label; it now requires the
+  PR's checks to pass. When a worker fails validation it names the factory
+  gate that rejected the change (e.g. "factory fast checks failed: native
+  ingress/deployment/write guard tests"), which was otherwise only in /tmp on
+  the runner.
 - `report` counted a worker holding an issue and its PR twice, so it
   disagreed with `status` (e.g. 12 vs 6). Both now count one entry per worker.
 - `outcomes --all` could not read routine scheduler passes ("finished without

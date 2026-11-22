@@ -25,6 +25,7 @@ from rotisserie.factory_console.github import (
     string,
     timestamp,
 )
+from rotisserie.factory_console.service import checks
 from rotisserie.factory_console.tracker import (
     DISPATCH_WORKFLOW,
     Assignment,
@@ -112,6 +113,25 @@ def judge(action: str, kind: str, pr: Obj, worker: WorkerOutcome | None) -> tupl
     if stage == wanted_gone:
         return "not-met", f"it is still {stage.removeprefix('factory:')}"
     return "met", f"{goal} (now {stage.removeprefix('factory:') or 'unlabeled'})"
+
+
+FAST_CHECK_LINE = re.compile(r"factory fast checks failed: (?P<what>.+?) \(log: ")
+
+
+def validation_failure(tracker: Tracker, jobs: list[Obj]) -> str:
+    """Which factory gate rejected the worker's change, from its session log.
+
+    The detail is otherwise only in /tmp on the runner. Empty when not found.
+    """
+    session = next((job for job in jobs if string(job, "name").endswith("/ factory")), None)
+    if session is None:
+        return ""
+    try:
+        log = tracker.log(integer(session, "id") or 0)
+    except GitHubError:
+        return ""
+    found = list(FAST_CHECK_LINE.finditer(log))
+    return f"factory fast checks failed: {found[-1].group('what')}" if found else ""
 
 
 ASSIGNMENT_LINE = re.compile(
@@ -217,6 +237,10 @@ def _follow_assignment(
         if string(tracker.run(worker_run), "status") == "completed":
             worker = tracker.worker_outcome(jobs)
             worker_result = str(worker.result)
+            if worker.result is Result.FAILED and "validation" in worker.message:
+                gate = validation_failure(tracker, jobs)
+                if gate:
+                    worker = WorkerOutcome(worker.result, f"{worker.message}; {gate}", worker.pr)
         else:
             worker_result = "running"
     if worker is None and worker_run is not None:
@@ -229,6 +253,15 @@ def _follow_assignment(
             except GitHubError:
                 pr = {}
         goal, goal_text = judge(action, assignment.kind, pr, worker)
+        if action == "ci-repair" and assignment.kind == "pr" and goal == "met" and pr:
+            # The goal is green checks, not a stage label.
+            try:
+                red = checks.failing_checks(github, assignment.number, read_logs=False)
+            except GitHubError:
+                red = []
+            if red:
+                names = ", ".join(item.name for item in red[:3])
+                goal, goal_text = "not-met", f"its checks still fail: {names}"
         if pr.get("merged") is not True and string(pr, "state") == "closed":
             # Closed by a person: the request was overtaken, not missed.
             goal, goal_text = "closed", "the pull request was closed"

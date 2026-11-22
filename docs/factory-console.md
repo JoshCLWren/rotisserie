@@ -190,12 +190,15 @@ worker reported, and whether the goal holds **now**:
 | Action | Goal checked |
 |---|---|
 | `merge-conflict` | GitHub no longer reports the PR as conflicting |
-| `ci-repair` | the PR left the failing-checks stage |
+| `ci-repair` | the PR's checks pass on its current head |
 | `review-findings` | the PR left the changes-requested stage |
 | `review` | the PR has a review decision (ready or changes requested) |
 | implement (issue) | the worker delivered a pull request |
 
 A failed worker never counts as done, even when later work fixed the item.
+When a worker's change was rejected by a factory gate (for example the fast
+checks), the row says which one; that detail is otherwise only in `/tmp` on
+the runner.
 Requests the scheduler deferred count as "not started", not as misses. The
 "Not done" list shows each item whose latest started request missed its goal.
 A PR someone closed counts as "closed" (overtaken), not as a miss.

@@ -1597,3 +1597,56 @@ def test_by_item_flags_items_going_in_circles() -> None:
         ("pr:1", 3, 2, True),
         ("pr:2", 2, 1, False),
     ]
+
+
+def test_outcomes_names_the_factory_gate_that_rejected_a_change(fake: FakeGitHub) -> None:
+    from rotisserie.factory_console.service.outcomes import validation_failure
+    from rotisserie.factory_console.tracker import Tracker
+
+    fake.texts["actions/jobs/41/logs"] = (
+        "x factory fast checks failed: native ingress/deployment/write guard tests "
+        "(log: /tmp/factory-fast-checks-1.log)\n"
+    )
+    jobs: list[Obj] = [job("run / factory", [], job_id=41)]
+    tracker = Tracker(GitHub(REPO, executable="sh"))
+    assert validation_failure(tracker, jobs) == (
+        "factory fast checks failed: native ingress/deployment/write guard tests"
+    )
+    assert validation_failure(tracker, [job("other", [], job_id=42)]) == ""
+
+
+def test_a_ci_repair_goal_is_green_checks_not_a_stage_label(fake: FakeGitHub) -> None:
+    fake.routes["fixed-model-factory-dispatch.yml/runs"] = {
+        "workflow_runs": [
+            {
+                "id": 900,
+                "display_title": "Factory dispatch · pr:3953",
+                "status": "completed",
+                "created_at": "2026-11-21T22:30:00Z",
+            }
+        ]
+    }
+    fake.routes["actions/runs/900/jobs"] = {"jobs": list[JSON](DISPATCH_DONE)}
+    fake.texts["actions/jobs/11/logs"] = dispatched_log(
+        kind="pr", number=3953, action="ci-repair", dispatched_at=int(START.timestamp())
+    )
+    fake.routes["free-model-factory-entry.yml/runs"] = {
+        "workflow_runs": [{"id": 950, "display_title": f"Factory {WORKER} · fixed-model entry"}]
+    }
+    fake.routes["actions/runs/950$"] = {"id": 950, "status": "completed"}
+    fake.routes["actions/runs/950/jobs"] = {
+        "jobs": [job("Persist trusted worker outcome in Neon", [step("Classify")], job_id=31)]
+    }
+    fake.texts["actions/jobs/31/logs"] = "[factory-outcome] work_completed: Repaired\n"
+    fake.routes["pulls/3953$"] = {
+        "state": "open",
+        "labels": [{"name": "factory:review"}],
+        "head": {"sha": "b" * 40},
+    }
+    fake.routes[r"commits/b{40}/check-runs"] = {
+        "check_runs": [{"id": 5, "name": "rust-roll", "conclusion": "failure", "html_url": "u"}]
+    }
+    code, out = invoke(["--json", "outcomes"])
+    request = json.loads(out)["requests"][0]
+    assert request["goal"] == "not-met"
+    assert request["goal_text"] == "its checks still fail: rust-roll"
