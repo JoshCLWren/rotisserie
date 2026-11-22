@@ -7,6 +7,7 @@ code-writing agent is enrolled in the provider/model roster.
 
 from __future__ import annotations
 
+import json
 import re
 from datetime import UTC, datetime
 from types import ModuleType
@@ -97,6 +98,57 @@ def _linked_targets(github: GitHub, offer: frontier.Offer) -> list[int]:
     return [int(link), number] if link != number else [number]
 
 
+def _required_checks_outcome(github: GitHub, number: int) -> str:
+    """Use the same exact-head required-check classification as the dispatcher."""
+    try:
+        values = json.loads(
+            github.gh(
+                "pr", "checks", str(number), "--repo", github.repo,
+                "--required", "--json", "state",
+            )
+        )
+    except (GitHubError, ValueError):
+        return "waiting"
+    if not isinstance(values, list) or not values:
+        return "waiting"
+    states = [
+        str(row.get("state", "")).upper()
+        for row in values if isinstance(row, dict) and isinstance(row.get("state"), str)
+    ]
+    if len(states) != len(values):
+        return "waiting"
+    passed = {"SUCCESS", "NEUTRAL", "SKIPPED"}
+    failed = {"FAILURE", "TIMED_OUT", "CANCELLED", "ACTION_REQUIRED", "STARTUP_FAILURE"}
+    if any(value not in passed | failed for value in states):
+        return "waiting"
+    return "failed" if any(value in failed for value in states) else "passed"
+
+
+def _conflict_without_ci(github: GitHub, number: int, head: str | None) -> bool:
+    """Narrow existing controller exception for a conflicted head with no CI."""
+    if head is None:
+        return False
+    try:
+        pr = obj(github.repo_api(f"pulls/{number}"))
+        if (string(obj(pr.get("head")), "sha") != head
+                or string(pr, "state") != "open"
+                or not (pr.get("mergeable") is False
+                        or string(pr, "mergeable_state").upper() == "DIRTY")):
+            return False
+        response = obj(github.repo_api(f"commits/{head}/check-runs?per_page=100"))
+    except GitHubError:
+        return False
+    runs = response.get("check_runs")
+    if (not isinstance(runs, list) or not isinstance(response.get("total_count"), int)
+            or response["total_count"] != len(runs)):
+        return False
+    return not any(
+        not isinstance(run, dict) or run.get("name") == "CI Summary"
+        or str(run.get("status", "")).lower() != "completed"
+        for run in runs
+    )
+
+
 def _live_offer(github: GitHub, previous: frontier.Offer) -> tuple[bool, str]:
     """Reject moved heads, priority/stage changes, new dependencies and holds."""
     latest = frontier.capture(github, now=datetime.now(UTC))
@@ -118,10 +170,20 @@ def _live_offer(github: GitHub, previous: frontier.Offer) -> tuple[bool, str]:
     if higher:
         return False, "a higher-ranked eligible action appeared"
     kind, number_text = previous.target.split(":")
+    number = int(number_text)
     if kind == "issue":
-        blocked, problem = queue.open_blocker(github, int(number_text))
+        blocked, problem = queue.open_blocker(github, number)
         if blocked:
             return False, problem or "issue dependencies changed"
+    else:
+        checks = _required_checks_outcome(github, number)
+        if checks == "waiting" and not (
+            previous.action == "merge-conflict"
+            and _conflict_without_ci(github, number, previous.head_sha)
+        ):
+            return False, "required CI is still running or unknown"
+        if previous.action == "ci-repair" and checks != "failed":
+            return False, "current head has no terminal required CI failure"
     return True, ""
 
 
