@@ -272,6 +272,13 @@ def add_parser(subcommands: argparse._SubParsersAction[argparse.ArgumentParser])
     )
     _common(reserve)
 
+    revoke = commands.add_parser(
+        "revoke", help="remove an external agent's claim (operator override, logged)"
+    )
+    revoke.add_argument("claim_id", help="claim UUID shown by 'leases' or 'next'")
+    revoke.add_argument("--reason", required=True, help="why the claim is being removed")
+    _common(revoke)
+
     for verb in ("renew", "release", "handoff"):
         lease = commands.add_parser(verb, help=f"{verb} an external fenced claim")
         lease.add_argument("claim_id", help="UUID returned by reserve-next")
@@ -576,6 +583,7 @@ def _help_text() -> str:
             "  rotisserie factory renew UUID --client AGENT",
             "  rotisserie factory release UUID --client AGENT",
             "  rotisserie factory handoff UUID --client AGENT --evidence GITHUB_URL",
+            "  rotisserie factory revoke UUID --reason TEXT  remove an external agent's claim",
             "  rotisserie factory unstick       start the workers that clear the bottleneck",
             "  rotisserie factory outcomes      did the requested work actually happen",
             "  rotisserie factory checks pr:N   why its checks fail",
@@ -689,6 +697,8 @@ def cmd_run(context: Context, arguments: argparse.Namespace) -> Outcome:
     outcome = Outcome(Result.UNKNOWN, EXIT_CODES[Result.UNKNOWN], data)
     stopped_workers: list[str] = []
     attempt = 0
+    if not _take_over_external(context, number, data):
+        return Outcome(Result.FAILED, EXIT_CODES[Result.FAILED], data)
     for attempt in range(TAKE_OVER_ATTEMPTS):
         item = lookup(context.github, kind, number)
         if item.owner:
@@ -713,6 +723,46 @@ def cmd_run(context: Context, arguments: argparse.Namespace) -> Outcome:
         )
     data["take_over_attempts"] = attempt + 1
     return outcome
+
+
+def _take_over_external(context: Context, number: int, data: dict[str, object]) -> bool:
+    """Remove an external agent's claim on the target; the operator asked to take over.
+
+    External agents hold no GitHub worker run to cancel, so without this a
+    takeover would keep finding the target busy until it gave up.
+    """
+    console = context.console
+    try:
+        claim = external.holder(context.github, number)
+    except external.ClaimStoreUnavailable as exc:
+        console.note(
+            f"Can't see outside-agent claims from here ({exc}). If one holds #{number}, "
+            "run 'rotisserie factory revoke' where the factory's Neon connection is set up."
+        )
+        return True
+    except (RuntimeError, ValueError) as exc:
+        console.fail(f"Could not check whether an outside agent holds #{number}: {exc}")
+        return False
+    if claim is None:
+        return True
+    who = f"{claim.get('client')} ({claim.get('actor')})"
+    console.note(f"#{number} is held by outside agent {who}; removing its claim")
+    try:
+        result = external.revoke(
+            context.github,
+            claim_id=str(claim.get("claim_id")),
+            reason=f"operator take-over of #{number}",
+            environment=dict(os.environ),
+        )
+    except (RuntimeError, ValueError) as exc:
+        console.fail(f"Could not remove the outside agent's claim: {exc}")
+        return False
+    if result.get("status") != "revoked":
+        console.fail(f"Could not remove the outside agent's claim: {result.get('reason')}")
+        return False
+    data["revoked_external_claim"] = result
+    console.ok("Outside agent's claim removed", who)
+    return True
 
 
 def _show_request(console: Console, request: Request) -> None:
@@ -1814,7 +1864,14 @@ def cmd_next(context: Context, arguments: argparse.Namespace) -> Outcome:
 def cmd_external(context: Context, arguments: argparse.Namespace) -> Outcome:
     verb = arguments.factory_command
     try:
-        if verb == "reserve-next":
+        if verb == "revoke":
+            outcome = external.revoke(
+                context.github,
+                claim_id=arguments.claim_id,
+                reason=arguments.reason,
+                environment=dict(os.environ),
+            )
+        elif verb == "reserve-next":
             outcome = external.reserve_next(
                 context.github,
                 client=arguments.client,
@@ -1840,7 +1897,7 @@ def cmd_external(context: Context, arguments: argparse.Namespace) -> Outcome:
             {"status": "held", "reason": str(exc), "retry": "refresh_frontier"},
         )
     state = str(outcome.get("status"))
-    if state in ("reserved", "renewed", "released"):
+    if state in ("reserved", "renewed", "released", "revoked"):
         context.console.ok(f"External claim {state}")
         handoff = outcome.get("handoff")
         if isinstance(handoff, dict):
@@ -2715,6 +2772,7 @@ HANDLERS = {
     "renew": cmd_external,
     "release": cmd_external,
     "handoff": cmd_external,
+    "revoke": cmd_external,
     "unstick": cmd_unstick,
     "outcomes": cmd_outcomes,
     "close": cmd_close,

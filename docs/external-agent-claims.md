@@ -111,6 +111,26 @@ fenced claim even after expiry. Recovery without owner cooperation requires
 independent authoritative inactivity evidence and explicit reconciliation;
 never delete a lease merely because its timestamp elapsed.
 
+### Operator override
+
+The operator can always take an item back. Either remove the claim directly:
+
+```bash
+rotisserie factory revoke UUID --reason "phone agent went offline"
+```
+
+or take the item over for a factory worker, which removes any outside agent's
+claim on it first:
+
+```bash
+rotisserie factory run PROVIDER auto --target pr:123 --take-over
+```
+
+Both need the factory's Neon connection (`FACTORY_STATE_DSN_FILE`) and write
+access to the repository. Removal is fenced by the claim UUID, so a newer claim
+on the same item is never touched, and the event log records who removed whose
+claim and why. Nothing removes an outside agent's claim automatically.
+
 External claims count in normal factory WIP and completion backpressure; they
 do not consume fictitious numeric provider slots. Owner-promoted priorities and
 review independence remain in force. Completing the task needs independent

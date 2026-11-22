@@ -1274,3 +1274,105 @@ def external_claim_details(
             await conn.close()
 
     return asyncio.run(_read())
+
+
+async def _external_holder(repo: str, number: int) -> dict[str, Any] | None:
+    conn = await measured_connect(dsn=_dsn(), timeout=8, command_timeout=8)
+    try:
+        row = await conn.fetchrow(
+            "SELECT payload, expires_at FROM public.factory_state_kv WHERE cache_key=$1",
+            _target_key(repo, number),
+        )
+    finally:
+        await conn.close()
+    if not row:
+        return None
+    payload = row["payload"]
+    value = json.loads(payload) if isinstance(payload, str) else payload
+    record = value[0] if isinstance(value, list) and value else {}
+    if not isinstance(record, dict) or record.get("external") is not True:
+        return None
+    expires_at = row["expires_at"]
+    return {
+        "claim_id": str(record.get("claim_id") or ""),
+        "actor": str(record.get("actor") or ""),
+        "client": str(record.get("client") or ""),
+        "target": str(record.get("target") or ""),
+        "action": str(record.get("action") or ""),
+        "targets": [int(n) for n in record.get("targets") or [] if str(n).isdecimal()],
+        "expires_at": expires_at.isoformat() if hasattr(expires_at, "isoformat") else str(expires_at),
+    }
+
+
+def external_holder(repo: str, number: int) -> dict[str, Any] | None:
+    """Return the external claim holding one target key, or None."""
+    if not re.fullmatch(r"[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+", repo) or type(number) is not int or number < 1:
+        raise ValueError("invalid external holder query")
+    if not enabled():
+        raise RuntimeError("Neon is not configured")
+    return asyncio.run(_external_holder(repo, number))
+
+
+async def _revoke_external(repo: str, operator: str, token: str, reason: str) -> dict[str, Any]:
+    key = _external_key(repo, token)
+    conn = await measured_connect(dsn=_dsn(), timeout=8, command_timeout=12)
+    try:
+        async with conn.transaction():
+            await conn.execute(
+                "SELECT pg_advisory_xact_lock(hashtextextended($1, 0))", LEASE_PREFIX + repo
+            )
+            row = await conn.fetchrow(
+                "SELECT payload FROM public.factory_state_kv WHERE cache_key=$1", key
+            )
+            if not row:
+                return {"status": "conflict", "reason": "claim_missing_or_replaced"}
+            payload = row["payload"]
+            value = json.loads(payload) if isinstance(payload, str) else payload
+            record = value[0] if isinstance(value, list) and value else {}
+            if record.get("claim_id") != token or record.get("external") is not True:
+                return {"status": "conflict", "reason": "stale_claim"}
+            numbers = [int(n) for n in record.get("targets") or []]
+            keys = [key, *(_target_key(repo, n) for n in numbers)]
+            # Fenced by the exact claim UUID: a newer claim on the same target
+            # is never removed by revoking an older one.
+            await conn.execute(
+                """DELETE FROM public.factory_state_kv
+                   WHERE cache_key=ANY($1::text[]) AND payload->0->>'claim_id'=$2""",
+                keys, token,
+            )
+            await conn.execute(
+                """INSERT INTO public.factory_state_events
+                   (source,event_type,subject_type,subject_number,detail)
+                   VALUES ('rotisserie-external','external_revoked','target',$1,$2::jsonb)""",
+                numbers[-1] if numbers else 0, json.dumps({
+                    "repo": repo, "claim_id": token, "operator": operator,
+                    "actor": record.get("actor"), "client": record.get("client"),
+                    "target": record.get("target"), "action": record.get("action"),
+                    "reason": reason,
+                }),
+            )
+        return {
+            "status": "revoked", "claim_id": token, "targets": numbers,
+            "client": record.get("client"), "actor": record.get("actor"),
+        }
+    finally:
+        await conn.close()
+
+
+def revoke_external(repo: str, operator: str, claim_id: str, *, reason: str) -> dict[str, Any]:
+    """Operator-initiated, UUID-fenced removal of one external claim.
+
+    Never automatic: only an explicit operator request (revoke or take-over)
+    calls this, and the event log records who revoked whose claim and why.
+    """
+    _external_request(repo, operator, "operator", [1])
+    try:
+        uuid.UUID(claim_id)
+    except (ValueError, AttributeError):
+        raise ValueError("invalid claim ID") from None
+    reason = reason.strip()
+    if not reason or len(reason) > 500 or any(c in reason for c in "\r\n"):
+        raise ValueError("revoking a claim needs a one-line reason")
+    if not enabled():
+        raise RuntimeError("trusted external claims require Neon")
+    return asyncio.run(_revoke_external(repo, operator, claim_id, reason))

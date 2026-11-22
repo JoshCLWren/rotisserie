@@ -737,6 +737,92 @@ def test_take_over_stops_the_holder_first(fake: FakeGitHub) -> None:
     assert "#3953 is free" in out
 
 
+def test_take_over_removes_an_outside_agents_claim_first(
+    fake: FakeGitHub, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from rotisserie.factory_console.service import external
+
+    claim = "11111111-1111-4111-8111-111111111111"
+    revoked: list[dict[str, str]] = []
+    monkeypatch.setattr(
+        external,
+        "holder",
+        lambda github, number: (
+            None if revoked else {"claim_id": claim, "client": "codebuff-phone", "actor": "josh"}
+        ),
+    )
+
+    def revoke(github: object, **kwargs: str) -> dict[str, object]:
+        revoked.append(kwargs)
+        return {"status": "revoked", "claim_id": kwargs["claim_id"]}
+
+    monkeypatch.setattr(external, "revoke", revoke)
+    scheduler_routes(fake, log=dispatched_log())
+    fake.routes["issues/3953$"] = {"number": 3953, "title": "t", "labels": [], "state": "open"}
+    code, out = invoke(
+        [
+            "--json",
+            "run",
+            "opencode-go",
+            "auto",
+            "--target",
+            "issue:3953",
+            "--take-over",
+            "--no-wait",
+        ],
+    )
+    assert code == 0, out
+    assert revoked and revoked[0]["claim_id"] == claim
+    assert revoked[0]["reason"] == "operator take-over of #3953"
+    assert json.loads(out)["revoked_external_claim"]["claim_id"] == claim
+    assert fake.dispatch_inputs()["force_slot"] == "true"
+
+
+def test_take_over_stops_when_the_outside_claim_cannot_be_removed(
+    fake: FakeGitHub, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from rotisserie.factory_console.service import external
+
+    monkeypatch.setattr(
+        external,
+        "holder",
+        lambda github, number: {
+            "claim_id": "11111111-1111-4111-8111-111111111111",
+            "client": "codebuff-phone",
+            "actor": "josh",
+        },
+    )
+    monkeypatch.setattr(
+        external, "revoke", lambda github, **kwargs: {"status": "conflict", "reason": "stale_claim"}
+    )
+    scheduler_routes(fake, log=dispatched_log())
+    fake.routes["issues/3953$"] = {"number": 3953, "title": "t", "labels": [], "state": "open"}
+    code, out = invoke(
+        ["run", "opencode-go", "auto", "--target", "issue:3953", "--take-over", "--no-wait"]
+    )
+    assert code != 0
+    assert "stale_claim" in out
+    assert not any(call[0] == "workflow" for call in fake.calls)
+
+
+def test_take_over_without_neon_explains_and_continues(
+    fake: FakeGitHub, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from rotisserie.factory_console.service import external
+
+    def unavailable(github: object, number: int) -> None:
+        raise external.ClaimStoreUnavailable("FACTORY_STATE_DSN_FILE is not set")
+
+    monkeypatch.setattr(external, "holder", unavailable)
+    scheduler_routes(fake, log=dispatched_log())
+    fake.routes["issues/3953$"] = {"number": 3953, "title": "t", "labels": [], "state": "open"}
+    code, out = invoke(
+        ["run", "opencode-go", "auto", "--target", "issue:3953", "--take-over", "--no-wait"]
+    )
+    assert code == 0, out
+    assert "rotisserie factory revoke" in out
+
+
 # other commands ---------------------------------------------------------------------
 
 
@@ -2320,3 +2406,36 @@ def test_leases_read_neon_when_configured(
         ("#301", False),
     ]
     assert data["rows"][1]["holder"].startswith("operation scheduler-9")
+
+
+def test_revoke_command_removes_an_external_claim(
+    fake: FakeGitHub, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from rotisserie.factory_console.service import external
+
+    seen: list[dict[str, object]] = []
+
+    def revoke(github: object, **kwargs: object) -> dict[str, object]:
+        seen.append(kwargs)
+        return {"status": "revoked", "claim_id": kwargs["claim_id"]}
+
+    monkeypatch.setattr(external, "revoke", revoke)
+    claim = "11111111-1111-4111-8111-111111111111"
+    code, out = invoke(["--json", "revoke", claim, "--reason", "phone went offline"])
+    assert code == 0, out
+    assert json.loads(out)["status"] == "revoked"
+    assert seen[0]["claim_id"] == claim and seen[0]["reason"] == "phone went offline"
+
+
+def test_revoke_command_reports_a_refusal(
+    fake: FakeGitHub, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from rotisserie.factory_console.service import external
+
+    def revoke(github: object, **kwargs: object) -> dict[str, object]:
+        raise ValueError("GitHub actor lacks verified write access to this repository")
+
+    monkeypatch.setattr(external, "revoke", revoke)
+    code, out = invoke(["revoke", "11111111-1111-4111-8111-111111111111", "--reason", "x"])
+    assert code == 4
+    assert "write access" in out

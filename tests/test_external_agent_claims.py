@@ -456,3 +456,76 @@ def test_unrelated_handoff_pr_cannot_release_implementation_claim(
         )
     assert setup.holder == "codebuff"
     assert github.review_labels == []
+
+
+class RevokeLedger:
+    def __init__(self, *, live: bool = True, claim: dict[str, object] | None = None) -> None:
+        self.live = live
+        self.claim = claim
+        self.revoked: list[tuple[str, str, str, str]] = []
+
+    def enabled(self) -> bool:
+        return self.live
+
+    def external_holder(self, repo: str, number: int) -> dict[str, object] | None:
+        assert repo == REPO
+        return self.claim
+
+    def revoke_external(
+        self, repo: str, operator: str, claim_id: str, *, reason: str
+    ) -> dict[str, object]:
+        self.revoked.append((repo, operator, claim_id, reason))
+        return {"status": "revoked", "claim_id": claim_id}
+
+
+CLAIM = "11111111-1111-4111-8111-111111111111"
+
+
+def test_revoke_binds_the_verified_operator(monkeypatch: pytest.MonkeyPatch) -> None:
+    store = RevokeLedger()
+    monkeypatch.setattr(external, "ledger", lambda: cast(Any, store))
+    result = external.revoke(
+        cast(GitHub, GitHubDouble()), claim_id=CLAIM, reason="stuck phone", environment={}
+    )
+    assert result["status"] == "revoked"
+    assert store.revoked == [(REPO, "alice", CLAIM, "stuck phone")]
+
+
+def test_revoke_needs_write_access(monkeypatch: pytest.MonkeyPatch) -> None:
+    store = RevokeLedger()
+    monkeypatch.setattr(external, "ledger", lambda: cast(Any, store))
+    with pytest.raises(ValueError, match="write access"):
+        external.revoke(
+            cast(GitHub, GitHubDouble(permission="read")),
+            claim_id=CLAIM,
+            reason="x",
+            environment={},
+        )
+    assert store.revoked == []
+
+
+def test_revoke_rejects_malformed_claim(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(external, "ledger", lambda: cast(Any, RevokeLedger()))
+    with pytest.raises(ValueError, match="claim"):
+        external.revoke(cast(GitHub, GitHubDouble()), claim_id="x", reason="y", environment={})
+
+
+def test_holder_without_neon_says_it_cannot_see(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(external, "ledger", lambda: cast(Any, RevokeLedger(live=False)))
+    with pytest.raises(external.ClaimStoreUnavailable):
+        external.holder(cast(GitHub, GitHubDouble()), 7)
+
+
+def test_holder_when_ledger_cannot_load(monkeypatch: pytest.MonkeyPatch) -> None:
+    def broken() -> Any:
+        raise RuntimeError("Neon is not configured here")
+
+    monkeypatch.setattr(external, "ledger", broken)
+    with pytest.raises(external.ClaimStoreUnavailable, match="not configured"):
+        external.holder(cast(GitHub, GitHubDouble()), 7)
+
+
+def test_holder_returns_the_external_claim(monkeypatch: pytest.MonkeyPatch) -> None:
+    claim: dict[str, object] = {"claim_id": CLAIM, "client": "codebuff-phone"}
+    monkeypatch.setattr(external, "ledger", lambda: cast(Any, RevokeLedger(claim=claim)))
+    assert external.holder(cast(GitHub, GitHubDouble()), 7) == claim

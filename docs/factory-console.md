@@ -502,6 +502,24 @@ Cancelled counts as failed.
 The service behind this (`rotisserie.factory_console.service.main_health`)
 accepts already-fetched data, so one snapshot can serve several checks.
 
+## Outside agents (ChatGPT, Codebuff, Claude Code, a phone)
+
+Any agent can ask for the next meaningful work and reserve it through the same
+leases the factory's own workers use:
+
+```bash
+rotisserie factory next --json                       # ranked offers, read-only
+rotisserie factory reserve-next --client chatgpt --json
+rotisserie factory renew UUID --client chatgpt
+rotisserie factory handoff UUID --client chatgpt --evidence PR_URL
+rotisserie factory release UUID --client chatgpt
+rotisserie factory revoke UUID --reason TEXT         # operator: remove a claim
+```
+
+`run --take-over` also removes an outside agent's claim on the target. Agents
+with only GitHub access use the installed **Rotisserie External Claim
+Controller** workflow. Full rules: [external-agent-claims.md](external-agent-claims.md).
+
 ## Other front ends
 
 The console's logic lives in `rotisserie.factory_console.service`, which never

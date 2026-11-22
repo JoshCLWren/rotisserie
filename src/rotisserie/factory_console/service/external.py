@@ -530,3 +530,44 @@ def claim_action(
         github.repo, actor, client, claim_id, operation=operation, evidence=evidence
     )
     return result
+
+
+class ClaimStoreUnavailable(RuntimeError):
+    """This machine has no connection to the shared claim store (Neon)."""
+
+
+def holder(github: GitHub, number: int) -> dict[str, object] | None:
+    """The external claim holding issue/PR ``number``, or None when it is free of one.
+
+    Raises ClaimStoreUnavailable when the shared store cannot be read here.
+    """
+    try:
+        store = ledger()
+    except RuntimeError as exc:
+        raise ClaimStoreUnavailable(str(exc)) from None
+    if not hasattr(store, "external_holder"):
+        raise RuntimeError("installed Rotisserie factory runtime cannot read external claims")
+    if not store.enabled():
+        raise ClaimStoreUnavailable("FACTORY_STATE_DSN_FILE is not set")
+    found: dict[str, object] | None = store.external_holder(github.repo, number)
+    return found
+
+
+def revoke(
+    github: GitHub,
+    *,
+    claim_id: str,
+    reason: str,
+    environment: dict[str, str],
+) -> dict[str, object]:
+    """Operator-initiated removal of an external claim (explicit, fenced, logged)."""
+    if not CLAIM_ID.fullmatch(claim_id):
+        raise ValueError("invalid claim identity")
+    operator = principal(github, environment)
+    store = ledger()
+    if not hasattr(store, "revoke_external"):
+        raise RuntimeError("installed Rotisserie factory runtime cannot revoke external claims")
+    result: dict[str, object] = store.revoke_external(
+        github.repo, operator, claim_id, reason=reason
+    )
+    return result
