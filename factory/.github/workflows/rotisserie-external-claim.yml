@@ -12,6 +12,10 @@ on:
         description: Stable non-secret ID, e.g. codebuff-phone
         type: string
         required: true
+      capabilities:
+        description: Comma-separated actions the agent can perform, blank means all
+        type: string
+        required: false
       target:
         description: Optional expected top offer (issue:N or pr:N)
         type: string
@@ -73,6 +77,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           OP: ${{ inputs.operation }}
           CLIENT: ${{ inputs.client }}
+          ABILITIES: ${{ inputs.capabilities }}
           EXPECTED: ${{ inputs.target }}
           CLAIM: ${{ inputs.claim_id }}
           EVIDENCE: ${{ inputs.evidence }}
@@ -83,7 +88,11 @@ jobs:
           args=(factory "$OP" --repo "$GITHUB_REPOSITORY" --client "$CLIENT" --json)
           case "$OP" in
             reserve-next)
-              if [[ -n "$EXPECTED" ]]; then args+=(--target "$EXPECTED"); fi ;;
+              if [[ -n "$EXPECTED" ]]; then args+=(--target "$EXPECTED"); fi
+              if [[ -n "$ABILITIES" ]]; then
+                IFS=',' read -r -a capabilities <<< "$ABILITIES"
+                for capability in "${capabilities[@]}"; do args+=(--can "$capability"); done
+              fi ;;
             renew|release)
               [[ -n "$CLAIM" ]] || exit 2
               args=(factory "$OP" "$CLAIM" --repo "$GITHUB_REPOSITORY" --client "$CLIENT" --json) ;;
