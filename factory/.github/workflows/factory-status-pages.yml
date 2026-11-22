@@ -37,8 +37,11 @@ permissions:
   pages: write
   id-token: write
 
+# Separate groups: GitHub keeps one pending run per group, so frequent
+# scheduler-triggered refreshes would otherwise cancel a queued push run and
+# its Pages deployment.
 concurrency:
-  group: factory-status-pages
+  group: factory-status-pages-${{ github.event_name == 'push' && 'push' || 'refresh' }}
   cancel-in-progress: false
 
 jobs:
