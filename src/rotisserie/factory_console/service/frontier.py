@@ -309,12 +309,13 @@ def capture(github: GitHub, *, now: datetime) -> Frontier:
     # Shared Neon target keys record external ownership; count each linked
     # PR/issue claim only once when enforcing the normal WIP gate.
     leases, problem = _active_leases(github.repo)
-    external_wip = len({
-        str(value["claim_id"])
-        for value in leases.values()
-        if str(value.get("operation", "")).startswith("external:")
-        and value.get("wip") is True
-    })
+    external_wip = len(
+        {
+            str(value["claim_id"])
+            for value in leases.values()
+            if str(value.get("operation", "")).startswith("external:") and value.get("wip") is True
+        }
+    )
     core = runtime.module("factory_work_policy")
     candidates = core.build_candidates(
         board.issues,
