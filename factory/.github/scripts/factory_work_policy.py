@@ -700,6 +700,8 @@ def build_candidates(
     no_diff_attempts_by_issue: Mapping[int, int] | None = None,
     no_diff_attempt_records: Iterable[NoDiffAttempt] | None = None,
     include_backpressured_issues: bool = False,
+    pr_wip_limit: int = FACTORY_PR_WIP_LIMIT,
+    review_backlog_limit: int = FACTORY_REVIEW_BACKLOG_LIMIT,
 ) -> list[Candidate]:
     """Build and rank executable issue and pull-request candidates.
 
@@ -708,6 +710,8 @@ def build_candidates(
         prs: Open pull-request payloads from GitHub.
         no_diff_attempts_by_issue: Retry counts keyed by issue number.
         no_diff_attempt_records: Structured no-diff retry records.
+        pr_wip_limit: Effective repository limit for open implementation PR work.
+        review_backlog_limit: Effective repository completion backlog limit.
         include_backpressured_issues: Keep otherwise-eligible issues that are
             only held back by the PR WIP or review-backlog gate. This is for
             queue visibility and ranking, never for bypassing backpressure:
@@ -727,9 +731,11 @@ def build_candidates(
         for issue in issues
         if str(issue.get('state') or 'OPEN').upper() == 'OPEN'
     }
-    pr_wip_full = factory_pr_wip_count(prs) >= FACTORY_PR_WIP_LIMIT
+    if pr_wip_limit < 1 or review_backlog_limit < 1:
+        raise ValueError('factory WIP and review backlog limits must be positive')
+    pr_wip_full = factory_pr_wip_count(prs) >= pr_wip_limit
     review_backlog_full = (
-        factory_review_backlog_count(prs) >= FACTORY_REVIEW_BACKLOG_LIMIT
+        factory_review_backlog_count(prs) >= review_backlog_limit
     )
     candidates: list[Candidate] = []
     for issue in issues:
