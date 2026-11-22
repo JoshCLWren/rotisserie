@@ -119,6 +119,32 @@ _factory_fast_check_run() {
   return "$status"
 }
 
+# The log lives in /tmp on the runner and is never uploaded, so a failure was
+# invisible to operators and tools ("frontend typecheck" with no error). Print
+# the tail of every failed step to the job log, bounded, between markers that
+# `rotisserie factory outcomes` reads. Lint/type/test output only: commands
+# never echo secrets, and these runs are already public CI output.
+FACTORY_FAST_CHECK_EXCERPT_LINES="${FACTORY_FAST_CHECK_EXCERPT_LINES:-40}"
+_factory_fast_check_publish_failures() {
+  local log="$1"
+  printf '::group::factory fast check failure output\n'
+  printf '=== factory fast check failure output ===\n'
+  awk -v keep="$FACTORY_FAST_CHECK_EXCERPT_LINES" '
+    /^### / { if (label != "" && status != "0") emit(); label = $0; n = 0; status = ""; next }
+    /^\[exit [0-9]+\]$/ { status = $2; sub(/\]/, "", status); next }
+    label != "" { buf[++n] = $0 }
+    function emit(   start, i) {
+      print label
+      start = n - keep + 1; if (start < 1) start = 1
+      for (i = start; i <= n; i++) print buf[i]
+      print "[exit " status "]"
+    }
+    END { if (label != "" && status != "" && status != "0") emit() }
+  ' "$log"
+  printf '=== end factory fast check failure output ===\n'
+  printf '::endgroup::\n'
+}
+
 _factory_fast_check_ensure_uv() {
   [[ ":${PATH}:" == *":${HOME}/.local/bin:"* ]] || export PATH="${PATH}:${HOME}/.local/bin"
   command -v uv >/dev/null 2>&1 && return 0
@@ -302,6 +328,7 @@ factory_run_fast_checks() {
   if (( ${#failures[@]} )); then
     printf '\nFAST CHECKS FAILED: %s\n' "$(IFS=';'; echo "${failures[*]}")" >> "$log"
     printf 'factory fast checks failed: %s (log: %s)\n' "$(IFS=';'; echo "${failures[*]}")" "$log" >&2
+    _factory_fast_check_publish_failures "$log" >&2
     return 1
   fi
   printf '\nFAST CHECKS PASSED\n' >> "$log"
