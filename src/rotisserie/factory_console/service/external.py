@@ -355,7 +355,9 @@ def reserve_next(
             f"rotisserie factory release {claim_id} --client {client} --repo {github.repo}"
         ),
         "report": chosen.url,
-        "review_and_merge_gates": "Existing exact-head independent review, CI and acceptance remain required",
+        "review_and_merge_gates": (
+            "Existing exact-head independent review, CI and acceptance remain required"
+        ),
     }
     return outcome
 
