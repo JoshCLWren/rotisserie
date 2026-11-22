@@ -10,20 +10,24 @@ from rotisserie.factory_console.github import GitHub, GitHubError
 
 
 def repository_variables(github: GitHub) -> dict[str, str]:
-    """Use the exact registered workflow snapshot before the optional API."""
+    """Repository variables, with the workflow-delivered settings snapshot winning.
+
+    A workflow's ``FACTORY_REPO_VARS`` carries the registered settings even when
+    its token cannot read the Variables API. Other variables (for example
+    ``FACTORY_MAIN_CI_WORKFLOWS``) still come from the API whenever it answers.
+    """
     delivered: dict[str, str] = runtime.module("factory_settings").repository_variables()
-    if delivered:
-        return delivered
     try:
         raw = github.gh("variable", "list", "--repo", github.repo, "--json", "name,value")
         rows = json.loads(raw)
     except (GitHubError, ValueError):
-        return {}
-    return {
+        return delivered
+    listed = {
         str(row["name"]): str(row["value"])
         for row in rows
         if isinstance(row, dict) and "name" in row
     }
+    return {**listed, **delivered}
 
 
 def secret_names(github: GitHub) -> set[str] | None:
