@@ -10,6 +10,7 @@ Starting the plan submits one forced, targeted request per task.
 
 from __future__ import annotations
 
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 
@@ -23,6 +24,7 @@ from rotisserie.factory_console.service import (
     queue,
     reliability,
 )
+from rotisserie.factory_console.service import obsolete as obsolete_check
 from rotisserie.factory_console.tracker import Clock
 
 # Order within the backlog: a review can move a PR straight to ready (out of the
@@ -82,6 +84,8 @@ class Plan:
     needed_to_reopen_intake: int  # backlog PRs that must leave review for new issues to start
     model_choice: str  # why this provider/model, or why none could be picked
     problems: tuple[str, ...] = field(default=())  # why nothing can be started
+    # Backlog PRs main has moved past (their files are gone): a person should close them.
+    obsolete: tuple[queue.Reason, ...] = field(default=())
 
     def to_dict(self) -> dict[str, object]:
         from dataclasses import asdict
@@ -130,14 +134,31 @@ def plan(
             )
         )
 
+    free = [item for item in backlog if item.free]
+    with ThreadPoolExecutor(max_workers=6) as pool:
+        stale = dict(
+            zip(
+                (item.number for item in free),
+                pool.map(lambda pr: _staleness(github, pr.number), free),
+                strict=True,
+            )
+        )
+    obsolete = [
+        queue.Reason("obsolete", found.text, prs=(found.pr,))
+        for found in stale.values()
+        if found is not None and found.obsolete
+    ]
     for item in sorted(backlog, key=lambda pr: (ACTION_ORDER.index(pr.action), pr.number)):
+        found = stale.get(item.number)
+        if found is not None and found.obsolete:
+            continue
         if not item.free:
             worker = item.owner.removeprefix("factory:")
-            found = runtime.provider_for_worker(worker)
+            holder = runtime.provider_for_worker(worker)
             who = (
                 "A local worker"
                 if worker == "local"
-                else (found.name if found else f"Worker {worker}")
+                else (holder.name if holder else f"Worker {worker}")
             )
             held.append(
                 queue.Reason(
@@ -183,7 +204,15 @@ def plan(
         needed,
         choice_text,
         tuple(problems),
+        tuple(obsolete),
     )
+
+
+def _staleness(github: GitHub, number: int) -> obsolete_check.Staleness | None:
+    try:
+        return obsolete_check.pr_staleness(github, number)
+    except GitHubError:
+        return None
 
 
 # How far back a model's miss on an item keeps it off that item.

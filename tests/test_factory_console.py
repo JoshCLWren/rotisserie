@@ -1363,3 +1363,43 @@ def test_unstick_does_not_repeat_a_model_that_just_missed_on_the_item() -> None:
     exhausted = _assign(task, ranked, {"pr:5575": {"opencode-go/a", "opencode-go/b"}})
     assert exhausted.model == "opencode-go/a"
     assert "every offered model already missed on it recently" in exhausted.why
+
+
+def _missing() -> JSON:
+    raise GitHubNotFoundError("gone")
+
+
+def test_a_pr_whose_files_main_deleted_is_probably_obsolete(fake: FakeGitHub) -> None:
+    from rotisserie.factory_console.service.obsolete import pr_staleness
+
+    fake.routes[r"pulls/304/files"] = [
+        {"filename": "tests/test_factory_state_cache.py", "status": "modified"},
+        {"filename": "app/kept.py", "status": "modified"},
+        {"filename": "app/new.py", "status": "added"},  # added files are not checked
+        {"filename": "docs/gone.md", "status": "modified"},
+    ]
+    fake.routes[r"contents/tests/test_factory_state_cache.py"] = _missing
+    fake.routes[r"contents/docs/gone.md"] = _missing
+    fake.routes[r"contents/app/kept.py"] = {"sha": "x"}
+    fake.routes[r"commits\?path=tests/test_factory_state_cache.py"] = [
+        {"sha": "11627036aa", "commit": {"message": "chore(factory): move it (#5531)\n\nbody"}}
+    ]
+    found = pr_staleness(GitHub(REPO, executable="sh"), 304)
+    assert found.checked == 3
+    assert found.deleted == ("tests/test_factory_state_cache.py", "docs/gone.md")
+    assert found.obsolete
+    assert "main deleted 2 of the 3 files" in found.text
+    assert "removed by 11627036 chore(factory): move it (#5531)" in found.text
+
+
+def test_unstick_sends_no_worker_to_an_obsolete_pr(fake: FakeGitHub) -> None:
+    unstick_routes(fake, FULL_BACKLOG)
+    fake.routes[r"pulls/304/files"] = [{"filename": "gone.py", "status": "modified"}]
+    fake.routes[r"contents/gone.py"] = _missing
+    code, out = invoke(["--json", "unstick", "--dry-run"])
+    plan = json.loads(out)["plan"]
+    targets = [item["task"]["target"] for item in plan["assignments"]]
+    assert "pr:304" not in targets and "pr:301" in targets
+    assert [reason["prs"] for reason in plan["obsolete"]] == [[304]]
+    code, out = invoke(["unstick", "--dry-run"])
+    assert "Needs you: probably obsolete (1)" in out

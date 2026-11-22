@@ -140,7 +140,12 @@ same board, then plans:
   before new issues can start.
 - **Nothing backed up**: the issues that can start now.
 
-PRs a worker already holds are listed, never taken. Each task gets the
+PRs a worker already holds are listed, never taken. PRs `main` has moved past
+(half or more of the files they change no longer exist on the default branch,
+for example after a program was retired or code moved to another repository)
+are listed under "Needs you: probably obsolete", with the commit that removed
+the first file. No worker is sent to them: a merge-conflict worker cannot
+resolve changes to deleted files. Close them to free their backlog slots. Each task gets the
 best-ranked model that has not missed on that same item in the last 6 hours
 (from `outcomes`), so a model that just left a conflict in place is not sent
 back to it. Models are ranked by delivered track record over 7 days, from

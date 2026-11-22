@@ -20,6 +20,9 @@ such change must be called out here and in its release notes.
 
 ### Added
 
+- `unstick` recognizes probably-obsolete backlog PRs (`main` deleted most of
+  the files they change) and lists them for a person to close instead of
+  sending merge-conflict workers that cannot succeed.
 - `rotisserie factory outcomes` follows each requested piece of work to its
   effect and says whether its goal holds now (conflict gone, checks fixed,
   review decided, PR delivered), flagging workers that reported success or

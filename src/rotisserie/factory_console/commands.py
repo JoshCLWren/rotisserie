@@ -1595,12 +1595,21 @@ def _show_plan(console: Console, found: unstick.Plan) -> None:
         console.line(f"  {console.dot} {reason.text}")
     for reason in found.held:
         console.line(f"  {console.dot} {reason.text}")
+    if found.obsolete:
+        console.line()
+        console.heading(f"Needs you: probably obsolete ({len(found.obsolete)})")
+        for reason in found.obsolete:
+            console.line(f"  {console.dot} {reason.text}")
+        console.line(
+            "  No worker is sent to these. Closing them frees their review-backlog slots: "
+            "gh pr close N --comment REASON"
+        )
     if not found.assignments:
         return
     first = found.assignments[0]
     models = {(item.provider, item.model) for item in found.assignments}
     console.heading(f"Plan: {len(found.assignments)} workers")
-    rows_meta = [("Why", found.model_choice)] if len(models) == 1 else []
+    rows_meta = [("Why", first.why.split("; ", 1)[0])] if len(models) == 1 else []
     if len(models) == 1:
         rows_meta = [
             ("Provider", runtime.resolve_provider(first.provider).name),
