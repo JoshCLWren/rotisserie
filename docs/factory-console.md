@@ -228,6 +228,40 @@ says to take it over (`run … --action ci-repair --take-over`).
 `--since 2h` sets the window; `--all` also follows routine scheduler passes,
 one row per worker each pass started.
 
+### Failing because of main
+
+A PR is tested as if merged into the default branch, so a breakage that lands
+on main turns every open PR that runs the same check red. Repairing it PR by PR
+wastes workers: fixing main's files is outside the PR's scope (the factory
+rejects it), and leaving them keeps the check red.
+
+`checks`, `unstick` and `doctor` tell the two apart, from GitHub alone and with
+no repository-specific names:
+
+- **File evidence**: the failure names files (a formatter diff, a compile
+  error's path) that the PR does not change.
+- **Main evidence**: the same check's latest run on the default branch, found
+  through the failing run's own workflow, and whether it fails the same way. A
+  green result older than the change that broke the files is reported as out of
+  date (merges made with the workflow token start no push CI).
+- **Spread**: failures naming the same files are one incident, even across
+  checks (two workflows running the same formatter).
+
+Each failing check is **own**, **inherited** (main still fails), **fixed on
+main** (main changed the files, or the check passed on main, after the PR's
+run) or **mixed** (fails in the PR's own files and in main's).
+
+- While main still fails, `unstick` sends no worker to PRs whose failures are
+  all inherited or mixed, and lists the incident under "Failing because of
+  main" with the likely cause (the main commit, and its PR, that last changed
+  the files). `doctor` fails the "shared failures" check. Fix main once.
+- Once main has moved past a failure, the repair is merging main into the
+  branch. `unstick` plans a **sync** for each PR no worker holds (GitHub's
+  update-branch, refused if the head moved since the plan or a worker took the
+  PR); its own failures get a worker after the checks run again. `doctor --fix`
+  makes the same syncs. PRs a worker holds are left alone.
+- If a PR's changed files cannot be read, its failures count as its own.
+
 ## What does it conflict with?
 
 `rotisserie factory conflicts pr:N` compares each file the PR changes (files it

@@ -41,6 +41,7 @@ from rotisserie.factory_console.github import (
     timestamp,
 )
 from rotisserie.factory_console.service import (
+    baseline,
     catalog,
     checks,
     close,
@@ -549,6 +550,7 @@ def cmd_run(context: Context, arguments: argparse.Namespace) -> Outcome:
     kind, number = _split_target(request.target)
     outcome = Outcome(Result.UNKNOWN, EXIT_CODES[Result.UNKNOWN], data)
     stopped_workers: list[str] = []
+    attempt = 0
     for attempt in range(TAKE_OVER_ATTEMPTS):
         item = lookup(context.github, kind, number)
         if item.owner:
@@ -659,6 +661,7 @@ def _watch_scheduler(
     console = context.console
     shown: set[Stage] = set()
     last = View(Stage.SUBMITTED, "", started)
+    jobs: list[Obj] = []  # poll yields at least once; initialized for the type checker
     for now in tracker.poll(4):
         run = tracker.run(run_id)
         jobs = tracker.jobs(run_id)
@@ -809,6 +812,8 @@ def _watch_worker(
     data["worker_url"] = context.url(f"/actions/runs/{run_id}")
     shown: set[str] = set()
     started_at: datetime | None = None
+    jobs: list[Obj] = []
+    run: Obj = {}  # poll yields at least once; initialized for the type checker
     for now in tracker.poll(10 if not follow else 15):
         run = tracker.run(run_id)
         jobs = tracker.jobs(run_id)
@@ -1667,7 +1672,7 @@ def cmd_unstick(context: Context, arguments: argparse.Namespace) -> Outcome:
     )
     data: dict[str, object] = {"plan": found.to_dict()}
     _show_plan(console, found)
-    if not found.assignments:
+    if not found.assignments and not found.syncs:
         for problem in found.problems:
             console.fail(problem[0].upper() + problem[1:])
         return Outcome(Result.NO_WORK, EXIT_CODES[Result.NO_WORK], data)
@@ -1679,9 +1684,19 @@ def cmd_unstick(context: Context, arguments: argparse.Namespace) -> Outcome:
             console.line("Nothing was started. Add --yes to start these workers.")
             return Outcome(Result.NO_WORK, EXIT_CODES[Result.NO_WORK], data)
         count = len(found.assignments)
-        if not context.prompt.confirm(f"Start {count} worker{'s' if count != 1 else ''}?"):
+        work = [f"start {count} worker{'s' if count != 1 else ''}"] if count else []
+        if found.syncs:
+            work.append(f"sync {len(found.syncs)} PR(s) with main")
+        if not context.prompt.confirm(" and ".join(work).capitalize() + "?"):
             console.line("Nothing was started.")
             return Outcome(Result.NO_WORK, EXIT_CODES[Result.NO_WORK], data)
+    synced = [unstick.sync(context.github, item) for item in found.syncs]
+    for change in synced:
+        (console.ok if change.ok else console.warn)(change.text)
+    data["synced"] = [asdict(change) for change in synced]
+    if not found.assignments:
+        result = Result.SUBMITTED if any(change.ok for change in synced) else Result.NO_WORK
+        return Outcome(result, EXIT_CODES[result], data)
     submissions = unstick.start(context.github, context.clock, found)
     started = []
     for submission in submissions:
@@ -1717,6 +1732,16 @@ def _show_plan(console: Console, found: unstick.Plan) -> None:
         console.heading(f"Needs you: models keep failing ({len(found.needs_person)})")
         for reason in found.needs_person:
             console.line(f"  {console.dot} {reason.text}")
+    if found.shared_failures:
+        _show_shared_failures(console, found.shared_failures)
+    for reason in found.waiting_on_main:
+        console.line(f"  {console.dot} {reason.text}")
+    if found.syncs:
+        console.line()
+        console.heading(f"Sync with main ({len(found.syncs)})")
+        for pending in found.syncs:
+            console.line(f"  {console.dot} PR #{pending.pr}: {pending.why}")
+        console.line("  No worker: merging main into the branch is the repair.")
     if not found.assignments:
         return
     first = found.assignments[0]
@@ -1748,6 +1773,17 @@ def _show_plan(console: Console, found: unstick.Plan) -> None:
     if found.left_out:
         console.line(f"  {found.left_out} more could be started (raise --max)")
     console.line()
+
+
+def _show_shared_failures(console: Console, incidents: tuple[baseline.Incident, ...]) -> None:
+    console.line()
+    console.heading(f"Failing because of main ({len(incidents)})")
+    for incident in incidents:
+        console.line(f"  {console.dot} {incident.text}")
+        if incident.cause:
+            console.line(f"      Likely cause: {incident.cause}")
+        for line in incident.evidence:
+            console.line(f"      - {line}")
 
 
 # outcomes -------------------------------------------------------------------------------
@@ -1915,20 +1951,36 @@ def cmd_checks(context: Context, arguments: argparse.Namespace) -> Outcome:
         raise UsageError("checks takes a pull request: pr:N")
     console = context.console
     failing = checks.failing_checks(context.github, number)
+    shared = baseline.analyze(context.github, {number: failing}) if failing else baseline.Report()
+    origins = {item.check: item for item in shared.for_pr(number)}
     if not failing:
         console.ok(f"PR #{number}: no failing checks on its current head")
     else:
         console.fail(f"PR #{number}: {len(failing)} failing check(s)")
         for item in failing:
             console.line(f"  {console.dot} {item.name} ({item.kind}): {item.summary}")
+            verdict = origins.get(item.name)
+            if verdict is not None and verdict.origin != baseline.OWN:
+                console.line(f"    From main ({verdict.origin}): {verdict.reason}")
             console.link("    Log", item.url)
+        for incident in shared.incidents:
+            if incident.cause:
+                console.line(f"  Likely cause on main: {incident.cause}")
         console.line()
-        console.line(
-            f"Repair it: rotisserie factory run PROVIDER MODEL --target pr:{number} "
-            "--action ci-repair"
-        )
+        own = shared.own_failures(number, failing)
+        if own:
+            console.line(
+                f"Repair it: rotisserie factory run PROVIDER MODEL --target pr:{number} "
+                "--action ci-repair"
+            )
+        elif shared.needs_sync(number):
+            console.line("Main has moved past these failures: sync the branch with main.")
+        else:
+            console.line("Nothing here is the PR's to repair: fix main once, then sync.")
     return Outcome(
-        Result.COMPLETED, EXIT_OK, {"pr": number, "failing": [i.to_dict() for i in failing]}
+        Result.COMPLETED,
+        EXIT_OK,
+        {"pr": number, "failing": [i.to_dict() for i in failing], "origins": shared.to_dict()},
     )
 
 

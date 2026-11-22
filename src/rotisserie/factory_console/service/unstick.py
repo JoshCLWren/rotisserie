@@ -15,8 +15,9 @@ from dataclasses import dataclass, field, replace
 from datetime import datetime, timedelta
 
 from rotisserie.factory_console import runtime
-from rotisserie.factory_console.github import GitHub, GitHubError
+from rotisserie.factory_console.github import GitHub, GitHubError, label_names, obj, string
 from rotisserie.factory_console.service import (
+    baseline,
     catalog,
     checks,
     dispatch,
@@ -76,6 +77,23 @@ class Assignment:
 
 
 @dataclass(frozen=True)
+class Sync:
+    """Merge the default branch into a PR whose only failures main already fixed."""
+
+    pr: int
+    head: str  # the head the plan saw; the update is refused if it moved
+    title: str
+    why: str
+
+
+@dataclass(frozen=True)
+class Synced:
+    pr: int
+    ok: bool
+    text: str
+
+
+@dataclass(frozen=True)
 class Plan:
     """What is stuck, the work that clears it, and who does it."""
 
@@ -90,6 +108,12 @@ class Plan:
     obsolete: tuple[queue.Reason, ...] = field(default=())
     # Items several models already failed on; another round is unlikely to help.
     needs_person: tuple[queue.Reason, ...] = field(default=())
+    # Failures main caused: fixed once on main, never repaired PR by PR.
+    shared_failures: tuple[baseline.Incident, ...] = field(default=())
+    # PRs red only because of main; no worker until main is fixed.
+    waiting_on_main: tuple[queue.Reason, ...] = field(default=())
+    # PRs red only because of an old main that has since moved on: sync, no worker.
+    syncs: tuple[Sync, ...] = field(default=())
 
     def to_dict(self) -> dict[str, object]:
         from dataclasses import asdict
@@ -163,11 +187,57 @@ def plan(
                 strict=True,
             )
         )
+    try:
+        shared = baseline.analyze(github, {number: found for number, found in red.items() if found})
+    except GitHubError:
+        shared = baseline.Report()
+    waiting: list[queue.Reason] = []
+    syncs: list[Sync] = []
     for item in sorted(backlog, key=lambda pr: (ACTION_ORDER.index(pr.action), pr.number)):
         found = stale.get(item.number)
         if found is not None and found.obsolete:
             continue
-        failing = red.get(item.number) or []
+        everything = red.get(item.number) or []
+        if everything and shared.waits_on_main(item.number):
+            waiting.append(
+                queue.Reason(
+                    "waiting-on-main",
+                    f"PR #{item.number}: red because main fails "
+                    f"({_inherited_text(shared, item.number)}). No worker until main is fixed.",
+                    prs=(item.number,),
+                )
+            )
+            continue
+        if everything and shared.needs_sync(item.number):
+            if item.free:
+                head = _head(github, item.number)
+                if head:
+                    syncs.append(
+                        Sync(
+                            item.number,
+                            head,
+                            item.title,
+                            f"red because of an older main "
+                            f"({_inherited_text(shared, item.number)}); main has moved on"
+                            + (
+                                "; its own failures get a worker once the checks run again"
+                                if shared.own_failures(item.number, everything)
+                                else ""
+                            ),
+                        )
+                    )
+                    continue
+            else:
+                held.append(
+                    queue.Reason(
+                        "held",
+                        f"PR #{item.number}: red because of an older main; sync it with "
+                        "main once its worker finishes.",
+                        prs=(item.number,),
+                    )
+                )
+                continue
+        failing = shared.own_failures(item.number, everything)
         if failing and item.action in ("review", "review-findings"):
             # No review round can validate while the PR's own checks are red.
             item = replace(item, action="ci-repair")
@@ -263,6 +333,9 @@ def plan(
     assignments = tuple(_assign(task, ranked, missed) for task in capped) if ranked else ()
     if not tasks:
         problems = (*problems, "nothing is waiting that a new worker could take")
+    syncs = [item for item in syncs if f"pr:{item.pr}" not in skip]
+    if only:
+        syncs = [item for item in syncs if f"pr:{item.pr}" in only]
     return Plan(
         tuple(diagnosis),
         assignments,
@@ -273,6 +346,50 @@ def plan(
         tuple(problems),
         tuple(obsolete),
         tuple(needs_person),
+        shared.incidents,
+        tuple(waiting),
+        tuple(syncs),
+    )
+
+
+def _inherited_text(shared: baseline.Report, pr: int) -> str:
+    found = [item for item in shared.for_pr(pr) if item.not_the_prs]
+    names = ", ".join(dict.fromkeys(item.check for item in found))
+    return f"{names}: {found[0].summary}" if found else names
+
+
+def _head(github: GitHub, number: int) -> str:
+    try:
+        return string(obj(obj(github.repo_api(f"pulls/{number}")).get("head")), "sha")
+    except GitHubError:
+        return ""
+
+
+def sync(github: GitHub, item: Sync) -> Synced:
+    """Merge the default branch into the PR, only if its head is still the planned one.
+
+    GitHub refuses the update when the head moved (a worker pushed) or the merge
+    conflicts; either way nothing changes and the reason is reported.
+    """
+    try:
+        labels = label_names(obj(github.repo_api(f"issues/{item.pr}")))
+        owner = next((label for label in labels if runtime_owner(label)), "")
+        if owner:
+            return Synced(item.pr, False, f"PR #{item.pr}: {owner} took it; left alone")
+        github.repo_api(
+            f"pulls/{item.pr}/update-branch",
+            method="PUT",
+            fields={"expected_head_sha": item.head},
+        )
+    except GitHubError as exc:
+        return Synced(item.pr, False, f"PR #{item.pr}: not synced: {exc}")
+    return Synced(item.pr, True, f"PR #{item.pr}: merged main into it; its checks run again")
+
+
+def runtime_owner(label: str) -> bool:
+    """A factory owner label naming a worker (not the unowned marker)."""
+    return label.startswith("factory:") and (
+        label.removeprefix("factory:").isdigit() or label == "factory:local"
     )
 
 

@@ -8,7 +8,9 @@ Every check here replaces a diagnosis first done by hand:
 * the scheduler stopped running;
 * Rotisserie intake could not decide, so no fresh issue was admitted;
 * most workers were rejected by the *same* factory gate: the fast checks ran
-  tests the repository had deleted, so every Rust change "failed validation".
+  tests the repository had deleted, so every Rust change "failed validation";
+* main broke a check (a PR merged with unformatted code), so every backlog PR
+  running it went red and repair workers were sent to fix main's files PR by PR.
 """
 
 from __future__ import annotations
@@ -19,15 +21,25 @@ from collections.abc import Callable
 from dataclasses import asdict, dataclass
 from datetime import datetime, timedelta
 
+from rotisserie.factory_console import runtime
 from rotisserie.factory_console.github import (
     GitHub,
     GitHubError,
     integer,
     items,
+    obj,
     string,
     timestamp,
 )
-from rotisserie.factory_console.service import outcomes, providers, queue, reliability
+from rotisserie.factory_console.service import (
+    baseline,
+    checks,
+    outcomes,
+    providers,
+    queue,
+    reliability,
+    unstick,
+)
 from rotisserie.factory_console.tracker import DISPATCH_WORKFLOW, Clock, Tracker, failure_reasons
 
 DASHBOARD_WORKFLOW = "factory-status-pages.yml"
@@ -49,6 +61,7 @@ class Finding:
     text: str
     hint: str = ""
     fix: str = ""  # a safe repair `apply_fixes` can make; empty when none
+    targets: tuple[str, ...] = ()  # what the fix acts on, e.g. "pr:N@HEAD"
 
     def to_dict(self) -> dict[str, object]:
         return asdict(self)
@@ -173,6 +186,43 @@ def systemic_rejection(found: list[outcomes.RequestOutcome]) -> Finding:
     )
 
 
+def shared_failures(github: GitHub, now: datetime) -> Finding:
+    """Backlog PRs red because of main, not because of their own change."""
+    variables = providers.repository_variables(github)
+    board = queue.summarize_queue(github, now=int(now.timestamp()), variables=variables).board
+    backlog = runtime.completion_backlog(list(board.prs))
+    red = {item.number: checks.failing_checks(github, item.number) for item in backlog}
+    report = baseline.analyze(github, {number: found for number, found in red.items() if found})
+    broken = [item for item in report.incidents if item.state == "broken"]
+    if broken:
+        first = broken[0]
+        return Finding(
+            "shared failures",
+            "fail",
+            first.text,
+            (f"Likely cause: {first.cause}. " if first.cause else "")
+            + "rotisserie factory unstick --dry-run shows the evidence; no worker is sent "
+            "to these PRs until main is fixed",
+        )
+    free = {item.number for item in backlog if item.free}
+    syncs = []
+    for number in sorted(red):
+        if number in free and report.needs_sync(number):
+            head = string(obj(obj(github.repo_api(f"pulls/{number}")).get("head")), "sha")
+            if head:
+                syncs.append(f"pr:{number}@{head}")
+    if syncs:
+        names = ", ".join(f"#{item.split('@')[0][3:]}" for item in syncs)
+        return Finding(
+            "shared failures",
+            "warn",
+            f"main has moved past the failures on {names}; their branches need main merged in",
+            fix="sync-main",
+            targets=tuple(syncs),
+        )
+    return Finding("shared failures", "ok", "no backlog PR is red because of main")
+
+
 def run_checks(github: GitHub, *, now: datetime, clock: Clock | None = None) -> list[Finding]:
     """Every health check; a check that cannot read GitHub reports that instead of failing."""
     tracker = Tracker(github, clock)
@@ -190,6 +240,7 @@ def run_checks(github: GitHub, *, now: datetime, clock: Clock | None = None) -> 
         ("scheduler", lambda: _scheduler(github, now)),
         ("rotisserie intake", lambda: _intake(github, now)),
         ("worker rejections", rejections),
+        ("shared failures", lambda: shared_failures(github, now)),
     ]
     for name, check in checks:
         try:
@@ -218,4 +269,12 @@ def apply_fixes(github: GitHub, findings: list[Finding]) -> list[Applied]:
         output = github.gh("workflow", "run", DASHBOARD_WORKFLOW, "--repo", github.repo)
         url = next((part for part in output.split() if "/actions/runs/" in part), "")
         done.append(Applied("publish-snapshot", f"started {DASHBOARD_WORKFLOW}", url))
+    for finding in findings:
+        if finding.fix != "sync-main" or finding.status == "ok":
+            continue
+        for target in finding.targets:
+            ref, head = target.split("@", 1)
+            result = unstick.sync(github, unstick.Sync(int(ref[3:]), head, "", ""))
+            if result.ok:
+                done.append(Applied("sync-main", result.text))
     return done
