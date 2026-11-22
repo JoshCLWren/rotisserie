@@ -3,8 +3,8 @@
 from __future__ import annotations
 
 import threading
-from dataclasses import replace
 from concurrent.futures import ThreadPoolExecutor
+from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 from typing import Any, cast
 
