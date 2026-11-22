@@ -542,6 +542,90 @@ def head_commit_evidence(head: str) -> tuple[str | None, str | None, str] | None
     return author_login, committer_login, message
 
 
+# GitHub's compare API lists at most 300 files; a merge at that size fails closed.
+MAX_BASE_MERGE_FILES = 300
+MAX_BASE_MERGE_CHAIN = 5
+
+
+def _blob_at(path: str, ref: str) -> str | None:
+    """Blob SHA of ``path`` at ``ref``, or ``None`` when it does not exist there."""
+    proc = run_gh(["api", f"repos/{REPO}/contents/{path}?ref={ref}"], check=False)
+    if proc.returncode:
+        if "Not Found" in proc.stderr or "404" in proc.stderr:
+            return None
+        raise RuntimeError(f"could not read {path} at {ref}: {proc.stderr.strip()}")
+    payload = json_object(json.loads(proc.stdout or "null"))
+    return str(payload.get("sha") or "") if payload is not None else None
+
+
+def clean_base_merge_parent(head: str) -> str | None:
+    """The PR-side parent when ``head`` only merged the default branch in, else ``None``.
+
+    "Update branch" (or an operator sync) adds a merge commit authored by whoever
+    clicked it, so the head loses its attested author although it contributes no
+    code of its own. That is provable from GitHub alone: the head has exactly two
+    parents, the second is already on the default branch, and every file the merge
+    changes relative to the PR's previous head is byte-identical to the default
+    branch's version (deleted files are absent there too). A conflict resolution or
+    any extra edit breaks that, and the function fails closed.
+    """
+    commit = json_object(gh_json(["api", f"repos/{REPO}/commits/{head}"]))
+    if commit is None or str(commit.get("sha") or "") != head:
+        return None
+    parents = [
+        str(parent.get("sha") or "")
+        for raw in (json_array(commit.get("parents")) or [])
+        if (parent := json_object(raw)) is not None
+    ]
+    if len(parents) != 2 or not all(HEAD_RE.fullmatch(sha) for sha in parents):
+        return None
+    ours, theirs = parents
+    repo = json_object(gh_json(["api", f"repos/{REPO}"]))
+    base = str(repo.get("default_branch") or "") if repo is not None else ""
+    if not base:
+        return None
+    on_base = json_object(gh_json(["api", f"repos/{REPO}/compare/{theirs}...{base}"]))
+    if on_base is None or on_base.get("status") not in ("ahead", "identical"):
+        return None
+    diff = json_object(gh_json(["api", f"repos/{REPO}/compare/{ours}...{head}"]))
+    files = json_array(diff.get("files")) if diff is not None else None
+    if files is None or len(files) >= MAX_BASE_MERGE_FILES:
+        return None
+    for raw in files:
+        row = json_object(raw)
+        if row is None:
+            return None
+        path = str(row.get("filename") or "")
+        status = str(row.get("status") or "")
+        if not path:
+            return None
+        if status == "removed":
+            if _blob_at(path, theirs) is not None:
+                return None
+            continue
+        if not row.get("sha") or _blob_at(path, theirs) != str(row["sha"]):
+            return None
+        previous = str(row.get("previous_filename") or "")
+        if status == "renamed" and previous and _blob_at(previous, theirs) is not None:
+            return None
+    return ours
+
+
+def inherited_base_merge_identity(pr_number: int, head: str) -> tuple[str, str] | None:
+    """The attested author of the code under a chain of clean default-branch merges."""
+    comments = model_comment_bodies(pr_number)
+    current = head
+    for _ in range(MAX_BASE_MERGE_CHAIN):
+        parent = clean_base_merge_parent(current)
+        if parent is None:
+            return None
+        identity = current_head_author_identity(comments, pr=pr_number, head=parent)
+        if identity is not None:
+            return identity
+        current = parent
+    return None
+
+
 def attest_exact_head_author(
     *, pr_number: int, head: str, pr: dict[str, Any]
 ) -> tuple[str, str] | None:
@@ -558,10 +642,13 @@ def attest_exact_head_author(
        from that worker's roster pin. Only the controller-bot stream is trusted
        here: contributor markers on the owner stream are attacker-controlled and
        must never be laundered into a bot author attestation;
-    2. otherwise a human head is attested from the pull request's verified
+    2. a head that only merged the default branch into an attested head (GitHub's
+       "Update branch", an operator sync) keeps that head's author, proven by
+       :func:`clean_base_merge_parent`;
+    3. otherwise a human head is attested from the pull request's verified
        GitHub author and the head commit's ``Model:`` trailer, or ``human``
        when absent; contributor commits must match the verified PR author;
-    3. anything else, including conflicting records or a foreign commit
+    4. anything else, including conflicting records or a foreign commit
        identity, fails closed with ``None``.
 
     The command ``reconcile-provenance`` exposes this explicitly for a head that
@@ -602,6 +689,13 @@ def attest_exact_head_author(
         return normalize_model_family(model), marker_model_token(worker)
     if len(contributors) > 1:
         return None
+    # A merge that only brought the default branch in keeps the PR's author.
+    inherited = inherited_base_merge_identity(pr_number, head)
+    if inherited is not None:
+        model, agent = inherited
+        marker = agent_model_author_marker(pr=pr_number, head=head, model=model, agent=agent)
+        run_gh(["issue", "comment", str(pr_number), "--repo", REPO, "--body", marker])
+        return model, agent
     evidence = head_commit_evidence(head)
     if evidence is None:
         return None

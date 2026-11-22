@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import importlib.util
 import importlib
+import json
 import re
 import subprocess
 import sys
@@ -3688,3 +3689,100 @@ def test_review_uses_existing_model_preflight_and_provider_rotation() -> None:
     assert "FACTORY_RUNTIME_MODEL: ${{ steps.executor.outputs.runtime_model" in workflow
     worker = (WORKFLOWS.parent / "scripts" / "free-model-factory-worker.sh").read_text()
     assert "select_next_eligible_model" in worker
+
+
+# Clean default-branch merges keep the PR's attested author ---------------------------
+
+MERGE_HEAD = "1" * 40
+OURS = "2" * 40
+THEIRS = "3" * 40
+
+
+def _merge_world(
+    module: Any,
+    monkeypatch: MonkeyPatch,
+    *,
+    files: list[dict[str, object]],
+    blobs: dict[str, str | None],
+    parents: list[str] | None = None,
+    on_base: str = "ahead",
+) -> None:
+    payloads: dict[str, object] = {
+        f"repos/{module.REPO}/commits/{MERGE_HEAD}": {
+            "sha": MERGE_HEAD,
+            "parents": [{"sha": sha} for sha in (parents or [OURS, THEIRS])],
+        },
+        f"repos/{module.REPO}": {"default_branch": "main"},
+        f"repos/{module.REPO}/compare/{THEIRS}...main": {"status": on_base},
+        f"repos/{module.REPO}/compare/{OURS}...{MERGE_HEAD}": {"files": files},
+    }
+    monkeypatch.setattr(module, "gh_json", lambda args, **_kw: payloads.get(args[1]))
+
+    def run_gh(args: list[str], **_kw: object) -> subprocess.CompletedProcess[str]:
+        path = args[1].split("/contents/", 1)[1].split("?", 1)[0]
+        blob = blobs.get(path)
+        if blob is None:
+            return subprocess.CompletedProcess(args, 1, "", "gh: Not Found (HTTP 404)")
+        return subprocess.CompletedProcess(args, 0, json.dumps({"sha": blob}), "")
+
+    monkeypatch.setattr(module, "run_gh", run_gh)
+
+
+def test_update_branch_merge_keeps_the_pr_side_parent(monkeypatch: MonkeyPatch) -> None:
+    module = load_review_controller()
+    _merge_world(
+        module, monkeypatch,
+        files=[
+            {"filename": "a.rs", "status": "modified", "sha": "b1"},
+            {"filename": "gone.rs", "status": "removed", "sha": ""},
+        ],
+        blobs={"a.rs": "b1", "gone.rs": None},
+    )  # fmt: skip
+    assert module.clean_base_merge_parent(MERGE_HEAD) == OURS
+
+
+@pytest.mark.parametrize(
+    ("files", "blobs", "parents", "on_base"),
+    [
+        # A file the merge changed differs from main's: conflict resolution or an edit.
+        ([{"filename": "a.rs", "status": "modified", "sha": "mine"}], {"a.rs": "main"}, None,
+         "ahead"),
+        # A file the merge deleted still exists on main.
+        ([{"filename": "a.rs", "status": "removed", "sha": ""}], {"a.rs": "x"}, None, "ahead"),
+        # Not a merge.
+        ([], {}, [OURS], "ahead"),
+        # The other parent is not on the default branch.
+        ([], {}, None, "diverged"),
+    ],
+)  # fmt: skip
+def test_anything_but_a_clean_base_merge_fails_closed(
+    monkeypatch: MonkeyPatch,
+    files: list[dict[str, object]],
+    blobs: dict[str, str | None],
+    parents: list[str] | None,
+    on_base: str,
+) -> None:
+    module = load_review_controller()
+    _merge_world(module, monkeypatch, files=files, blobs=blobs, parents=parents, on_base=on_base)
+    assert module.clean_base_merge_parent(MERGE_HEAD) is None
+
+
+def test_attestation_inherits_the_author_through_a_clean_base_merge(
+    monkeypatch: MonkeyPatch,
+) -> None:
+    module = load_review_controller()
+    monkeypatch.setattr(module, "labels_of", lambda _pr: {"factory"})
+    monkeypatch.setattr(module, "model_comment_bodies", lambda _pr: [])
+    monkeypatch.setattr(module, "wrapper_recorded_contributors", lambda *_a, **_kw: set())
+    monkeypatch.setattr(
+        module,
+        "current_head_author_identity",
+        lambda _c, *, pr, head: ("opencode-go-hy4-flash-free", "43") if head == OURS else None,
+    )
+    monkeypatch.setattr(module, "clean_base_merge_parent", lambda head: OURS if head == MERGE_HEAD else None)
+    posted: list[list[str]] = []
+    monkeypatch.setattr(module, "run_gh", lambda args, **_kw: posted.append(args))
+    identity = module.attest_exact_head_author(pr_number=7, head=MERGE_HEAD, pr={})
+    assert identity == ("opencode-go-hy4-flash-free", "43")
+    [comment] = posted
+    assert f"head-{MERGE_HEAD}" in comment[-1] and "agent-43" in comment[-1]
