@@ -409,3 +409,9 @@ def completion_backlog(prs: list[Row]) -> list[BacklogPR]:
 def pr_wip_count(prs: list[Row]) -> int:
     """Factory PRs holding a worker lease (FACTORY_PR_WIP_LIMIT counts these)."""
     return int(module("factory_work_policy").factory_pr_wip_count([dict(row) for row in prs]))
+
+
+def linked_issue(pr: Row) -> int | None:
+    """The issue a PR delivers (branch name, closing keyword, or ``Fix #N`` title)."""
+    found = module("factory_work_policy").linked_issue_from_pr(dict(pr))
+    return None if found is None else int(found)

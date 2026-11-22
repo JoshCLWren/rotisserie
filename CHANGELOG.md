@@ -20,6 +20,10 @@ such change must be called out here and in its release notes.
 
 ### Added
 
+- `rotisserie factory close pr:N --reason TEXT` stops any worker on the PR,
+  closes it with the reason, and closes its issue as not planned.
+- `unstick` starts at most as many issues as the review-backlog and open-PR
+  limits leave room for, so clearing a jam does not immediately recreate it.
 - `unstick` recognizes probably-obsolete backlog PRs (`main` deleted most of
   the files they change) and lists them for a person to close instead of
   sending merge-conflict workers that cannot succeed.

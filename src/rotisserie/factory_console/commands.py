@@ -42,6 +42,7 @@ from rotisserie.factory_console.github import (
 )
 from rotisserie.factory_console.service import (
     catalog,
+    close,
     dispatch,
     outcomes,
     providers,
@@ -257,6 +258,23 @@ def add_parser(subcommands: argparse._SubParsersAction[argparse.ArgumentParser])
     )
     _common(results)
 
+    shut = commands.add_parser(
+        "close",
+        help="close a pull request that should not be done, and the issue it delivers",
+        description=(
+            "Stop any worker holding the pull request, close it with your reason as the "
+            "comment, and close the issue it delivers as 'not planned' so intake does not "
+            "pick it up again."
+        ),
+    )
+    shut.add_argument("what", nargs="+", help="pr:N (one or more)")
+    shut.add_argument("--reason", required=True, help="why; posted as the closing comment")
+    shut.add_argument(
+        "--keep-issue", action="store_true", help="close only the pull request, not its issue"
+    )
+    shut.add_argument("--yes", "-y", action="store_true", help="do not ask first")
+    _common(shut)
+
     providers = commands.add_parser(
         "providers", help="providers the factory can use and whether they are set up"
     )
@@ -371,6 +389,7 @@ def _help_text() -> str:
             "  rotisserie factory why [issue:N] why work is or is not being picked up",
             "  rotisserie factory unstick       start the workers that clear the bottleneck",
             "  rotisserie factory outcomes      did the requested work actually happen",
+            "  rotisserie factory close pr:N --reason TEXT   close work that should not be done",
             "  rotisserie factory cancel issue:N",
             "  rotisserie factory watch RUN",
             "  rotisserie factory providers | models PROVIDER | prioritize issue:N",
@@ -1691,6 +1710,48 @@ def cmd_outcomes(context: Context, arguments: argparse.Namespace) -> Outcome:
     return Outcome(Result.COMPLETED, EXIT_OK, data)
 
 
+# close ----------------------------------------------------------------------------------
+
+
+def cmd_close(context: Context, arguments: argparse.Namespace) -> Outcome:
+    console = context.console
+    numbers = []
+    for what in arguments.what:
+        kind, number = _split_target(what)
+        if kind != "pr":
+            raise UsageError("close takes pull requests: pr:N")
+        numbers.append(number)
+    plan = []
+    for number in numbers:
+        item = lookup(context.github, "pr", number)
+        issue = None if arguments.keep_issue else close.linked_issue(context.github, number)
+        plan.append((item, issue))
+        held = f"; stop {item.provider or 'its worker'} first" if item.owner else ""
+        also = f" and issue #{issue} (not planned)" if issue else ""
+        console.line(f"  {console.dot} PR #{number}{also}{held}: {item.title}")
+    console.line(f"  Comment: {arguments.reason}")
+    if not arguments.yes:
+        if not context.interactive:
+            console.line("Nothing was closed. Add --yes to close these.")
+            return Outcome(Result.NO_WORK, EXIT_CODES[Result.NO_WORK], {})
+        if not context.prompt.confirm("Close these?", default=False):
+            console.line("Nothing was closed.")
+            return Outcome(Result.NO_WORK, EXIT_CODES[Result.NO_WORK], {})
+    done = []
+    for item, _ in plan:
+        if item.owner and not _stop_worker(context, item, wait=True, purpose="close it"):
+            console.fail(f"PR #{item.number} was left open: its worker did not stop")
+            continue
+        closed = close.close_pr(
+            context.github, item.number, arguments.reason, with_issue=not arguments.keep_issue
+        )
+        with_issue = f" and issue #{closed.issue}" if closed.issue and closed.issue_was_open else ""
+        console.ok(f"Closed PR #{item.number}{with_issue}")
+        done.append(closed.to_dict())
+    result = Result.COMPLETED if len(done) == len(plan) else Result.FAILED
+    return Outcome(result, EXIT_CODES[result], {"closed": done})
+
+
 # providers / models --------------------------------------------------------------------
 
 
@@ -1914,6 +1975,7 @@ HANDLERS = {
     "why": cmd_why,
     "unstick": cmd_unstick,
     "outcomes": cmd_outcomes,
+    "close": cmd_close,
     "explain": cmd_why,
     "providers": cmd_providers,
     "models": cmd_models,

@@ -1403,3 +1403,46 @@ def test_unstick_sends_no_worker_to_an_obsolete_pr(fake: FakeGitHub) -> None:
     assert [reason["prs"] for reason in plan["obsolete"]] == [[304]]
     code, out = invoke(["unstick", "--dry-run"])
     assert "Needs you: probably obsolete (1)" in out
+
+
+def test_close_closes_the_pr_and_its_issue_as_not_planned(fake: FakeGitHub) -> None:
+    fake.routes[r"issues/5575$"] = {"number": 5575, "title": "SQL budgets", "labels": []}
+    fake.routes[r"pulls/5575$"] = {
+        "title": "Rust API: SQL budgets",
+        "body": "Closes #4737.",
+        "head": {"ref": "factory/work-checkpoints/issue-4737/beam-free/1"},
+        "state": "open",
+        "labels": [],
+    }
+    fake.routes[r"issues/4737$"] = {"number": 4737, "state": "open"}
+    code, out = invoke(["close", "pr:5575", "--reason", "Retired in #5239."])
+    assert code == 3 and "Nothing was closed. Add --yes" in out
+    assert not any(call[:2] == ["pr", "close"] for call in fake.calls)
+    code, out = invoke(["close", "pr:5575", "--reason", "Retired in #5239.", "--yes"])
+    assert code == 0
+    assert "Closed PR #5575 and issue #4737" in out
+    pr_close = next(call for call in fake.calls if call[:2] == ["pr", "close"])
+    assert pr_close[pr_close.index("--comment") + 1] == "Retired in #5239."
+    issue_close = next(call for call in fake.calls if call[:2] == ["issue", "close"])
+    assert issue_close[2] == "4737"
+    assert issue_close[issue_close.index("--reason") + 1] == "not planned"
+
+
+def test_close_refuses_issues_and_an_empty_reason(fake: FakeGitHub) -> None:
+    code, out = invoke(["close", "issue:5", "--reason", "x", "--yes"])
+    assert code == 2 and "close takes pull requests" in out
+
+
+def test_unstick_starts_no_more_issues_than_the_limits_leave_room_for(fake: FakeGitHub) -> None:
+    issues = [open_issue(n, "factory:unowned") for n in range(41, 51)]
+    # 4 PRs in the backlog (limit 6): room for 2 more.
+    unstick_routes(fake, FULL_BACKLOG[:4], issues=issues)
+    code, out = invoke(["--json", "unstick", "--dry-run"])
+    plan = json.loads(out)["plan"]
+    issue_tasks = [
+        item["task"]["target"]
+        for item in plan["assignments"]
+        if item["task"]["target"].startswith("issue:")
+    ]
+    assert issue_tasks == ["issue:41", "issue:42"]
+    assert "adds at most 2" in plan["diagnosis"][0]["text"]

@@ -13,6 +13,7 @@ rotisserie factory settings    # limits, worker counts and priority order
 rotisserie factory why issue:N # why an issue is or is not being picked up
 rotisserie factory unstick     # start the workers that clear the bottleneck
 rotisserie factory outcomes    # did the requested work actually happen
+rotisserie factory close pr:N --reason TEXT  # close work that should not be done
 ```
 
 The repository is taken from `--repo owner/name`, `FACTORY_REPO`, the nearest
@@ -138,7 +139,9 @@ same board, then plans:
   first (an approval moves a PR out of the backlog), then CI repairs, review
   feedback, and merge conflicts. It says how many PRs must leave the backlog
   before new issues can start.
-- **Nothing backed up**: the issues that can start now.
+- **Nothing backed up**: the issues that can start now, but only as many as the
+  review-backlog and open-PR limits leave room for. Every started issue becomes
+  a PR in that backlog, and the scheduler fills free slots on its own.
 
 PRs a worker already holds are listed, never taken. PRs `main` has moved past
 (half or more of the files they change no longer exist on the default branch,
@@ -162,6 +165,18 @@ rotisserie factory unstick --max 3 -y  # start at most 3 without asking
 Starting sends one forced, targeted request per task (the same as
 `run PROVIDER MODEL --force --target pr:N --action ACTION`). Outside a terminal
 it starts nothing unless you pass `--yes`.
+
+## Closing work that should not be done
+
+`rotisserie factory close pr:N [pr:M …] --reason TEXT` is for work you
+cancelled, or that `main` has moved past (see `unstick`'s "probably obsolete"
+list). It shows what it will do and asks first (`--yes` skips the question;
+outside a terminal it closes nothing without it). For each pull request it:
+
+1. stops the worker holding it, if any, and waits for the claim to be released;
+2. closes the PR with your reason as the comment;
+3. closes the issue it delivers as **not planned**, with the same reason, so
+   intake does not pick it up again (`--keep-issue` leaves the issue open).
 
 ## Did it work?
 

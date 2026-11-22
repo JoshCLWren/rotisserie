@@ -178,7 +178,13 @@ def plan(
             )
         )
     if not review_full and wip < board.pr_wip_limit:
-        for entry in summary.ready:
+        # Every started issue becomes a PR in the backlog: start only as many as the
+        # limits leave room for, or unstick recreates the jam it just cleared.
+        room = max(
+            0,
+            min(board.review_backlog_limit - len(backlog), board.pr_wip_limit - wip),
+        )
+        for entry in summary.ready[:room]:
             tasks.append(
                 Task(f"issue:{entry.issue}", "advance", entry.title, "can start now; implement it")
             )
@@ -186,7 +192,9 @@ def plan(
             diagnosis.append(
                 queue.Reason(
                     "ready",
-                    f"No limit is holding work back; {len(summary.ready)} issues can start now.",
+                    f"No limit is holding work back; {len(summary.ready)} issues can start now. "
+                    "The scheduler fills free slots on its own; unstick adds at most "
+                    f"{room} (the room left under the review-backlog and open-PR limits).",
                 )
             )
 
