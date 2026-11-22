@@ -30,7 +30,7 @@ def test_manual_neon_claim_workflow_is_a_controller_not_a_factory_worker() -> No
     assert "persist-credentials: false" in content
     assert "FACTORY_REPO_VARS: >-" in content
     assert "factory \"$OP\"" in content
-    assert "uv tool run --from ./.rotisserie/runtime rotisserie" in content
+    assert "uv tool run --with 'asyncpg>=0.30,<1' --from ./.rotisserie/runtime rotisserie" in content
     assert "retention-days: 1" in content
     assert "git push" not in content
     assert "gh issue edit" not in content
