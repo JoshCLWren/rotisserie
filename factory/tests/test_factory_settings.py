@@ -92,3 +92,23 @@ def test_unset_repository_variables_arrive_empty_and_mean_default(monkeypatch):
 def test_settings_module_ships_in_the_adopter_overlay():
     overlay = (ROOT / 'install/overlay-paths.txt').read_text().splitlines()
     assert '.github/scripts/factory_settings.py' in overlay
+
+
+def test_unset_workers_per_provider_variable_means_default(monkeypatch):
+    """Regression: workflows deliver unset variables as "" (live failure 2026-11-22)."""
+    monkeypatch.delenv('FACTORY_SLOTS_PER_PROVIDER', raising=False)
+    monkeypatch.setenv(settings.REPO_VARS_ENV, json.dumps({'FACTORY_SLOTS_PER_PROVIDER': ''}))
+    assert worker_slots.slot_count() == 12
+    assert len(worker_slots.slots()) == 12 * len(worker_slots.sources())
+
+
+def test_every_reader_accepts_the_exact_workflow_payload_when_nothing_is_set(monkeypatch):
+    """Render the real workflow value with every variable unset, as GitHub does."""
+    import re as regex
+    payload = regex.sub(r'\$\{\{ vars\.[A-Z_]+ \}\}', '', settings.workflow_env_value())
+    monkeypatch.setenv(settings.REPO_VARS_ENV, payload)
+    for name in settings.BY_NAME:
+        monkeypatch.delenv(name, raising=False)
+        assert settings.resolve(name)[1] == 'default'
+    assert worker_slots.slot_count() == 12
+    assert policy.env_positive_int('FACTORY_PR_WIP_LIMIT', 8) == 8
