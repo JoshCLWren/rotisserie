@@ -167,9 +167,9 @@ def from_snapshot(
             kind == "pr"
             and len(
                 [
-                    l
-                    for l in labels
-                    if l
+                    label
+                    for label in labels
+                    if label
                     in (
                         "factory:review",
                         "factory:ci",
