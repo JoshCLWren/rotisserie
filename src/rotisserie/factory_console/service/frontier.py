@@ -133,7 +133,8 @@ def from_snapshot(
         labels = _labels(core, row)
         owner = core.owner_of(labels)
         action = (
-            "implement" if kind == "issue"
+            "implement"
+            if kind == "issue"
             else core.completion_action_for(candidate.stage, bool(candidate.conflicted))
         )
         blockers: list[str] = []
@@ -149,7 +150,9 @@ def from_snapshot(
             touched.append(int(candidate.linked_issue))
         claimed = [n for n in touched if n in active_targets]
         if claimed:
-            blockers.append("Existing or unreconciled Neon lease on " + ", ".join(f"#{n}" for n in claimed))
+            blockers.append(
+                "Existing or unreconciled Neon lease on " + ", ".join(f"#{n}" for n in claimed)
+            )
         dependencies: set[int] = set()
         if kind == "issue":
             verdict = issue_verdicts.get(number)
@@ -160,10 +163,25 @@ def from_snapshot(
             dependencies = core.parse_declared_dependencies(string(row, "body"))
         if kind == "pr" and not string(row, "headRefOid"):
             blockers.append("Missing exact pull-request head SHA")
-        if kind == "pr" and len([l for l in labels if l in (
-            "factory:review", "factory:ci", "factory:changes-requested",
-            "factory:ready", "factory:blocked", "factory:building",
-        )]) != 1:
+        if (
+            kind == "pr"
+            and len(
+                [
+                    l
+                    for l in labels
+                    if l
+                    in (
+                        "factory:review",
+                        "factory:ci",
+                        "factory:changes-requested",
+                        "factory:ready",
+                        "factory:blocked",
+                        "factory:building",
+                    )
+                ]
+            )
+            != 1
+        ):
             blockers.append("PR stage is ambiguous; reconcile lifecycle labels")
         if action == "review" and candidate.head_contributors:
             # A known contributor may still be a valid reviewer on another PR;
@@ -173,7 +191,7 @@ def from_snapshot(
             independence = "unknown author provenance must use current review policy"
         else:
             independence = "not a review action"
-        url = f"https://github.com/{repository}/{ 'issues' if kind == 'issue' else 'pull' }/{number}"
+        url = f"https://github.com/{repository}/{'issues' if kind == 'issue' else 'pull'}/{number}"
         goal = {
             "implement": "Implement the issue's acceptance criteria and produce a PR",
             "review": "Independently review this exact head and report valid findings",
@@ -197,9 +215,9 @@ def from_snapshot(
                 lane=int(candidate.lane),
                 priority=int(candidate.priority),
                 prerequisites=tuple(f"issue:{n}" for n in sorted(dependencies)),
-                blocked_by=tuple(f"issue:{n}" for n in sorted(
-                    n for n in dependencies if n in issues_by_number
-                )),
+                blocked_by=tuple(
+                    f"issue:{n}" for n in sorted(n for n in dependencies if n in issues_by_number)
+                ),
                 head_sha=string(row, "headRefOid") or None if kind == "pr" else None,
                 owner=owner,
                 lease=lease,
@@ -214,9 +232,11 @@ def from_snapshot(
                     "unknown: independent targets do not prove disjoint files, "
                     "dependencies, or provider capacity"
                 ),
-                provenance={"producer": candidate.producer_worker or None,
-                            "head_contributors": sorted(candidate.head_contributors),
-                            "review_independence": independence},
+                provenance={
+                    "producer": candidate.producer_worker or None,
+                    "head_contributors": sorted(candidate.head_contributors),
+                    "review_independence": independence,
+                },
             )
         )
     represented = {offer.target for offer in offers}
@@ -226,31 +246,37 @@ def from_snapshot(
         if f"issue:{number}" in represented:
             continue
         verdict = issue_verdicts.get(number)
-        holds.append({
-            "target": f"issue:{number}",
-            "url": f"https://github.com/{repository}/issues/{number}",
-            "status": verdict.status if verdict else "unknown",
-            "reasons": [reason.text for reason in verdict.reasons] if verdict else [
-                "Not admitted by the controller's current policy"
-            ],
-        })
+        holds.append(
+            {
+                "target": f"issue:{number}",
+                "url": f"https://github.com/{repository}/issues/{number}",
+                "status": verdict.status if verdict else "unknown",
+                "reasons": [reason.text for reason in verdict.reasons]
+                if verdict
+                else ["Not admitted by the controller's current policy"],
+            }
+        )
     for row in prs:
         number = int(row["number"])
         if f"pr:{number}" not in represented:
-            holds.append({
-                "target": f"pr:{number}",
-                "url": f"https://github.com/{repository}/pull/{number}",
-                "status": "waiting",
-                "reasons": ["No executable action selected for this PR at this stage"],
-            })
+            holds.append(
+                {
+                    "target": f"pr:{number}",
+                    "url": f"https://github.com/{repository}/pull/{number}",
+                    "status": "waiting",
+                    "reasons": ["No executable action selected for this PR at this stage"],
+                }
+            )
     instant = now.astimezone(UTC)
     return Frontier(
-        SCHEMA_VERSION, repository,
+        SCHEMA_VERSION,
+        repository,
         instant.isoformat(),
         (instant + FRESH_FOR).isoformat(),
         not bool(lease_problem),
         lease_problem or "Neon leases inspected, but no work has been reserved",
-        tuple(offers), tuple(holds),
+        tuple(offers),
+        tuple(holds),
     )
 
 
@@ -266,8 +292,13 @@ def capture(github: GitHub, *, now: datetime) -> Frontier:
     by_issue = {entry.issue: entry.verdict for entry in summary.entries}
     leases, problem = _active_leases(github.repo)
     return from_snapshot(
-        github.repo, now=now, issues=board.issues, prs=board.prs,
-        candidates=candidates, issue_verdicts=by_issue, leases=leases,
+        github.repo,
+        now=now,
+        issues=board.issues,
+        prs=board.prs,
+        candidates=candidates,
+        issue_verdicts=by_issue,
+        leases=leases,
         lease_problem=problem,
         review_limit=board.review_backlog_limit,
         wip_limit=board.pr_wip_limit,
