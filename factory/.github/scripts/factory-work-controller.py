@@ -2712,10 +2712,15 @@ def dispatch_next(
             # An accepted but timed-out workflow_dispatch may already exist.
             # Retaining the lease is safer than risking duplicate execution.
             raise RuntimeError('Could not confirm worker dispatch. Inspect Actions before retrying.') from None
-        chosen_action = 'implement' if candidate.kind == 'issue' else (
-            action if force_slot and target_spec and action != 'advance'
-            else completion_action_for(candidate.stage, candidate.conflicted) or 'review-findings'
-        )
+        if candidate.kind == 'issue':
+            chosen_action: str | None = 'implement'
+        elif force_slot and target_spec and action != 'advance':
+            chosen_action = action
+        elif force_slot:
+            # Forced PR work with no stage action addresses review feedback.
+            chosen_action = completion_action_for(candidate.stage, candidate.conflicted) or 'review-findings'
+        else:
+            chosen_action = completion_action_for(candidate.stage, candidate.conflicted)
         result: dict[str, object] = {
             'status': 'dispatched', 'kind': candidate.kind, 'number': candidate.number,
             'action': chosen_action, 'worker': worker, 'provider': source, 'model': model,

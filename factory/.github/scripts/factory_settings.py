@@ -18,6 +18,7 @@ Operator force (``--force``) is never limited by these pacing settings.
 from __future__ import annotations
 
 import argparse
+import functools
 import json
 import os
 import sys
@@ -114,6 +115,17 @@ def _warn(message: str) -> None:
     print(f"[factory-settings] {message}", file=sys.stderr)
 
 
+def workflow_env_value() -> str:
+    """The ``FACTORY_REPO_VARS`` value every factory workflow sets.
+
+    Only registered settings are passed (never every repository variable, which
+    would print unrelated configuration into public workflow logs). Unset
+    variables arrive as empty strings and are treated as unset.
+    """
+    pairs = ", ".join(f'"{s.name}": "${{{{ vars.{s.name} }}}}"' for s in SETTINGS)
+    return "{" + pairs + "}"
+
+
 def repository_variables(env: Mapping[str, str] | None = None) -> dict[str, str]:
     """Return repository variables delivered to this workflow run, if any."""
     values = os.environ if env is None else env
@@ -127,7 +139,11 @@ def repository_variables(env: Mapping[str, str] | None = None) -> dict[str, str]
         return {}
     if not isinstance(parsed, dict):
         return {}
-    return {str(key): str(value) for key, value in parsed.items() if isinstance(value, (str, int))}
+    return {
+        str(key): str(value)
+        for key, value in parsed.items()
+        if isinstance(value, (str, int)) and str(value) != ""
+    }
 
 
 def raw_value(name: str, env: Mapping[str, str] | None = None) -> tuple[str | None, str]:
@@ -200,8 +216,16 @@ def integer(name: str, default: int | None = None, env: Mapping[str, str] | None
 
 def priority_ranks(env: Mapping[str, str] | None = None) -> dict[str, int]:
     """Map each work category to its pick-up rank (0 is picked first)."""
+    values = os.environ if env is None else env
+    return dict(_priority_ranks(values.get("FACTORY_PRIORITY_ORDER"), values.get(REPO_VARS_ENV, "")))
+
+
+@functools.lru_cache(maxsize=16)
+def _priority_ranks(explicit: str | None, delivered: str) -> tuple[tuple[str, int], ...]:
+    # Sorting calls this per comparison; parse each configuration once.
+    env = {REPO_VARS_ENV: delivered} if explicit is None else {"FACTORY_PRIORITY_ORDER": explicit}
     value, _origin = resolve("FACTORY_PRIORITY_ORDER", env)
-    return {category: index for index, category in enumerate(str(value).split(","))}
+    return tuple((category, index) for index, category in enumerate(str(value).split(",")))
 
 
 def report(env: Mapping[str, str] | None = None) -> list[dict[str, object]]:

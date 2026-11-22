@@ -74,9 +74,19 @@ def test_partial_priority_order_keeps_remaining_categories_in_default_order():
     assert sorted(value.split(',')) == sorted(settings.PRIORITY_CATEGORIES)
 
 
-def test_every_factory_workflow_receives_repository_settings():
+def test_every_factory_workflow_receives_exactly_the_registered_settings():
+    # Only registered settings, never toJSON(vars): ComicPile logs are public.
+    expected = settings.workflow_env_value()
     for workflow in (ROOT / '.github/workflows').glob('*.yml'):
-        assert 'FACTORY_REPO_VARS: ${{ toJSON(vars) }}' in workflow.read_text(), workflow.name
+        text = workflow.read_text()
+        assert 'toJSON(vars)' not in text, workflow.name
+        assert f'FACTORY_REPO_VARS: >-\n    {expected}\n' in text, workflow.name
+
+
+def test_unset_repository_variables_arrive_empty_and_mean_default(monkeypatch):
+    monkeypatch.delenv('FACTORY_PR_WIP_LIMIT', raising=False)
+    monkeypatch.setenv(settings.REPO_VARS_ENV, json.dumps({'FACTORY_PR_WIP_LIMIT': ''}))
+    assert settings.resolve('FACTORY_PR_WIP_LIMIT') == (8, 'default')
 
 
 def test_settings_module_ships_in_the_adopter_overlay():
