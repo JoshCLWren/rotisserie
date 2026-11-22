@@ -6,6 +6,8 @@ from datetime import UTC, datetime
 from types import SimpleNamespace
 from typing import Any
 
+import pytest
+
 from rotisserie.factory_console.service import frontier, queue
 
 REPO = "acme/widgets"
@@ -186,3 +188,76 @@ def test_ambiguous_pr_stage_fails_closed() -> None:
     )
     assert result.offers[0].status == "held"
     assert "ambiguous" in " ".join(result.offers[0].hold_reasons)
+
+
+def test_ledger_rows_are_bound_to_their_keys_not_stale_payload_overlap() -> None:
+    # Old claim A covered both #9 and #10. Claim B replaced only #10.
+    # Do not accidentally overwrite B with the stale A row.
+    rows = [
+        {
+            "key": f"factory-lease-v1:{REPO}:target:10",
+            "targets": [10],
+            "claim_id": "new-B",
+            "worker": "B",
+            "active": True,
+        },
+        {
+            "key": f"factory-lease-v1:{REPO}:target:9",
+            "targets": [9, 10],
+            "claim_id": "expired-A",
+            "worker": "A",
+            "active": False,
+        },
+        {
+            "key": f"factory-lease-v1:{REPO}:worker:A",
+            "targets": [9, 10],
+            "claim_id": "expired-A",
+            "worker": "A",
+            "active": False,
+        },
+    ]
+    leases = frontier._target_leases(REPO, rows)
+    assert leases[10]["claim_id"] == "new-B"
+    assert leases[10]["active"] is True
+    assert leases[9]["claim_id"] == "expired-A"
+    assert leases[9]["active"] is False
+    result = snapshot([issue(9), issue(10)], [], [candidate("issue", 9), candidate("issue", 10)], leases=leases)
+    assert [offer.status for offer in result.offers] == ["held", "held"]
+    assert [offer.lease["claim_id"] for offer in result.offers if offer.lease] == [
+        "expired-A",
+        "new-B",
+    ]
+
+
+def test_capture_passes_repository_capacity_to_shared_policy(monkeypatch: pytest.MonkeyPatch) -> None:
+    from rotisserie.factory_console import runtime
+    from rotisserie.factory_console.service import providers
+
+    settings: list[tuple[int, int]] = []
+    class PolicyProxy:
+        def build_candidates(self, issues: object, prs: object, **kwargs: int) -> list[Any]:
+            settings.append((kwargs["pr_wip_limit"], kwargs["review_backlog_limit"]))
+            return [candidate("issue", 7)]
+
+        def labels_of(self, row: Any) -> set[str]:
+            return {"factory:unowned"}
+
+        def owner_of(self, labels: set[str]) -> str:
+            return "factory:unowned"
+
+        def parse_declared_dependencies(self, body: str) -> set[int]:
+            return set()
+
+    policy = PolicyProxy()
+    monkeypatch.setattr(runtime, "module", lambda name: policy)
+    monkeypatch.setattr(providers, "repository_variables", lambda gh: {})
+    monkeypatch.setattr(frontier, "_active_leases", lambda repo: ({}, ""))
+    for wip, backlog in [(8, 6), (14, 12)]:
+        board = queue.Board([issue(7)], [], wip, backlog, {})
+        summary = queue.QueueSummary((queue.QueueEntry(7, "Issue 7", queue.Verdict("ready", ())),), board)
+        monkeypatch.setattr(queue, "summarize_queue", lambda gh, *, now, variables, summary=summary: summary)
+        github = SimpleNamespace(repo=REPO)
+        result = frontier.capture(github, now=NOW)
+        assert len(result.offers) == 1
+        assert result.offers[0].capacity["review_limit"] == backlog
+    assert settings == [(8, 6), (14, 12)]
