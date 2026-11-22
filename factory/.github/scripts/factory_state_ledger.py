@@ -48,7 +48,7 @@ async def _acquire(repo: str, worker: str, numbers: list[int], ttl: int) -> str 
             await conn.execute("SELECT pg_advisory_xact_lock(hashtextextended($1, 0))", LEASE_PREFIX + repo)
             busy = await conn.fetch(
                 """SELECT cache_key FROM public.factory_state_kv
-                   WHERE cache_key = ANY($1::text[]) AND expires_at > now()""",
+                   WHERE cache_key = ANY($1::text[]) AND (expires_at > now() OR payload->0->>'external'='true')""",
                 keys,
             )
             if busy:
@@ -203,7 +203,7 @@ async def _acquire_operation(repo: str, holder: str, number: int, ttl: int) -> s
             # operation can never both see the target free.
             await conn.execute("SELECT pg_advisory_xact_lock(hashtextextended($1, 0))", LEASE_PREFIX + repo)
             busy = await conn.fetchval(
-                "SELECT 1 FROM public.factory_state_kv WHERE cache_key=$1 AND expires_at > now()",
+                "SELECT 1 FROM public.factory_state_kv WHERE cache_key=$1 AND (expires_at > now() OR payload->0->>'external'='true')",
                 key,
             )
             if busy:
@@ -297,6 +297,7 @@ def _lease_row(key: str, payload: Any, expires_at: Any, active: bool) -> dict[st
         "claim_id": str(first.get("claim_id") or ""),
         "worker": str(first.get("worker") or ""),
         "operation": str(first.get("operation") or ""),
+        "wip": first.get("wip") is True,
         "targets": [int(n) for n in first.get("targets") or [] if str(n).isdecimal()],
         "expires_at": expires_at.isoformat() if hasattr(expires_at, "isoformat") else str(expires_at),
         "active": bool(active),
