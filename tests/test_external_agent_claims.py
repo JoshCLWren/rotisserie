@@ -291,12 +291,13 @@ def test_changed_pr_head_rejected_before_neon_claim(
             [44] if g.head == "a" * 40 else (_ for _ in ()).throw(ValueError("head changed"))
         ),
     )
-    with pytest.raises(ValueError, match="head changed"):
-        external.reserve_next(
-            cast(GitHub, GitHubDouble(head="b" * 40)),
-            client="codebuff",
-            environment={},
-        )
+    result = external.reserve_next(
+        cast(GitHub, GitHubDouble(head="b" * 40)),
+        client="codebuff",
+        environment={},
+    )
+    assert result["status"] == "held"
+    assert "head changed" in str(result["reason"])
     assert setup.calls == 0
 
 
