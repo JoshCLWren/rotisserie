@@ -42,18 +42,29 @@ class LedgerDouble:
         self.holder: str | None = None
         self.calls = 0
 
-    def reserve_external(self, repo: str, actor: str, client: str, numbers: list[int], **kwargs: Any) -> dict[str, object]:
+    def reserve_external(
+        self, repo: str, actor: str, client: str, numbers: list[int], **kwargs: Any
+    ) -> dict[str, object]:
         assert repo == REPO
         assert actor == "alice"
         with self.lock:
             self.calls += 1
             if self.holder:
-                return {"status": "conflict", "reason": "existing_or_unreconciled_lease", "retry": "refresh_frontier"}
+                return {
+                    "status": "conflict",
+                    "reason": "existing_or_unreconciled_lease",
+                    "retry": "refresh_frontier",
+                }
             self.holder = client
-            return {"status": "reserved", "claim_id": "11111111-1111-4111-8111-111111111111",
-                    "expires_at": "2026-11-22T23:00:00Z"}
+            return {
+                "status": "reserved",
+                "claim_id": "11111111-1111-4111-8111-111111111111",
+                "expires_at": "2026-11-22T23:00:00Z",
+            }
 
-    def external_lease_action(self, repo: str, actor: str, client: str, claim_id: str, **kwargs: Any) -> dict[str, object]:
+    def external_lease_action(
+        self, repo: str, actor: str, client: str, claim_id: str, **kwargs: Any
+    ) -> dict[str, object]:
         with self.lock:
             if client != self.holder:
                 return {"status": "conflict", "reason": "stale_or_wrong_client"}
@@ -63,14 +74,29 @@ class LedgerDouble:
             return {"status": "renewed"}
 
 
-def make_offer(*, number: int = 7, action: str = "implement", contributors: list[str] | None = None) -> frontier.Offer:
+def make_offer(
+    *, number: int = 7, action: str = "implement", contributors: list[str] | None = None
+) -> frontier.Offer:
     return frontier.Offer(
-        rank=1, target=f"issue:{number}", url=f"https://github.com/{REPO}/issues/{number}",
-        title=f"Item {number}", action=action, instruction="Implement the acceptance criteria",
-        reason="controller", status="candidate", hold_reasons=(), lane=3, priority=1,
-        prerequisites=(), blocked_by=(), head_sha=None, owner="factory:unowned",
-        lease=None, capacity={"pr_wip": 0, "wip_limit": 5},
-        parallel_group=f"isolated:issue:{number}", parallel_confidence="unknown",
+        rank=1,
+        target=f"issue:{number}",
+        url=f"https://github.com/{REPO}/issues/{number}",
+        title=f"Item {number}",
+        action=action,
+        instruction="Implement the acceptance criteria",
+        reason="controller",
+        status="candidate",
+        hold_reasons=(),
+        lane=3,
+        priority=1,
+        prerequisites=(),
+        blocked_by=(),
+        head_sha=None,
+        owner="factory:unowned",
+        lease=None,
+        capacity={"pr_wip": 0, "wip_limit": 5},
+        parallel_group=f"isolated:issue:{number}",
+        parallel_confidence="unknown",
         provenance={"head_contributors": contributors or [], "producer": None},
     )
 
@@ -78,9 +104,14 @@ def make_offer(*, number: int = 7, action: str = "implement", contributors: list
 def make_frontier(*offers: frontier.Offer) -> frontier.Frontier:
     now = datetime.now(UTC)
     return frontier.Frontier(
-        schema_version=1, repository=REPO, generated_at=now.isoformat(),
+        schema_version=1,
+        repository=REPO,
+        generated_at=now.isoformat(),
         expires_at=(now + timedelta(seconds=60)).isoformat(),
-        authoritative_claim_available=True, authority_note="", offers=offers, holds=(),
+        authoritative_claim_available=True,
+        authority_note="",
+        offers=offers,
+        holds=(),
     )
 
 
@@ -95,7 +126,9 @@ def setup(monkeypatch: pytest.MonkeyPatch) -> LedgerDouble:
 
 def test_reserve_returns_real_fenced_claim_and_handoff(setup: LedgerDouble) -> None:
     result = external.reserve_next(
-        cast(GitHub, GitHubDouble()), client="codebuff-phone", environment={},
+        cast(GitHub, GitHubDouble()),
+        client="codebuff-phone",
+        environment={},
     )
     assert result["status"] == "reserved"
     handoff = result["handoff"]
@@ -126,15 +159,19 @@ def test_two_external_clients_race_one_offer_exactly_one_wins(setup: LedgerDoubl
 def test_revoked_permission_cannot_acquire(setup: LedgerDouble) -> None:
     with pytest.raises(ValueError, match="write access"):
         external.reserve_next(
-            cast(GitHub, GitHubDouble(permission="read")), client="chatgpt", environment={},
+            cast(GitHub, GitHubDouble(permission="read")),
+            client="chatgpt",
+            environment={},
         )
     assert setup.calls == 0
 
 
 def test_reordered_target_is_rejected_without_acquisition(setup: LedgerDouble) -> None:
     result = external.reserve_next(
-        cast(GitHub, GitHubDouble()), client="chatgpt",
-        expected="issue:42", environment={},
+        cast(GitHub, GitHubDouble()),
+        client="chatgpt",
+        expected="issue:42",
+        environment={},
     )
     assert result["reason"] == "offer_reordered_or_no_longer_highest"
     assert setup.calls == 0
@@ -142,7 +179,9 @@ def test_reordered_target_is_rejected_without_acquisition(setup: LedgerDouble) -
 
 def test_expired_observation_requires_refresh(setup: LedgerDouble) -> None:
     result = external.reserve_next(
-        cast(GitHub, GitHubDouble()), client="chatgpt", environment={},
+        cast(GitHub, GitHubDouble()),
+        client="chatgpt",
+        environment={},
         advertised_at="2026-11-21T01:00:00+00:00",
     )
     assert result["reason"] == "offer_snapshot_expired"
@@ -153,18 +192,27 @@ def test_identity_fences_renewal_and_release(setup: LedgerDouble) -> None:
     external.reserve_next(cast(GitHub, GitHubDouble()), client="chatgpt", environment={})
     token = "11111111-1111-4111-8111-111111111111"
     stale = external.claim_action(
-        cast(GitHub, GitHubDouble()), client="codebuff", claim_id=token,
-        operation="release", environment={},
+        cast(GitHub, GitHubDouble()),
+        client="codebuff",
+        claim_id=token,
+        operation="release",
+        environment={},
     )
     assert stale["status"] == "conflict"
     renewed = external.claim_action(
-        cast(GitHub, GitHubDouble()), client="chatgpt", claim_id=token,
-        operation="renew", environment={},
+        cast(GitHub, GitHubDouble()),
+        client="chatgpt",
+        claim_id=token,
+        operation="renew",
+        environment={},
     )
     assert renewed["status"] == "renewed"
     released = external.claim_action(
-        cast(GitHub, GitHubDouble()), client="chatgpt", claim_id=token,
-        operation="release", environment={},
+        cast(GitHub, GitHubDouble()),
+        client="chatgpt",
+        claim_id=token,
+        operation="release",
+        environment={},
     )
     assert released["status"] == "released"
     assert setup.holder is None
@@ -173,10 +221,15 @@ def test_identity_fences_renewal_and_release(setup: LedgerDouble) -> None:
 def test_untrusted_github_event_cannot_impersonate_dispatch(setup: LedgerDouble) -> None:
     with pytest.raises(ValueError, match="original authorized"):
         external.reserve_next(
-            cast(GitHub, GitHubDouble()), client="chatgpt",
-            environment={"GITHUB_ACTIONS": "true", "GITHUB_EVENT_NAME": "push",
-                         "GITHUB_REPOSITORY": REPO, "GITHUB_ACTOR": "alice",
-                         "GITHUB_RUN_ATTEMPT": "1"},
+            cast(GitHub, GitHubDouble()),
+            client="chatgpt",
+            environment={
+                "GITHUB_ACTIONS": "true",
+                "GITHUB_EVENT_NAME": "push",
+                "GITHUB_REPOSITORY": REPO,
+                "GITHUB_ACTOR": "alice",
+                "GITHUB_RUN_ATTEMPT": "1",
+            },
         )
     assert setup.calls == 0
 
@@ -184,8 +237,10 @@ def test_untrusted_github_event_cannot_impersonate_dispatch(setup: LedgerDouble)
 def test_handoff_evidence_is_repo_bound(setup: LedgerDouble) -> None:
     with pytest.raises(ValueError, match="same-repository"):
         external.claim_action(
-            cast(GitHub, GitHubDouble()), client="chatgpt",
+            cast(GitHub, GitHubDouble()),
+            client="chatgpt",
             claim_id="11111111-1111-4111-8111-111111111111",
-            operation="handoff", environment={},
+            operation="handoff",
+            environment={},
             evidence="https://evil.example/exfiltrate?token=123",
         )
