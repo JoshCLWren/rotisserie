@@ -55,7 +55,7 @@ jobs:
           set -Eeuo pipefail
           test -f .rotisserie/runtime/pyproject.toml
           uv tool run --from ./.rotisserie/runtime rotisserie factory \
-            --repo "$GITHUB_REPOSITORY" next --json > "$RUNNER_TEMP/frontier.json"
+            next --repo "$GITHUB_REPOSITORY" --json > "$RUNNER_TEMP/frontier.json"
           python3 - "$RUNNER_TEMP/frontier.json" "$GITHUB_STEP_SUMMARY" <<'PY'
           import json
           import sys
