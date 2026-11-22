@@ -13,7 +13,13 @@ def test_factory_gate_workflows_ensure_json_capable_github_cli() -> None:
     for name in ("fixed-model-factory-dispatch.yml", "factory-ready-merge-drain.yml"):
         text = (WORKFLOW_DIR / name).read_text(encoding="utf-8")
         setup = text.index("Ensure GitHub CLI supports JSON PR checks")
-        drain = text.index("Drain exact-head ready factory PRs")
+        # The drain merges; the dispatcher still reconciles CI through the gates.
+        anchor = (
+            "Drain exact-head ready factory PRs"
+            if name == "factory-ready-merge-drain.yml"
+            else "Reconcile unowned factory CI PRs"
+        )
+        drain = text.index(anchor)
 
         assert setup < drain
         assert "gh pr checks --help" in text

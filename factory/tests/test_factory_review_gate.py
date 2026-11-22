@@ -800,14 +800,16 @@ def test_worker_stages_trusted_controller_and_submits_exact_reviewed_head() -> N
 
 
 def test_dispatcher_requires_controller_authorization_before_merge() -> None:
-    """The scheduled merge drain cannot merge a ready label without exact-head attestation."""
-    source = (WORKFLOWS / "fixed-model-factory-dispatch.yml").read_text(encoding="utf-8")
+    """The dispatcher never merges; the serialized drain authorizes every merge."""
+    dispatcher = (WORKFLOWS / "fixed-model-factory-dispatch.yml").read_text(encoding="utf-8")
+    assert "gh pr merge" not in dispatcher
+    source = (WORKFLOWS / "factory-ready-merge-drain.yml").read_text(encoding="utf-8")
     authorization = 'python3 "$review_controller" authorized --pr "$pr"'
     merge = 'gh pr merge "$pr"'
     assert authorization in source
     assert merge in source
     assert source.index(authorization) < source.index(merge)
-    assert '"$authorized_head" != "$head"' in source
+    assert '== "$expected_head"' in source
 
 
 def test_validate_review_lease_returns_already_ready_for_promoted_pr() -> None:
@@ -1900,10 +1902,7 @@ def test_merge_drain_never_reads_native_review_state_for_merge() -> None:
 
 def test_every_scheduled_auto_merge_route_runs_the_controller_gate_first() -> None:
     """Each scheduled factory merge route checks gates before it can merge."""
-    for workflow in (
-        "factory-ready-merge-drain.yml",
-        "fixed-model-factory-dispatch.yml",
-    ):
+    for workflow in ("factory-ready-merge-drain.yml",):
         content = (WORKFLOWS / workflow).read_text(encoding="utf-8")
         gate_call = content.index('gates --pr')
         merge_call = content.index('gh pr merge "$pr"')

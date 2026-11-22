@@ -775,7 +775,9 @@ def test_workflows_delegate_mechanical_gates_to_controller():
     for name in ("factory-ready-merge-drain.yml", "fixed-model-factory-dispatch.yml"):
         text = (root / name).read_text()
         assert "factory-review-controller.py" in text
-        assert " gates --pr " in text
+        if name == "factory-ready-merge-drain.yml":
+            # Only the serialized drain merges, so only it runs merge gates.
+            assert " gates --pr " in text
         for line_number, line in enumerate(text.splitlines(), 1):
             if "gh pr checks" in line and "--help" not in line:
                 raise AssertionError(

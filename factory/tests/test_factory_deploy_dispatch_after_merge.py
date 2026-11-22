@@ -68,9 +68,10 @@ def test_known_bot_merge_paths_are_all_found() -> None:
     # merge route; their call sites are covered in test_factory_worker_merge_route.py.
     assert {
         ".github/workflows/factory-ready-merge-drain.yml",
-        ".github/workflows/fixed-model-factory-dispatch.yml",
         ".github/scripts/factory-canonical-merge-route.sh",
     } <= paths
+    # Merges are serialized: the dispatcher only triggers the drain.
+    assert ".github/workflows/fixed-model-factory-dispatch.yml" not in paths
 
 
 def test_every_bot_merge_path_dispatches_deploy_production() -> None:
@@ -166,6 +167,8 @@ esac
         f"""case "$2" in
   authorized) pr="$4"; echo "{{\\"authorized\\":true,\\"head\\":\\"sha$pr\\"}}" ;;
   gates) echo '{{"decision":"{gate}","reason":"test"}}' ;;
+  gate) echo '{{"allow":true,"lane":"normal","reason":"green","main":{{"sha":"{"0" * 40}","state":"green"}}}}' ;;
+  after-merge) echo '{{"main":{{"explanation":"main verified pending"}}}}' ;;
   *) exit 0 ;;
 esac
 """,
@@ -185,10 +188,7 @@ esac
     return log.read_text(encoding="utf-8").splitlines() if log.exists() else []
 
 
-DRAINS = (
-    ".github/workflows/factory-ready-merge-drain.yml",
-    ".github/workflows/fixed-model-factory-dispatch.yml",
-)
+DRAINS = (".github/workflows/factory-ready-merge-drain.yml",)
 
 
 def test_drains_dispatch_one_deploy_after_the_last_merge(tmp_path: Path) -> None:
@@ -196,14 +196,16 @@ def test_drains_dispatch_one_deploy_after_the_last_merge(tmp_path: Path) -> None
         calls = _run_drain(tmp_path / str(index), rel)
         merges = [i for i, call in enumerate(calls) if call.startswith("gh pr merge")]
         dispatches = [i for i, call in enumerate(calls) if call.startswith("gh workflow run")]
-        assert len(merges) == 2, (rel, calls)
+        # Serialized: one merge per drain run even with two ready PRs; the
+        # next merge waits for the resulting main's CI.
+        assert len(merges) == 1, (rel, calls)
         assert len(dispatches) == 1, (rel, calls)
         assert dispatches[0] > merges[-1], (rel, calls)
         assert (
             "gh workflow run deploy-production.yml --repo JoshCLWren/comic-pile --ref main -f source=factory-merge"
             in calls[dispatches[0]]
         )
-        assert "merged 2 PR(s)" in calls[dispatches[0]]
+        assert "merged 1 PR(s)" in calls[dispatches[0]]
 
 
 def test_drains_count_prs_merged_while_gh_errored(tmp_path: Path) -> None:
@@ -214,7 +216,7 @@ def test_drains_count_prs_merged_while_gh_errored(tmp_path: Path) -> None:
         dispatches = [call for call in calls if call.startswith("gh workflow run")]
         assert len(dispatches) == 1, (rel, calls)
         assert "-f source=factory-merge" in dispatches[0]
-        assert "merged 2 PR(s)" in dispatches[0]
+        assert "merged 1 PR(s)" in dispatches[0]
 
 
 def test_drains_without_a_merge_do_not_dispatch(tmp_path: Path) -> None:

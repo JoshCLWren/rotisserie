@@ -226,50 +226,46 @@ jobs:
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
+          FACTORY_MAIN_CI_WORKFLOWS: ${{ vars.FACTORY_MAIN_CI_WORKFLOWS }}
         run: |
           set -Eeuo pipefail
-          sha="$(git rev-parse HEAD 2>/dev/null || git rev-parse origin/main)"
-          runs_file="$RUNNER_TEMP/main-ci-workflow-runs.json"
-          if ! gh api --paginate --slurp \
-            "repos/${GITHUB_REPOSITORY}/actions/workflows/ci.yml/runs?head_sha=${sha}&event=push&per_page=100" \
-            > "$runs_file"; then
-            echo "GitHub API unavailable proving product CI health at ${sha}; blocking factory merges" >&2
-            echo "main_red=true" >> "$GITHUB_OUTPUT"
-            echo "failing=UNAVAILABLE" >> "$GITHUB_OUTPUT"
+          # Serialized merges: the next merge waits until the exact main commit
+          # has passed product CI. No CI run means unverified, never green, and
+          # an unverified main gets its product CI dispatched here (GITHUB_TOKEN
+          # merges fire no push event, so nothing else would run it).
+          # Fetched once; the drain step hands this snapshot to the gate.
+          snapshot="$RUNNER_TEMP/factory-main-health.json"
+          if ! result="$(python3 .github/scripts/factory_main_health.py ensure-verification --repo "$GITHUB_REPOSITORY")"; then
+            echo "Could not prove product CI health of main; no merge this run" >&2
+            echo "state=unavailable" >> "$GITHUB_OUTPUT"
             exit 0
           fi
-          if ! health="$(python3 .github/scripts/factory_main_health.py --sha "$sha" < "$runs_file")"; then
-            echo "GitHub returned invalid product CI health data at ${sha}; blocking factory merges" >&2
-            echo "main_red=true" >> "$GITHUB_OUTPUT"
-            echo "failing=UNAVAILABLE" >> "$GITHUB_OUTPUT"
-            exit 0
-          fi
-          total="$(jq -r '.total' <<< "$health")"
-          failing="$(jq -r '.failing' <<< "$health")"
-          echo "Main health API result: sha=${sha} total_count=${total} failing=${failing}"
-          if [[ "${total:-0}" != "0" && "${failing:-0}" != "0" ]]; then
-            echo "Main $sha has failed product CI ($failing/$total failing) - blocking factory merges" >&2
-            echo "main_red=true" >> "$GITHUB_OUTPUT"
-            echo "failing=$failing" >> "$GITHUB_OUTPUT"
-            exit 0
-          fi
-          echo "Main $sha is green (total=$total failing=$failing)"
-          echo "main_red=false" >> "$GITHUB_OUTPUT"
+          printf '%s\n' "$result" > "$snapshot"
+          state="$(jq -r '.main.state' <<< "$result")"
+          jq -r '.main.explanation' <<< "$result"
+          dispatched="$(jq -r '.dispatched | join(", ")' <<< "$result")"
+          [[ -z "$dispatched" ]] || echo "Dispatched product CI on main: ${dispatched}"
+          echo "state=$state" >> "$GITHUB_OUTPUT"
 
       - name: Drain exact-head ready factory PRs
-        if: steps.main_health.outputs.main_red != 'true'
+        # Green main merges normally; red main admits only the main-repair lane
+        # (main-breakage PRs). Pending or unverified main waits for its CI.
+        if: steps.main_health.outputs.state == 'green' || steps.main_health.outputs.state == 'red'
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
+          FACTORY_MAIN_CI_WORKFLOWS: ${{ vars.FACTORY_MAIN_CI_WORKFLOWS }}
+          MAIN_STATE: ${{ steps.main_health.outputs.state }}
         run: |
           set -Eeuo pipefail
           review_controller='.github/scripts/factory-review-controller.py'
           closure_script='.github/scripts/factory_post_merge_closure.py'
+          main_health='.github/scripts/factory_main_health.py'
           # shellcheck source=/dev/null
           source .github/scripts/factory-dispatch-production-deploy.sh
           # GITHUB_TOKEN merges fire no push event, so dispatch Deploy
-          # Production once, after the last merge of this run (EXIT trap so a
-          # later failure in the loop cannot skip it).
+          # Production after this run's merge (EXIT trap so a later failure
+          # cannot skip it).
           merged_count=0
           dispatch_deploy_after_merges() {
             if (( merged_count > 0 )); then
@@ -284,6 +280,19 @@ jobs:
               echo "Post-merge closure for PR #${pr} failed; the stranded-closure sweep will retry" >&2
               return 1
             }
+          }
+
+          # One merge per run: release the claim, dispatch product CI on the
+          # resulting main, and stop. The next merge waits for that verdict.
+          finish_merge() {
+            local pr="$1" previous="$2" after
+            merged_count=$((merged_count + 1))
+            complete_post_merge_closure "$pr" || true
+            if after="$(python3 "$main_health" after-merge --repo "$GITHUB_REPOSITORY" --previous "$previous")"; then
+              echo "Resulting main: $(jq -r '.main.explanation // empty' <<< "$after")"
+            else
+              echo "Could not dispatch verification of the resulting main; the next drain dispatches it" >&2
+            fi
           }
 
           echo 'Sweeping recently merged factory PRs for stranded issue closures'
@@ -306,8 +315,11 @@ jobs:
           fi
 
           for candidate in "${ready_prs[@]}"; do
-            IFS=$'\t' read -r pr expected_head _ <<< "$candidate"
+            IFS=$'\t' read -r pr expected_head labels <<< "$candidate"
             [[ -n "$pr" && -n "$expected_head" ]] || continue
+            if [[ "${MAIN_STATE:-}" == red &&",${labels}," != *",main-breakage,"* ]]; then
+              continue
+            fi
             authorization="$(python3 "$review_controller" authorized --pr "$pr")" || {
               echo "Unable to verify semantic authorization for PR #${pr}; leaving it open" >&2
               continue
@@ -344,25 +356,38 @@ jobs:
                 ;;
             esac
 
-            echo "Merging semantically authorized ready PR #${pr} at ${expected_head}"
+            # Re-check main and take the exclusive merge claim on its exact SHA.
+            # Reuses this run's main snapshot and the listing's labels; only
+            # main's SHA is re-read before the claim.
+            serial="$(python3 "$main_health" gate --repo "$GITHUB_REPOSITORY" --pr "$pr" \
+              --labels "$labels" --health-file "$RUNNER_TEMP/factory-main-health.json")" || {
+              echo "Unable to evaluate the serialized merge gate; no merge this run" >&2
+              exit 0
+            }
+            if [[ "$(jq -r '.allow' <<< "$serial")" != 'true' ]]; then
+              echo "PR #${pr} waits: $(jq -r '.reason' <<< "$serial")"
+              [[ "$(jq -r '.main.state' <<< "$serial")" == red ]] && continue
+              exit 0
+            fi
+            main_before="$(jq -r '.main.sha' <<< "$serial")"
+
+            echo "Merging semantically authorized ready PR #${pr} at ${expected_head} onto main ${main_before} ($(jq -r '.lane' <<< "$serial") lane)"
             if gh pr merge "$pr" --repo "$GITHUB_REPOSITORY" \
               --merge --match-head-commit "$expected_head"; then
               echo "Merged ready PR #${pr}"
-              merged_count=$((merged_count + 1))
-              complete_post_merge_closure "$pr" || true
-              continue
+              finish_merge "$pr" "$main_before"
+              exit 0
             fi
 
             state="$(gh pr view "$pr" --repo "$GITHUB_REPOSITORY" --json state --jq .state 2>/dev/null || true)"
             if [[ "$state" == "MERGED" ]]; then
               echo "PR #${pr} was merged by another actor; completing any interrupted post-merge closure"
-              # The merge may have landed even though gh errored (or another
-              # GITHUB_TOKEN actor merged it); count it so the deploy is still
-              # dispatched. Deploy Production dedupes an already-READY SHA.
-              merged_count=$((merged_count + 1))
-              complete_post_merge_closure "$pr" || true
-              continue
+              # The merge may have landed even though gh errored; count it so
+              # the deploy is still dispatched and main is still verified.
+              finish_merge "$pr" "$main_before"
+              exit 0
             fi
+            python3 "$main_health" release --repo "$GITHUB_REPOSITORY" --sha "$main_before" >/dev/null || true
             echo "Unable to merge ready PR #${pr}; it will retry on the next drain" >&2
           done
 

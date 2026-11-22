@@ -138,11 +138,35 @@ factory_merge_with_canonical_gates() {
     return 1
   fi
 
+  # Serialized merges: only onto a verified green main (a red main admits only
+  # main-breakage repairs), under an exclusive claim on main's exact SHA, so
+  # this route cannot race the ready-merge drain or another worker.
+  local main_health serial main_before
+  main_health="$(dirname "${TRUSTED_REVIEW_CONTROLLER}")/factory_main_health.py"
+  if [[ ! -f "$main_health" ]]; then
+    FACTORY_MERGE_GATE_REASON='trusted serialized merge gate is not staged'
+    return 1
+  fi
+  if ! serial="$(python3 "$main_health" gate --repo "${GITHUB_REPOSITORY:?}" --pr "$pr")"; then
+    FACTORY_MERGE_GATE_DECISION='retry'
+    FACTORY_MERGE_GATE_REASON='serialized merge gate could not read main CI'
+    return 1
+  fi
+  if [[ "$(printf '%s' "$serial" | factory_canonical_merge_json_field lane)" == 'none' ]]; then
+    FACTORY_MERGE_GATE_DECISION='retry'
+    FACTORY_MERGE_GATE_REASON="$(printf '%s' "$serial" | factory_canonical_merge_json_field reason)"
+    return 1
+  fi
+  main_before="$(printf '%s' "$serial" | python3 -c 'import json,sys; print(json.load(sys.stdin)["main"]["sha"])')"
+
   # --match-head-commit makes GitHub reject the merge when the reviewed head
   # moved after the gates were evaluated.
   if gh pr merge "$pr" --merge --match-head-commit "$expected_head" --delete-branch; then
     factory_dispatch_production_deploy "Factory ${WORKER:-worker} merged PR #${pr}"
+    python3 "$main_health" after-merge --repo "$GITHUB_REPOSITORY" --previous "$main_before" >/dev/null || \
+      printf '[factory-merge] could not dispatch verification of the resulting main; the drain will\n' >&2
   else
+    python3 "$main_health" release --repo "$GITHUB_REPOSITORY" --sha "$main_before" >/dev/null || true
     FACTORY_MERGE_STATE='merge-failed'
     FACTORY_MERGE_GATE_REASON="merge command failed for head ${expected_head}"
     return 2
