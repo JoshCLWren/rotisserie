@@ -35,6 +35,15 @@ Handoff records evidence in Neon and releases the claim. It **does not**
 approve a review, bypass required checks, merge a PR, close the issue, or
 authorize deployment. Use ordinary controller gates after recording evidence.
 
+An `implement` claim must produce an open, non-draft PR in the same repository
+with an explicit `Closes #ISSUE` reference to the claimed issue. Handing off
+that PR URL causes the **trusted controller** to verify the link and project
+`factory`, `factory:review` and `factory:unowned` labels onto the PR before
+releasing the fenced Neon claim. This enrolls the PR in the **existing**
+independent-review queue; it does not authorize merge or replace ownership
+with labels. An unrelated PR, issue URL or workflow run cannot complete
+an implementation claim. A repair claim must use evidence for its own PR.
+
 Do not put Neon credentials into a model session, its prompt, tool output,
 artifact, commit, or issue comment. The local direct CLI is only available to
 an appropriately trusted controller environment. An ordinary agent without
