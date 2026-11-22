@@ -19,9 +19,18 @@ REPO = "acme/widgets"
 class GitHubDouble:
     repo = REPO
 
-    def __init__(self, *, permission: str = "write", head: str = "a" * 40) -> None:
+    def __init__(
+        self,
+        *,
+        permission: str = "write",
+        head: str = "a" * 40,
+        priority: str = "ralph-priority:low",
+        dependency_open: bool = False,
+    ) -> None:
         self.permission = permission
         self.head = head
+        self.priority = priority
+        self.dependency_open = dependency_open
 
     def whoami(self) -> str:
         return "alice"
@@ -29,8 +38,10 @@ class GitHubDouble:
     def repo_api(self, route: str) -> Any:
         if route.startswith("collaborators/"):
             return {"permission": self.permission}
+        if "/dependencies/blocked_by" in route:
+            return [{"state": "open", "number": 99}] if self.dependency_open else []
         if route.startswith("issues/"):
-            return {"state": "open"}
+            return {"state": "open", "labels": [{"name": self.priority}]}
         if route.startswith("pulls/"):
             return {"state": "open", "head": {"sha": self.head, "ref": "work-7"}}
         raise AssertionError(route)
@@ -346,3 +357,31 @@ def test_known_external_code_author_cannot_reserve_own_review(
     handoff = result["handoff"]
     assert isinstance(handoff, dict)
     assert handoff["target"] == "issue:8"
+
+
+def test_priority_changed_after_neon_cas_releases_our_claim(
+    setup: LedgerDouble,
+) -> None:
+    result = external.reserve_next(
+        cast(GitHub, GitHubDouble(priority="ralph-priority:critical")),
+        client="chatgpt",
+        environment={},
+    )
+    assert result["status"] == "conflict"
+    assert "priority" in str(result["reason"])
+    assert setup.calls == 1
+    assert setup.holder is None
+
+
+def test_dependency_opened_after_neon_cas_releases_our_claim(
+    setup: LedgerDouble,
+) -> None:
+    result = external.reserve_next(
+        cast(GitHub, GitHubDouble(dependency_open=True)),
+        client="codebuff",
+        environment={},
+    )
+    assert result["status"] == "conflict"
+    assert "99" in str(result["reason"])
+    assert setup.calls == 1
+    assert setup.holder is None
