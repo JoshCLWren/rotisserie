@@ -365,7 +365,7 @@ def lease_report(
                 continue
             found.append(
                 LeaseRow(
-                    f"#{ident}" if kind == "target" else f"worker:{ident}",
+                    f"#{ident}" if kind == "target" else f"{kind}:{ident}",
                     _describe(row),
                     bool(row["active"]),
                     str(row["expires_at"]),
