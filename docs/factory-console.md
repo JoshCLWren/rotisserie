@@ -15,6 +15,7 @@ rotisserie factory unstick     # start the workers that clear the bottleneck
 rotisserie factory outcomes    # did the requested work actually happen
 rotisserie factory close pr:N --reason TEXT  # close work that should not be done
 rotisserie factory checks pr:N # why its checks fail, in one line each
+rotisserie factory groom inventory  # the whole open backlog, with evidence per item
 rotisserie factory doctor      # is the factory itself healthy
 rotisserie factory conflicts pr:N  # which of its files main also changed, and where
 ```
@@ -282,6 +283,59 @@ merged commits that keep older dates.
 models have failed an item's conflicts in the last 6 hours, it stops planning
 workers for it and lists it under **Needs you: models keep failing**: merge it
 by hand, or close it if the overlapping merged PR already did the work.
+
+## Grooming the backlog
+
+`rotisserie factory groom` reconciles an adopter's open issues and PRs with
+reality in two steps, with a person (or an agent working for one) between them.
+
+```
+rotisserie factory groom inventory --out inventory.json   # read everything, attach evidence
+rotisserie factory groom apply plan.json                  # check a reviewed plan (dry run)
+rotisserie factory groom apply plan.json --yes --log groom-audit.jsonl
+```
+
+**inventory** reads every page of open issues and PRs and refuses, rather
+than truncates, if any page cannot be read. Each item gets evidence: who holds
+it, the PRs that implement an issue and the issues a PR implements, declared
+dependencies (`Depends on #N`, `blocked by #N`) that are already closed, merged
+PRs that claim to close or be part of the issue (a bare mention does not
+count), near-identical titles, and text about the factory runtime (which
+belongs upstream). A disposition is proposed only where evidence alone decides
+it: a PR whose issues are all closed is `superseded`, a structured
+manual-only issue is `manual-product-decision`. A merged PR is evidence to
+verify, never proof that an issue's acceptance criteria are met, so such issues
+are `unknown` until someone checks.
+
+**apply** runs a JSON plan of reviewed actions:
+
+```json
+{"actions": [
+  {"id": "unhold-1234", "op": "edit-body", "target": "issue:1234",
+   "why": "the hold on #100 was lifted on 2026-01-15", "body": "...new body...",
+   "expect": {"body_sha256": "<from the inventory>"}},
+  {"op": "labels", "target": "issue:1234", "why": "...", "remove": ["factory:blocked"]},
+  {"op": "close-issue", "target": "issue:99", "reason": "completed",
+   "why": "PR #120 delivered every acceptance item; verified on production",
+   "comment": "..."},
+  {"op": "duplicate", "target": "issue:98", "duplicate_of": 97, "why": "...", "comment": "..."},
+  {"op": "close-pr", "target": "pr:130", "why": "...", "comment": "...",
+   "expect": {"head": "<reviewed head SHA>"}}
+]}
+```
+
+Operations: `comment`, `edit-body`, `labels`, `close-issue` (`completed` or
+`not_planned`), `duplicate` (posts "Duplicate of #N" and closes), `close-pr`,
+and `transfer` (moves an issue that belongs to another repository, such as a
+factory-runtime ticket filed in the adopter, with its comments; set `to_repo`). Every action needs a `why`; closures need a comment; body edits need
+the hash of the body that was reviewed; closing a PR needs its reviewed head.
+Before each write the item is read again, and the action is **refused** when a
+worker holds it, when its body, labels or head changed since review, or when it
+would close an issue that an open PR still implements (decide the PR first).
+Closing a PR never closes its issue: that is a separate action. Each applied
+action leaves a marker comment, so running the same plan again changes nothing.
+Without `--yes` nothing is written; `--log` appends every result to an audit
+file.
 
 ## Is the factory itself healthy?
 

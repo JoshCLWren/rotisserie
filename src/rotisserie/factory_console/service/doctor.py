@@ -8,7 +8,7 @@ Every check here replaces a diagnosis first done by hand:
 * the scheduler stopped running;
 * Rotisserie intake could not decide, so no fresh issue was admitted;
 * most workers were rejected by the *same* factory gate: the fast checks ran
-  tests the repository had deleted, so every Rust change "failed validation";
+  tests the repository had deleted, so every change to that code "failed validation";
 * main broke a check (a PR merged with unformatted code), so every backlog PR
   running it went red and repair workers were sent to fix main's files PR by PR.
 """
