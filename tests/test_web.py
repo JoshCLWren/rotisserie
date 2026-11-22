@@ -122,7 +122,9 @@ def test_browser_requires_local_origin_session_and_bounded_operations() -> None:
         merged.update(headers or {})
         if data is not None:
             merged["Content-Type"] = "application/json"
-        connection.request(method, path, body=json.dumps(data) if data is not None else None, headers=merged)
+        connection.request(
+            method, path, body=json.dumps(data) if data is not None else None, headers=merged
+        )
         response = connection.getresponse()
         text = response.read().decode()
         status = response.status
@@ -132,7 +134,8 @@ def test_browser_requires_local_origin_session_and_bounded_operations() -> None:
     try:
         assert send("GET", "/api/status")[0] == 403
         auth = {"X-Rotisserie-Token": "unit-test-session"}
-        assert send("GET", "/api/status", headers={**auth, "Origin": "https://other.test"})[0] == 403
+        foreign_origin = {**auth, "Origin": "https://other.test"}
+        assert send("GET", "/api/status", headers=foreign_origin)[0] == 403
         assert send("GET", "/api/status", headers={**auth, "Host": "localhost"})[0] == 403
         assert send("GET", "/api/status", headers=auth)[0] == 200
         assert calls == [("acme/widgets", ["status"])]
