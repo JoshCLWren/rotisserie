@@ -12,6 +12,7 @@ import os
 import re
 import uuid
 from datetime import datetime, timezone
+from collections.abc import Callable
 from typing import Any
 
 from factory_state_metrics import connect as measured_connect
@@ -931,8 +932,10 @@ if __name__ == "__main__":
 # provider reservations. An expired external claim is intentionally still a
 # hold until its identity-fenced release or verified operator reconciliation.
 EXTERNAL_ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$")
+# Review is not offered: the merge gate only counts approvals whose reviewer
+# model the trusted runtime recorded, which an outside agent cannot provide.
 EXTERNAL_ACTIONS = frozenset({
-    "implement", "review", "review-findings", "ci-repair", "merge-conflict",
+    "implement", "review-findings", "ci-repair", "merge-conflict",
 })
 EXTERNAL_WIP_ACTIONS = frozenset({
     "implement", "review-findings", "ci-repair", "merge-conflict",
@@ -1066,6 +1069,7 @@ def reserve_external(
 async def _finish_external(
     repo: str, actor: str, client: str, token: str, *,
     operation: str, evidence: str, ttl: int,
+    verify: Callable[[dict[str, Any]], None] | None,
 ) -> dict[str, Any]:
     key = _external_key(repo, token)
     conn = await measured_connect(dsn=_dsn(), timeout=8, command_timeout=12)
@@ -1095,6 +1099,16 @@ async def _finish_external(
             )
             if len(confirmed) != len(keys) or any(row["id"] != token for row in confirmed):
                 return {"status": "conflict", "reason": "stale_target_fence"}
+            if verify is not None:
+                # Runs while this transaction holds the repository lock and
+                # the verified fences: no other claim, revoke or factory
+                # acquisition can interleave, and an exception here rolls
+                # back, leaving the claim held rather than silently lost.
+                verify({
+                    "target": record["target"], "action": record["action"],
+                    "head": record.get("head"), "targets": list(numbers),
+                    "client": client, "actor": actor, "claim_id": token,
+                })
             if operation == "renew":
                 if row["expires_at"] <= datetime.now(timezone.utc):
                     return {"status": "conflict", "reason": "lease_expired_liveness_unknown"}
@@ -1145,7 +1159,13 @@ async def _finish_external(
 def external_lease_action(
     repo: str, actor: str, client: str, claim_id: str, *,
     operation: str, evidence: str = "", ttl: int = 1800,
+    verify: Callable[[dict[str, Any]], None] | None = None,
 ) -> dict[str, Any]:
+    """Renew, release or hand off one claim, fenced by UUID, actor and client.
+
+    ``verify`` (handoff only) checks the evidence against the claimed task and
+    projects GitHub review stage inside the locked transaction.
+    """
     _external_request(repo, actor, client, [1])
     try:
         uuid.UUID(claim_id)
@@ -1155,12 +1175,15 @@ def external_lease_action(
         raise ValueError("invalid external lease operation")
     if operation == "handoff" and not evidence.strip():
         raise ValueError("handoff requires durable evidence")
+    if verify is not None and operation != "handoff":
+        raise ValueError("only a handoff verifies evidence")
     if len(evidence) > 2000 or any(c in evidence for c in "\r\n"):
         raise ValueError("invalid external evidence")
     if not enabled():
         raise RuntimeError("trusted external claims require Neon")
     return asyncio.run(_finish_external(
-        repo, actor, client, claim_id, operation=operation, evidence=evidence, ttl=ttl
+        repo, actor, client, claim_id, operation=operation, evidence=evidence, ttl=ttl,
+        verify=verify,
     ))
 
 
@@ -1179,97 +1202,6 @@ def external_wip_count(repo: str) -> int:
                 f"{LEASE_PREFIX}{repo}:external:",
             )
             return int(result or 0)
-        finally:
-            await conn.close()
-
-    return asyncio.run(_read())
-
-
-def external_code_authors(repo: str, numbers: list[int]) -> set[str]:
-    """Return known external coding clients for the current issue/PR lineage.
-
-    GitHub actor names are NOT model identities: several independent agents
-    may operate using the repository owner's account. The durable client ID,
-    not that shared actor, is the review-independence fence.
-    """
-    if not enabled():
-        raise RuntimeError("Neon is not configured")
-    if not numbers or any(type(n) is not int or n < 1 for n in numbers):
-        raise ValueError("invalid author-provenance targets")
-
-    async def _read() -> set[str]:
-        conn = await measured_connect(dsn=_dsn(), timeout=8, command_timeout=8)
-        try:
-            targets = [f"issue:{n}" for n in numbers] + [f"pr:{n}" for n in numbers]
-            rows = await conn.fetch(
-                """SELECT DISTINCT detail->>'client' AS client
-                   FROM public.factory_state_events
-                   WHERE source='rotisserie-external'
-                     AND event_type='external_reserved'
-                     AND detail->>'repo'=$1
-                     AND detail->>'target'=ANY($2::text[])
-                     AND detail->>'action' IN
-                         ('implement','review-findings','ci-repair','merge-conflict')""",
-                repo, targets,
-            )
-            return {str(row["client"]) for row in rows if row["client"]}
-        finally:
-            await conn.close()
-
-    return asyncio.run(_read())
-
-
-def external_claim_details(
-    repo: str, actor: str, client: str, claim_id: str
-) -> dict[str, Any]:
-    """Read a fenced external claim before validating its GitHub handoff."""
-    _external_request(repo, actor, client, [1])
-    try:
-        uuid.UUID(claim_id)
-    except (ValueError, AttributeError):
-        raise ValueError("invalid claim ID") from None
-    if not enabled():
-        raise RuntimeError("Neon is not configured")
-
-    async def _read() -> dict[str, Any]:
-        conn = await measured_connect(dsn=_dsn(), timeout=8, command_timeout=8)
-        try:
-            row = await conn.fetchrow(
-                "SELECT payload FROM public.factory_state_kv WHERE cache_key=$1",
-                _external_key(repo, claim_id),
-            )
-            if row is None:
-                raise RuntimeError("external claim missing or replaced")
-            payload = row["payload"]
-            data = json.loads(payload) if isinstance(payload, str) else payload
-            record = data[0] if isinstance(data, list) and data else {}
-            if (
-                record.get("claim_id") != claim_id
-                or record.get("actor") != actor
-                or record.get("client") != client
-                or record.get("external") is not True
-            ):
-                raise RuntimeError("external claim identity changed")
-            numbers = list(record["targets"])
-            target_rows = await conn.fetch(
-                """SELECT cache_key, payload->0->>'claim_id' AS claim_id
-                   FROM public.factory_state_kv
-                   WHERE cache_key=ANY($1::text[])""",
-                [_target_key(repo, number) for number in numbers],
-            )
-            if len(target_rows) != len(numbers) or any(
-                row["claim_id"] != claim_id for row in target_rows
-            ):
-                raise RuntimeError("stale external claim target fences")
-            return {
-                "target": record["target"],
-                "action": record["action"],
-                "head": record.get("head"),
-                "targets": numbers,
-                "client": client,
-                "actor": actor,
-                "claim_id": claim_id,
-            }
         finally:
             await conn.close()
 
