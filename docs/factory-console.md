@@ -312,7 +312,7 @@ are `unknown` until someone checks.
 ```json
 {"actions": [
   {"id": "unhold-1234", "op": "edit-body", "target": "issue:1234",
-   "why": "the hold on #4335 was lifted 2026-11-20", "body": "...new body...",
+   "why": "the hold on #100 was lifted on 2026-01-15", "body": "...new body...",
    "expect": {"body_sha256": "<from the inventory>"}},
   {"op": "labels", "target": "issue:1234", "why": "...", "remove": ["factory:blocked"]},
   {"op": "close-issue", "target": "issue:99", "reason": "completed",

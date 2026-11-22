@@ -1,11 +1,11 @@
 """Is a pull request's check failing because of the PR, or because of main?
 
 A PR is tested as if merged into the default branch, so a breakage that lands
-on main shows up on every open PR that runs the same check. ComicPile main once
-failed ``cargo fmt --check`` in three files a merged PR left unformatted; four
-backlog PRs then went red in files none of them changed. Repair workers on
-those PRs either fixed main's files (and were rejected as out of scope) or left
-them (and stayed red), round after round.
+on main shows up on every open PR that runs the same check (for example, a
+merge that leaves files failing the formatter turns every PR running that
+formatter red in files none of them changed). Repair workers on those PRs
+either fix main's files (and are rejected as out of scope) or leave them (and
+stay red), round after round.
 
 This tells the two apart from GitHub alone, with no repository-specific names:
 
