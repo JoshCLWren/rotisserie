@@ -12,6 +12,7 @@ rotisserie factory stats       # which providers and models actually deliver
 rotisserie factory settings    # limits, worker counts and priority order
 rotisserie factory why issue:N # why an issue is or is not being picked up
 rotisserie factory unstick     # start the workers that clear the bottleneck
+rotisserie factory outcomes    # did the requested work actually happen
 ```
 
 The repository is taken from `--repo owner/name`, `FACTORY_REPO`, the nearest
@@ -155,6 +156,27 @@ Starting sends one forced, targeted request per task (the same as
 `run PROVIDER MODEL --force --target pr:N --action ACTION`). Outside a terminal
 it starts nothing unless you pass `--yes`.
 
+## Did it work?
+
+A worker's own verdict is not proof. A merge-conflict worker can finish
+"without changes" while the pull request still conflicts.
+`rotisserie factory outcomes` follows each targeted request (from `run --target`
+or `unstick`) through to its effect: what the scheduler decided, what the
+worker reported, and whether the goal holds **now**:
+
+| Action | Goal checked |
+|---|---|
+| `merge-conflict` | GitHub no longer reports the PR as conflicting |
+| `ci-repair` | the PR left the failing-checks stage |
+| `review-findings` | the PR left the changes-requested stage |
+| `review` | the PR has a review decision (ready or changes requested) |
+| implement (issue) | the worker delivered a pull request |
+
+A failed worker never counts as done, even when later work fixed the item.
+Requests the scheduler deferred count as "not started", not as misses. The
+"Not done" list shows each item whose latest started request missed its goal.
+`--since 2h` sets the window; `--all` includes routine scheduler passes.
+
 ## Other front ends
 
 The console's logic lives in `rotisserie.factory_console.service`, which never
@@ -177,7 +199,8 @@ plan = unstick.plan(github, now=now)
 print(plan.to_dict())
 ```
 
-`queue` (why), `unstick` (plan and start), `dispatch` (submit a request),
+`queue` (why), `unstick` (plan and start), `outcomes` (did it work),
+`catalog` (models offered now), `dispatch` (submit a request),
 `reliability` (track record) and `providers` (setup) are in the service so far.
 Older commands still mix reading, deciding and printing in `commands.py` and
 move into the service when they are next changed.

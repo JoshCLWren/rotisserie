@@ -1262,3 +1262,89 @@ def test_models_flags_track_record_models_the_provider_dropped(
     assert rows["opencode-go/hy4-flash-free"]["offered"] is True
     assert rows["opencode-go/deepseek-v4.1-flash-free"]["offered"] is False
     assert "no longer offered" in rows["opencode-go/deepseek-v4.1-flash-free"]["source"]
+
+
+# outcomes ------------------------------------------------------------------------------
+
+
+def test_outcome_goals_follow_the_target_state_not_the_workers_word() -> None:
+    from rotisserie.factory_console.service.outcomes import judge
+    from rotisserie.factory_console.tracker import WorkerOutcome
+
+    idle = WorkerOutcome(Result.IDLE, "nothing to do")
+    conflicted: Obj = {"mergeable": False, "mergeable_state": "dirty", "state": "open"}
+    clean: Obj = {"mergeable": True, "mergeable_state": "clean", "state": "open"}
+    computing: Obj = {"mergeable": None, "mergeable_state": "unknown", "state": "open"}
+    assert judge("merge-conflict", "pr", conflicted, idle)[0] == "not-met"
+    assert judge("merge-conflict", "pr", clean, idle)[0] == "met"
+    assert judge("merge-conflict", "pr", computing, idle)[0] == "pending"
+    stuck: Obj = {"state": "open", "labels": [{"name": "factory:changes-requested"}]}
+    moved: Obj = {"state": "open", "labels": [{"name": "factory:review"}]}
+    assert judge("review-findings", "pr", stuck, idle) == (
+        "not-met",
+        "it is still changes-requested",
+    )
+    assert judge("review-findings", "pr", moved, idle)[0] == "met"
+    assert judge("review", "pr", moved, idle)[0] == "not-met"
+    assert judge("ci-repair", "pr", {"merged": True}, idle)[0] == "met"
+    delivered = WorkerOutcome(Result.DELIVERED, "Verified PR #9 was handed off", 9)
+    assert judge("implement", "issue", {}, delivered) == ("met", "pull request #9 was delivered")
+
+
+def test_latest_misses_ignore_older_requests_and_unstarted_ones() -> None:
+    from rotisserie.factory_console.service.outcomes import RequestOutcome, latest_misses
+
+    def outcome(run: int, target: str, goal: str) -> RequestOutcome:
+        return RequestOutcome(
+            run, START, target, "dispatched", "", "review", "m", "w", None, "", "", goal, ""
+        )
+
+    found = [
+        outcome(4, "pr:1", "not-started"),  # deferred: does not hide the real result
+        outcome(3, "pr:1", "met"),
+        outcome(2, "pr:1", "not-met"),  # older miss, since fixed
+        outcome(1, "pr:2", "not-met"),
+    ]
+    assert [item.scheduler_run for item in latest_misses(found)] == [1]
+
+
+def test_outcomes_flags_an_idle_worker_that_left_conflicts(fake: FakeGitHub) -> None:
+    fake.routes["fixed-model-factory-dispatch.yml/runs"] = {
+        "workflow_runs": [
+            {
+                "id": 900,
+                "display_title": "Factory dispatch · pr:3953",
+                "status": "completed",
+                "created_at": "2026-11-21T22:30:00Z",
+            },
+            {"id": 901, "display_title": "Factory dispatch · opencode-go", "status": "completed"},
+        ]
+    }
+    fake.routes["actions/runs/900/jobs"] = {"jobs": list[JSON](DISPATCH_DONE)}
+    fake.texts["actions/jobs/11/logs"] = dispatched_log(
+        kind="pr", number=3953, action="merge-conflict", dispatched_at=int(START.timestamp())
+    )
+    fake.routes["free-model-factory-entry.yml/runs"] = {
+        "workflow_runs": [
+            {
+                "id": 950,
+                "display_title": f"Factory {WORKER} · opencode-go/hy4-flash-free · fixed-model entry",
+                "created_at": "2026-11-21T23:00:31Z",
+            }
+        ]
+    }
+    fake.routes["actions/runs/950$"] = {"id": 950, "status": "completed"}
+    fake.routes["actions/runs/950/jobs"] = {
+        "jobs": [job("Persist trusted worker outcome in Neon", [step("Classify")], job_id=31)]
+    }
+    fake.texts["actions/jobs/31/logs"] = "[factory-outcome] idle: The model found nothing to do\n"
+    fake.routes["pulls/3953$"] = {"mergeable": False, "mergeable_state": "dirty", "state": "open"}
+    code, out = invoke(["outcomes", "--since", "2h"])
+    assert code == 0
+    assert "Requests since" in out and "(1)" in out  # the routine pass is left out
+    assert "pr:3953: it still has merge conflicts" in out
+    assert "the worker reported nothing to do, but the goal does not hold" in out
+    code, out = invoke(["--json", "outcomes", "--all"])
+    data = json.loads(out)
+    assert data["goals"]["not-met"] == 1
+    assert data["requests"][0]["worker_result"] == "idle"

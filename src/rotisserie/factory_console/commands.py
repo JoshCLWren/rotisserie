@@ -43,6 +43,7 @@ from rotisserie.factory_console.github import (
 from rotisserie.factory_console.service import (
     catalog,
     dispatch,
+    outcomes,
     providers,
     queue,
     reliability,
@@ -241,6 +242,21 @@ def add_parser(subcommands: argparse._SubParsersAction[argparse.ArgumentParser])
     clear.add_argument("--yes", "-y", action="store_true", help="start without asking")
     _common(clear)
 
+    results = commands.add_parser(
+        "outcomes",
+        help="did requested work actually happen? (worker result and the target's state now)",
+        description=(
+            "Follow each recent scheduler request through to its effect: what the scheduler "
+            "decided, what the worker reported, and whether the goal holds now (merge conflict "
+            "gone, checks fixed, review decided, PR delivered)."
+        ),
+    )
+    results.add_argument("--since", default="2h", help="how far back: 2h, 1d, or a date")
+    results.add_argument(
+        "--all", action="store_true", help="include routine scheduler passes, not just targeted"
+    )
+    _common(results)
+
     providers = commands.add_parser(
         "providers", help="providers the factory can use and whether they are set up"
     )
@@ -354,6 +370,7 @@ def _help_text() -> str:
             "  rotisserie factory settings      limits, worker counts, priorities",
             "  rotisserie factory why [issue:N] why work is or is not being picked up",
             "  rotisserie factory unstick       start the workers that clear the bottleneck",
+            "  rotisserie factory outcomes      did the requested work actually happen",
             "  rotisserie factory cancel issue:N",
             "  rotisserie factory watch RUN",
             "  rotisserie factory providers | models PROVIDER | prioritize issue:N",
@@ -1604,6 +1621,60 @@ def _show_plan(console: Console, found: unstick.Plan) -> None:
     console.line()
 
 
+# outcomes -------------------------------------------------------------------------------
+
+GOAL_WORDS = {
+    "met": "done",
+    "not-met": "NOT done",
+    "pending": "in progress",
+    "not-started": "",
+    "unknown": "?",
+}
+
+
+def cmd_outcomes(context: Context, arguments: argparse.Namespace) -> Outcome:
+    console = context.console
+    start = parse_since(arguments.since, context.clock.now())
+    found = outcomes.request_outcomes(
+        context.github, since=start, clock=context.clock, targeted_only=not arguments.all
+    )
+    console.heading(f"Requests since {local_time(start)} ({len(found)})")
+    if not found:
+        console.line("No requests in that window.")
+    rows = []
+    for item in found:
+        worker = item.worker_result or item.decision
+        if item.decision != "dispatched":
+            worker = f"not started: {item.decision}"
+        rows.append(
+            [
+                local_time(item.requested_at),
+                item.target or "next task",
+                item.action or "",
+                item.model.removeprefix("opencode-go/") if item.model else "",
+                worker,
+                GOAL_WORDS.get(item.goal, item.goal),
+            ]
+        )
+    console.table(["Asked", "Item", "Action", "Model", "Worker", "Goal"], rows)
+    misses = outcomes.latest_misses(found)
+    if misses:
+        console.line()
+        console.line("Not done (latest request per item):")
+        for item in misses:
+            detail = item.reason if item.decision != "dispatched" else item.goal_text
+            console.line(f"  {console.dot} {item.target or 'next task'}: {detail}")
+            if item.worker_result == str(Result.IDLE):
+                console.line("      the worker reported nothing to do, but the goal does not hold")
+    summary = Counter(item.goal for item in found)
+    data: dict[str, object] = {
+        "since": start.isoformat(),
+        "requests": [item.to_dict() for item in found],
+        "goals": dict(summary),
+    }
+    return Outcome(Result.COMPLETED, EXIT_OK, data)
+
+
 # providers / models --------------------------------------------------------------------
 
 
@@ -1826,6 +1897,7 @@ HANDLERS = {
     "prioritize": cmd_prioritize,
     "why": cmd_why,
     "unstick": cmd_unstick,
+    "outcomes": cmd_outcomes,
     "explain": cmd_why,
     "providers": cmd_providers,
     "models": cmd_models,
