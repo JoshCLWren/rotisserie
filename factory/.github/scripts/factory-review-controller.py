@@ -11,12 +11,13 @@ import re
 import subprocess
 import sys
 import time
-from pathlib import Path
 from collections.abc import Mapping
+from pathlib import Path
 from typing import Any, Literal, TypedDict, cast
 
 sys.path.insert(0, os.path.dirname(__file__))
 from factory_adopter import repository  # noqa: E402
+
 issue_acceptance = importlib.import_module("factory_issue_acceptance")
 implementation_delivery = importlib.import_module("factory_implementation_delivery")
 # Reuse the post-merge closure selector so the merge-side dependency check
@@ -1010,18 +1011,78 @@ def interpret_required_checks(
     return gate_result("pass", "all required checks are successful")
 
 
+def advisory_check_names() -> set[str]:
+    """Check names the adopter declares advisory (comma-separated FACTORY_ADVISORY_CHECKS).
+
+    Empty by default: every reported check gates the merge unless the adopter
+    explicitly says otherwise.
+    """
+    raw = os.environ.get("FACTORY_ADVISORY_CHECKS", "")
+    return {name.strip() for name in raw.split(",") if name.strip()}
+
+
+def interpret_reported_checks(checks: object | None, *, advisory: set[str]) -> GateResult:
+    """Pure interpretation of `gh pr checks --json name,state` (every reported check).
+
+    Branch rules often require one aggregate check while path-filtered
+    workflows (for example a Rust build that only runs when Rust files change)
+    report beside it without being required. A red non-required check is still
+    a real failure at this head, so it denies the merge unless the adopter
+    declared that check advisory. A pending one waits.
+    """
+    if not isinstance(checks, list):
+        return gate_result("retry", "reported checks could not be determined")
+    failing: set[str] = set()
+    waiting: set[str] = set()
+    for check in checks:
+        if not isinstance(check, dict):
+            return gate_result("retry", "reported check payload contained an invalid row")
+        name = str(check.get("name") or "").strip()
+        state = str(check.get("state") or "").upper()
+        if not name or not state:
+            return gate_result("retry", "reported check row was missing its name or state")
+        if name in advisory or state in PASSING_CHECK_STATES:
+            continue
+        if state in FAILING_CHECK_STATES:
+            failing.add(name)
+        else:
+            waiting.add(name if state in RETRY_CHECK_STATES else f"{name} ({state})")
+    if failing:
+        return gate_result("deny", f"checks failed at this head: {', '.join(sorted(failing))}")
+    if waiting:
+        return gate_result("retry", f"checks are not terminal: {', '.join(sorted(waiting))}")
+    return gate_result("pass", "all reported checks are successful")
+
+
+def _checks_payload(
+    args: list[str],
+) -> tuple[bool, object | None, subprocess.CompletedProcess[str]]:
+    """Run a `gh pr checks` query; returns (valid_json, payload, process)."""
+    proc = run_gh(args, check=False)
+    if not proc.stdout.strip():
+        return True, None, proc
+    try:
+        return True, json.loads(proc.stdout), proc
+    except json.JSONDecodeError:
+        return False, None, proc
+
+
 def required_checks_gate(pr_number: int) -> GateResult:
-    proc = run_gh(
-        ["pr", "checks", str(pr_number), "--repo", REPO, "--required", "--json", "state"],
-        check=False,
+    """Required checks must pass, and no other reported check may be red or pending."""
+    valid, checks, proc = _checks_payload(
+        ["pr", "checks", str(pr_number), "--repo", REPO, "--required", "--json", "state"]
     )
-    checks: object | None = None
-    if proc.stdout.strip():
-        try:
-            checks = json.loads(proc.stdout)
-        except json.JSONDecodeError:
-            return gate_result("retry", "required checks returned invalid JSON")
-    return interpret_required_checks(checks, command_status=proc.returncode, stderr=proc.stderr)
+    if not valid:
+        return gate_result("retry", "required checks returned invalid JSON")
+    required = interpret_required_checks(checks, command_status=proc.returncode, stderr=proc.stderr)
+    if required["decision"] != "pass":
+        return required
+    valid, reported, _ = _checks_payload(
+        ["pr", "checks", str(pr_number), "--repo", REPO, "--json", "name,state"]
+    )
+    if not valid:
+        return gate_result("retry", "reported checks returned invalid JSON")
+    return interpret_reported_checks(reported, advisory=advisory_check_names())
 
 
 def list_ci_pr_numbers() -> list[int]:
@@ -1056,8 +1117,8 @@ def list_ci_pr_numbers() -> list[int]:
                     numbers.append(int(page["number"]))
                 except (TypeError, ValueError):
                     continue
-            elif isinstance(page, list):
-                for item in page:
+            elif isinstance(page_rows := cast(object, page), list):
+                for item in cast(list[object], page_rows):
                     if isinstance(item, dict) and item.get("number") is not None:
                         try:
                             numbers.append(int(item["number"]))

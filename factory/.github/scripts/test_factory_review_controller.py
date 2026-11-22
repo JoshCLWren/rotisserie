@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import importlib.util
+import json
 import subprocess
 from pathlib import Path
 from types import ModuleType, SimpleNamespace
@@ -116,6 +117,108 @@ def test_required_checks_all_passing_passes():
         stderr="",
     )
     assert result["decision"] == "pass"
+
+
+def test_reported_checks_red_non_required_check_denies():
+    """A path-filtered check that is not required still blocks the merge when red."""
+    controller = load_controller()
+    result = controller.interpret_reported_checks(
+        [
+            {"name": "CI Summary", "state": "SUCCESS"},
+            {"name": "rust-roll", "state": "FAILURE"},
+            {"name": "Lint", "state": "SKIPPED"},
+        ],
+        advisory=set(),
+    )
+    assert result["decision"] == "deny"
+    assert "rust-roll" in result["reason"]
+
+
+def test_reported_checks_pending_non_required_check_retries():
+    controller = load_controller()
+    result = controller.interpret_reported_checks(
+        [{"name": "CI Summary", "state": "SUCCESS"}, {"name": "rust-roll", "state": "IN_PROGRESS"}],
+        advisory=set(),
+    )
+    assert result["decision"] == "retry"
+    assert "rust-roll" in result["reason"]
+
+
+def test_reported_checks_advisory_failure_is_ignored():
+    controller = load_controller()
+    result = controller.interpret_reported_checks(
+        [{"name": "CI Summary", "state": "SUCCESS"}, {"name": "Advisory bot", "state": "FAILURE"}],
+        advisory={"Advisory bot"},
+    )
+    assert result["decision"] == "pass"
+
+
+def test_reported_checks_unknown_state_and_bad_rows_fail_closed():
+    controller = load_controller()
+    assert controller.interpret_reported_checks(
+        [{"name": "x", "state": "MYSTERY"}], advisory=set()
+    )["decision"] == "retry"
+    assert controller.interpret_reported_checks(
+        [{"state": "SUCCESS"}], advisory=set()
+    )["decision"] == "retry"
+    assert controller.interpret_reported_checks(None, advisory=set())["decision"] == "retry"
+    assert controller.interpret_reported_checks(["row"], advisory=set())["decision"] == "retry"
+
+
+def test_advisory_check_names_reads_adopter_setting(monkeypatch):
+    controller = load_controller()
+    monkeypatch.setenv("FACTORY_ADVISORY_CHECKS", " Bot A ,, Bot B ")
+    assert controller.advisory_check_names() == {"Bot A", "Bot B"}
+    monkeypatch.delenv("FACTORY_ADVISORY_CHECKS")
+    assert controller.advisory_check_names() == set()
+
+
+def test_required_checks_gate_denies_red_non_required_check(monkeypatch):
+    """Regression: a PR merged while its only required check was green and Rust was red."""
+    controller = load_controller()
+    monkeypatch.delenv("FACTORY_ADVISORY_CHECKS", raising=False)
+    calls: list[list[str]] = []
+
+    def fake_run_gh(args, check=True, **_kwargs):
+        calls.append(args)
+        if "--required" in args:
+            payload: list[dict[str, str]] = [{"state": "SUCCESS"}]
+        else:
+            payload = [
+                {"name": "CI Summary", "state": "SUCCESS"},
+                {"name": "Rust function build and tests", "state": "FAILURE"},
+            ]
+        return subprocess.CompletedProcess(args, 0, json.dumps(payload), "")
+
+    monkeypatch.setattr(controller, "run_gh", fake_run_gh)
+    result = controller.required_checks_gate(42)
+    assert result["decision"] == "deny"
+    assert "Rust function build and tests" in result["reason"]
+    assert len(calls) == 2
+
+
+def test_required_checks_gate_skips_reported_query_when_required_fail(monkeypatch):
+    controller = load_controller()
+    calls: list[list[str]] = []
+
+    def fake_run_gh(args, check=True, **_kwargs):
+        calls.append(args)
+        return subprocess.CompletedProcess(args, 1, json.dumps([{"state": "FAILURE"}]), "")
+
+    monkeypatch.setattr(controller, "run_gh", fake_run_gh)
+    assert controller.required_checks_gate(42)["decision"] == "deny"
+    assert len(calls) == 1
+
+
+def test_required_checks_gate_invalid_reported_json_retries(monkeypatch):
+    controller = load_controller()
+
+    def fake_run_gh(args, check=True, **_kwargs):
+        body = json.dumps([{"state": "SUCCESS"}]) if "--required" in args else "{not json"
+        return subprocess.CompletedProcess(args, 0, body, "")
+
+    monkeypatch.setattr(controller, "run_gh", fake_run_gh)
+    assert controller.required_checks_gate(42)["decision"] == "retry"
 
 
 def test_ci_reconciliation_classifies_pending_as_retry():
