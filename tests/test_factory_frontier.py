@@ -279,9 +279,7 @@ def test_capture_passes_repository_capacity_to_shared_policy(
     capped_summary = queue.QueueSummary(
         (queue.QueueEntry(7, "Issue 7", queue.Verdict("ready", ())),), capped
     )
-    monkeypatch.setattr(
-        queue, "summarize_queue", lambda gh, *, now, variables: capped_summary
-    )
+    monkeypatch.setattr(queue, "summarize_queue", lambda gh, *, now, variables: capped_summary)
     held = frontier.capture(cast(GitHub, SimpleNamespace(repo=REPO)), now=NOW)
     assert not held.authoritative_claim_available
     assert held.offers[0].status == "held"
