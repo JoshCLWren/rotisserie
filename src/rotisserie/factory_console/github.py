@@ -129,7 +129,9 @@ class GitHub:
         return ANSI.sub("", output)
 
     def gh(self, *args: str, stdin: str | None = None, allow_exit_one: bool = False) -> str:
-        return self._run(list(args), stdin=stdin, allow_exit_one=allow_exit_one)
+        if allow_exit_one:
+            return self._run(list(args), stdin=stdin, allow_exit_one=True)
+        return self._run(list(args), stdin=stdin)
 
     def workflow_run(self, workflow: str, inputs: dict[str, str], *, ref: str = "main") -> str:
         args = ["workflow", "run", workflow, "--repo", self.repo, "--ref", ref]
