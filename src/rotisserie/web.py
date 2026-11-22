@@ -35,9 +35,20 @@ ACTIONS = frozenset(
 LEVELS = frozenset(("critical", "high", "medium", "low", "none"))
 READ_ONLY = frozenset(
     (
-        "status", "report", "stats", "settings", "providers", "models",
-        "why", "outcomes", "doctor", "leases", "checks", "review",
-        "conflicts", "unstick",
+        "status",
+        "report",
+        "stats",
+        "settings",
+        "providers",
+        "models",
+        "why",
+        "outcomes",
+        "doctor",
+        "leases",
+        "checks",
+        "review",
+        "conflicts",
+        "unstick",
     )
 )
 MAX_BODY = 4096
@@ -153,13 +164,17 @@ def write_command(data: Mapping[str, Any]) -> list[str]:
 def invoke(repository: str, args: list[str]) -> dict[str, Any]:
     """Call the shipped CLI, which enforces all dispatcher and lease checks."""
     command = [
-        sys.executable, "-m", "rotisserie", "factory",
-        "--repo", repository, "--json", *args,
+        sys.executable,
+        "-m",
+        "rotisserie",
+        "factory",
+        "--repo",
+        repository,
+        "--json",
+        *args,
     ]
     try:
-        result = subprocess.run(
-            command, capture_output=True, text=True, check=False, timeout=90
-        )
+        result = subprocess.run(command, capture_output=True, text=True, check=False, timeout=90)
     except subprocess.TimeoutExpired:
         return {"result": "timeout", "error": "The factory command timed out.", "exit_code": 4}
     except OSError:
