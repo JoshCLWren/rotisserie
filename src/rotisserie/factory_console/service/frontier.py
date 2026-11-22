@@ -7,13 +7,14 @@ a free claim. The write boundary belongs to the trusted controller, not here.
 
 from __future__ import annotations
 
+import json
 from collections.abc import Mapping
 from dataclasses import asdict, dataclass
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from rotisserie.factory_console import runtime
-from rotisserie.factory_console.github import GitHub, Obj, string
+from rotisserie.factory_console.github import GitHub, GitHubError, Obj, string
 from rotisserie.factory_console.service import providers, queue
 from rotisserie.factory_console.service import sync as branch_sync
 
@@ -107,6 +108,34 @@ def _target_leases(repository: str, rows: list[dict[str, Any]]) -> dict[int, dic
     return leases
 
 
+RETRY_HISTORY_UNAVAILABLE = (
+    "The factory's retry history could not be read; the controller starts no new issue "
+    "work without it"
+)
+
+
+def _retry_history(github: GitHub, core: Any, now: datetime) -> list[Any] | None:
+    """The controller's no-diff retry records, read the way the controller reads them.
+
+    Uses the same trusted comment window and parser as the dispatcher, so an
+    issue or PR the controller has retired for repeated empty attempts is not
+    offered here either. ``None`` means unknown, which holds issue intake.
+    """
+    epoch = int(now.timestamp())
+    since_epoch = epoch - int(core.FACTORY_NO_DIFF_RETRY_RESET_SECONDS)
+    since = datetime.fromtimestamp(since_epoch - since_epoch % 60, tz=UTC)
+    path = f"repos/{github.repo}/issues/comments?since={since:%Y-%m-%dT%H:%M:%SZ}&per_page=100"
+    try:
+        pages = json.loads(github.gh("api", "--paginate", "--slurp", path))
+    except (GitHubError, ValueError):
+        return None
+    if not isinstance(pages, list) or not all(isinstance(page, list) for page in pages):
+        return None
+    comments = [comment for page in pages for comment in page if isinstance(comment, dict)]
+    records: list[Any] = core.parse_no_diff_attempts_from_comments(comments, now_epoch=epoch)
+    return records
+
+
 def _number(row: Obj) -> int:
     number = row.get("number")
     if not isinstance(number, int) or isinstance(number, bool) or number <= 0:
@@ -132,6 +161,7 @@ def from_snapshot(
     wip_limit: int,
     review_backlog: int,
     pr_wip: int,
+    issue_hold: str = "",
 ) -> Frontier:
     """Pure projection of the same already-ranked controller candidates.
 
@@ -173,6 +203,8 @@ def from_snapshot(
                 "Existing or unreconciled Neon lease on " + ", ".join(f"#{n}" for n in claimed)
             )
         dependencies: set[int] = set()
+        if kind == "issue" and issue_hold:
+            blockers.append(issue_hold)
         if kind == "issue":
             verdict = issue_verdicts.get(number)
             if verdict is None:
@@ -324,9 +356,16 @@ def capture(github: GitHub, *, now: datetime) -> Frontier:
         }
     )
     core = runtime.module("factory_work_policy")
+    attempts = _retry_history(github, core, now)
+    issue_retries: dict[int, int] = {}
+    for attempt in attempts or []:
+        if attempt.kind == "issue":
+            issue_retries[attempt.number] = issue_retries.get(attempt.number, 0) + 1
     candidates = core.build_candidates(
         board.issues,
         board.prs,
+        no_diff_attempts_by_issue=issue_retries,
+        no_diff_attempt_records=attempts,
         pr_wip_limit=board.pr_wip_limit,
         review_backlog_limit=board.review_backlog_limit,
         external_wip=external_wip,
@@ -342,6 +381,7 @@ def capture(github: GitHub, *, now: datetime) -> Frontier:
         issue_verdicts=by_issue,
         leases=leases,
         lease_problem=problem,
+        issue_hold="" if attempts is not None else RETRY_HISTORY_UNAVAILABLE,
         review_limit=board.review_backlog_limit,
         wip_limit=board.pr_wip_limit,
         review_backlog=len(runtime.completion_backlog(rows_for_counts)),
