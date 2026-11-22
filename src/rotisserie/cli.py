@@ -99,6 +99,11 @@ def parser() -> argparse.ArgumentParser:
     subcommands = value.add_subparsers(dest="command", required=True)
     factory_commands.add_parser(subcommands)
 
+    web = subcommands.add_parser("web", help="open the local Rotisserie factory control room")
+    web.add_argument("--repo", help="adopter repository (owner/name)")
+    web.add_argument("--port", type=int, default=8765, help="local port (default 8765)")
+    web.add_argument("--no-browser", action="store_true", help="do not open a browser automatically")
+
     subcommands.add_parser("inspect", help="inspect the configured graph")
     plan = subcommands.add_parser("plan", help="plan deterministic work selection")
     plan.add_argument("--at", type=int, required=True)
@@ -286,6 +291,10 @@ def main(argv: Sequence[str] | None = None) -> int:
     arguments = command_parser.parse_args(argv)
     if arguments.command == "factory":
         return factory_commands.main(arguments)
+    if arguments.command == "web":
+        from rotisserie.web import serve
+
+        return serve(arguments.repo, arguments.port, open_browser=not arguments.no_browser)
     if arguments.config is None:
         command_parser.error(f"--config is required for '{arguments.command}'")
     correlation_id = arguments.correlation_id or str(uuid.uuid4())
