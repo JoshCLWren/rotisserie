@@ -11,6 +11,13 @@ such change must be called out here and in its release notes.
 
 ### Added
 
+- `rotisserie factory disk`: per-volume usage and the reclaimable worktrees,
+  Rust target directories, build outputs and caches under the roots configured
+  in `[disk]` of `.rotisserie/config.toml`, with sizes and the reason anything
+  is kept. `--fix --yes` deletes only safe items (clean, pushed worktrees and
+  target dirs no live worker owns, build outputs and caches no process uses),
+  re-checking each first; without `--yes` it is a dry run. `doctor` gains a
+  "disk space" check that warns above 80% and points to it.
 - `rotisserie factory sync` and `rotisserie factory leases`: Rotisserie now owns
   branch synchronization. A sync takes a short Neon operation lease on the PR's
   target key, so workers can't be assigned it mid-sync and a held PR is never
