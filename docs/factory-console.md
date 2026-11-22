@@ -54,6 +54,7 @@ rotisserie factory checks pr:N # why its checks fail, in one line each
 rotisserie factory review pr:N # whose approval counts: known self-review vs missing metadata
 rotisserie factory groom inventory  # the whole open backlog, with evidence per item
 rotisserie factory doctor      # is the factory itself healthy
+rotisserie factory disk [--fix --yes]  # what fills the host's disks; reclaim the safe part
 rotisserie factory conflicts pr:N  # which of its files main also changed, and where
 ```
 
@@ -463,6 +464,7 @@ found by hand. It exits 4 when any check fails.
 | rotisserie intake | the intake decision cannot be made, so no fresh issue is admitted |
 | worker rejections | one factory gate rejected at least half (and 3+) of recent finished workers; that points at the gate or the repository, not the models |
 | main verification | the exact default-branch commit failed product CI (fail), or has no product CI run yet (warn: *unverified*, never green) |
+| disk space | warns when a volume on this host is above `[disk] warn_percent` (default 80%); `rotisserie factory disk` says what is safe to reclaim |
 
 A check that cannot reach GitHub says so instead of failing.
 
@@ -501,6 +503,68 @@ Cancelled counts as failed.
 
 The service behind this (`rotisserie.factory_console.service.main_health`)
 accepts already-fetched data, so one snapshot can serve several checks.
+
+## Is the host out of disk?
+
+`rotisserie factory disk` shows how full each volume is and what the factory
+can take back from it, with sizes. It reads only this host, so it works
+outside an adopter repository and needs no GitHub login.
+
+```sh
+rotisserie factory disk                      # report: volumes, reclaimable by category, kept items
+rotisserie factory disk --all                # also list every kept item, not just the largest ten
+rotisserie factory disk --fix                # dry run: what --fix --yes would delete
+rotisserie factory disk --fix --yes          # delete the safe items
+rotisserie factory disk --keep TAG           # treat a worker tag as live (e.g. a subagent not in the ledger)
+rotisserie factory disk --config FILE        # read [disk] from FILE instead of the adopter config
+```
+
+It looks at four categories, and deletes an item only when it is safe:
+
+| Category | What | Safe to delete when |
+|---|---|---|
+| worktree | each directory under `worktree_roots` | no uncommitted or untracked change, no merge or rebase in progress, not locked, `HEAD` is on a remote branch (pushed or merged), idle for `idle_hours`, no live worker tag, no running process uses it |
+| target | each `CARGO_TARGET_DIR` under `target_roots`, named by worker tag | its tag has no live worker, idle for `idle_hours`, no running process uses it |
+| build | each `build_dirs` match, plus git-ignored `build_names` (`node_modules`, `target`) inside a kept worktree that is idle (dirty or unpushed, but nobody is at work in it) | idle for `idle_hours`, no live worker tag in its path, no running process uses it |
+| cache | `caches` (default: uv, pip, npm, pnpm, Go build and Cargo registry caches, found the way each tool finds its own) | no running process uses it |
+
+Everything else is kept, with the reason: a dirty worktree, unpushed commits,
+a checkout that is not git, a live worker. A worker is live when its tag (the
+worktree or target directory name) has a running pid in the local factory
+`ledger` (`<tag> pid=<n> ...` lines), or `--keep` names it. "Running process
+uses it" means a process's working directory, an open file or its
+`CARGO_TARGET_DIR` is inside the item (read from `/proc`).
+
+`--fix --yes` re-checks each item just before deleting it, refuses any path
+that is not under a configured root (or is a symlink or a mount point), and
+runs `git worktree prune` after removing a worktree. Without `--yes`, `--fix`
+is a dry run. Sizes count only blocks the deletion would free: a file also
+hard-linked from elsewhere (uv's cache links into virtualenvs) frees nothing.
+It exits 4 when a deletion only partly succeeded.
+
+`doctor` warns in its "disk space" check when any volume is above
+`warn_percent` and points here.
+
+Configure it in the adopter's `.rotisserie/config.toml` (or any TOML file
+passed with `--config`). Every key is optional. Relative paths resolve against
+the adopter repository (or the standalone file's directory); `~` and
+`$VARIABLE` expand; roots accept globs.
+
+```toml
+[disk]
+warn_percent = 80                 # doctor warns above this
+idle_hours = 2                    # anything changed more recently is kept
+volumes = ["/", "/mnt/data"]      # default: "/" plus every root's volume
+worktree_roots = [".claude/worktrees", "/mnt/data/worktrees/*"]   # default: .claude/worktrees
+target_roots = ["/mnt/data/cargo-target"]                         # default: none
+build_dirs = ["/mnt/data/code/*/target"]                          # default: none
+build_names = ["node_modules", "target"]
+caches = ["$UV_CACHE_DIR", "~/.cache/pnpm"]                       # replaces the defaults
+ledger = "/mnt/data/local-factory/ledger.txt"                     # default: none
+```
+
+The service (`rotisserie.factory_console.service.disk`) returns a typed
+`DiskReport` and `Removed` results; the CLI is one renderer of them.
 
 ## Other front ends
 

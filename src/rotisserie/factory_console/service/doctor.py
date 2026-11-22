@@ -11,17 +11,21 @@ Every check here replaces a diagnosis first done by hand:
   tests the repository had deleted, so every change to that code "failed validation";
 * main broke a check (a PR merged with unformatted code), so every backlog PR
   running it went red and repair workers were sent to fix main's files PR by PR;
+* the factory host ran out of disk (worktrees, Rust targets and caches of
+  finished workers), so workers failed while linking;
 * main had no product CI at all: factory merges use GITHUB_TOKEN, which fires no
   push event, and "no run" was being read as green.
 """
 
 from __future__ import annotations
 
+import os
 import re
 from collections import Counter
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from dataclasses import asdict, dataclass
 from datetime import datetime, timedelta
+from pathlib import Path
 
 from rotisserie.factory_console import runtime
 from rotisserie.factory_console.github import (
@@ -36,6 +40,7 @@ from rotisserie.factory_console.github import (
 from rotisserie.factory_console.service import (
     baseline,
     checks,
+    disk,
     main_health,
     outcomes,
     providers,
@@ -274,6 +279,32 @@ def shared_failures(github: GitHub, now: datetime) -> Finding:
     return Finding("shared failures", "ok", "no backlog PR is red because of main")
 
 
+def disk_space(cwd: Path | None = None, env: Mapping[str, str] | None = None) -> Finding:
+    """A volume above the warning threshold fails workers mid-build; say what to reclaim."""
+    try:
+        settings = disk.load_settings(None, os.environ if env is None else env, cwd or Path.cwd())
+    except disk.DiskConfigError as exc:
+        return Finding("disk space", "warn", f"could not check: {exc}")
+    found = disk.volumes(settings)
+    full = [volume for volume in found if volume.percent > settings.warn_percent]
+    if not full:
+        return Finding(
+            "disk space",
+            "ok",
+            f"{len(found)} volume(s) at or under {settings.warn_percent}% full",
+        )
+    text = ", ".join(
+        f"{volume.path} is {volume.percent}% full ({disk.human_size(volume.free)} free)"
+        for volume in full
+    )
+    return Finding(
+        "disk space",
+        "warn",
+        text,
+        "rotisserie factory disk shows what is safe to reclaim; add --fix --yes to remove it",
+    )
+
+
 def run_checks(github: GitHub, *, now: datetime, clock: Clock | None = None) -> list[Finding]:
     """Every health check; a check that cannot read GitHub reports that instead of failing."""
     tracker = Tracker(github, clock)
@@ -286,6 +317,7 @@ def run_checks(github: GitHub, *, now: datetime, clock: Clock | None = None) -> 
         return systemic_rejection(recent)
 
     checks: list[tuple[str, Callable[[], Finding]]] = [
+        ("disk space", disk_space),
         ("reliability snapshot", lambda: _stats(github, now)),
         ("dashboard publisher", lambda: _dashboard(github, tracker)),
         ("scheduler", lambda: _scheduler(github, now)),

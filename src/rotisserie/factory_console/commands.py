@@ -46,6 +46,7 @@ from rotisserie.factory_console.service import (
     checks,
     close,
     conflicts,
+    disk,
     dispatch,
     doctor,
     groom,
@@ -84,6 +85,9 @@ from rotisserie.factory_console.work import (
 EXIT_OK = 0
 EXIT_USAGE = 2
 EXIT_INTERRUPTED = 130
+# Commands that only look at this host; they work outside any adopter repository.
+LOCAL_COMMANDS = frozenset({"disk"})
+LOCAL_REPOSITORY = "local/host"
 TARGET = re.compile(r"^(issue|pr):([1-9][0-9]*)$")
 ACTIONS = ("advance", "implement", "merge-conflict", "ci-repair", "review-findings", "review")
 ACTION_WORDS = {
@@ -321,6 +325,35 @@ def add_parser(subcommands: argparse._SubParsersAction[argparse.ArgumentParser])
     )
     _common(health)
 
+    space = commands.add_parser(
+        "disk",
+        help="what fills the factory host's disks, and what is safe to reclaim",
+        description=(
+            "Report each volume's usage and the reclaimable worktrees, Rust target "
+            "directories, build outputs and caches under the roots configured in [disk] "
+            "of .rotisserie/config.toml. --fix --yes deletes only the items judged safe: "
+            "clean, pushed worktrees and target directories no live worker owns, "
+            "build outputs and caches no running process uses. Without --yes, --fix only "
+            "shows what it would delete."
+        ),
+    )
+    space.add_argument(
+        "--fix", action="store_true", help="delete the safe items (a dry run without --yes)"
+    )
+    space.add_argument("--yes", "-y", action="store_true", help="really delete with --fix")
+    space.add_argument(
+        "--config", type=Path, help="TOML file with a [disk] table (default: adopter config)"
+    )
+    space.add_argument(
+        "--keep",
+        action="append",
+        default=[],
+        metavar="TAG",
+        help="treat this worker tag as live (repeatable), e.g. a subagent not in the ledger",
+    )
+    space.add_argument("--all", action="store_true", help="also list every item that is kept")
+    _common(space)
+
     clash = commands.add_parser(
         "conflicts", help="which of a pull request's files main also changed, and where"
     )
@@ -473,14 +506,20 @@ def main(
     data: dict[str, object] = {"command": command}
     context: Context | None = None
     try:
-        repo = find_repository(getattr(arguments, "repo", None), values, Path.cwd())
+        try:
+            repo = find_repository(getattr(arguments, "repo", None), values, Path.cwd())
+        except UsageError:
+            if command not in LOCAL_COMMANDS:
+                raise
+            repo = LOCAL_REPOSITORY
         github = GitHub(repo, executable=executable)
         input_stream = stdin or sys.stdin
         interactive = console.interactive and input_stream.isatty() and not json_mode
         context = Context(
             github, console, Prompt(console, input_stream), clock or Clock(), interactive
         )
-        data["repository"] = repo
+        if repo != LOCAL_REPOSITORY:
+            data["repository"] = repo
         handler = HANDLERS[command]
         outcome = handler(context, arguments)
         data.update(outcome.data)
@@ -537,6 +576,7 @@ def _help_text() -> str:
             "  rotisserie factory sync pr:N     merge main in (never while a worker holds it)",
             "  rotisserie factory leases        who holds which item",
             "  rotisserie factory doctor        is the factory itself healthy",
+            "  rotisserie factory disk [--fix --yes]  what fills the disk; reclaim the safe part",
             "  rotisserie factory close pr:N --reason TEXT   close work that should not be done",
             "  rotisserie factory cancel issue:N",
             "  rotisserie factory watch RUN",
@@ -2008,6 +2048,86 @@ def cmd_doctor(context: Context, arguments: argparse.Namespace) -> Outcome:
     return Outcome(result, EXIT_CODES[result], data)
 
 
+# disk -----------------------------------------------------------------------------------
+
+KEPT_SHOWN = 10
+
+
+def cmd_disk(context: Context, arguments: argparse.Namespace) -> Outcome:
+    console = context.console
+    size = disk.human_size
+    try:
+        settings = disk.load_settings(
+            arguments.config, dict(os.environ), Path.cwd(), required=arguments.config is not None
+        )
+    except disk.DiskConfigError as exc:
+        raise UsageError(str(exc)) from exc
+    scanner = disk.Scanner(settings, disk.ProcProcesses(), keep=tuple(arguments.keep))
+    report = scanner.scan()
+    console.heading("Disk usage")
+    for volume in report.volumes:
+        line = f"{volume.path}: {volume.percent}% used, {size(volume.free)} free"
+        if volume.percent > report.warn_percent:
+            console.warn(line)
+        else:
+            console.ok(line)
+    console.line()
+    console.heading(f"Safe to reclaim: {size(report.total)}")
+    console.table(
+        ["Category", "Size", "Items"],
+        [
+            [category, size(total), str(sum(1 for i in report.safe if i.category == category))]
+            for category, total in report.reclaimable().items()
+            if total
+        ],
+    )
+    if report.safe:
+        console.line()
+        console.table(
+            ["Size", "Category", "Path", "Why"],
+            [[size(i.size), i.category, i.path, i.reason] for i in report.safe],
+        )
+    kept = report.kept
+    if kept:
+        console.line()
+        console.heading(f"Kept: {len(kept)} item(s), {size(sum(i.size for i in kept))}")
+        shown = kept if arguments.all else kept[:KEPT_SHOWN]
+        console.table(
+            ["Size", "Category", "Path", "Why kept"],
+            [[size(i.size), i.category, i.path, i.reason] for i in shown],
+        )
+        if len(shown) < len(kept):
+            console.line(f"... and {len(kept) - len(shown)} more (--all lists them)")
+    data: dict[str, object] = {"settings": settings.to_dict(), **report.to_dict()}
+    if not arguments.fix:
+        if report.safe:
+            console.line()
+            console.line("Remove them: rotisserie factory disk --fix --yes")
+        return Outcome(Result.COMPLETED, EXIT_OK, data)
+    if not arguments.yes:
+        console.line()
+        console.line(
+            f"Dry run: --fix --yes would delete {len(report.safe)} item(s), "
+            f"freeing about {size(report.total)}."
+        )
+        data["dry_run"] = True
+        return Outcome(Result.COMPLETED, EXIT_OK, data)
+    removed = scanner.remove(report)
+    console.line()
+    for change in removed:
+        if change.ok:
+            console.ok(f"removed {change.path}", size(change.size))
+        else:
+            console.warn(f"{change.path}: {change.text}")
+    freed = sum(change.size for change in removed if change.ok)
+    console.line(f"Freed about {size(freed)}.")
+    data["removed"] = [change.to_dict() for change in removed]
+    data["freed"] = freed
+    failed = any(not change.ok and change.text.startswith("partly") for change in removed)
+    result = Result.FAILED if failed else Result.COMPLETED
+    return Outcome(result, EXIT_CODES[result], data)
+
+
 # conflicts ------------------------------------------------------------------------------
 
 
@@ -2608,6 +2728,7 @@ HANDLERS = {
     "sync": cmd_sync,
     "leases": cmd_leases,
     "doctor": cmd_doctor,
+    "disk": cmd_disk,
     "explain": cmd_why,
     "providers": cmd_providers,
     "models": cmd_models,
