@@ -1182,3 +1182,37 @@ def external_wip_count(repo: str) -> int:
             await conn.close()
 
     return asyncio.run(_read())
+
+
+def external_code_authors(repo: str, numbers: list[int]) -> set[str]:
+    """Return known external coding clients for the current issue/PR lineage.
+
+    GitHub actor names are NOT model identities: several independent agents
+    may operate using the repository owner's account. The durable client ID,
+    not that shared actor, is the review-independence fence.
+    """
+    if not enabled():
+        raise RuntimeError("Neon is not configured")
+    if not numbers or any(type(n) is not int or n < 1 for n in numbers):
+        raise ValueError("invalid author-provenance targets")
+
+    async def _read() -> set[str]:
+        conn = await measured_connect(dsn=_dsn(), timeout=8, command_timeout=8)
+        try:
+            targets = [f"issue:{n}" for n in numbers] + [f"pr:{n}" for n in numbers]
+            rows = await conn.fetch(
+                """SELECT DISTINCT detail->>'client' AS client
+                   FROM public.factory_state_events
+                   WHERE source='rotisserie-external'
+                     AND event_type='external_reserved'
+                     AND detail->>'repo'=$1
+                     AND detail->>'target'=ANY($2::text[])
+                     AND detail->>'action' IN
+                         ('implement','review-findings','ci-repair','merge-conflict')""",
+                repo, targets,
+            )
+            return {str(row["client"]) for row in rows if row["client"]}
+        finally:
+            await conn.close()
+
+    return asyncio.run(_read())
