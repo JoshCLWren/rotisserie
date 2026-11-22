@@ -75,8 +75,12 @@ class LedgerDouble:
         if self.holder != client:
             raise RuntimeError("claim identity changed")
         return {
-            "target": "issue:7", "action": "implement", "head": None,
-            "targets": [7], "client": client, "actor": actor,
+            "target": "issue:7",
+            "action": "implement",
+            "head": None,
+            "targets": [7],
+            "client": client,
+            "actor": actor,
             "claim_id": claim_id,
         }
 
@@ -423,9 +427,11 @@ def test_fenced_implementation_handoff_enrolls_linked_pr_for_independent_review(
     reserved = external.reserve_next(cast(GitHub, github), client="chatgpt", environment={})
     assert reserved["status"] == "reserved"
     delivered = external.claim_action(
-        cast(GitHub, github), client="chatgpt",
+        cast(GitHub, github),
+        client="chatgpt",
         claim_id="11111111-1111-4111-8111-111111111111",
-        operation="handoff", environment={},
+        operation="handoff",
+        environment={},
         evidence=f"https://github.com/{REPO}/pull/88",
     )
     assert delivered["handoff_recorded"] is True
@@ -441,9 +447,11 @@ def test_unrelated_handoff_pr_cannot_release_implementation_claim(
     external.reserve_next(cast(GitHub, github), client="codebuff", environment={})
     with pytest.raises(ValueError, match="linked issue"):
         external.claim_action(
-            cast(GitHub, github), client="codebuff",
+            cast(GitHub, github),
+            client="codebuff",
             claim_id="11111111-1111-4111-8111-111111111111",
-            operation="handoff", environment={},
+            operation="handoff",
+            environment={},
             evidence=f"https://github.com/{REPO}/pull/88",
         )
     assert setup.holder == "codebuff"
