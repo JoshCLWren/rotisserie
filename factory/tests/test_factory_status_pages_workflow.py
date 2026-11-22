@@ -87,3 +87,15 @@ def test_publisher_also_runs_after_the_scheduler_when_the_snapshot_is_stale() ->
     gate = jobs["freshness"]["steps"][0]["run"]
     assert 'if [[ "$EVENT" != "workflow_run" ]]' in gate  # manual and cron runs always publish
     assert "age > 840" in gate
+
+
+def test_refresh_runs_cannot_cancel_a_queued_push_deployment() -> None:
+    """Greptile P1 on Comic Pile #5671: one pending run per concurrency group."""
+    import yaml
+
+    workflow = yaml.safe_load(WORKFLOW.read_text(encoding="utf-8"))
+    group = workflow["concurrency"]["group"]
+    assert group == (
+        "factory-status-pages-${{ github.event_name == 'push' && 'push' || 'refresh' }}"
+    )
+    assert workflow["concurrency"]["cancel-in-progress"] is False
