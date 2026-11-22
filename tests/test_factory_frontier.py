@@ -221,7 +221,9 @@ def test_ledger_rows_are_bound_to_their_keys_not_stale_payload_overlap() -> None
     assert leases[10]["active"] is True
     assert leases[9]["claim_id"] == "expired-A"
     assert leases[9]["active"] is False
-    result = snapshot([issue(9), issue(10)], [], [candidate("issue", 9), candidate("issue", 10)], leases=leases)
+    result = snapshot(
+        [issue(9), issue(10)], [], [candidate("issue", 9), candidate("issue", 10)], leases=leases
+    )
     assert [offer.status for offer in result.offers] == ["held", "held"]
     assert [offer.lease["claim_id"] for offer in result.offers if offer.lease] == [
         "expired-A",
@@ -229,11 +231,14 @@ def test_ledger_rows_are_bound_to_their_keys_not_stale_payload_overlap() -> None
     ]
 
 
-def test_capture_passes_repository_capacity_to_shared_policy(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_capture_passes_repository_capacity_to_shared_policy(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     from rotisserie.factory_console import runtime
     from rotisserie.factory_console.service import providers
 
     settings: list[tuple[int, int]] = []
+
     class PolicyProxy:
         def build_candidates(self, issues: object, prs: object, **kwargs: int) -> list[Any]:
             settings.append((kwargs["pr_wip_limit"], kwargs["review_backlog_limit"]))
@@ -256,8 +261,12 @@ def test_capture_passes_repository_capacity_to_shared_policy(monkeypatch: pytest
     monkeypatch.setattr(frontier, "_active_leases", lambda repo: ({}, ""))
     for wip, backlog in [(8, 6), (14, 12)]:
         board = queue.Board([issue(7)], [], wip, backlog, {})
-        summary = queue.QueueSummary((queue.QueueEntry(7, "Issue 7", queue.Verdict("ready", ())),), board)
-        monkeypatch.setattr(queue, "summarize_queue", lambda gh, *, now, variables, summary=summary: summary)
+        summary = queue.QueueSummary(
+            (queue.QueueEntry(7, "Issue 7", queue.Verdict("ready", ())),), board
+        )
+        monkeypatch.setattr(
+            queue, "summarize_queue", lambda gh, *, now, variables, summary=summary: summary
+        )
         github = SimpleNamespace(repo=REPO)
         result = frontier.capture(github, now=NOW)
         assert len(result.offers) == 1
