@@ -249,6 +249,8 @@ def test_capture_passes_repository_capacity_to_shared_policy(monkeypatch: pytest
             return set()
 
     policy = PolicyProxy()
+    monkeypatch.setattr(runtime, "completion_backlog", lambda rows: [])
+    monkeypatch.setattr(runtime, "pr_wip_count", lambda rows: 0)
     monkeypatch.setattr(runtime, "module", lambda name: policy)
     monkeypatch.setattr(providers, "repository_variables", lambda gh: {})
     monkeypatch.setattr(frontier, "_active_leases", lambda repo: ({}, ""))
