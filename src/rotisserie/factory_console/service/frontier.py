@@ -7,6 +7,7 @@ a free claim. The write boundary belongs to the trusted controller, not here.
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import asdict, dataclass
 from datetime import UTC, datetime, timedelta
 from typing import Any
@@ -95,6 +96,13 @@ def _active_leases(repository: str) -> tuple[dict[int, dict[str, object]], str]:
     return leases, ""
 
 
+def _number(row: Obj) -> int:
+    number = row.get("number")
+    if not isinstance(number, int) or isinstance(number, bool) or number <= 0:
+        raise ValueError("A factory work row has no valid issue/PR number")
+    return number
+
+
 def _labels(core: Any, row: Obj) -> set[str]:
     return set(core.labels_of(row))
 
@@ -120,8 +128,8 @@ def from_snapshot(
     Unknown lease state blocks every claim, while leaving candidates inspectable.
     """
     core = runtime.module("factory_work_policy")
-    issues_by_number = {int(row["number"]): row for row in issues}
-    prs_by_number = {int(row["number"]): row for row in prs}
+    issues_by_number = {_number(row): row for row in issues}
+    prs_by_number = {_number(row): row for row in prs}
     active_targets = set(leases)
     offers: list[Offer] = []
     for position, candidate in enumerate(candidates, 1):
@@ -242,7 +250,7 @@ def from_snapshot(
     represented = {offer.target for offer in offers}
     holds: list[dict[str, object]] = []
     for row in issues:
-        number = int(row["number"])
+        number = _number(row)
         if f"issue:{number}" in represented:
             continue
         verdict = issue_verdicts.get(number)
@@ -257,7 +265,7 @@ def from_snapshot(
             }
         )
     for row in prs:
-        number = int(row["number"])
+        number = _number(row)
         if f"pr:{number}" not in represented:
             holds.append(
                 {
@@ -291,6 +299,7 @@ def capture(github: GitHub, *, now: datetime) -> Frontier:
     candidates = core.build_candidates(board.issues, board.prs)
     by_issue = {entry.issue: entry.verdict for entry in summary.entries}
     leases, problem = _active_leases(github.repo)
+    rows_for_counts: list[Mapping[str, object]] = list(board.prs)
     return from_snapshot(
         github.repo,
         now=now,
@@ -302,6 +311,6 @@ def capture(github: GitHub, *, now: datetime) -> Frontier:
         lease_problem=problem,
         review_limit=board.review_backlog_limit,
         wip_limit=board.pr_wip_limit,
-        review_backlog=len(runtime.completion_backlog(board.prs)),
-        pr_wip=runtime.pr_wip_count(board.prs),
+        review_backlog=len(runtime.completion_backlog(rows_for_counts)),
+        pr_wip=runtime.pr_wip_count(rows_for_counts),
     )
