@@ -274,6 +274,20 @@ def test_capture_passes_repository_capacity_to_shared_policy(
         assert result.offers[0].capacity["review_limit"] == backlog
     assert settings == [(8, 6), (14, 12)]
 
+    # No candidate becomes claimable if the gh list cap might hide work.
+    capped = queue.Board([issue(number) for number in range(1, 1001)], [], 8, 6, {})
+    capped_summary = queue.QueueSummary(
+        (queue.QueueEntry(7, "Issue 7", queue.Verdict("ready", ())),), capped
+    )
+    monkeypatch.setattr(
+        queue, "summarize_queue", lambda gh, *, now, variables: capped_summary
+    )
+    held = frontier.capture(cast(GitHub, SimpleNamespace(repo=REPO)), now=NOW)
+    assert not held.authoritative_claim_available
+    assert held.offers[0].status == "held"
+    assert "pagination cap" in held.authority_note
+
+
 
 def test_shared_policy_applies_nondefault_backpressure_to_candidates() -> None:
     from rotisserie.factory_console import runtime
