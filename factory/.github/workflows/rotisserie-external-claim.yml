@@ -119,15 +119,18 @@ jobs:
           if isinstance(handoff, dict):
               lines.extend(["", f"Task: {handoff.get('target')}, {handoff.get('action')}",
                             f"URL: {handoff.get('url')}",
-                            f"Claim: {handoff.get('claim_id')}",
-                            f"Renew: {handoff.get('renew')}"])
+                            f"Claim: `{handoff.get('claim_id')}`",
+                            f"Expires: `{handoff.get('expires_at')}`",
+                            f"Evidence: {handoff.get('evidence_required')}",
+                            f"Renew: `{handoff.get('renew_github')}`",
+                            f"Hand off: `{handoff.get('handoff_github')}`"])
           Path(sys.argv[2]).write_text("\n".join(lines) + "\n")
           PY
           exit "$code"
 
       - name: Publish bounded result
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: rotisserie-external-claim-${{ github.run_id }}
           path: ${{ runner.temp }}/external-claim.json

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import threading
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import replace
@@ -33,6 +34,8 @@ class GitHubDouble:
         self.dependency_open = dependency_open
         self.review_labels: list[str] = []
         self.review_issue = 7
+        self.closed: set[int] = set()
+        self.label_writes = 0
 
     def whoami(self) -> str:
         return "alice"
@@ -43,7 +46,9 @@ class GitHubDouble:
         if "/dependencies/blocked_by" in route:
             return [{"state": "open", "number": 99}] if self.dependency_open else []
         if route.startswith("issues/"):
-            return {"state": "open", "labels": [{"name": self.priority}]}
+            number = int(route.split("/")[1])
+            state = "closed" if number in self.closed else "open"
+            return {"state": state, "labels": [{"name": self.priority}]}
         if route.startswith("pulls/"):
             return {
                 "state": "open",
@@ -57,8 +62,10 @@ class GitHubDouble:
 
     def gh(self, *args: str, **kwargs: Any) -> str:
         assert args[:1] == ("api",)
-        assert "issues/88/labels" in str(args[1])
-        self.review_labels = ["factory", "factory:review", "factory:unowned"]
+        assert args[1].endswith("/labels")
+        assert args[2:4] == ("--method", "PUT")
+        self.label_writes += 1
+        self.review_labels = list(json.loads(kwargs["stdin"])["labels"])
         return "{}"
 
 
@@ -67,27 +74,24 @@ class LedgerDouble:
         self.lock = threading.Lock()
         self.holder: str | None = None
         self.calls = 0
-        self.code_authors: set[str] = set()
-
-    def external_claim_details(
-        self, repo: str, actor: str, client: str, claim_id: str
-    ) -> dict[str, object]:
-        if self.holder != client:
-            raise RuntimeError("claim identity changed")
-        return {
+        self.claim: dict[str, object] = {
             "target": "issue:7",
             "action": "implement",
             "head": None,
             "targets": [7],
-            "client": client,
-            "actor": actor,
-            "claim_id": claim_id,
         }
+        self.rows: list[dict[str, object]] = []
+        self.revoked: list[tuple[str, str]] = []
 
-    def external_code_authors(self, repo: str, numbers: list[int]) -> set[str]:
+    def list_leases(self, repo: str) -> list[dict[str, object]]:
         assert repo == REPO
-        assert numbers
-        return self.code_authors
+        return list(self.rows)
+
+    def revoke_external(
+        self, repo: str, operator: str, claim_id: str, *, reason: str
+    ) -> dict[str, object]:
+        self.revoked.append((claim_id, reason))
+        return {"status": "revoked", "claim_id": claim_id}
 
     def reserve_external(
         self, repo: str, actor: str, client: str, numbers: list[int], **kwargs: Any
@@ -115,6 +119,9 @@ class LedgerDouble:
         with self.lock:
             if client != self.holder:
                 return {"status": "conflict", "reason": "stale_or_wrong_client"}
+            verify = kwargs.get("verify")
+            if verify is not None:
+                verify({**self.claim, "client": client, "actor": actor, "claim_id": claim_id})
             if kwargs.get("operation") in {"release", "handoff"}:
                 self.holder = None
                 return {
@@ -324,23 +331,16 @@ def test_changed_pr_head_rejected_before_neon_claim(
         make_offer(),
         target="pr:44",
         url=f"https://github.com/{REPO}/pull/44",
-        action="review",
+        action="review-findings",
         head_sha="a" * 40,
     )
     monkeypatch.setattr(frontier, "capture", lambda *a, **k: make_frontier(offer))
-    monkeypatch.setattr(
-        external,
-        "_linked_targets",
-        lambda g, o: (
-            [44] if g.head == "a" * 40 else (_ for _ in ()).throw(ValueError("head changed"))
-        ),
-    )
     result = external.reserve_next(
         cast(GitHub, GitHubDouble(head="b" * 40)),
         client="codebuff",
         environment={},
     )
-    assert result["status"] == "held"
+    assert result["status"] == "conflict"
     assert "head changed" in str(result["reason"])
     assert setup.calls == 0
 
@@ -354,12 +354,12 @@ def test_dependency_change_holds_issue_before_claim(monkeypatch: pytest.MonkeyPa
     assert reason == "New blocker"
 
 
-def test_review_waits_for_required_ci(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_repair_waits_for_required_ci(monkeypatch: pytest.MonkeyPatch) -> None:
     offered = replace(
         make_offer(),
         target="pr:44",
         url=f"https://github.com/{REPO}/pull/44",
-        action="review",
+        action="review-findings",
         head_sha="a" * 40,
     )
     monkeypatch.setattr(frontier, "capture", lambda *a, **k: make_frontier(offered))
@@ -369,9 +369,10 @@ def test_review_waits_for_required_ci(monkeypatch: pytest.MonkeyPatch) -> None:
     assert "required CI" in reason
 
 
-def test_known_external_code_author_cannot_reserve_own_review(
+def test_review_offers_are_never_reserved_by_outside_agents(
     setup: LedgerDouble, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    """The merge gate cannot count an outside review, so the next offer wins."""
     review = replace(
         make_offer(),
         target="pr:44",
@@ -381,12 +382,38 @@ def test_known_external_code_author_cannot_reserve_own_review(
     )
     second = replace(make_offer(number=8), rank=2)
     monkeypatch.setattr(frontier, "capture", lambda *a, **k: make_frontier(review, second))
-    monkeypatch.setattr(
-        external, "_linked_targets", lambda g, o: [44] if o.action == "review" else [8]
-    )
-    setup.code_authors.add("chatgpt")
     result = external.reserve_next(cast(GitHub, GitHubDouble()), client="chatgpt", environment={})
     assert result["status"] == "reserved"
+    handoff = result["handoff"]
+    assert isinstance(handoff, dict)
+    assert handoff["target"] == "issue:8"
+    with pytest.raises(ValueError, match="unsupported agent abilities"):
+        external.reserve_next(
+            cast(GitHub, GitHubDouble()),
+            client="chatgpt",
+            environment={},
+            abilities=frozenset({"review"}),
+        )
+
+
+def test_capability_filter_picks_highest_offer_the_agent_can_do(
+    setup: LedgerDouble, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    repair = replace(
+        make_offer(),
+        target="pr:44",
+        url=f"https://github.com/{REPO}/pull/44",
+        action="ci-repair",
+        head_sha="a" * 40,
+    )
+    second = replace(make_offer(number=8), rank=2)
+    monkeypatch.setattr(frontier, "capture", lambda *a, **k: make_frontier(repair, second))
+    result = external.reserve_next(
+        cast(GitHub, GitHubDouble()),
+        client="docs-bot",
+        environment={},
+        abilities=frozenset({"implement"}),
+    )
     handoff = result["handoff"]
     assert isinstance(handoff, dict)
     assert handoff["target"] == "issue:8"
@@ -529,3 +556,152 @@ def test_holder_returns_the_external_claim(monkeypatch: pytest.MonkeyPatch) -> N
     claim: dict[str, object] = {"claim_id": CLAIM, "client": "codebuff-phone"}
     monkeypatch.setattr(external, "ledger", lambda: cast(Any, RevokeLedger(claim=claim)))
     assert external.holder(cast(GitHub, GitHubDouble()), 7) == claim
+
+
+TOKEN = "11111111-1111-4111-8111-111111111111"
+
+
+def _repair_claim(setup: LedgerDouble, action: str = "review-findings") -> None:
+    setup.holder = "codebuff"
+    setup.claim = {"target": "pr:88", "action": action, "head": "a" * 40, "targets": [88]}
+
+
+@pytest.mark.parametrize(
+    ("action", "stage"),
+    [
+        ("review-findings", "factory:changes-requested"),
+        ("ci-repair", "factory:ci"),
+        ("merge-conflict", "factory:review"),
+    ],
+)
+def test_repair_handoff_returns_pr_to_review_like_a_worker(
+    setup: LedgerDouble, action: str, stage: str
+) -> None:
+    _repair_claim(setup, action)
+    github = GitHubDouble(head="b" * 40)
+    github.review_labels = ["factory", stage, "factory:unowned", "area:api"]
+    result = external.claim_action(
+        cast(GitHub, github),
+        client="codebuff",
+        claim_id=TOKEN,
+        operation="handoff",
+        environment={},
+        evidence=f"https://github.com/{REPO}/pull/88",
+    )
+    assert result["handoff_recorded"] is True
+    assert sorted(github.review_labels) == [
+        "area:api",
+        "factory",
+        "factory:review",
+        "factory:unowned",
+    ]
+    assert github.label_writes == (0 if stage == "factory:review" else 1)
+    assert setup.holder is None
+
+
+def test_repair_handoff_without_new_commit_keeps_the_claim(setup: LedgerDouble) -> None:
+    _repair_claim(setup)
+    github = GitHubDouble(head="a" * 40)
+    github.review_labels = ["factory", "factory:changes-requested", "factory:unowned"]
+    with pytest.raises(ValueError, match="no new commit"):
+        external.claim_action(
+            cast(GitHub, github),
+            client="codebuff",
+            claim_id=TOKEN,
+            operation="handoff",
+            environment={},
+            evidence=f"https://github.com/{REPO}/pull/88",
+        )
+    assert setup.holder == "codebuff"
+    assert github.label_writes == 0
+
+
+def test_repair_handoff_cannot_point_at_another_pr(setup: LedgerDouble) -> None:
+    _repair_claim(setup)
+    setup.claim["target"] = "pr:87"
+    github = GitHubDouble(head="b" * 40)
+    with pytest.raises(ValueError, match="different PR"):
+        external.claim_action(
+            cast(GitHub, github),
+            client="codebuff",
+            claim_id=TOKEN,
+            operation="handoff",
+            environment={},
+            evidence=f"https://github.com/{REPO}/pull/88",
+        )
+    assert setup.holder == "codebuff"
+
+
+@pytest.mark.parametrize("route", ["issues/7", "actions/runs/12345"])
+def test_only_the_pull_request_is_handoff_evidence(setup: LedgerDouble, route: str) -> None:
+    external.reserve_next(cast(GitHub, GitHubDouble()), client="chatgpt", environment={})
+    with pytest.raises(ValueError, match="pull request that carries the work"):
+        external.claim_action(
+            cast(GitHub, GitHubDouble()),
+            client="chatgpt",
+            claim_id=TOKEN,
+            operation="handoff",
+            environment={},
+            evidence=f"https://github.com/{REPO}/{route}",
+        )
+    assert setup.holder == "chatgpt"
+
+
+def test_failed_label_projection_never_loses_the_claim(setup: LedgerDouble) -> None:
+    class BrokenLabels(GitHubDouble):
+        def gh(self, *args: str, **kwargs: Any) -> str:
+            raise RuntimeError("GitHub refused the label write")
+
+    external.reserve_next(cast(GitHub, BrokenLabels()), client="chatgpt", environment={})
+    with pytest.raises(RuntimeError, match="refused"):
+        external.claim_action(
+            cast(GitHub, BrokenLabels()),
+            client="chatgpt",
+            claim_id=TOKEN,
+            operation="handoff",
+            environment={},
+            evidence=f"https://github.com/{REPO}/pull/88",
+        )
+    assert setup.holder == "chatgpt"
+
+
+def test_reconcile_recovers_only_claims_whose_work_github_closed(setup: LedgerDouble) -> None:
+    marker = f"factory-lease-v1:{REPO}:external:"
+    other = "22222222-2222-4222-8222-222222222222"
+    setup.rows = [
+        {"key": marker + TOKEN, "claim_id": TOKEN, "targets": [7, 88], "active": False},
+        {"key": marker + other, "claim_id": other, "targets": [9], "active": False},
+        {"key": f"factory-lease-v1:{REPO}:target:7", "claim_id": TOKEN, "targets": [7, 88]},
+    ]
+    github = GitHubDouble()
+    github.closed = {7, 88}
+    removed = external.reconcile(cast(GitHub, github), actor="alice", store=cast(Any, setup))
+    assert [row["claim_id"] for row in removed] == [TOKEN]
+    assert setup.revoked == [(TOKEN, "work finished on GitHub: #7, #88 closed")]
+
+
+def test_reconcile_keeps_every_claim_when_neon_cannot_be_read(setup: LedgerDouble) -> None:
+    def broken(repo: str) -> list[dict[str, object]]:
+        raise RuntimeError("Neon unavailable")
+
+    setup.list_leases = broken  # type: ignore[method-assign]
+    assert (
+        external.reconcile(cast(GitHub, GitHubDouble()), actor="alice", store=cast(Any, setup))
+        == []
+    )
+    assert setup.revoked == []
+
+
+def test_handoff_packet_carries_lease_identity_and_both_bridges(setup: LedgerDouble) -> None:
+    result = external.reserve_next(
+        cast(GitHub, GitHubDouble()), client="codebuff-phone", environment={}
+    )
+    handoff = result["handoff"]
+    assert isinstance(handoff, dict)
+    assert handoff["expires_at"] == "2026-11-22T23:00:00Z"
+    assert handoff["claim_id"] == TOKEN
+    assert "gh workflow run rotisserie-external-claim.yml" in str(handoff["renew_github"])
+    assert "-f operation=handoff" in str(handoff["handoff_github"])
+    assert "Closes #N" in str(handoff["evidence_required"])
+    assert "Model:" in str(handoff["provenance"])
+    assert "not approval" in str(handoff["review_and_merge_gates"])

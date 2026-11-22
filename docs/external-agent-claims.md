@@ -35,14 +35,40 @@ Handoff records evidence in Neon and releases the claim. It **does not**
 approve a review, bypass required checks, merge a PR, close the issue, or
 authorize deployment. Use ordinary controller gates after recording evidence.
 
-An `implement` claim must produce an open, non-draft PR in the same repository
-with an explicit `Closes #ISSUE` reference to the claimed issue. Handing off
-that PR URL causes the **trusted controller** to verify the link and project
-`factory`, `factory:review` and `factory:unowned` labels onto the PR before
-releasing the fenced Neon claim. This enrolls the PR in the **existing**
-independent-review queue; it does not authorize merge or replace ownership
-with labels. An unrelated PR, issue URL or workflow run cannot complete
-an implementation claim. A repair claim must use evidence for its own PR.
+### What an outside agent can take
+
+`implement`, `review-findings`, `ci-repair` and `merge-conflict`. The
+frontier still lists `review` offers, but an outside agent never reserves
+them: the merge gate only counts an approval whose reviewer model the trusted
+runtime recorded, which an outside agent cannot provide. Independent review
+stays with the factory's own reviewers. `--can ACTION` narrows the choice to
+what the agent can do; it still receives the highest-ranked offer of those.
+
+### Handoff evidence
+
+The only evidence is the pull request that carries the work:
+
+- `implement`: an open, non-draft PR in the same repository whose body says
+  `Closes #ISSUE` for the claimed issue, in no other factory stage.
+- `review-findings`, `ci-repair`, `merge-conflict`: the claimed PR itself,
+  with at least one new commit since the claim (its head moved), still in a
+  completion stage.
+
+The trusted controller checks that evidence and moves the PR into the
+existing review queue (`factory`, `factory:review`, `factory:unowned`),
+exactly as a factory worker does when it finishes. Both steps run **inside
+the ledger's locked transaction** that releases the claim: if either fails,
+the transaction rolls back and the claim stays held, and no other claim,
+revoke or factory acquisition can interleave. With no PR to show, `release`
+the claim instead.
+
+### Authorship
+
+End every commit message with a `Model: <exact model id>` trailer. The
+factory's review controller reads it from the owner-authored head and records
+the author model, so the model that wrote the work never approves it. With no
+trailer the author is unknown and any reviewer may approve, per the existing
+review policy. The GitHub account alone is not treated as a model identity.
 
 Do not put Neon credentials into a model session, its prompt, tool output,
 artifact, commit, or issue comment. The local direct CLI is only available to
@@ -57,6 +83,11 @@ External Claim Controller → Run workflow**. Set `operation=reserve-next` and a
 stable `client` string, for example `codebuff-phone`. No issue number is
 required. Download the run's one-day `rotisserie-external-claim-<run>` JSON
 artifact, read the exact target, lease UUID and expiry, and follow the handoff.
+
+The reservation's `handoff` packet carries the exact `gh workflow run`
+commands for renewing, releasing and handing off that claim (`renew_github`,
+`release_github`, `handoff_github`), its `expires_at`, the evidence it needs
+and where to report. Renew well before `expires_at` (claims last 30 minutes).
 
 Agents with GitHub CLI access can dispatch the same authorized workflow:
 
@@ -104,12 +135,18 @@ Every renewal, release and handoff must match that identity and all target
 fences. Linked issue/PR targets are reserved together. A losing agent receives
 a structured `conflict` and can refresh.
 
-An expired external claim is *not* proof that its owner stopped. Until the
-controller establishes inactivity, it remains an unreconciled hold; the factory
-must not silently overwrite it. The same owner can voluntarily release its
-fenced claim even after expiry. Recovery without owner cooperation requires
-independent authoritative inactivity evidence and explicit reconciliation;
-never delete a lease merely because its timestamp elapsed.
+An expired external claim is *not* proof that its owner stopped. It stays a
+hold: the factory never overwrites it, the expired-lease sweep skips it, and
+its owner can no longer renew it. Recovery needs authoritative evidence:
+
+1. **The owner gives it back.** The same actor and client can `release` its
+   fenced claim even after expiry.
+2. **GitHub says the work is gone.** Every `reserve-next` first removes any
+   outside claim whose targets are all closed or merged. The removal is
+   UUID-fenced and logged as `external_revoked` with the reason.
+3. **The operator says so** (below).
+
+Nothing else frees an outside claim; an elapsed timestamp alone never does.
 
 ### Operator override
 
