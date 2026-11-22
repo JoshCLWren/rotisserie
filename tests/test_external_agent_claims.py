@@ -273,10 +273,18 @@ def test_unknown_neon_liveness_holds_all_work(
     assert setup.calls == 0
 
 
-def test_changed_pr_head_rejected_before_neon_claim(setup: LedgerDouble, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_changed_pr_head_rejected_before_neon_claim(
+    setup: LedgerDouble, monkeypatch: pytest.MonkeyPatch
+) -> None:
     offer = replace(make_offer(), target="pr:44", url=f"https://github.com/{REPO}/pull/44", action="review", head_sha="a" * 40)
     monkeypatch.setattr(external.frontier, "capture", lambda *a, **k: make_frontier(offer))
-    monkeypatch.setattr(external, "_linked_targets", lambda g, o: [44] if g.head == "a" * 40 else (_ for _ in ()).throw(ValueError("head changed")))
+    monkeypatch.setattr(
+        external,
+        "_linked_targets",
+        lambda g, o: (
+            [44] if g.head == "a" * 40 else (_ for _ in ()).throw(ValueError("head changed"))
+        ),
+    )
     with pytest.raises(ValueError, match="head changed"):
         external.reserve_next(
             cast(GitHub, GitHubDouble(head="b" * 40)),
@@ -310,7 +318,9 @@ def test_known_external_code_author_cannot_reserve_own_review(
     review = replace(make_offer(), target="pr:44", url=f"https://github.com/{REPO}/pull/44", action="review", head_sha="a" * 40)
     second = replace(make_offer(number=8), rank=2)
     monkeypatch.setattr(external.frontier, "capture", lambda *a, **k: make_frontier(review, second))
-    monkeypatch.setattr(external, "_linked_targets", lambda g, o: [44] if o.action == "review" else [8])
+    monkeypatch.setattr(
+        external, "_linked_targets", lambda g, o: [44] if o.action == "review" else [8]
+    )
     setup.code_authors.add("chatgpt")
     result = external.reserve_next(cast(GitHub, GitHubDouble()), client="chatgpt", environment={})
     assert result["status"] == "reserved"
