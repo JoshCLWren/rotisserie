@@ -6,11 +6,17 @@ ComicPile's old `scripts/factory-run`.
 
 ```bash
 rotisserie factory run opencode-go opencode-go/hy4-flash-free --force
-rotisserie factory status      # who is working on what, and for how long
+rotisserie factory status      # who is working on what: provider, model, state, how long
 rotisserie factory report      # what merged, what failed and why, is it running
 rotisserie factory stats       # which providers and models actually deliver
 rotisserie factory settings    # limits, worker counts and priority order
 rotisserie factory why issue:N # why an issue is or is not being picked up
+rotisserie factory unstick     # start the workers that clear the bottleneck
+rotisserie factory outcomes    # did the requested work actually happen
+rotisserie factory close pr:N --reason TEXT  # close work that should not be done
+rotisserie factory checks pr:N # why its checks fail, in one line each
+rotisserie factory doctor      # is the factory itself healthy
+rotisserie factory conflicts pr:N  # which of its files main also changed, and where
 ```
 
 The repository is taken from `--repo owner/name`, `FACTORY_REPO`, the nearest
@@ -45,7 +51,7 @@ asks nothing.
 | `--force` (alias `--force-slot`) | override the factory's own limits (below) |
 | `--slot N` | use worker number N for the provider (implies `--force`) |
 | `--action ACTION` | on a chosen PR: `review`, `review-findings`, `ci-repair`, `merge-conflict` |
-| `--take-over` | if another worker holds the target, stop it first, then start yours |
+| `--take-over` | if another worker holds the target, stop it first, then start yours; waits for the scheduler's decision (even with `--no-wait`) and takes over once more if a routine pass re-claimed the item in between |
 | `--no-wait` | submit and return immediately |
 | `--follow` | watch until the worker finishes and show the PR's checks and review |
 | `--json` | print one JSON document instead of progress |
@@ -125,6 +131,163 @@ The intake decision runs the installed Rotisserie, which may be newer or older
 than the one the factory workflow uses. A specific worker may still skip an
 eligible issue it failed on before (strike retry); that is decided at
 assignment.
+
+## Clearing the bottleneck
+
+`rotisserie factory unstick` turns `why`'s diagnosis into work. It reads the
+same board, then plans:
+
+- **Review backlog at its limit** (`FACTORY_REVIEW_BACKLOG_LIMIT`): new issues
+  cannot start, so it targets the backlog PRs no worker holds. Reviews come
+  first (an approval moves a PR out of the backlog), then CI repairs, review
+  feedback, and merge conflicts. It says how many PRs must leave the backlog
+  before new issues can start.
+- **Nothing backed up**: the issues that can start now, but only as many as the
+  review-backlog and open-PR limits leave room for. Every started issue becomes
+  a PR in that backlog, and the scheduler fills free slots on its own.
+
+PRs a worker already holds are listed, never taken. PRs `main` has moved past
+(half or more of the files they change no longer exist on the default branch,
+for example after a program was retired or code moved to another repository)
+are listed under "Needs you: probably obsolete", with the commit that removed
+the first file. No worker is sent to them: a merge-conflict worker cannot
+resolve changes to deleted files. Close them to free their backlog slots. Each task gets the
+best-ranked model that has not missed on that same item in the last 6 hours
+(from `outcomes`), so a model that just left a conflict in place is not sent
+back to it. Models are ranked by delivered track record over 7 days, from
+the published reliability counts: set up in the repository, not paused, at
+least 3 runs, at least one PR delivered. Name `PROVIDER MODEL` to choose them
+yourself.
+
+```
+rotisserie factory unstick --dry-run   # show the plan only
+rotisserie factory unstick             # show it, ask, then start
+rotisserie factory unstick --max 3 -y  # start at most 3 without asking
+```
+
+`--skip pr:N` keeps an item out of the plan and `--only pr:N` limits the plan to
+the named items (both repeatable). Every run plans again from live state, so a
+plan seen with `--dry-run` can differ a minute later; to start exactly what
+you reviewed, pass those items with `--only`.
+
+Starting sends one forced, targeted request per task (the same as
+`run PROVIDER MODEL --force --target pr:N --action ACTION`). Outside a terminal
+it starts nothing unless you pass `--yes`.
+
+## Closing work that should not be done
+
+`rotisserie factory close pr:N [pr:M …] --reason TEXT` is for work you
+cancelled, or that `main` has moved past (see `unstick`'s "probably obsolete"
+list). It shows what it will do and asks first (`--yes` skips the question;
+outside a terminal it closes nothing without it). For each pull request it:
+
+1. stops the worker holding it, if any, and waits for the claim to be released;
+2. closes the PR with your reason as the comment;
+3. closes the issue it delivers as **not planned**, with the same reason, so
+   intake does not pick it up again (`--keep-issue` leaves the issue open).
+
+## Did it work?
+
+A worker's own verdict is not proof. A merge-conflict worker can finish
+"without changes" while the pull request still conflicts.
+`rotisserie factory outcomes` follows each targeted request (from `run --target`
+or `unstick`) through to its effect: what the scheduler decided, what the
+worker reported, and whether the goal holds **now**:
+
+| Action | Goal checked |
+|---|---|
+| `merge-conflict` | GitHub no longer reports the PR as conflicting |
+| `ci-repair` | the PR's checks pass on its current head |
+| `review-findings` | the PR left the changes-requested stage |
+| `review` | the PR has a review decision (ready or changes requested) |
+| implement (issue) | the worker delivered a pull request |
+
+A failed worker never counts as done, even when later work fixed the item.
+When a worker's change was rejected by a factory gate (for example the fast
+checks), the row says which one; that detail is otherwise only in `/tmp` on
+the runner.
+Requests the scheduler deferred count as "not started", not as misses. The
+"Not done" list shows each item whose latest started request missed its goal.
+A PR someone closed counts as "closed" (overtaken), not as a miss.
+
+`outcomes --by-item` shows one line per item: rounds, misses, actions and the
+latest result, most-missed first. An item that missed twice or more with
+nothing done is marked "going in circles": another round on the same models
+is unlikely to help. `--limit N` reads more scheduler passes (default 40,
+newest first) for long windows.
+
+## Why are its checks failing?
+
+`rotisserie factory checks pr:N` reads the failing check runs on the PR's
+current head and pulls the first real error out of each log: a `cargo fmt`
+diff (with the files), failing test names (and a hint when the failure is a
+stale checked-in generated contract), or a compile error. A review-feedback
+round cannot validate while these are red, so `unstick` plans **ci-repair**
+instead of review work for such PRs, and for one a worker already holds it
+says to take it over (`run … --action ci-repair --take-over`).
+`--since 2h` sets the window; `--all` also follows routine scheduler passes,
+one row per worker each pass started.
+
+## What does it conflict with?
+
+`rotisserie factory conflicts pr:N` compares each file the PR changes (files it
+added are skipped) at the PR's merge base with the default branch, and names
+the merged PR behind each difference. It is exact for any branch age; the
+compare API's file list stops at 300 files, and commit `since` filters miss
+merged commits that keep older dates.
+
+`unstick` adds this overlap to every merge-conflict task. Once three different
+models have failed an item's conflicts in the last 6 hours, it stops planning
+workers for it and lists it under **Needs you: models keep failing**: merge it
+by hand, or close it if the overlapping merged PR already did the work.
+
+## Is the factory itself healthy?
+
+`rotisserie factory doctor` runs the checks behind problems that were first
+found by hand. It exits 4 when any check fails.
+
+| Check | Fails when |
+|---|---|
+| reliability snapshot | `factory-stats.json` was never published, or is over an hour old |
+| dashboard publisher | the last `factory-status-pages.yml` run failed; names the step and error |
+| scheduler | no scheduler run in 20 minutes |
+| rotisserie intake | the intake decision cannot be made, so no fresh issue is admitted |
+| worker rejections | one factory gate rejected at least half (and 3+) of recent finished workers; that points at the gate or the repository, not the models |
+
+A check that cannot reach GitHub says so instead of failing.
+
+`doctor --fix` makes the safe repairs it finds. Today that is re-running the
+stats publisher (`factory-status-pages.yml`) when the snapshot is missing or
+stale; GitHub's 15-minute schedule can lag by hours. Without `--fix` it only
+says a repair is available.
+
+## Other front ends
+
+The console's logic lives in `rotisserie.factory_console.service`, which never
+prints, prompts or parses arguments. It returns typed results with `to_dict()`
+and structured reason codes (`Reason.code`, plus the issues, PRs and setting
+involved), so a TUI, web page or MCP server can call it directly:
+
+```python
+from datetime import UTC, datetime
+
+from rotisserie.factory_console.github import GitHub
+from rotisserie.factory_console.service import providers, queue, unstick
+
+github = GitHub("owner/repo")
+now = datetime.now(UTC)
+summary = queue.summarize_queue(
+    github, now=int(now.timestamp()), variables=providers.repository_variables(github)
+)
+plan = unstick.plan(github, now=now)
+print(plan.to_dict())
+```
+
+`queue` (why), `unstick` (plan and start), `outcomes` (did it work),
+`catalog` (models offered now), `dispatch` (submit a request),
+`reliability` (track record) and `providers` (setup) are in the service so far.
+Older commands still mix reading, deciding and printing in `commands.py` and
+move into the service when they are next changed.
 
 ## Exit codes
 

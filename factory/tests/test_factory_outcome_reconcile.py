@@ -123,3 +123,17 @@ def test_entry_persister_runs_reconciliation_without_owning_the_verdict() -> Non
     assert step["continue-on-error"] is True
     assert '--exclude-run "$GITHUB_RUN_ID"' in step["run"]
     assert entry["jobs"]["persist_outcome"]["permissions"]["actions"] == "read"
+
+
+def test_worker_run_titles_parse_with_and_without_a_model() -> None:
+    """Run names gained a model segment; older runs must still be attributed."""
+    budget = importlib.import_module("factory_source_budget")
+    old = "Factory 1327811785100 · fixed-model entry"
+    new = "Factory 1327811785100 · opencode-go/hy4-flash-free · fixed-model entry"
+    auto = "Factory 1327811785100 · auto · fixed-model entry"
+    for title in (old, new, auto):
+        assert RECONCILE.TITLE_RE.fullmatch(title)["worker"] == "1327811785100"
+        assert budget.ENTRY_TITLE_RE.match(title)["worker"] == "1327811785100"
+    assert RECONCILE.TITLE_RE.fullmatch(new)["model"] == "opencode-go/hy4-flash-free"
+    assert RECONCILE.TITLE_RE.fullmatch(old)["model"] is None
+    assert RECONCILE.TITLE_RE.fullmatch("Factory 1 · a · b · fixed-model entry") is None

@@ -1,4 +1,7 @@
-"""``rotisserie factory why`` — why the factory is or is not picking up an issue.
+"""Queue eligibility: why the factory is or is not picking up an issue.
+
+Front-end neutral: functions here read GitHub and return typed results with
+structured reasons. The CLI (``rotisserie factory why``) only renders them.
 
 Every answer comes from the dispatcher's own rules: the shared eligibility
 module, the controller's backpressure gates, and Rotisserie's intake decision,
@@ -12,8 +15,9 @@ import base64
 import json
 import re
 from collections import Counter
+from collections.abc import Mapping
 from concurrent.futures import ThreadPoolExecutor
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
 
 from rotisserie.factory_console import runtime
 from rotisserie.factory_console.github import (
@@ -204,12 +208,32 @@ def explain(board: Board, row: Obj, *, blocker: bool | None) -> runtime.Explanat
 
 
 @dataclass(frozen=True)
+class Reason:
+    """One thing standing between an issue and a worker.
+
+    ``code`` is stable (see ``CATEGORY_WORDS``) for front ends to switch on;
+    ``text`` is the default English sentence. ``issues``/``prs`` name the
+    items involved and ``setting`` the factory setting that governs it.
+    """
+
+    code: str
+    text: str
+    issues: tuple[int, ...] = ()
+    prs: tuple[int, ...] = ()
+    setting: str | None = None
+
+
+@dataclass(frozen=True)
 class Verdict:
     """One issue's answer: can it start, and if not, what stops it."""
 
     status: str  # ready | waiting | not-eligible
-    reasons: tuple[str, ...]  # plain-language lines
-    category: str  # the first reason, for grouping in the summary
+    reasons: tuple[Reason, ...]
+
+    @property
+    def category(self) -> str:
+        """The first reason's code, for grouping; ``ready`` when nothing stops it."""
+        return self.reasons[0].code if self.reasons else "ready"
 
 
 def verdict(
@@ -218,49 +242,52 @@ def verdict(
     *,
     blocker_detail: str = "",
 ) -> Verdict:
-    lines: list[tuple[str, str]] = []
+    lines: list[Reason] = []
     for reason in explanation.reasons:
         lines.extend(_reason_lines(reason, explanation, board, blocker_detail))
     if explanation.intake == "not-authorized":
         # Intake restates most static reasons; add only what it knows beyond them.
-        lines.extend(_intake_lines(explanation.issue, board, {category for category, _ in lines}))
-    if lines and any(category != "backpressure" for category, _ in lines):
-        return Verdict("not-eligible", tuple(text for _, text in lines), lines[0][0])
+        lines.extend(_intake_lines(explanation.issue, board, {item.code for item in lines}))
+    if lines and any(item.code != "backpressure" for item in lines):
+        return Verdict("not-eligible", tuple(lines))
     # Only pacing stands in the way: name the limit and its numbers.
     held = _limit_lines(explanation) or lines
     if held:
-        return Verdict("waiting", tuple(text for _, text in held), held[0][0])
-    return Verdict("ready", (), "ready")
+        return Verdict("waiting", tuple(held))
+    return Verdict("ready", ())
 
 
 def _reason_lines(
     reason: str, explanation: runtime.Explanation, board: Board, blocker_detail: str
-) -> list[tuple[str, str]]:
+) -> list[Reason]:
     if reason.startswith("eligible: "):
         return []
     if reason.endswith(", not open"):
-        return [("closed", "It is closed.")]
+        return [Reason("closed", "It is closed.")]
     if reason.endswith("non-executable product exclusion"):
         if explanation.intake == "not-authorized":
             return []  # an intake refusal; explained by _intake_lines
-        return [("excluded", "It is on the factory's do-not-execute list.")]
+        return [Reason("excluded", "It is on the factory's do-not-execute list.")]
     if reason.startswith("labeled epic/prd"):
-        return [("parent", "It is an epic or PRD (parent work), not a task.")]
+        return [Reason("parent", "It is an epic or PRD (parent work), not a task.")]
     if reason.startswith("structured manual-only"):
         return [
-            (
+            Reason(
                 "manual-only",
                 "Its description marks it manual-only. The factory never overrides that, "
                 "even with --force.",
             )
         ]
     if reason.startswith("body declares a product-acceptance parent"):
-        return [("parent", "It is a product-acceptance parent; its child issues are the work.")]
+        return [
+            Reason("parent", "It is a product-acceptance parent; its child issues are the work.")
+        ]
     if reason.startswith("blocked labels present: "):
-        return [("blocked", f"It is labeled {reason.removeprefix('blocked labels present: ')}.")]
+        labels = reason.removeprefix("blocked labels present: ")
+        return [Reason("blocked", f"It is labeled {labels}.")]
     if reason.startswith("terminal label present: "):
         labels = reason.removeprefix("terminal label present: ")
-        return [("finished", f"It is already marked finished ({labels}).")]
+        return [Reason("finished", f"It is already marked finished ({labels}).")]
     if reason.startswith("active factory lease held by "):
         owner = reason.removeprefix("active factory lease held by ")
         worker = owner.removeprefix("factory:")
@@ -269,16 +296,25 @@ def _reason_lines(
         else:
             provider = runtime.provider_for_worker(worker)
             who = f"Worker {worker}" + (f" ({provider.name})" if provider else "")
-        return [("held", f"{who} is already on it.")]
+        return [Reason("held", f"{who} is already on it.")]
     if reason.startswith("unresolved dependencies: "):
         waiting = reason.removeprefix("unresolved dependencies: ")
-        return [("dependency", f"It depends on {waiting}, still open.")]
+        numbers = tuple(int(n) for n in re.findall(r"#(\d+)", waiting))
+        return [Reason("dependency", f"It depends on {waiting}, still open.", issues=numbers)]
     if reason == "an open canonical PR already owns this issue":
         prs = ", ".join(f"#{n}" for n in explanation.owning_prs) or "an open pull request"
-        return [("has-pr", f"Pull request {prs} already implements it; work continues there.")]
+        return [
+            Reason(
+                "has-pr",
+                f"Pull request {prs} already implements it; work continues there.",
+                prs=explanation.owning_prs,
+            )
+        ]
     if reason == "a live open dependency blocker is reported by GitHub":
-        return [("dependency", (blocker_detail or "GitHub lists an open blocking issue") + ".")]
-    return [("other", reason)]
+        text = (blocker_detail or "GitHub lists an open blocking issue") + "."
+        numbers = tuple(int(n) for n in re.findall(r"#(\d+)", blocker_detail))
+        return [Reason("dependency", text, issues=numbers)]
+    return [Reason("other", reason)]
 
 
 # Intake block codes already covered when the static rules gave one of these reasons.
@@ -294,30 +330,33 @@ INTAKE_RESTATES = {
 }
 
 
-def _intake_lines(number: int, board: Board, known: set[str]) -> list[tuple[str, str]]:
+def _intake_lines(number: int, board: Board, known: set[str]) -> list[Reason]:
     if board.intake_problem:
-        return [("intake", f"Rotisserie intake admits nothing right now: {board.intake_problem}.")]
+        return [
+            Reason("intake", f"Rotisserie intake admits nothing right now: {board.intake_problem}.")
+        ]
     _, codes = (board.intake or {}).get(number, (False, ()))
     fresh = [code for code in codes if not INTAKE_RESTATES.get(code, set()) & known]
     if codes and not fresh:
         return []
     if not codes:
-        return [] if known else [("intake", "Rotisserie's intake decision did not admit it.")]
+        return [] if known else [Reason("intake", "Rotisserie's intake decision did not admit it.")]
     category = "backpressure" if fresh == ["backpressure"] else "intake"
     words = "; ".join(INTAKE_WORDS.get(code, code.replace("_", " ")) for code in fresh)
-    return [(category, f"Rotisserie intake is holding it: {words}.")]
+    return [Reason(category, f"Rotisserie intake is holding it: {words}.")]
 
 
-def _limit_lines(explanation: runtime.Explanation) -> list[tuple[str, str]]:
+def _limit_lines(explanation: runtime.Explanation) -> list[Reason]:
     """The controller's backpressure gates, applied to an otherwise eligible issue."""
-    held: list[tuple[str, str]] = []
+    held: list[Reason] = []
     if explanation.pr_wip >= explanation.pr_wip_limit and not explanation.bypasses_wip_limit:
         held.append(
-            (
+            Reason(
                 "wip-limit",
                 f"{explanation.pr_wip} of {explanation.pr_wip_limit} factory pull requests "
                 "already have a worker (FACTORY_PR_WIP_LIMIT). Only urgent work (main breakage, "
                 "user-reported bugs, critical priority) starts now.",
+                setting="FACTORY_PR_WIP_LIMIT",
             )
         )
     if (
@@ -325,11 +364,12 @@ def _limit_lines(explanation: runtime.Explanation) -> list[tuple[str, str]]:
         and not explanation.bypasses_saturated_review_backlog
     ):
         held.append(
-            (
+            Reason(
                 "review-limit",
                 f"{explanation.review_backlog} pull requests are waiting on review or checks "
                 f"(limit {explanation.review_backlog_limit}, FACTORY_REVIEW_BACKLOG_LIMIT). "
                 "Only main-breakage issues start new work until that drains.",
+                setting="FACTORY_REVIEW_BACKLOG_LIMIT",
             )
         )
     return held
@@ -353,10 +393,6 @@ CATEGORY_WORDS = {
 }
 
 
-def summarize(verdicts: list[tuple[Obj, Verdict]]) -> Counter[str]:
-    return Counter(item.category for _, item in verdicts if item.status != "ready")
-
-
 def sweep(github: GitHub, board: Board) -> list[tuple[Obj, Verdict]]:
     """Every open issue's verdict; live dependency links are read for the eligible ones."""
     first = [(row, explain(board, row, blocker=None)) for row in board.issues]
@@ -373,3 +409,92 @@ def sweep(github: GitHub, board: Board) -> list[tuple[Obj, Verdict]]:
         checked = list(pool.map(check, candidates))
     rest = [(row, verdict(item, board)) for row, item in first if not item.eligible]
     return checked + rest
+
+
+# Entry points for front ends (CLI, TUI, web, MCP) ---------------------------------
+
+
+@dataclass(frozen=True)
+class IssueAnswer:
+    """The full answer for one issue."""
+
+    issue: int
+    title: str
+    verdict: Verdict
+    explanation: runtime.Explanation
+    intake_problem: str
+
+    def to_dict(self) -> dict[str, object]:
+        data = asdict(self)
+        data["status"] = self.verdict.status
+        data["category"] = self.verdict.category
+        return data
+
+
+@dataclass(frozen=True)
+class QueueEntry:
+    issue: int
+    title: str
+    verdict: Verdict
+
+
+@dataclass(frozen=True)
+class QueueSummary:
+    """Every open issue's verdict, plus the board it was computed from."""
+
+    entries: tuple[QueueEntry, ...]
+    board: Board
+
+    @property
+    def ready(self) -> tuple[QueueEntry, ...]:
+        return tuple(
+            sorted(
+                (entry for entry in self.entries if entry.verdict.status == "ready"),
+                key=lambda entry: entry.issue,
+            )
+        )
+
+    @property
+    def not_starting(self) -> Counter[str]:
+        return Counter(
+            entry.verdict.category for entry in self.entries if entry.verdict.status != "ready"
+        )
+
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "open_issues": len(self.entries),
+            "ready": [entry.issue for entry in self.ready],
+            "not_starting": dict(self.not_starting),
+            "issues": [asdict(entry) for entry in self.entries],
+            "intake_problem": self.board.intake_problem or None,
+        }
+
+
+def _number(row: Obj) -> int:
+    value = row.get("number")
+    assert isinstance(value, int)
+    return value
+
+
+def answer_issue(
+    github: GitHub, number: int, *, now: int, variables: Mapping[str, str]
+) -> IssueAnswer:
+    board = read_board(github, dict(variables), now)
+    row = issue_row(github, board, number)
+    blocked, detail = open_blocker(github, number)
+    explanation = explain(board, row, blocker=blocked)
+    return IssueAnswer(
+        number,
+        string(row, "title"),
+        verdict(explanation, board, blocker_detail=detail),
+        explanation,
+        board.intake_problem,
+    )
+
+
+def summarize_queue(github: GitHub, *, now: int, variables: Mapping[str, str]) -> QueueSummary:
+    board = read_board(github, dict(variables), now)
+    entries = tuple(
+        QueueEntry(_number(row), string(row, "title"), item) for row, item in sweep(github, board)
+    )
+    return QueueSummary(entries, board)

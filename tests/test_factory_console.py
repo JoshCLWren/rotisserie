@@ -125,7 +125,7 @@ class FakeGitHub:
     """Routes ``gh`` invocations to scripted responses and records them."""
 
     routes: dict[str, JSON | Callable[[], JSON]] = field(default_factory=dict)
-    texts: dict[str, str] = field(default_factory=dict)
+    texts: dict[str, str | Callable[[], str]] = field(default_factory=dict)
     calls: list[list[str]] = field(default_factory=list)
     dispatch_output: str = f"https://github.com/{REPO}/actions/runs/900\n"
     error: Exception | None = None
@@ -146,7 +146,7 @@ class FakeGitHub:
             if "--allow-escape-sequences" in argv:
                 for prefix, text in self.texts.items():
                     if path.endswith(prefix):
-                        return text
+                        return text() if callable(text) else text
                 return ""
             for prefix, value in self.routes.items():
                 if re.search(prefix, path):
@@ -165,6 +165,8 @@ class FakeGitHub:
             return json.dumps(self.routes.get("issue-list", []))
         if argv[:2] == ["pr", "list"]:
             return json.dumps(self.routes.get("pr-list", []))
+        if argv[:2] == ["secret", "list"]:
+            return json.dumps(self.routes.get("secret-list", []))
         return "[]"
 
     def dispatch_inputs(self) -> dict[str, str]:
@@ -976,3 +978,929 @@ def test_why_explains_a_closed_issue(fake: FakeGitHub) -> None:
     assert code == 0
     assert "It is closed." in out
     assert "--force" not in out
+
+
+# unstick -------------------------------------------------------------------------------
+
+
+def stats_snapshot(*models: tuple[str, str, int, int, Obj]) -> Obj:
+    import base64
+
+    entries: list[JSON] = [
+        {
+            "source": source,
+            "model": model,
+            "health": health,
+            "windows": {
+                "7d": {"runs": runs, "delivered": delivered, "failed": runs - delivered},
+                "24h": {"runs": 0, "delivered": 0, "failed": 0},
+            },
+        }
+        for source, model, runs, delivered, health in models
+    ]
+    payload = {"generated_at": "2026-11-21T22:50:00Z", "models": entries, "providers": []}
+    return {"content": base64.b64encode(json.dumps(payload).encode()).decode()}
+
+
+HEALTHY: Obj = {"status": "healthy"}
+
+
+LIVE_MODELS: dict[str, frozenset[str] | None] = {}
+
+
+@pytest.fixture(autouse=True)
+def live_catalog(monkeypatch: pytest.MonkeyPatch) -> dict[str, frozenset[str] | None]:
+    """Never read this machine's OpenCode CLI or the network in tests."""
+    from rotisserie.factory_console.service import catalog
+
+    LIVE_MODELS.clear()
+    monkeypatch.setattr(catalog, "live_models", lambda provider: LIVE_MODELS.get(provider.key))
+    monkeypatch.setattr(catalog, "opencode_catalog", lambda: [])
+    return LIVE_MODELS
+
+
+def unstick_routes(fake: FakeGitHub, prs: list[Obj], issues: list[Obj] | None = None) -> None:
+    why_routes(fake, issues or [open_issue(41, "factory:unowned")], prs)
+    fake.routes["secret-list"] = [{"name": "OPENCODE_GO_CLIENT_ID"}, {"name": "NVIDIA_API_KEY"}]
+    fake.routes["contents/factory-stats.json"] = stats_snapshot(
+        ("opencode-free", "hy4-flash-free", 10, 2, HEALTHY),
+        ("opencode-free", "nemotron-3.5-lightning-free", 10, 5, HEALTHY),
+        # Best rate, but its provider is not set up here.
+        ("z-ai", "glm-9", 4, 4, HEALTHY),
+        # Paused right now.
+        (
+            "nvidia",
+            "moonshotai/kimi-k3.1-pro",
+            10,
+            9,
+            {"status": "cooling", "cooldown_until": "2026-11-22T05:00:00Z"},
+        ),
+    )
+
+
+def backlog(*specs: tuple[int, str, str]) -> list[Obj]:
+    prs = []
+    for number, stage, owner in specs:
+        pr = factory_pr(number, 900 + number, stage, owner)
+        if stage == "factory:conflict":
+            pr["labels"] = [{"name": "factory:review"}, {"name": owner}]
+            pr["mergeable"] = "CONFLICTING"
+        prs.append(pr)
+    return prs
+
+
+FULL_BACKLOG = backlog(
+    (301, "factory:review", "factory:unowned"),
+    (302, "factory:ci", "factory:unowned"),
+    (303, "factory:changes-requested", "factory:unowned"),
+    (304, "factory:conflict", "factory:unowned"),
+    (305, "factory:review", f"factory:{WORKER}"),
+    (306, "factory:review", "factory:unowned"),
+    (307, "factory:review", "factory:unowned"),
+)
+
+
+def test_unstick_plans_backlog_work_with_the_best_set_up_model(fake: FakeGitHub) -> None:
+    unstick_routes(fake, FULL_BACKLOG)
+    code, out = invoke(["--json", "unstick", "--dry-run"])
+    data = json.loads(out)
+    plan = data["plan"]
+    assert code == 0
+    assert plan["needed_to_reopen_intake"] == 2  # 7 in the backlog, limit 6
+    work = [(item["task"]["target"], item["task"]["action"]) for item in plan["assignments"]]
+    # Reviews first (they can leave the backlog directly), then repairs, then conflicts.
+    assert work == [
+        ("pr:301", "review"),
+        ("pr:306", "review"),
+        ("pr:307", "review"),
+        ("pr:302", "ci-repair"),
+        ("pr:303", "review-findings"),
+        ("pr:304", "merge-conflict"),
+    ]
+    assert {item["model"] for item in plan["assignments"]} == {
+        "opencode-go/nemotron-3.5-lightning-free"
+    }
+    assert "5 of 10 runs delivered" in plan["model_choice"]
+    assert [reason["prs"] for reason in plan["held"]] == [[305]]
+    assert not any(call[0] == "workflow" for call in fake.calls)
+
+
+def test_unstick_starts_one_forced_targeted_worker_per_task(fake: FakeGitHub) -> None:
+    unstick_routes(fake, FULL_BACKLOG)
+    code, out = invoke(["unstick", "--max", "2", "--yes"])
+    assert code == 0
+    assert "Plan: 2 workers" in out
+    assert "4 more could be started (raise --max)" in out
+    sent = [
+        dict(call[i + 1].split("=", 1) for i, item in enumerate(call) if item == "-f")
+        for call in fake.calls
+        if call[0] == "workflow"
+    ]
+    assert [(item["target"], item["action"], item["force_slot"]) for item in sent] == [
+        ("pr:301", "review", "true"),
+        ("pr:306", "review", "true"),
+    ]
+    assert all(item["provider"] == "opencode-go" for item in sent)
+    assert "pr:301: request sent" in out
+
+
+def test_unstick_needs_confirmation_outside_a_terminal(fake: FakeGitHub) -> None:
+    unstick_routes(fake, FULL_BACKLOG)
+    code, out = invoke(["unstick"])
+    assert code == 3
+    assert "Add --yes to start these workers." in out
+    assert not any(call[0] == "workflow" for call in fake.calls)
+
+
+def test_unstick_asks_before_starting_in_a_terminal(fake: FakeGitHub) -> None:
+    unstick_routes(fake, FULL_BACKLOG)
+    code, out = invoke(["unstick"], stdin="n\n", tty=True)
+    assert code == 3
+    assert "Nothing was started." in out
+    assert not any(call[0] == "workflow" for call in fake.calls)
+
+
+def test_unstick_without_backpressure_starts_issues_that_can_start(fake: FakeGitHub) -> None:
+    unstick_routes(fake, [], issues=[open_issue(41, "factory:unowned"), open_issue(42, "epic")])
+    code, out = invoke(["--json", "unstick", "--dry-run"])
+    plan = json.loads(out)["plan"]
+    assert [item["task"]["target"] for item in plan["assignments"]] == ["issue:41"]
+    assert plan["assignments"][0]["task"]["action"] == "advance"
+    assert plan["diagnosis"][0]["code"] == "ready"
+
+
+def test_unstick_honors_an_explicit_provider_and_model(fake: FakeGitHub) -> None:
+    unstick_routes(fake, FULL_BACKLOG)
+    code, out = invoke(
+        ["--json", "unstick", "opencode-go", "opencode-go/hy4-flash-free", "--dry-run"]
+    )
+    plan = json.loads(out)["plan"]
+    assert {item["model"] for item in plan["assignments"]} == {"opencode-go/hy4-flash-free"}
+    assert plan["model_choice"] == "you chose it"
+
+
+def test_unstick_reports_when_no_model_has_a_track_record(fake: FakeGitHub) -> None:
+    unstick_routes(fake, FULL_BACKLOG)
+    fake.routes["secret-list"] = []
+    code, out = invoke(["unstick", "--dry-run"])
+    assert code == 3
+    assert "No set-up, unpaused model that the provider still offers has a track record" in out
+
+
+def test_paused_models_count_as_paused_only_until_the_cooldown_ends() -> None:
+    from rotisserie.factory_console.service import reliability
+
+    past: Obj = {"status": "cooling", "cooldown_until": "2026-11-21T20:00:00Z"}
+    future: Obj = {"status": "cooling", "cooldown_until": "2026-11-22T05:00:00Z"}
+    assert reliability.health_status(past, START) == "healthy"
+    assert reliability.health_status(future, START) == "paused"
+    assert reliability.health_status({"status": "retired"}, START) == "retired"
+
+
+def test_stats_does_not_show_an_expired_pause(fake: FakeGitHub) -> None:
+    fake.routes["contents/factory-stats.json"] = stats_snapshot(
+        (
+            "opencode-free",
+            "hy4-flash-free",
+            5,
+            1,
+            {"status": "cooling", "cooldown_until": "2026-11-21T20:00:00Z"},
+        ),
+    )
+    code, out = invoke(["stats"])
+    assert code == 0
+    assert "paused until" not in out
+
+
+def test_service_layer_stays_front_end_neutral() -> None:
+    """Web, TUI and MCP front ends reuse the service; it must never print or prompt."""
+    import ast
+    from pathlib import Path
+
+    service = Path(commands.__file__).with_name("service")
+    for path in sorted(service.glob("*.py")):
+        tree = ast.parse(path.read_text())
+        for node in ast.walk(tree):
+            if isinstance(node, ast.ImportFrom) and node.module:
+                assert node.module not in (
+                    "rotisserie.factory_console.ui",
+                    "rotisserie.factory_console.commands",
+                    "argparse",
+                ), f"{path.name} imports {node.module}"
+            if isinstance(node, ast.Import):
+                assert all(alias.name != "argparse" for alias in node.names), path.name
+            if isinstance(node, ast.Call) and isinstance(node.func, ast.Name):
+                assert node.func.id not in ("print", "input"), f"{path.name} calls {node.func.id}"
+
+
+def test_status_shows_each_workers_model_from_its_run_name(fake: FakeGitHub) -> None:
+    other = runtime.module("factory_worker_slots").worker_id("opencode-free", 2)
+    third = runtime.module("factory_worker_slots").worker_id("opencode-free", 3)
+    fake.routes[r"issues\?state=open&per_page=100&page=1&"] = [
+        {"number": 11, "title": "Exact model", "labels": [{"name": f"factory:{WORKER}"}]},
+        {"number": 12, "title": "Auto model", "labels": [{"name": f"factory:{other}"}]},
+        {"number": 13, "title": "Old run", "labels": [{"name": f"factory:{third}"}]},
+    ]
+    fake.routes[r"free-model-factory-entry.yml/runs\?status=in_progress"] = {
+        "workflow_runs": [
+            {
+                "id": 1,
+                "display_title": f"Factory {WORKER} · opencode-go/hy4-flash-free · fixed-model entry",
+                "status": "in_progress",
+            },
+            {"id": 2, "display_title": f"Factory {other} · auto · fixed-model entry"},
+            {"id": 3, "display_title": f"Factory {third} · fixed-model entry"},
+        ]
+    }
+    code, out = invoke(["status"])
+    assert code == 0
+    assert "Model" in out
+    assert "opencode-go/hy4-flash-free" in out
+    assert "picked by the worker" in out
+    assert "not recorded (older run)" in out
+    code, out = invoke(["--json", "status"])
+    models = {item["ref"]: item["model"] for item in json.loads(out)["working"]}
+    assert models == {
+        "issue:11": "opencode-go/hy4-flash-free",
+        "issue:12": "auto",
+        "issue:13": None,
+    }
+
+
+def test_unstick_skips_models_the_provider_no_longer_offers(fake: FakeGitHub) -> None:
+    unstick_routes(fake, FULL_BACKLOG)
+    # nemotron has the best record but OpenCode Go no longer lists it; the worker
+    # would refuse it ("not a current zero-price tool-capable Go model").
+    LIVE_MODELS["opencode-go"] = frozenset({"opencode-go/hy4-flash-free"})
+    code, out = invoke(["--json", "unstick", "--dry-run"])
+    plan = json.loads(out)["plan"]
+    assert {item["model"] for item in plan["assignments"]} == {"opencode-go/hy4-flash-free"}
+    assert "could not check" not in plan["model_choice"]
+
+
+def test_unstick_ranks_unverifiable_models_after_checked_ones(fake: FakeGitHub) -> None:
+    unstick_routes(fake, FULL_BACKLOG)
+    LIVE_MODELS["opencode-go"] = None  # no readable live list on this machine
+    code, out = invoke(["--json", "unstick", "--dry-run"])
+    plan = json.loads(out)["plan"]
+    assert "could not check that the provider still offers it" in plan["model_choice"]
+
+
+def test_models_flags_track_record_models_the_provider_dropped(
+    fake: FakeGitHub, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from rotisserie.factory_console.service import catalog
+
+    fake.routes["contents/factory-stats.json"] = stats_snapshot(
+        ("opencode-free", "hy4-flash-free", 10, 2, HEALTHY),
+        ("opencode-free", "deepseek-v4.1-flash-free", 29, 4, HEALTHY),
+    )
+    monkeypatch.setattr(catalog, "opencode_catalog", lambda: ["opencode-go/hy4-flash-free"])
+    code, out = invoke(["--json", "models", "opencode-go"])
+    rows = {row["model"]: row for row in json.loads(out)["models"]}
+    assert code == 0
+    assert rows["opencode-go/hy4-flash-free"]["offered"] is True
+    assert rows["opencode-go/deepseek-v4.1-flash-free"]["offered"] is False
+    assert "no longer offered" in rows["opencode-go/deepseek-v4.1-flash-free"]["source"]
+
+
+# outcomes ------------------------------------------------------------------------------
+
+
+def test_outcome_goals_follow_the_target_state_not_the_workers_word() -> None:
+    from rotisserie.factory_console.service.outcomes import judge
+    from rotisserie.factory_console.tracker import WorkerOutcome
+
+    idle = WorkerOutcome(Result.IDLE, "nothing to do")
+    conflicted: Obj = {"mergeable": False, "mergeable_state": "dirty", "state": "open"}
+    clean: Obj = {"mergeable": True, "mergeable_state": "clean", "state": "open"}
+    computing: Obj = {"mergeable": None, "mergeable_state": "unknown", "state": "open"}
+    assert judge("merge-conflict", "pr", conflicted, idle)[0] == "not-met"
+    assert judge("merge-conflict", "pr", clean, idle)[0] == "met"
+    assert judge("merge-conflict", "pr", computing, idle)[0] == "pending"
+    stuck: Obj = {"state": "open", "labels": [{"name": "factory:changes-requested"}]}
+    moved: Obj = {"state": "open", "labels": [{"name": "factory:review"}]}
+    assert judge("review-findings", "pr", stuck, idle) == (
+        "not-met",
+        "it is still changes-requested",
+    )
+    assert judge("review-findings", "pr", moved, idle)[0] == "met"
+    assert judge("review", "pr", moved, idle)[0] == "not-met"
+    assert judge("ci-repair", "pr", {"merged": True}, idle)[0] == "met"
+    delivered = WorkerOutcome(Result.DELIVERED, "Verified PR #9 was handed off", 9)
+    assert judge("implement", "issue", {}, delivered) == ("met", "pull request #9 was delivered")
+
+
+def test_latest_misses_ignore_older_requests_and_unstarted_ones() -> None:
+    from rotisserie.factory_console.service.outcomes import RequestOutcome, latest_misses
+
+    def outcome(run: int, target: str, goal: str) -> RequestOutcome:
+        return RequestOutcome(
+            run, START, target, "dispatched", "", "review", "m", "w", None, "", "", goal, ""
+        )
+
+    found = [
+        outcome(4, "pr:1", "not-started"),  # deferred: does not hide the real result
+        outcome(3, "pr:1", "met"),
+        outcome(2, "pr:1", "not-met"),  # older miss, since fixed
+        outcome(1, "pr:2", "not-met"),
+    ]
+    assert [item.scheduler_run for item in latest_misses(found)] == [1]
+
+
+def test_outcomes_flags_an_idle_worker_that_left_conflicts(fake: FakeGitHub) -> None:
+    fake.routes["fixed-model-factory-dispatch.yml/runs"] = {
+        "workflow_runs": [
+            {
+                "id": 900,
+                "display_title": "Factory dispatch · pr:3953",
+                "status": "completed",
+                "created_at": "2026-11-21T22:30:00Z",
+            },
+            {"id": 901, "display_title": "Factory dispatch · opencode-go", "status": "completed"},
+        ]
+    }
+    fake.routes["actions/runs/900/jobs"] = {"jobs": list[JSON](DISPATCH_DONE)}
+    fake.texts["actions/jobs/11/logs"] = dispatched_log(
+        kind="pr", number=3953, action="merge-conflict", dispatched_at=int(START.timestamp())
+    )
+    fake.routes["free-model-factory-entry.yml/runs"] = {
+        "workflow_runs": [
+            {
+                "id": 950,
+                "display_title": f"Factory {WORKER} · opencode-go/hy4-flash-free · fixed-model entry",
+                "created_at": "2026-11-21T23:00:31Z",
+            }
+        ]
+    }
+    fake.routes["actions/runs/950$"] = {"id": 950, "status": "completed"}
+    fake.routes["actions/runs/950/jobs"] = {
+        "jobs": [job("Persist trusted worker outcome in Neon", [step("Classify")], job_id=31)]
+    }
+    fake.texts["actions/jobs/31/logs"] = "[factory-outcome] idle: The model found nothing to do\n"
+    fake.routes["pulls/3953$"] = {"mergeable": False, "mergeable_state": "dirty", "state": "open"}
+    code, out = invoke(["outcomes", "--since", "2h"])
+    assert code == 0
+    assert "Requests since" in out and "(1)" in out  # the routine pass is left out
+    assert "pr:3953: it still has merge conflicts" in out
+    assert "the worker reported nothing to do, but the goal does not hold" in out
+    code, out = invoke(["--json", "outcomes", "--all"])
+    data = json.loads(out)
+    assert data["goals"]["not-met"] == 1
+    assert data["requests"][0]["worker_result"] == "idle"
+
+
+def test_unstick_does_not_repeat_a_model_that_just_missed_on_the_item() -> None:
+    from rotisserie.factory_console.service.unstick import Task, _assign
+
+    ranked = [("opencode-go", "opencode-go/a", "best"), ("opencode-go", "opencode-go/b", "next")]
+    task = Task("pr:5575", "merge-conflict", "t", "w")
+    fresh = _assign(task, ranked, {})
+    assert fresh.model == "opencode-go/a" and "missed" not in fresh.why
+    moved = _assign(task, ranked, {"pr:5575": {"opencode-go/a"}})
+    assert moved.model == "opencode-go/b"
+    assert "opencode-go/a just missed on it" in moved.why
+    exhausted = _assign(task, ranked, {"pr:5575": {"opencode-go/a", "opencode-go/b"}})
+    assert exhausted.model == "opencode-go/a"
+    assert "every offered model already missed on it recently" in exhausted.why
+
+
+def _missing() -> JSON:
+    raise GitHubNotFoundError("gone")
+
+
+def test_a_pr_whose_files_main_deleted_is_probably_obsolete(fake: FakeGitHub) -> None:
+    from rotisserie.factory_console.service.obsolete import pr_staleness
+
+    fake.routes[r"pulls/304/files"] = [
+        {"filename": "tests/test_factory_state_cache.py", "status": "modified"},
+        {"filename": "app/kept.py", "status": "modified"},
+        {"filename": "app/new.py", "status": "added"},  # added files are not checked
+        {"filename": "docs/gone.md", "status": "modified"},
+    ]
+    fake.routes[r"contents/tests/test_factory_state_cache.py"] = _missing
+    fake.routes[r"contents/docs/gone.md"] = _missing
+    fake.routes[r"contents/app/kept.py"] = {"sha": "x"}
+    fake.routes[r"commits\?path=tests/test_factory_state_cache.py"] = [
+        {"sha": "11627036aa", "commit": {"message": "chore(factory): move it (#5531)\n\nbody"}}
+    ]
+    found = pr_staleness(GitHub(REPO, executable="sh"), 304)
+    assert found.checked == 3
+    assert found.deleted == ("tests/test_factory_state_cache.py", "docs/gone.md")
+    assert found.obsolete
+    assert "main deleted 2 of the 3 files" in found.text
+    assert "removed by 11627036 chore(factory): move it (#5531)" in found.text
+
+
+def test_unstick_sends_no_worker_to_an_obsolete_pr(fake: FakeGitHub) -> None:
+    unstick_routes(fake, FULL_BACKLOG)
+    fake.routes[r"pulls/304/files"] = [{"filename": "gone.py", "status": "modified"}]
+    fake.routes[r"contents/gone.py"] = _missing
+    code, out = invoke(["--json", "unstick", "--dry-run"])
+    plan = json.loads(out)["plan"]
+    targets = [item["task"]["target"] for item in plan["assignments"]]
+    assert "pr:304" not in targets and "pr:301" in targets
+    assert [reason["prs"] for reason in plan["obsolete"]] == [[304]]
+    code, out = invoke(["unstick", "--dry-run"])
+    assert "Needs you: probably obsolete (1)" in out
+
+
+def test_close_closes_the_pr_and_its_issue_as_not_planned(fake: FakeGitHub) -> None:
+    fake.routes[r"issues/5575$"] = {"number": 5575, "title": "SQL budgets", "labels": []}
+    fake.routes[r"pulls/5575$"] = {
+        "title": "Rust API: SQL budgets",
+        "body": "Closes #4737.",
+        "head": {"ref": "factory/work-checkpoints/issue-4737/beam-free/1"},
+        "state": "open",
+        "labels": [],
+    }
+    fake.routes[r"issues/4737$"] = {"number": 4737, "state": "open"}
+    code, out = invoke(["close", "pr:5575", "--reason", "Retired in #5239."])
+    assert code == 3 and "Nothing was closed. Add --yes" in out
+    assert not any(call[:2] == ["pr", "close"] for call in fake.calls)
+    code, out = invoke(["close", "pr:5575", "--reason", "Retired in #5239.", "--yes"])
+    assert code == 0
+    assert "Closed PR #5575 and issue #4737" in out
+    pr_close = next(call for call in fake.calls if call[:2] == ["pr", "close"])
+    assert pr_close[pr_close.index("--comment") + 1] == "Retired in #5239."
+    issue_close = next(call for call in fake.calls if call[:2] == ["issue", "close"])
+    assert issue_close[2] == "4737"
+    assert issue_close[issue_close.index("--reason") + 1] == "not planned"
+
+
+def test_close_refuses_issues_and_an_empty_reason(fake: FakeGitHub) -> None:
+    code, out = invoke(["close", "issue:5", "--reason", "x", "--yes"])
+    assert code == 2 and "close takes pull requests" in out
+
+
+def test_unstick_starts_no_more_issues_than_the_limits_leave_room_for(fake: FakeGitHub) -> None:
+    issues = [open_issue(n, "factory:unowned") for n in range(41, 51)]
+    # 4 PRs in the backlog (limit 6): room for 2 more.
+    unstick_routes(fake, FULL_BACKLOG[:4], issues=issues)
+    code, out = invoke(["--json", "unstick", "--dry-run"])
+    plan = json.loads(out)["plan"]
+    issue_tasks = [
+        item["task"]["target"]
+        for item in plan["assignments"]
+        if item["task"]["target"].startswith("issue:")
+    ]
+    assert issue_tasks == ["issue:41", "issue:42"]
+    assert "adds at most 2" in plan["diagnosis"][0]["text"]
+
+
+def test_report_and_status_count_a_worker_on_an_issue_and_its_pr_once(fake: FakeGitHub) -> None:
+    fake.routes[r"issues\?state=open&per_page=100&page=1&"] = [
+        {"number": 11, "title": "The issue", "labels": [{"name": f"factory:{WORKER}"}]},
+        {
+            "number": 12,
+            "title": "Its pull request",
+            "pull_request": {},
+            "labels": [{"name": f"factory:{WORKER}"}],
+        },
+    ]
+    code, out = invoke(["--json", "status"])
+    assert code == 0
+    code, report = invoke(["report", "--since", "1h"])
+    assert "1 item(s) being worked on now" in report
+    code, out = invoke(["status"])
+    assert "Working now (1)" in out
+
+
+def test_routine_scheduler_passes_list_every_worker_they_started() -> None:
+    from rotisserie.factory_console.service.outcomes import routine_assignments
+
+    log = (
+        '2026-11-22T04:09:01Z Factory 1236998703300 assignment: {"kind": "pr", "number": 5662, '
+        '"worker": "1236998703300", "stage": "factory:review"}\n'
+        "2026-11-22T04:09:02Z Starting Factory 1236998703300 (dispatch attempt 1/3)\n"
+        '2026-11-22T04:09:03Z Factory 1078053396700 assignment: {"kind": "issue", "number": 3483, '
+        '"worker": "1078053396700", "stage": "factory:building"}\n'
+        '    echo "Factory ${worker} assignment: ${assignment}"\n'
+    )
+    found = routine_assignments(log, START)
+    assert [(item.kind, item.number, item.worker, item.action) for item in found] == [
+        ("pr", 5662, "1236998703300", "review"),
+        ("issue", 3483, "1078053396700", "implement"),
+    ]
+
+
+def test_outcomes_counts_a_closed_pr_as_overtaken_not_missed(fake: FakeGitHub) -> None:
+    fake.routes["fixed-model-factory-dispatch.yml/runs"] = {
+        "workflow_runs": [
+            {
+                "id": 900,
+                "display_title": "Factory dispatch · pr:3953",
+                "status": "completed",
+                "created_at": "2026-11-21T22:30:00Z",
+            }
+        ]
+    }
+    fake.routes["actions/runs/900/jobs"] = {"jobs": list[JSON](DISPATCH_DONE)}
+    fake.texts["actions/jobs/11/logs"] = dispatched_log(
+        kind="pr", number=3953, action="review", dispatched_at=int(START.timestamp())
+    )
+    fake.routes["free-model-factory-entry.yml/runs"] = {
+        "workflow_runs": [{"id": 950, "display_title": f"Factory {WORKER} · fixed-model entry"}]
+    }
+    fake.routes["actions/runs/950$"] = {"id": 950, "status": "completed"}
+    fake.routes["actions/runs/950/jobs"] = {
+        "jobs": [job("Persist trusted worker outcome in Neon", [step("Classify")], job_id=31)]
+    }
+    fake.texts["actions/jobs/31/logs"] = (
+        "[factory-outcome] failed: Assignment target is no longer owned\n"
+    )
+    fake.routes["pulls/3953$"] = {"state": "closed", "merged": False}
+    code, out = invoke(["--json", "outcomes"])
+    data = json.loads(out)
+    assert data["requests"][0]["goal"] == "closed"
+    code, out = invoke(["outcomes"])
+    assert "Not done" not in out
+
+
+# checks ---------------------------------------------------------------------------------
+
+
+def test_check_logs_are_summarized_by_their_first_real_failure() -> None:
+    from rotisserie.factory_console.service.checks import summarize_log
+
+    fmt = (
+        "2026-11-20T17:20:00Z Diff in /home/runner/work/comic-pile/comic-pile/native/roll-service/src/a.rs:162:\n"
+        "2026-11-20T17:20:00Z Diff in /home/runner/work/comic-pile/comic-pile/native/roll-service/src/b.rs:9:\n"
+        "##[error]Process completed with exit code 1.\n"
+    )
+    kind, summary, files = summarize_log(fmt)
+    assert kind == "formatting"
+    assert summary == "cargo fmt --check wants changes in a.rs, b.rs"
+    assert files == ("native/roll-service/src/a.rs", "native/roll-service/src/b.rs")
+    tests = (
+        "test same_path_openapi::tests::checked_in_contract_is_current ... FAILED\n"
+        "error: test failed, to rerun pass `-p comicpile-roll-service --lib`\n"
+    )
+    kind, summary, _ = summarize_log(tests)
+    assert kind == "tests"
+    assert "same_path_openapi::tests::checked_in_contract_is_current" in summary
+    assert "regenerate it" in summary
+    kind, summary, _ = summarize_log("error[E0308]: mismatched types\n")
+    assert (kind, summary) == ("compile", "error[E0308]: mismatched types")
+    kind, summary, _ = summarize_log("##[error]Process completed with exit code 1.\n")
+    assert kind == "other"
+
+
+def test_checks_command_reports_failing_checks_on_the_head(fake: FakeGitHub) -> None:
+    fake.routes[r"pulls/5629$"] = {"head": {"sha": "6dcf97e6" + "0" * 32}}
+    fake.routes[r"commits/6dcf97e6\w+/check-runs"] = {
+        "check_runs": [
+            {"id": 71, "name": "rust-roll", "conclusion": "failure", "html_url": "u1"},
+            {"id": 72, "name": "lint", "conclusion": "success", "html_url": "u2"},
+        ]
+    }
+    fake.texts["actions/jobs/71/logs"] = "Diff in /home/runner/work/w/w/src/a.rs:1:\n"
+    code, out = invoke(["checks", "pr:5629"])
+    assert code == 0
+    assert "rust-roll (formatting): cargo fmt --check wants changes in a.rs" in out
+    assert "--action ci-repair" in out and "lint" not in out
+
+
+def test_unstick_sends_ci_repair_not_review_when_checks_are_red(fake: FakeGitHub) -> None:
+    unstick_routes(fake, FULL_BACKLOG)
+    fake.routes[r"pulls/303$"] = {"head": {"sha": "a" * 40}}
+    fake.routes[r"commits/a{40}/check-runs"] = {
+        "check_runs": [{"id": 81, "name": "rust-roll", "conclusion": "failure", "html_url": "u"}]
+    }
+    fake.texts["actions/jobs/81/logs"] = "test x::y ... FAILED\n"
+    code, out = invoke(["--json", "unstick", "--dry-run"])
+    plan = json.loads(out)["plan"]
+    work = {item["task"]["target"]: item["task"] for item in plan["assignments"]}
+    assert work["pr:303"]["action"] == "ci-repair"  # was changes-requested
+    assert "checks fail: rust-roll: failing tests: x::y" in work["pr:303"]["why"]
+
+
+def test_by_item_flags_items_going_in_circles() -> None:
+    from rotisserie.factory_console.service.outcomes import RequestOutcome, by_item
+
+    def outcome(run: int, target: str, goal: str, result: str = "failed") -> RequestOutcome:
+        return RequestOutcome(
+            run, START, target, "dispatched", "", "review-findings", "m", "w", None,
+            result, "", goal, "",
+        )  # fmt: skip
+
+    histories = by_item(
+        [
+            outcome(5, "pr:1", "pending", "running"),
+            outcome(4, "pr:1", "not-met"),
+            outcome(3, "pr:1", "not-met"),
+            outcome(2, "pr:2", "met", "delivered"),
+            outcome(1, "pr:2", "not-met"),
+        ]
+    )
+    assert [(item.target, item.rounds, item.missed, item.churning) for item in histories] == [
+        ("pr:1", 3, 2, True),
+        ("pr:2", 2, 1, False),
+    ]
+
+
+def test_outcomes_names_the_factory_gate_that_rejected_a_change(fake: FakeGitHub) -> None:
+    from rotisserie.factory_console.service.outcomes import validation_failure
+    from rotisserie.factory_console.tracker import Tracker
+
+    fake.texts["actions/jobs/41/logs"] = (
+        "x factory fast checks failed: native ingress/deployment/write guard tests "
+        "(log: /tmp/factory-fast-checks-1.log)\n"
+    )
+    jobs: list[Obj] = [job("run / factory", [], job_id=41)]
+    tracker = Tracker(GitHub(REPO, executable="sh"))
+    assert validation_failure(tracker, jobs) == (
+        "factory fast checks failed: native ingress/deployment/write guard tests"
+    )
+    assert validation_failure(tracker, [job("other", [], job_id=42)]) == ""
+
+
+def test_a_ci_repair_goal_is_green_checks_not_a_stage_label(fake: FakeGitHub) -> None:
+    fake.routes["fixed-model-factory-dispatch.yml/runs"] = {
+        "workflow_runs": [
+            {
+                "id": 900,
+                "display_title": "Factory dispatch · pr:3953",
+                "status": "completed",
+                "created_at": "2026-11-21T22:30:00Z",
+            }
+        ]
+    }
+    fake.routes["actions/runs/900/jobs"] = {"jobs": list[JSON](DISPATCH_DONE)}
+    fake.texts["actions/jobs/11/logs"] = dispatched_log(
+        kind="pr", number=3953, action="ci-repair", dispatched_at=int(START.timestamp())
+    )
+    fake.routes["free-model-factory-entry.yml/runs"] = {
+        "workflow_runs": [{"id": 950, "display_title": f"Factory {WORKER} · fixed-model entry"}]
+    }
+    fake.routes["actions/runs/950$"] = {"id": 950, "status": "completed"}
+    fake.routes["actions/runs/950/jobs"] = {
+        "jobs": [job("Persist trusted worker outcome in Neon", [step("Classify")], job_id=31)]
+    }
+    fake.texts["actions/jobs/31/logs"] = "[factory-outcome] work_completed: Repaired\n"
+    fake.routes["pulls/3953$"] = {
+        "state": "open",
+        "labels": [{"name": "factory:review"}],
+        "head": {"sha": "b" * 40},
+    }
+    fake.routes[r"commits/b{40}/check-runs"] = {
+        "check_runs": [{"id": 5, "name": "rust-roll", "conclusion": "failure", "html_url": "u"}]
+    }
+    code, out = invoke(["--json", "outcomes"])
+    request = json.loads(out)["requests"][0]
+    assert request["goal"] == "not-met"
+    assert request["goal_text"] == "its checks still fail: rust-roll"
+
+
+def test_outcomes_shows_the_first_error_from_the_published_excerpt(fake: FakeGitHub) -> None:
+    from rotisserie.factory_console.service.outcomes import validation_failure
+    from rotisserie.factory_console.tracker import Tracker
+
+    fake.texts["actions/jobs/41/logs"] = (
+        "x factory fast checks failed: frontend typecheck (log: /tmp/f.log)\n"
+        "=== factory fast check failure output ===\n"
+        "### frontend typecheck\n"
+        "src/api.ts(3,1): error TS2322: Type 'string' is not assignable to type 'number'.\n"
+        "[exit 2]\n"
+        "=== end factory fast check failure output ===\n"
+    )
+    tracker = Tracker(GitHub(REPO, executable="sh"))
+    assert validation_failure(tracker, [job("run / factory", [], job_id=41)]) == (
+        "factory fast checks failed: frontend typecheck "
+        "(src/api.ts(3,1): error TS2322: Type 'string' is not assignable to type 'number'.)"
+    )
+
+
+def test_unstick_skip_and_only_scope_the_plan(fake: FakeGitHub) -> None:
+    unstick_routes(fake, FULL_BACKLOG)
+    code, out = invoke(["--json", "unstick", "--dry-run", "--skip", "pr:301", "--skip", "pr:306"])
+    targets = [item["task"]["target"] for item in json.loads(out)["plan"]["assignments"]]
+    assert "pr:301" not in targets and "pr:306" not in targets and "pr:307" in targets
+    code, out = invoke(["--json", "unstick", "--dry-run", "--only", "pr:302"])
+    targets = [item["task"]["target"] for item in json.loads(out)["plan"]["assignments"]]
+    assert targets == ["pr:302"]
+    code, out = invoke(["unstick", "--dry-run", "--skip", "5656"])
+    assert code == 2 and "--skip/--only take pr:N or issue:N" in out
+
+
+# doctor ---------------------------------------------------------------------------------
+
+
+def _finished(run: int, message: str, result: str = "failed") -> object:
+    from rotisserie.factory_console.service.outcomes import RequestOutcome
+
+    return RequestOutcome(
+        run, START, f"pr:{run}", "dispatched", "", "ci-repair", "m", "w", run, result,
+        message, "not-met", "",
+    )  # fmt: skip
+
+
+def test_doctor_flags_one_gate_rejecting_most_workers() -> None:
+    """The fast checks ran tests main had deleted: every Rust worker 'failed'."""
+    from rotisserie.factory_console.service.doctor import systemic_rejection
+
+    gate = (
+        "Code saved; validation incomplete; factory fast checks failed: "
+        "native ingress/deployment/write guard tests"
+    )
+    found = [_finished(n, gate) for n in range(4)] + [_finished(9, "model gave up")]
+    finding = systemic_rejection(found)  # type: ignore[arg-type]
+    assert finding.status == "fail"
+    assert "4 of 5 recent workers were rejected by the same factory gate" in finding.text
+    assert "native ingress/deployment/write guard tests" in finding.text
+    healthy = systemic_rejection([_finished(1, "model gave up")])  # type: ignore[list-item]
+    assert healthy.status == "ok"
+
+
+def test_doctor_reports_a_missing_stats_snapshot_and_a_failed_publisher(
+    fake: FakeGitHub,
+) -> None:
+    fake.routes["contents/factory-stats.json"] = lambda: (_ for _ in ()).throw(
+        GitHubNotFoundError("missing")
+    )
+    fake.routes["factory-status-pages.yml/runs"] = {
+        "workflow_runs": [{"id": 77, "status": "completed", "conclusion": "failure"}]
+    }
+    fake.routes[r"actions/runs/77/jobs"] = {
+        "jobs": [
+            job(
+                "publish-live-dashboard",
+                [step("Generate factory dashboard", conclusion="failure")],
+                conclusion="failure",
+                job_id=78,
+            )
+        ]
+    }
+    fake.routes[r"check-runs/78/annotations"] = [
+        {"annotation_level": "failure", "message": "Process completed with exit code 1."}
+    ]
+    fake.texts["actions/jobs/78/logs"] = (
+        "Traceback (most recent call last):\n"
+        "ValueError: factory slot capacity must be a positive integer\n"
+    )
+    fake.routes["fixed-model-factory-dispatch.yml/runs"] = {
+        "workflow_runs": [{"id": 1, "created_at": "2026-11-21T22:59:00Z"}]
+    }
+    why_routes(fake, [])
+    code, out = invoke(["doctor"])
+    assert code == 4
+    assert "reliability snapshot: factory-stats.json has never been published" in out
+    assert "dashboard publisher: last run failure at step 'Generate factory dashboard'" in out
+    assert "factory slot capacity must be a positive integer" in out
+    assert "✓ scheduler: running" in out
+
+
+def test_doctor_fix_reruns_the_publisher_for_a_stale_snapshot(fake: FakeGitHub) -> None:
+    import base64
+
+    stale = {"generated_at": "2026-11-21T20:00:00Z", "models": [], "providers": []}
+    fake.routes["contents/factory-stats.json"] = {
+        "content": base64.b64encode(json.dumps(stale).encode()).decode()
+    }
+    fake.routes["factory-status-pages.yml/runs"] = {
+        "workflow_runs": [{"id": 77, "status": "completed", "conclusion": "success"}]
+    }
+    fake.routes["fixed-model-factory-dispatch.yml/runs"] = {
+        "workflow_runs": [{"id": 1, "created_at": "2026-11-21T22:59:00Z"}]
+    }
+    why_routes(fake, [])
+    code, out = invoke(["doctor"])
+    assert "factory-stats.json is stale" in out
+    assert "Safe repairs are available: rotisserie factory doctor --fix" in out
+    assert not any(call[0] == "workflow" for call in fake.calls)
+    code, out = invoke(["doctor", "--fix"])
+    run = next(call for call in fake.calls if call[0] == "workflow")
+    assert run[:3] == ["workflow", "run", "factory-status-pages.yml"]
+    assert "started factory-status-pages.yml" in out
+
+
+def test_take_over_retries_when_a_routine_pass_reclaims_the_item(fake: FakeGitHub) -> None:
+    """Stopping the holder frees the item; a routine pass can grab it first."""
+    slots = runtime.module("factory_worker_slots")
+    first, second = str(slots.worker_id("z-ai", 0)), str(slots.worker_id("kilo-auto", 0))
+    phase = {"n": 0}  # 0: first holds it, 1: second re-claimed it, 2: free
+
+    def issue() -> JSON:
+        owner = {0: first, 1: second}.get(phase["n"])
+        labels: list[JSON] = [{"name": f"factory:{owner}"}] if owner else []
+        return {"number": 3953, "title": "t", "labels": labels, "state": "open"}
+
+    def running() -> JSON:
+        owner = {0: first, 1: second}.get(phase["n"])
+        rows: list[JSON] = []
+        if owner:
+            rows.append(
+                {
+                    "id": 777 + phase["n"],
+                    "display_title": f"Factory {owner} · fixed-model entry",
+                    "status": "in_progress",
+                    "run_started_at": "2026-11-21T22:00:00Z",
+                }
+            )
+        return {"workflow_runs": rows}
+
+    def decision() -> str:
+        sent = sum(1 for call in fake.calls if call[0] == "workflow")
+        if sent == 1:
+            return (
+                '{"status":"busy","number":3953,"owner":"factory:'
+                + second
+                + '","owner_worker":"'
+                + second
+                + '"}\n'
+            )
+        return dispatched_log()
+
+    scheduler_routes(fake, log="")
+    fake.texts["actions/jobs/11/logs"] = decision
+    fake.routes["issues/3953$"] = issue
+    fake.routes = {"status=in_progress": running, **fake.routes}
+    clock = FakeClock()
+
+    def release(count: int) -> None:
+        cancels = sum(1 for call in fake.calls if call[:2] == ["run", "cancel"])
+        phase["n"] = 1 if cancels == 1 else 2
+
+    clock.on_sleep = release
+    code, out = invoke(
+        ["--json", "run", "opencode-go", "auto", "--target", "issue:3953", "--take-over",
+         "--no-wait"],
+        clock=clock,
+    )  # fmt: skip
+    data = json.loads(out)
+    assert code == 0, out
+    assert data["take_over_attempts"] == 2
+    assert data["stopped_workers"] == [first, second]
+    cancels = [call[2] for call in fake.calls if call[:2] == ["run", "cancel"]]
+    assert cancels == ["777", "778"]
+    assert sum(1 for call in fake.calls if call[0] == "workflow") == 2
+
+
+# conflicts ------------------------------------------------------------------------------
+
+
+def conflict_routes(fake: FakeGitHub) -> None:
+    fake.routes[r"pulls/5660$"] = {"head": {"ref": "feature"}, "base": {"ref": "main"}}
+    fake.routes[r"compare/main\.\.\.feature"] = {
+        "merge_base_commit": {"sha": "base1"},
+        "behind_by": 14,
+    }
+    fake.routes[r"pulls/5660/files"] = [
+        {"filename": "src/shared.rs", "status": "modified"},
+        {"filename": "src/untouched.rs", "status": "modified"},
+        {"filename": "src/new.rs", "status": "added"},
+    ]
+    fake.routes[r"contents/src/shared\.rs\?ref=base1"] = {"sha": "old"}
+    fake.routes[r"contents/src/shared\.rs\?ref=main"] = {"sha": "new"}
+    fake.routes[r"contents/src/untouched\.rs\?ref="] = {"sha": "same"}
+    fake.routes[r"commits\?path=src/shared\.rs"] = [
+        {"sha": "6dcf97e6aa", "commit": {"message": "checkpoint(factory): issue #5624"}}
+    ]
+    fake.routes[r"commits/6dcf97e6aa/pulls"] = [{"number": 5629, "merged_at": "2026-11-22"}]
+
+
+def test_conflicts_names_files_main_also_changed_and_the_merged_pr(fake: FakeGitHub) -> None:
+    conflict_routes(fake)
+    code, out = invoke(["--json", "conflicts", "pr:5660"])
+    data = json.loads(out)
+    assert code == 0
+    assert data["checked"] == 2  # added files cannot conflict
+    assert [item["path"] for item in data["overlaps"]] == ["src/shared.rs"]
+    assert data["prs"] == [5629]
+    assert data["text"] == "PR #5660: main also changed shared.rs (in #5629)"
+
+
+def test_unstick_hands_repeated_conflict_failures_to_a_person(fake: FakeGitHub) -> None:
+    from rotisserie.factory_console.service import outcomes
+
+    unstick_routes(fake, FULL_BACKLOG)
+
+    def missed(_github: GitHub, *, since: object, **_: object) -> list[object]:
+        return [
+            outcomes.RequestOutcome(
+                n,
+                START,
+                "pr:304",
+                "dispatched",
+                "",
+                "merge-conflict",
+                model,
+                "w",
+                n,
+                "failed",
+                "",
+                "not-met",
+                "",
+            )  # fmt: skip
+            for n, model in enumerate(["a/x", "b/y", "opencode-go/hy4-flash-free"])
+        ]
+
+    import pytest as _pytest
+
+    with _pytest.MonkeyPatch.context() as patch:
+        patch.setattr(outcomes, "request_outcomes", missed)
+        code, out = invoke(["--json", "unstick", "--dry-run"])
+    plan = json.loads(out)["plan"]
+    assert "pr:304" not in [item["task"]["target"] for item in plan["assignments"]]
+    assert plan["needs_person"][0]["prs"] == [304]
+    assert "3 models failed to resolve its conflicts" in plan["needs_person"][0]["text"]

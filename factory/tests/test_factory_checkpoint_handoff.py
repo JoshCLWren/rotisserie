@@ -516,3 +516,12 @@ def test_resumed_or_superseded_work_keeps_the_newer_model_label(harness: dict) -
     harness["calls"].clear()
     handoff.publish(REPO, RUN)
     assert _via_calls(harness) == []
+
+
+def test_source_worker_accepts_run_names_with_a_model() -> None:
+    assert handoff.source_worker({"display_title": "Factory 77 · fixed-model entry"}) == "77"
+    assert handoff.source_worker(
+        {"display_title": "Factory 77 · kilo/kilo-auto/free · fixed-model entry"}
+    ) == "77"
+    with pytest.raises(ValueError):
+        handoff.source_worker({"display_title": "Factory dispatch · pr:5"})

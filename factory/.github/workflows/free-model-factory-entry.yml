@@ -1,5 +1,5 @@
 name: Fixed Model Factory Entry
-run-name: Factory ${{ inputs.worker }} · fixed-model entry
+run-name: Factory ${{ inputs.worker }} · ${{ inputs.model || 'auto' }} · fixed-model entry
 
 on:
   workflow_dispatch:

@@ -373,3 +373,45 @@ def explain_issue(
         intake=str(gates["rotisserie_intake"]),
         open_blocker=None if blocker is None else bool(blocker),
     )
+
+
+@dataclass(frozen=True)
+class BacklogPR:
+    """A PR counted toward FACTORY_REVIEW_BACKLOG_LIMIT, with the action it needs."""
+
+    number: int
+    title: str
+    stage: str
+    owner: str  # factory owner label; "factory:unowned" when a worker may take it
+    conflicted: bool
+    action: str  # merge-conflict | ci-repair | review-findings | review
+
+    @property
+    def free(self) -> bool:
+        return self.owner in ("", "factory:unowned")
+
+
+def completion_backlog(prs: list[Row]) -> list[BacklogPR]:
+    rows = module("factory_work_policy").completion_backlog([dict(row) for row in prs])
+    return [
+        BacklogPR(
+            int(row["number"]),
+            str(row["title"]),
+            str(row["stage"] or ""),
+            str(row["owner"] or ""),
+            bool(row["conflicted"]),
+            str(row["action"] or "review"),
+        )
+        for row in rows
+    ]
+
+
+def pr_wip_count(prs: list[Row]) -> int:
+    """Factory PRs holding a worker lease (FACTORY_PR_WIP_LIMIT counts these)."""
+    return int(module("factory_work_policy").factory_pr_wip_count([dict(row) for row in prs]))
+
+
+def linked_issue(pr: Row) -> int | None:
+    """The issue a PR delivers (branch name, closing keyword, or ``Fix #N`` title)."""
+    found = module("factory_work_policy").linked_issue_from_pr(dict(pr))
+    return None if found is None else int(found)

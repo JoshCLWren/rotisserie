@@ -28,7 +28,10 @@ ENTRY_WORKFLOW = "free-model-factory-entry.yml"
 FACTORY_JOB = "run / factory"
 PERSIST_JOB = "Persist trusted worker outcome in Neon"
 # run-name is derived only from the trusted dispatcher's `worker` input.
-TITLE_RE = re.compile(r"^Factory (?P<worker>[1-9][0-9]*) · fixed-model entry$")
+# The model segment is optional: older runs are ``Factory N · fixed-model entry``.
+TITLE_RE = re.compile(
+    r"^Factory (?P<worker>[1-9][0-9]*)(?: · (?P<model>[^·]+?))? · fixed-model entry$"
+)
 
 GhApi = Callable[..., str]
 

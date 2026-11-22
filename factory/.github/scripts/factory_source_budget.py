@@ -22,7 +22,8 @@ from factory_adopter import repository
 
 GITHUB_DIR = Path(__file__).resolve().parents[1]
 BUDGETS_PATH = GITHUB_DIR / "factory-source-budgets.json"
-ENTRY_TITLE_RE = re.compile(r"^Factory (?P<worker>\d+) · fixed-model entry$")
+# The model segment is optional: older runs are ``Factory N · fixed-model entry``.
+ENTRY_TITLE_RE = re.compile(r"^Factory (?P<worker>\d+)(?: · (?P<model>[^·]+?))? · fixed-model entry$")
 PROTECTED_WORKERS: frozenset[int] = frozenset()
 # Cloudflare Workers Free hard-stops daily neuron usage. Enforce a conservative
 # source cap here so this factory-only guard remains on the fast-merge allowlist.

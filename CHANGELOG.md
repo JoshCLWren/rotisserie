@@ -9,8 +9,73 @@ such change must be called out here and in its release notes.
 
 ## [Unreleased]
 
+### Fixed
+
+- `run --take-over` could lose the item to a routine scheduler pass between
+  stopping the holder and its own request landing ("busy"). It now waits for
+  the scheduler's decision and takes over once more if that happened.
+- `outcomes` judged ci-repair by the PR's stage label; it now requires the
+  PR's checks to pass. When a worker fails validation it names the factory
+  gate that rejected the change (e.g. "factory fast checks failed: native
+  ingress/deployment/write guard tests"), which was otherwise only in /tmp on
+  the runner.
+- `report` counted a worker holding an issue and its PR twice, so it
+  disagreed with `status` (e.g. 12 vs 6). Both now count one entry per worker.
+- `outcomes --all` could not read routine scheduler passes ("finished without
+  recording a decision"). It now lists every worker each pass started, marks
+  cancelled passes, and counts a PR someone closed as overtaken, not missed.
+- `unstick` picked models the provider no longer offers, so every worker it
+  started failed at model selection ("not a current zero-price tool-capable Go
+  model"). It now checks the live model lists (local OpenCode CLI, published
+  catalogs) and skips dropped models; models it cannot check rank last and say
+  so. `models PROVIDER` marks track-record models the provider dropped.
+- `stats` showed models as paused after their cooldown had ended.
+
 ### Added
 
+- `rotisserie factory conflicts pr:N`: the PR's files that main also changed
+  since its merge base, and the merged PR behind each. `unstick` shows the
+  overlap on merge-conflict tasks and hands an item to a person after three
+  models fail its conflicts.
+- `doctor --fix` re-runs the stats publisher when the snapshot is missing or
+  stale (GitHub's schedule lagged by over an hour tonight).
+- `rotisserie factory doctor`: reliability snapshot missing or stale, the
+  dashboard publisher's last failure (step and error), scheduler stopped,
+  intake undecidable, and one factory gate rejecting most workers.
+- `unstick --skip ITEM` and `--only ITEM` scope a plan to what the operator
+  wants; runs plan again from live state, so `--only` starts exactly what a
+  dry run showed.
+- `rotisserie factory checks pr:N` summarizes each failing check on a PR's
+  head (formatting diff with files, failing tests, compile errors). `unstick`
+  sends ci-repair instead of review work to PRs with red checks and says when
+  a held PR needs a ci-repair takeover.
+- `outcomes --by-item` (rounds, misses and latest result per item; flags items
+  going in circles) and `outcomes --limit N`.
+- `rotisserie factory close pr:N --reason TEXT` stops any worker on the PR,
+  closes it with the reason, and closes its issue as not planned.
+- `unstick` starts at most as many issues as the review-backlog and open-PR
+  limits leave room for, so clearing a jam does not immediately recreate it.
+- `unstick` recognizes probably-obsolete backlog PRs (`main` deleted most of
+  the files they change) and lists them for a person to close instead of
+  sending merge-conflict workers that cannot succeed.
+- `rotisserie factory outcomes` follows each requested piece of work to its
+  effect and says whether its goal holds now (conflict gone, checks fixed,
+  review decided, PR delivered), flagging workers that reported success or
+  "nothing to do" while the problem remains. `unstick` uses it to avoid
+  sending a model back to an item it just missed on, so workers spread across
+  models.
+- `status` shows each worker's model. Worker runs are now named
+  `Factory N · MODEL · fixed-model entry` (`auto` when the worker picks it);
+  every run-name parser accepts both that and the older model-less name.
+- `rotisserie factory unstick` plans and starts the work that clears whatever
+  holds the factory back. For a full review backlog that means reviewing and
+  repairing the backlog PRs no worker holds. Each worker uses the provider and
+  model with the best delivered track record. It confirms before starting and
+  supports `--dry-run`, `--max N` and `--yes`.
+- `rotisserie.factory_console.service`: a front-end-neutral layer (queue
+  eligibility, unstick planning, dispatch, reliability, provider setup) with
+  typed results and structured reasons, so a TUI, web GUI or MCP server can
+  reuse the console's logic. `run`, `stats` and `providers` now use it.
 - `rotisserie factory why [issue:N]` explains why the factory is or is not
   picking up an issue: blocked or manual-only labels, open dependencies, an
   existing pull request, a worker already on it, Rotisserie intake, or the

@@ -934,7 +934,12 @@ def test_entry_run_name_exposes_queued_worker_identity() -> None:
         REPO_ROOT / ".github/workflows/free-model-factory-entry.yml"
     ).read_text(encoding="utf-8")
 
-    assert "run-name: Factory ${{ inputs.worker }} · fixed-model entry" in entry
+    # The model follows the worker so operators can see it without opening logs;
+    # every title parser also accepts the older model-less form.
+    assert (
+        "run-name: Factory ${{ inputs.worker }} · ${{ inputs.model || 'auto' }} · fixed-model entry"
+        in entry
+    )
 
 
 def test_inspect_assignment_returns_review_pr_for_smoke_routing(

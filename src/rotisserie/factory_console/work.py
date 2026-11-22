@@ -20,7 +20,8 @@ from rotisserie.factory_console.github import (
 from rotisserie.factory_console.tracker import WORKER_WORKFLOW, Tracker, session_started
 
 OWNER_LABEL = re.compile(r"^factory:(\d+)$")
-WORKER_TITLE = re.compile(r"^Factory (\d+) · fixed-model entry$")
+# ``Factory N · MODEL · fixed-model entry``; older runs have no model segment.
+WORKER_TITLE = re.compile(r"^Factory (\d+)(?: · (?P<model>[^·]+?))? · fixed-model entry$")
 
 
 @dataclass
@@ -31,6 +32,9 @@ class WorkerRun:
     started: datetime | None
     url: str
     coding_since: datetime | None = None
+    # Exact model from the run name; "auto" when the worker picks it at start,
+    # "" for runs started before run names carried the model.
+    model: str = ""
 
 
 @dataclass
@@ -54,6 +58,15 @@ class Item:
             return ""
         found = runtime.provider_for_worker(self.owner)
         return found.name if found else "local or unknown worker"
+
+    @property
+    def model(self) -> str:
+        """The worker's model in operator words; empty when nothing is running."""
+        if self.run is None:
+            return ""
+        if self.run.model == "auto":
+            return "picked by the worker"
+        return self.run.model or "not recorded (older run)"
 
 
 def owner_of(labels: set[str]) -> str:
@@ -116,6 +129,7 @@ def active_worker_runs(github: GitHub) -> dict[str, WorkerRun]:
                     string(row, "status"),
                     timestamp(row, "run_started_at") or timestamp(row, "created_at"),
                     string(row, "html_url"),
+                    model=(match.group("model") or "").strip(),
                 ),
             )
     return runs
@@ -154,3 +168,22 @@ def lookup(github: GitHub, kind: str, number: int) -> Item:
     if item.owner:
         item.run = active_worker_runs(github).get(item.owner)
     return item
+
+
+def one_per_worker(work: list[Item]) -> list[Item]:
+    """One entry per worker: a worker holds an issue and its pull request together.
+
+    ``status`` and ``report`` both count work this way, so their numbers agree.
+    """
+    by_worker: dict[str, list[Item]] = {}
+    for item in work:
+        by_worker.setdefault(item.owner, []).append(item)
+    merged: list[Item] = []
+    for held in by_worker.values():
+        pr = next((item for item in held if item.kind == "pr"), None)
+        issue = next((item for item in held if item.kind == "issue"), None)
+        main = pr or held[0]
+        if pr is not None and issue is not None:
+            main.title = f"{issue.title}  (issue #{issue.number})"
+        merged.append(main)
+    return merged
