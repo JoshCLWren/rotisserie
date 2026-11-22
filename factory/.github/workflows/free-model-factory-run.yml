@@ -110,6 +110,7 @@ jobs:
       exclusions: ${{ steps.prepare.outputs.exclusions }}
       candidate_health: ${{ steps.prepare.outputs.candidate_health }}
       fleet_sources: ${{ steps.prepare.outputs.fleet_sources }}
+      review_authors: ${{ steps.prepare.outputs.review_authors }}
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -162,6 +163,16 @@ jobs:
           fleet_sources="$(python3 .github/scripts/factory_state_operations.py export-fleet-failover-sources --repo "$GITHUB_REPOSITORY" --worker "$FACTORY_WORKER")"
           jq -e 'type == "array" and all(.[]; type == "string")' <<< "$fleet_sources" >/dev/null
           echo "fleet_sources=$fleet_sources" >> "$GITHUB_OUTPUT"
+          # A review must not run on a model that authored the PR. Read the PR's
+          # comments once here and hand the known author models to selection.
+          review_authors='[]'
+          if jq -e '.kind == "pr" and .stage == "factory:review"' <<< "$FACTORY_ASSIGNMENT" >/dev/null; then
+            review_pr="$(jq -er '.number' <<< "$FACTORY_ASSIGNMENT")"
+            review_authors="$(python3 .github/scripts/factory_review_model_guard.py authors --repo "$GITHUB_REPOSITORY" --pr "$review_pr")" \
+              || review_authors='[]'
+          fi
+          jq -e 'type == "array" and all(.[]; type == "string")' <<< "$review_authors" >/dev/null || review_authors='[]'
+          echo "review_authors=$(jq -c . <<< "$review_authors")" >> "$GITHUB_OUTPUT"
       # Trusted lifecycle evidence lives in Neon, keyed by this Entry run.
       # It replaces the retired issue #1093 heartbeat comments; the model job
       # never receives the DSN and no GitHub comment is read or written.
@@ -194,6 +205,7 @@ jobs:
       FACTORY_MODEL_EXCLUSIONS: ${{ needs.validate_assignment.outputs.exclusions }}
       FACTORY_CANDIDATE_HEALTH: ${{ needs.validate_assignment.outputs.candidate_health }}
       FACTORY_FLEET_SOURCES: ${{ needs.validate_assignment.outputs.fleet_sources }}
+      FACTORY_REVIEW_AUTHORS: ${{ needs.validate_assignment.outputs.review_authors || '[]' }}
       # Workflow token handles GitHub API, labels, comments, and backlog-zero
       # workflow dispatch. Git fetch/push and PR creation use the dedicated
       # PAT so pull_request workflows and initial review use a trusted actor.
@@ -553,6 +565,32 @@ jobs:
           fi
           model="$(jq -er '.model' <<< "$selection")"
           runtime_model="$(jq -er '.runtime_model' <<< "$selection")"
+          # Known self-review cannot count at the merge gate, so never spend a
+          # review session on it: re-pick across the eligible fleet, treating
+          # each author-model pick as attempted. Operator pins are respected.
+          if [[ "$REQUESTED_MODEL" == auto ]]; then
+            avoided=()
+            while why="$(python3 .github/scripts/factory_review_model_guard.py check \
+                --authors-json "${FACTORY_REVIEW_AUTHORS:-[]}" --model "$runtime_model")"; do
+              echo "Factory $WORKER: $why; selecting a different reviewer model"
+              avoided+=(--attempted-pair "$(jq -cn --arg s "$selected_source" --arg m "$model" '[$s, $m]')")
+              if (( ${#avoided[@]} > 16 )) || ! selection="$(python3 .github/scripts/factory_model_failover.py \
+                  --source "$SOURCE" --worker "$WORKER" \
+                  --rotation "${GITHUB_RUN_NUMBER:-0}" \
+                  --exclusions-file "$exclusions_file" \
+                  --eligible-sources-file "$RUNNER_TEMP/factory-fleet-sources.json" \
+                  --fleet-catalog-cache "$RUNNER_TEMP/factory-fleet-catalogs.json" \
+                  "${avoided[@]}")"; then
+                printf 'model_unavailable\tNo eligible reviewer model outside the PR authors\n' > "$discovery_outcome"
+                echo '::error::Every available model authored this PR; the review stays queued for another model'
+                exit 1
+              fi
+              selected_source="$(jq -r '.source // empty' <<< "$selection")"
+              selected_source="${selected_source:-$SOURCE}"
+              model="$(jq -er '.model' <<< "$selection")"
+              runtime_model="$(jq -er '.runtime_model' <<< "$selection")"
+            done
+          fi
           if [[ "$REQUESTED_MODEL" != auto && "$runtime_model" != "$REQUESTED_MODEL" ]]; then
             echo '::error::Selected model differs from explicit requested model'
             exit 1

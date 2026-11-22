@@ -24,6 +24,17 @@ such change must be called out here and in its release notes.
 
 ### Fixed
 
+- Factory merges are serialized, and each resulting main commit is verified
+  before the next merge. The ready-merge drain merges at most one PR per run,
+  and only onto a main commit whose product CI passed. An exclusive claim on
+  main's exact SHA keeps the drain and the workers' canonical route from racing
+  each other. The dispatcher no longer merges. After a merge, product CI is
+  dispatched on the new main: `GITHUB_TOKEN` merges fire no push event, and a
+  main with no CI run had been read as green. A red main admits only
+  `main-breakage` PRs. New setting: `FACTORY_MAIN_CI_WORKFLOWS`. `doctor` gains a
+  "main verification" check, and `doctor --fix` dispatches CI for an unverified
+  main.
+
 - `run --take-over` could lose the item to a routine scheduler pass between
   stopping the holder and its own request landing ("busy"). It now waits for
   the scheduler's decision and takes over once more if that happened.

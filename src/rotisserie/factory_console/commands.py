@@ -53,6 +53,7 @@ from rotisserie.factory_console.service import (
     providers,
     queue,
     reliability,
+    review,
     unstick,
 )
 from rotisserie.factory_console.service import sync as branch_sync
@@ -400,6 +401,22 @@ def add_parser(subcommands: argparse._SubParsersAction[argparse.ArgumentParser])
     red = commands.add_parser("checks", help="why a pull request's checks fail, in one line each")
     red.add_argument("what", help="pr:N")
     _common(red)
+
+    gate = commands.add_parser(
+        "review",
+        help="whose review counts on a pull request: known self-review versus missing metadata",
+    )
+    gate.add_argument("what", nargs="*", help="pr:N (one or more)")
+    gate.add_argument(
+        "--blocked", action="store_true",
+        help="every open factory PR parked in factory:blocked",
+    )  # fmt: skip
+    gate.add_argument(
+        "--requeue", action="store_true",
+        help="move PRs the retired review gate blocked back to review for another model",
+    )  # fmt: skip
+    gate.add_argument("--yes", action="store_true", help="requeue without asking")
+    _common(gate)
 
     providers = commands.add_parser(
         "providers", help="providers the factory can use and whether they are set up"
@@ -2162,6 +2179,72 @@ def cmd_checks(context: Context, arguments: argparse.Namespace) -> Outcome:
     )
 
 
+# review ---------------------------------------------------------------------------------
+
+
+def cmd_review(context: Context, arguments: argparse.Namespace) -> Outcome:
+    console = context.console
+    github = context.github
+    targets: list[tuple[int, Obj | None]] = []
+    for what in arguments.what:
+        kind, number = _split_target(what)
+        if kind != "pr":
+            raise UsageError("review takes pull requests: pr:N")
+        targets.append((number, None))
+    if arguments.blocked:
+        targets += [(integer(row, "number") or 0, row) for row in review.blocked_candidates(github)]
+    if not targets:
+        raise UsageError("Name pull requests (pr:N) or pass --blocked.")
+    reports = [review.inspect(github, number, pull=pull) for number, pull in targets]
+    for report in reports:
+        mark = console.ok if report.eligible else console.fail
+        mark(f"PR #{report.pr} ({report.stage or 'no stage'}): {report.status}")
+        authors = ", ".join(report.author_models) or "none recorded (any model may review)"
+        console.line(f"  Known author models: {authors}")
+        if not report.head_attributed:
+            console.line(
+                "  The current head has no author record of its own (a sync or hand push);"
+                " earlier heads' authors still count."
+            )
+        reviewers = ", ".join(report.reviewer_models) or "none recorded"
+        console.line(
+            f"  Approvals on this head: {len(report.approvers)}; reviewer models: {reviewers}"
+        )
+        console.line(f"  {report.reason}")
+        if report.block_note:
+            moved = (
+                f" (written on earlier head {report.block_head[:10]})"
+                if report.block_head and report.block_head != report.head
+                else ""
+            )
+            console.line(f"  Blocked note{moved}: {report.block_note[:200]}")
+        elif report.stage == review.BLOCKED:
+            console.line("  Blocked without a controller note; left alone.")
+        for action in report.actions:
+            console.line(f"  Next: {action}")
+    data: dict[str, object] = {"reports": [report.to_dict() for report in reports]}
+    if not arguments.requeue:
+        return Outcome(Result.COMPLETED, EXIT_OK, data)
+    candidates = [report for report in reports if report.blocked_by_review_gate]
+    if not candidates:
+        console.line("Nothing to requeue: no PR here is blocked by the review gate.")
+        return Outcome(Result.NO_WORK, EXIT_CODES[Result.NO_WORK], data)
+    console.line(f"Requeue for review: {', '.join(f'#{item.pr}' for item in candidates)}")
+    if not arguments.yes:
+        if not context.interactive:
+            console.line("Nothing was changed. Add --yes to requeue these.")
+            return Outcome(Result.NO_WORK, EXIT_CODES[Result.NO_WORK], data)
+        if not context.prompt.confirm("Requeue these?", default=False):
+            console.line("Nothing was changed.")
+            return Outcome(Result.NO_WORK, EXIT_CODES[Result.NO_WORK], data)
+    done = [review.requeue(github, item) for item in candidates]
+    for item in done:
+        (console.ok if item.ok else console.fail)(item.text)
+    data["requeued"] = [item.to_dict() for item in done]
+    result = Result.COMPLETED if all(item.ok for item in done) else Result.FAILED
+    return Outcome(result, EXIT_CODES[result], data)
+
+
 # groom ----------------------------------------------------------------------------------
 
 
@@ -2519,6 +2602,7 @@ HANDLERS = {
     "outcomes": cmd_outcomes,
     "close": cmd_close,
     "checks": cmd_checks,
+    "review": cmd_review,
     "groom": cmd_groom,
     "conflicts": cmd_conflicts,
     "sync": cmd_sync,

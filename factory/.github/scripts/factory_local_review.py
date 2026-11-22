@@ -113,9 +113,6 @@ def main() -> None:
     delivery = controller.implementation_delivery_gate(pr_number, head, body)
     if delivery["decision"] != "pass":
         raise RuntimeError("implementation delivery gate: " + delivery["reason"])
-    author = policy.current_head_author_identity(controller.model_comment_bodies(pr_number), pr=pr_number, head=head)
-    if author is None:
-        raise RuntimeError("controller author model unavailable")
     def recheck() -> None:
         """Fail closed if the immutable evidence or live ownership changed."""
         latest = controller.pr_json(pr_number)
@@ -130,9 +127,10 @@ def main() -> None:
     for lane in lanes:
         marker = policy.review_marker(pr=pr_number, head=head, reviewer=lane["identity"], producer=None, verdict="approve")
         controller.run_gh(["issue", "comment", str(pr_number), "--repo", controller.REPO, "--body", marker + "\nActual local review: " + lane["identity"] + "\n" + controller.redact_review_text(lane["report"])[:7000]])
-        if policy.normalize_model_family(lane["model"]) != author[0]:
-            marker = policy.agent_model_review_marker(pr=pr_number, head=head, author_model=author[0], reviewer_model=lane["model"], author_agent=author[1], reviewer_agent=lane["identity"])
-            controller.run_gh(["issue", "comment", str(pr_number), "--repo", controller.REPO, "--body", marker])
+        # Record the executed model for every lane; the merge gate decides
+        # whether it is known self-review against the PR's recorded authors.
+        marker = policy.reviewer_model_marker(pr=pr_number, head=head, reviewer_model=lane["model"], reviewer_agent=lane["identity"])
+        controller.run_gh(["issue", "comment", str(pr_number), "--repo", controller.REPO, "--body", marker])
     controller.run_gh(["issue", "comment", str(pr_number), "--repo", controller.REPO, "--body", controller.issue_acceptance.marker(issue, head, body)])
     recheck()
     controller.replace_factory_labels(pr_number, "factory:unowned", "factory:ci")

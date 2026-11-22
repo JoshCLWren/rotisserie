@@ -297,6 +297,6 @@ def test_dispatcher_and_worker_install_rest_shim() -> None:
 
     assert "Install REST-backed factory GitHub reads" in dispatcher
     assert "factory-gh-rest-shim.sh" in dispatcher
-    assert "Unable to enumerate factory:ready PRs" in dispatcher
+    assert "gh pr merge" not in dispatcher  # merges are serialized in the drain
     assert "install_factory_rest_gh" in worker
     assert "factory-gh-rest-shim.sh" in worker

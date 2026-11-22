@@ -201,7 +201,7 @@ def test_collected_signals_drive_the_domain_rule_end_to_end() -> None:
     assert verdict.revision == collected.revision
 
 
-def test_caller_producer_without_attestation_cannot_authorize_single_review() -> None:
+def test_caller_producer_without_attestation_is_reported_unattested() -> None:
     # Round-3 V1/L1 (a): a caller-supplied producer with nothing attested is a
     # cross-check only. It is excluded, but must not downgrade the fail-closed
     # dual-review requirement to a single reviewer.
@@ -217,8 +217,10 @@ def test_caller_producer_without_attestation_cannot_authorize_single_review() ->
     assert not collected.producer_attested
     assert collected.provenance_recorded
     verdict = evaluate_review_independence(collected)
-    assert not verdict.satisfied
-    assert verdict.required_reviewers == 2
+    # The unattested producer is reported, but (owner policy 2026-11-22) it no
+    # longer demands a second approval; one independent reviewer suffices.
+    assert verdict.satisfied
+    assert verdict.required_reviewers == 1
 
 
 @pytest.mark.parametrize(
@@ -326,7 +328,7 @@ def test_contradictory_producer_attestations_for_one_head_fail_closed() -> None:
         evidence.collect(comments, pr=7, head=HEAD)
 
 
-def test_unknown_producer_marker_blocks_single_reviewer_self_approval() -> None:
+def test_unknown_producer_marker_is_not_attested() -> None:
     # Round-2 L1/B5 end-to-end: a producer-unknown approval plus an exact-head
     # contributor record for a different worker must not authorize a single
     # reviewer, so the real (unexcluded) producer cannot self-approve.
@@ -341,8 +343,10 @@ def test_unknown_producer_marker_blocks_single_reviewer_self_approval() -> None:
     assert collected.producer is None
     assert collected.provenance_recorded
     verdict = evaluate_review_independence(collected)
-    assert not verdict.satisfied
-    assert verdict.required_reviewers == 2
+    # The unattested producer is reported, but (owner policy 2026-11-22) it no
+    # longer demands a second approval; one independent reviewer suffices.
+    assert verdict.satisfied
+    assert verdict.required_reviewers == 1
 
 
 def test_worker_named_unknown_cannot_forge_the_producer_sentinel() -> None:
@@ -469,5 +473,7 @@ def test_case_variant_producer_sentinel_is_not_attested() -> None:
     assert collected.producer is None
     assert not collected.producer_attested
     verdict = evaluate_review_independence(collected)
-    assert not verdict.satisfied
-    assert verdict.required_reviewers == 2
+    # The unattested producer is reported, but (owner policy 2026-11-22) it no
+    # longer demands a second approval; one independent reviewer suffices.
+    assert verdict.satisfied
+    assert verdict.required_reviewers == 1

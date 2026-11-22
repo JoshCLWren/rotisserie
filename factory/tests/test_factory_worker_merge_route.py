@@ -56,6 +56,25 @@ if os.environ.get("FAKE_CLOSURE_ERROR") == "1":
 print(os.environ.get("FAKE_CLOSURE_OUTCOME", "closed"))
 """
 
+SERIAL_BODY = """#!/usr/bin/env python3
+import json
+import os
+import sys
+
+with open(os.environ["CALL_LOG"], "a", encoding="utf-8") as handle:
+    handle.write("serial " + " ".join(sys.argv[1:]) + "\\n")
+if sys.argv[1] == "gate":
+    allow = os.environ.get("FAKE_SERIAL_ALLOW", "1") == "1"
+    print(json.dumps({
+        "allow": allow,
+        "lane": "normal" if allow else "none",
+        "reason": "main 0123 is verified green" if allow else "main 0123 is unverified (no product CI run); merges wait for it",
+        "main": {"sha": "0" * 40, "state": "green" if allow else "unverified"},
+    }))
+else:
+    print("{}")
+"""
+
 GH_BODY = """#!/usr/bin/env bash
 printf 'gh %s\\n' "$*" >> "${CALL_LOG:?}"
 if [[ "${1:-} ${2:-}" == "pr merge" ]]; then
@@ -76,6 +95,7 @@ def _write_fake_controller(trusted: Path) -> None:
 
 def _write_fake_closure(trusted: Path) -> None:
     (trusted / "factory_post_merge_closure.py").write_text(CLOSURE_BODY, encoding="utf-8")
+    (trusted / "factory_main_health.py").write_text(SERIAL_BODY, encoding="utf-8")
 
 
 def _fixture(
@@ -98,6 +118,7 @@ def _fixture(
         "PATH": f"{bin_dir}{os.pathsep}{os.environ['PATH']}",
         "CALL_LOG": str(tmp_path / "calls.log"),
         "TRUSTED_REVIEW_CONTROLLER": str(trusted / "factory-review-controller.py"),
+        "GITHUB_REPOSITORY": "owner/repo",
         "FAKE_GATE_DECISION": "pass",
         "FAKE_GATE_REASON": "all exact-head mechanical gates passed",
         "FAKE_MERGE_EXIT": "0",
@@ -665,3 +686,32 @@ def test_legacy_worker_merge_failure_releases_and_skips(
         f"release {PR} factory/87-4081-{branch_suffix} factory:review merge-failed"
     ]
     assert f"skip {PR}" in calls
+
+
+def test_serialized_gate_wait_does_not_merge(tmp_path: Path) -> None:
+    """An unverified or busy main defers the merge as retry, never merges."""
+    fields = _run_route(tmp_path, FAKE_SERIAL_ALLOW="0")
+    assert fields["status"] == "1"
+    assert fields["decision"] == "retry"
+    assert "unverified" in fields["reason"]
+    assert _merge_calls(fields["calls"]) == []
+    assert [c for c in fields["calls"] if c.startswith("serial ")] == [
+        "serial gate --repo owner/repo --pr 4085"
+    ]
+
+
+def test_serialized_merge_verifies_resulting_main(tmp_path: Path) -> None:
+    fields = _run_route(tmp_path)
+    serial = [c for c in fields["calls"] if c.startswith("serial ")]
+    assert serial == [
+        "serial gate --repo owner/repo --pr 4085",
+        "serial after-merge --repo owner/repo --previous " + "0" * 40,
+    ]
+    calls = fields["calls"]
+    assert calls.index(serial[0]) < calls.index(_merge_calls(calls)[0]) < calls.index(serial[1])
+
+
+def test_failed_merge_releases_the_serialized_claim(tmp_path: Path) -> None:
+    fields = _run_route(tmp_path, FAKE_MERGE_EXIT="1")
+    assert fields["status"] == "2"
+    assert "serial release --repo owner/repo --sha " + "0" * 40 in fields["calls"]

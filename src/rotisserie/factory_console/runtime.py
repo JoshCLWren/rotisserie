@@ -31,13 +31,14 @@ RUNTIME_MODULES = (
     "factory_work_policy",
     "factory_rotisserie_adopter",
     "factory_branch_sync",
+    "factory_main_health",
+    "factory_review_policy",
 )
 
 # Every file the wheel must carry, keyed by module name, with its checkout path.
 # The last three are not loaded by name; the modules above import them.
 RUNTIME_SOURCES = {
     **{name: f"factory/.github/scripts/{name}.py" for name in RUNTIME_MODULES},
-    "factory_review_policy": "factory/.github/scripts/factory_review_policy.py",
     "factory_adopter": "factory/.github/scripts/factory_adopter.py",
     "factory_eligibility": "factory/scripts/factory_eligibility.py",
 }

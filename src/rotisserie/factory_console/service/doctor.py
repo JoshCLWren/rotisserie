@@ -10,7 +10,9 @@ Every check here replaces a diagnosis first done by hand:
 * most workers were rejected by the *same* factory gate: the fast checks ran
   tests the repository had deleted, so every change to that code "failed validation";
 * main broke a check (a PR merged with unformatted code), so every backlog PR
-  running it went red and repair workers were sent to fix main's files PR by PR.
+  running it went red and repair workers were sent to fix main's files PR by PR;
+* main had no product CI at all: factory merges use GITHUB_TOKEN, which fires no
+  push event, and "no run" was being read as green.
 """
 
 from __future__ import annotations
@@ -34,6 +36,7 @@ from rotisserie.factory_console.github import (
 from rotisserie.factory_console.service import (
     baseline,
     checks,
+    main_health,
     outcomes,
     providers,
     queue,
@@ -156,6 +159,33 @@ def _intake(github: GitHub, now: datetime) -> Finding:
     return Finding("rotisserie intake", "ok", "deciding normally")
 
 
+def main_verification(github: GitHub, health: main_health.MainHealth | None = None) -> Finding:
+    """Serialized merges wait until the exact main commit has passed product CI."""
+    health = health or main_health.assess(github)
+    short = health.sha[:12]
+    if health.state == "green":
+        return Finding("main verification", "ok", health.explanation)
+    if health.state == "pending":
+        return Finding(
+            "main verification", "ok", health.explanation, "merges wait for this run to finish"
+        )
+    if health.state == "red":
+        return Finding(
+            "main verification",
+            "fail",
+            health.explanation,
+            "only PRs labelled main-breakage may merge until main is green again",
+        )
+    return Finding(
+        "main verification",
+        "warn",
+        health.explanation,
+        "merges wait for it; doctor --fix dispatches product CI on main now",
+        fix="verify-main",
+        targets=(f"main@{short}",),
+    )
+
+
 def systemic_rejection(found: list[outcomes.RequestOutcome]) -> Finding:
     """One factory gate rejecting most finished workers is a factory bug."""
     finished = [item for item in found if item.worker_result and item.worker_result != "running"]
@@ -259,6 +289,7 @@ def run_checks(github: GitHub, *, now: datetime, clock: Clock | None = None) -> 
         ("reliability snapshot", lambda: _stats(github, now)),
         ("dashboard publisher", lambda: _dashboard(github, tracker)),
         ("scheduler", lambda: _scheduler(github, now)),
+        ("main verification", lambda: main_verification(github)),
         ("rotisserie intake", lambda: _intake(github, now)),
         ("worker rejections", rejections),
         ("shared failures", lambda: shared_failures(github, now)),
@@ -290,6 +321,17 @@ def apply_fixes(github: GitHub, findings: list[Finding]) -> list[Applied]:
         output = github.gh("workflow", "run", DASHBOARD_WORKFLOW, "--repo", github.repo)
         url = next((part for part in output.split() if "/actions/runs/" in part), "")
         done.append(Applied("publish-snapshot", f"started {DASHBOARD_WORKFLOW}", url))
+    if "verify-main" in wanted:
+        # Re-read first: the drain or the dispatcher may have started CI since.
+        health = main_health.assess(github)
+        started = main_health.dispatch_verification(github, health)
+        if started:
+            done.append(
+                Applied(
+                    "verify-main",
+                    f"started {', '.join(started)} on main {health.sha[:12]}",
+                )
+            )
     for finding in findings:
         if finding.fix != "sync-main" or finding.status == "ok":
             continue

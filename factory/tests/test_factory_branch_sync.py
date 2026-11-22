@@ -236,7 +236,7 @@ def test_dispatcher_runs_the_bounded_leased_sync_pass():
     step = steps["Sync queued factory PRs with main under Neon leases"]
     assert "steps.api_budget.outputs.allow == 'true'" in step["if"]
     assert "!(inputs.target || inputs.provider)" in step["if"]
-    assert "main_red != 'true'" in step["if"]
+    assert "steps.main_health.outputs.state != 'red'" in step["if"]
     assert "factory_branch_sync.py --queued --max 5" in step["run"]
     assert "--force" not in step["run"] and "git push" not in step["run"]
     names = list(steps)

@@ -117,7 +117,8 @@ def test_recorded_repairer_cannot_authorize_a_head_it_repaired() -> None:
     assert observations[("completion", "change:4001")]["outcome"] == "blocked"
 
 
-def test_missing_contributor_provenance_requires_two_reviewers() -> None:
+def test_missing_contributor_provenance_needs_one_independent_reviewer() -> None:
+    """Missing provenance is a diagnostic, not a second-approval requirement."""
     adapter = load_adapter()
     view = json.loads(FIXTURE.read_text(encoding="utf-8"))
     pr = view["pull_requests"][0]
@@ -127,16 +128,6 @@ def test_missing_contributor_provenance_requires_two_reviewers() -> None:
     single = adapter.legacy_decisions(view)
     observations = {
         (item["dimension"], item["subject"]): item for item in single["observations"]
-    }
-    assert observations[("review", "change:4001")]["outcome"] == "blocked"
-
-    pr["reviews"] = [
-        {"reviewer": "9", "decision": "approved", "required": True},
-        {"reviewer": "10", "decision": "approved", "required": True},
-    ]
-    two_reviewers = adapter.legacy_decisions(view)
-    observations = {
-        (item["dimension"], item["subject"]): item for item in two_reviewers["observations"]
     }
     assert observations[("review", "change:4001")]["outcome"] == "approved"
 
