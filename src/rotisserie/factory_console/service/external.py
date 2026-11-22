@@ -103,8 +103,14 @@ def _required_checks_outcome(github: GitHub, number: int) -> str:
     try:
         values = json.loads(
             github.gh(
-                "pr", "checks", str(number), "--repo", github.repo,
-                "--required", "--json", "state",
+                "pr",
+                "checks",
+                str(number),
+                "--repo",
+                github.repo,
+                "--required",
+                "--json",
+                "state",
             )
         )
     except (GitHubError, ValueError):
@@ -113,7 +119,8 @@ def _required_checks_outcome(github: GitHub, number: int) -> str:
         return "waiting"
     states = [
         str(row.get("state", "")).upper()
-        for row in values if isinstance(row, dict) and isinstance(row.get("state"), str)
+        for row in values
+        if isinstance(row, dict) and isinstance(row.get("state"), str)
     ]
     if len(states) != len(values):
         return "waiting"
@@ -130,20 +137,27 @@ def _conflict_without_ci(github: GitHub, number: int, head: str | None) -> bool:
         return False
     try:
         pr = obj(github.repo_api(f"pulls/{number}"))
-        if (string(obj(pr.get("head")), "sha") != head
-                or string(pr, "state") != "open"
-                or not (pr.get("mergeable") is False
-                        or string(pr, "mergeable_state").upper() == "DIRTY")):
+        if (
+            string(obj(pr.get("head")), "sha") != head
+            or string(pr, "state") != "open"
+            or not (
+                pr.get("mergeable") is False or string(pr, "mergeable_state").upper() == "DIRTY"
+            )
+        ):
             return False
         response = obj(github.repo_api(f"commits/{head}/check-runs?per_page=100"))
     except GitHubError:
         return False
     runs = response.get("check_runs")
-    if (not isinstance(runs, list) or not isinstance(response.get("total_count"), int)
-            or response["total_count"] != len(runs)):
+    if (
+        not isinstance(runs, list)
+        or not isinstance(response.get("total_count"), int)
+        or response["total_count"] != len(runs)
+    ):
         return False
     return not any(
-        not isinstance(run, dict) or run.get("name") == "CI Summary"
+        not isinstance(run, dict)
+        or run.get("name") == "CI Summary"
         or str(run.get("status", "")).lower() != "completed"
         for run in runs
     )
@@ -236,7 +250,8 @@ def reserve_next(
                 authors: set[str] = store.external_code_authors(github.repo, linked)
             except (GitHubError, RuntimeError, ValueError) as exc:
                 return {
-                    "status": "held", "reason": f"review authorship unavailable: {exc}",
+                    "status": "held",
+                    "reason": f"review authorship unavailable: {exc}",
                     "retry": "refresh_frontier",
                 }
             if client in authors:
@@ -304,9 +319,7 @@ def reserve_next(
     kind, number_text = chosen.target.split(":")
     try:
         target_info = obj(
-            github.repo_api(
-                f"pulls/{number_text}" if kind == "pr" else f"issues/{number_text}"
-            )
+            github.repo_api(f"pulls/{number_text}" if kind == "pr" else f"issues/{number_text}")
         )
         issue_body = string(target_info, "body")
         if kind == "pr" and len(numbers) == 2:
@@ -314,7 +327,11 @@ def reserve_next(
             issue_body = string(obj(github.repo_api(f"issues/{linked_issue}")), "body")
     except GitHubError as exc:
         store.external_lease_action(
-            github.repo, actor, client, claim_id, operation="release",
+            github.repo,
+            actor,
+            client,
+            claim_id,
+            operation="release",
             evidence="handoff-preparation-failed",
         )
         return {"status": "conflict", "reason": str(exc), "retry": "refresh_frontier"}
