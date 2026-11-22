@@ -21,7 +21,7 @@ from factory_capacity_policy import (
     omniroute_enabled,
     remaining_omniroute_free_entry_slots,
 )
-from factory_work_policy import (BLOCKED_LABELS, FACTORY_NO_DIFF_RETRY_LIMIT, FACTORY_NO_DIFF_RETRY_RESET_SECONDS, FACTORY_PR_WIP_LIMIT, FACTORY_REVIEW_BACKLOG_LIMIT, FIXED_LEASE_TTL_SECONDS, LOCAL_LEASE_TTL_SECONDS, FIXED_OWNER_RE, NoDiffAttempt, NON_EXECUTABLE_ISSUES, OWNER_RE, REQUIRED_CHECK_FAILURE_STATES, STAGE_LABELS, STAGE_PRECEDENCE, Candidate, build_candidates, comment_is_trusted, completion_action_for, eligibility, explain_issue_report, provenance_lane, env_positive_int, factory_pr_wip_count, factory_review_backlog_count, is_manual_only, item_is_unowned, issue_bypasses_wip_limit, issue_explicitly_closed_by_pr, labels_of, lease_is_stale, linked_issue_from_branch, linked_issue_from_pr, order_candidates_for_worker, owner_of, parse_no_diff_attempts_from_comments, plan_distinct_assignments, pr_suppresses_issue_candidate, stage_of)
+from factory_work_policy import (BLOCKED_LABELS, FACTORY_NO_DIFF_RETRY_LIMIT, FACTORY_NO_DIFF_RETRY_RESET_SECONDS, FACTORY_PR_WIP_LIMIT, FACTORY_REVIEW_BACKLOG_LIMIT, FAILED_CHECK_RUN_CONCLUSIONS, FIXED_LEASE_TTL_SECONDS, LOCAL_LEASE_TTL_SECONDS, FIXED_OWNER_RE, NoDiffAttempt, NON_EXECUTABLE_ISSUES, OWNER_RE, REQUIRED_CHECK_FAILURE_STATES, STAGE_LABELS, STAGE_PRECEDENCE, Candidate, build_candidates, comment_is_trusted, completion_action_for, eligibility, explain_issue_report, provenance_lane, env_positive_int, factory_pr_wip_count, factory_review_backlog_count, is_manual_only, item_is_unowned, issue_bypasses_wip_limit, issue_explicitly_closed_by_pr, labels_of, lease_is_stale, linked_issue_from_branch, linked_issue_from_pr, order_candidates_for_worker, own_check_failures, owner_of, parse_no_diff_attempts_from_comments, plan_distinct_assignments, pr_suppresses_issue_candidate, stage_of)
 from factory_jev_shadow import apply_completion_ranking, apply_jev_ranking
 from stale_pr_decay import StalePRGuard, list_factory_prs
 from factory_review_policy import recorded_pr_contributors, trusted_comment_bodies
@@ -392,7 +392,139 @@ def candidate_is_live_executable(candidate: Candidate) -> bool:
         return conflicted_head_without_published_ci(candidate.number)
     if 'factory:ci' in labels:
         return outcome == 'failed'
+    if (
+        stage_of(labels) == 'factory:review'
+        and not candidate.conflicted
+        and item_is_unowned(labels)
+    ):
+        # A review cannot validate while the PR's own checks are red (the one
+        # required aggregate check may still pass beside a red path-filtered
+        # check). Failures main caused keep today's path.
+        own = own_red_checks(candidate.number)
+        if own:
+            reroute_red_review(candidate.number, labels, own)
+            return False
     return True
+
+
+CHECK_RUN_JOB_RE = re.compile(r'/actions/runs/(?P<run>\d+)/job/\d+')
+PULL_REQUEST_EVENTS = frozenset({'pull_request', 'pull_request_target'})
+# (failing run id, check name) -> conclusion of that check's latest main run.
+_MAIN_CHECK_CONCLUSIONS: dict[tuple[str, str], str] = {}
+_DEFAULT_BRANCH: list[str] = []
+
+
+def advisory_check_names() -> set[str]:
+    """Checks the adopter declared advisory (FACTORY_ADVISORY_CHECKS); they never gate."""
+    raw = os.environ.get('FACTORY_ADVISORY_CHECKS', '')
+    return {name.strip() for name in raw.split(',') if name.strip()}
+
+
+def default_branch() -> str:
+    if not _DEFAULT_BRANCH:
+        repo = gh_json(['api', f'repos/{REPO}'])
+        branch = str(repo.get('default_branch') or '') if isinstance(repo, dict) else ''
+        _DEFAULT_BRANCH.append(branch or 'main')
+    return _DEFAULT_BRANCH[0]
+
+
+def head_failing_check_runs(pr_number: int) -> list[tuple[str, str]]:
+    """``(name, html_url)`` of every failing, non-advisory check run on the PR head."""
+    head = str((live_pr_state(pr_number).get('head') or {}).get('sha') or '')
+    if not re.fullmatch(r'[0-9a-f]{40}', head):
+        return []
+    response = gh_json(['api', f'repos/{REPO}/commits/{head}/check-runs?per_page=100'])
+    runs = response.get('check_runs') if isinstance(response, dict) else None
+    if not isinstance(runs, list):
+        return []
+    advisory = advisory_check_names()
+    found: dict[str, str] = {}
+    for run in runs:
+        if not isinstance(run, dict):
+            continue
+        name = str(run.get('name') or '')
+        if (
+            name
+            and name not in advisory
+            and str(run.get('conclusion') or '').lower() in FAILED_CHECK_RUN_CONCLUSIONS
+        ):
+            found.setdefault(name, str(run.get('html_url') or ''))
+    return sorted(found.items())
+
+
+def main_check_conclusion(name: str, url: str) -> str:
+    """Conclusion of the same check's latest completed default-branch run.
+
+    Found through the failing run's own workflow, as Rotisserie's shared-failure
+    analysis does; empty when main has no such run (path filters, new check).
+    """
+    match = CHECK_RUN_JOB_RE.search(url)
+    if not match:
+        return ''
+    key = (match.group('run'), name)
+    if key in _MAIN_CHECK_CONCLUSIONS:
+        return _MAIN_CHECK_CONCLUSIONS[key]
+    _MAIN_CHECK_CONCLUSIONS[key] = ''
+    run = gh_json(['api', f'repos/{REPO}/actions/runs/{match.group("run")}'])
+    workflow = run.get('workflow_id') if isinstance(run, dict) else None
+    if not isinstance(workflow, int):
+        return ''
+    listing = gh_json([
+        'api', f'repos/{REPO}/actions/workflows/{workflow}/runs'
+        f'?branch={default_branch()}&status=completed&per_page=10',
+    ])
+    rows = listing.get('workflow_runs') if isinstance(listing, dict) else None
+    for row in rows if isinstance(rows, list) else []:
+        if not isinstance(row, dict) or str(row.get('event') or '') in PULL_REQUEST_EVENTS:
+            continue
+        jobs = gh_json(['api', f'repos/{REPO}/actions/runs/{row.get("id")}/jobs?per_page=100'])
+        job_rows = jobs.get('jobs') if isinstance(jobs, dict) else None
+        job = next(
+            (
+                item for item in (job_rows if isinstance(job_rows, list) else [])
+                if isinstance(item, dict) and item.get('name') == name
+            ),
+            None,
+        )
+        if job is None:
+            continue  # skipped by a path or event filter on this run
+        _MAIN_CHECK_CONCLUSIONS[key] = str(job.get('conclusion') or '').lower()
+        return _MAIN_CHECK_CONCLUSIONS[key]
+    return ''
+
+
+def own_red_checks(pr_number: int) -> list[str]:
+    """Failing checks on the PR head that main did not cause. Empty when unreadable."""
+    try:
+        failing = head_failing_check_runs(pr_number)
+        mains = {name: main_check_conclusion(name, url) for name, url in failing}
+    except (RuntimeError, ValueError, TypeError, KeyError, json.JSONDecodeError):
+        return []
+    return own_check_failures([name for name, _ in failing], mains)
+
+
+def reroute_red_review(number: int, labels: set[str], own: list[str]) -> bool:
+    """Move an unowned review PR whose own checks fail to ``factory:ci`` (CI repair).
+
+    The owner compare-and-swap leaves a PR alone if a worker claimed it since
+    ``labels`` were read; CI reconciliation then hands the failure to repair.
+    """
+    if owner_of(labels) != 'factory:unowned':
+        return False  # no owner label to compare-and-swap against; leave it alone
+    try:
+        moved = replace_factory_labels(
+            number, 'factory:unowned', 'factory:ci', expected_owner='factory:unowned',
+        )
+    except RuntimeError as exc:
+        print(f'[factory-controller] could not reroute PR #{number} to CI repair: {exc}', file=sys.stderr)
+        return False
+    if moved:
+        print(
+            f'[factory-controller] PR #{number}: its own checks fail ({", ".join(own)}); '
+            'moved from review to CI repair',
+            file=sys.stderr,
+        )
+    return moved
 
 
 def issue_excludes_worker_on_strike_retry(number: int, worker: str) -> bool:

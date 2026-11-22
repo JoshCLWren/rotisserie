@@ -326,6 +326,7 @@ def test_actionable_pr_stage_is_live_executable(
         lambda number: {"labels": [{"name": stage}]},
     )
     monkeypatch.setattr(controller, "required_checks_outcome", lambda number: 'passed')
+    monkeypatch.setattr(controller, "own_red_checks", lambda number: [])
 
     assert controller.candidate_is_live_executable(candidate) is True
 

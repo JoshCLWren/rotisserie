@@ -441,6 +441,28 @@ def completion_action_for(stage: str | None, conflicted: bool) -> str | None:
     }.get(stage or '')
 
 
+# Check-run conclusions that mean a check failed (GitHub's lowercase REST values).
+FAILED_CHECK_RUN_CONCLUSIONS = frozenset({'failure', 'timed_out', 'startup_failure', 'action_required'})
+
+
+def own_check_failures(
+    failing: Iterable[str], main_conclusions: Mapping[str, str]
+) -> list[str]:
+    """The failing checks a PR caused itself, so it needs CI repair, not review.
+
+    A PR is tested as if merged into the default branch, so a check main
+    breaks turns every PR running it red. Such a failure is inherited: the
+    PR's review keeps today's path and main is fixed once. A failing check
+    counts as the PR's own unless the same check's latest default-branch run
+    failed too (``main_conclusions`` maps check name to that run's
+    conclusion; a missing entry means main has no failing run of it).
+    """
+    return sorted({
+        name for name in failing
+        if str(main_conclusions.get(name) or '').lower() not in FAILED_CHECK_RUN_CONCLUSIONS
+    })
+
+
 def completion_backlog(prs: Iterable[dict[str, Any]]) -> list[dict[str, Any]]:
     """The PRs behind ``factory_review_backlog_count``, each with the action it needs.
 

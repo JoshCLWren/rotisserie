@@ -12,7 +12,9 @@ Every check here replaces a diagnosis first done by hand:
 * main broke a check (a PR merged with unformatted code), so every backlog PR
   running it went red and repair workers were sent to fix main's files PR by PR;
 * main had no product CI at all: factory merges use GITHUB_TOKEN, which fires no
-  push event, and "no run" was being read as green.
+  push event, and "no run" was being read as green;
+* PRs waiting for review whose own checks were red (a Clippy error, a stale
+  generated contract) kept drawing reviewers instead of CI repair.
 """
 
 from __future__ import annotations
@@ -37,6 +39,7 @@ from rotisserie.factory_console.service import (
     baseline,
     checks,
     main_health,
+    misrouted,
     outcomes,
     providers,
     queue,
@@ -274,6 +277,29 @@ def shared_failures(github: GitHub, now: datetime) -> Finding:
     return Finding("shared failures", "ok", "no backlog PR is red because of main")
 
 
+def misrouted_reviews(github: GitHub) -> Finding:
+    """PRs waiting for review whose own checks fail: they need CI repair, not a review."""
+    found = misrouted.scan(github)
+    if not found.misrouted:
+        return Finding(
+            "misrouted reviews", "ok", "no PR waiting for review has red checks of its own"
+        )
+    names = ", ".join(f"#{item.pr}" for item in found.misrouted)
+    held = [f"#{item.pr}" for item in found.misrouted if item.held]
+    note = (
+        f"; {', '.join(held)} {'is' if len(held) == 1 else 'are'} held by a worker" if held else ""
+    )
+    return Finding(
+        "misrouted reviews",
+        "warn",
+        f"{names} {'is' if len(found.misrouted) == 1 else 'are'} waiting for review, but "
+        f"{'its' if len(found.misrouted) == 1 else 'their'} own checks fail{note}",
+        "rotisserie factory checks --misrouted --requeue --yes moves the free ones to CI repair",
+        fix="route-ci-repair" if found.movable else "",
+        targets=tuple(f"pr:{item.pr}@{item.head}" for item in found.movable),
+    )
+
+
 def run_checks(github: GitHub, *, now: datetime, clock: Clock | None = None) -> list[Finding]:
     """Every health check; a check that cannot read GitHub reports that instead of failing."""
     tracker = Tracker(github, clock)
@@ -293,6 +319,7 @@ def run_checks(github: GitHub, *, now: datetime, clock: Clock | None = None) -> 
         ("rotisserie intake", lambda: _intake(github, now)),
         ("worker rejections", rejections),
         ("shared failures", lambda: shared_failures(github, now)),
+        ("misrouted reviews", lambda: misrouted_reviews(github)),
     ]
     for name, check in checks:
         try:
@@ -332,6 +359,17 @@ def apply_fixes(github: GitHub, findings: list[Finding]) -> list[Applied]:
                     f"started {', '.join(started)} on main {health.sha[:12]}",
                 )
             )
+    if "route-ci-repair" in wanted:
+        # Re-scan: only a PR still misrouted at the same head, and still free, moves.
+        planned = {
+            target for item in findings if item.fix == "route-ci-repair" for target in item.targets
+        }
+        for found in misrouted.scan(github).movable:
+            if f"pr:{found.pr}@{found.head}" not in planned:
+                continue
+            moved = misrouted.requeue(github, found)
+            if moved.ok:
+                done.append(Applied("route-ci-repair", moved.text))
     for finding in findings:
         if finding.fix != "sync-main" or finding.status == "ok":
             continue
