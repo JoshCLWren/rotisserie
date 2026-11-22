@@ -2163,6 +2163,7 @@ def test_doctor_fix_syncs_free_prs_main_moved_past(fake: FakeGitHub) -> None:
     finding = doctor.shared_failures(GitHub(REPO), START)
     assert (finding.status, finding.fix) == ("warn", "sync-main")
     assert finding.targets == (f"pr:301@{301:040d}",)  # #305 has a worker
+    assert "#305 also need it once their workers finish" in finding.text
     applied = doctor.apply_fixes(GitHub(REPO), [finding])
     assert [item.fix for item in applied] == ["sync-main"]
     puts = [call for call in fake.calls if any("update-branch" in part for part in call)]

@@ -206,19 +206,39 @@ def shared_failures(github: GitHub, now: datetime) -> Finding:
         )
     free = {item.number for item in backlog if item.free}
     syncs = []
+    waiting = []
     for number in sorted(red):
-        if number in free and report.needs_sync(number):
-            head = string(obj(obj(github.repo_api(f"pulls/{number}")).get("head")), "sha")
-            if head:
-                syncs.append(f"pr:{number}@{head}")
+        if not report.needs_sync(number):
+            continue
+        if number not in free:
+            waiting.append(f"#{number}")
+            continue
+        head = string(obj(obj(github.repo_api(f"pulls/{number}")).get("head")), "sha")
+        if head:
+            syncs.append(f"pr:{number}@{head}")
+    held = (
+        f"; {', '.join(waiting)} also need it once their workers finish (a review or "
+        "repair round on the old base fails validation on main's old files)"
+        if waiting
+        else ""
+    )
     if syncs:
         names = ", ".join(f"#{item.split('@')[0][3:]}" for item in syncs)
         return Finding(
             "shared failures",
             "warn",
-            f"main has moved past the failures on {names}; their branches need main merged in",
+            f"main has moved past the failures on {names}; their branches need main merged "
+            f"in{held}",
             fix="sync-main",
             targets=tuple(syncs),
+        )
+    if waiting:
+        return Finding(
+            "shared failures",
+            "warn",
+            f"main has moved past the failures on {', '.join(waiting)}, but workers hold them; "
+            "sync each once its worker finishes",
+            "rotisserie factory doctor --fix syncs the ones no worker holds",
         )
     return Finding("shared failures", "ok", "no backlog PR is red because of main")
 
