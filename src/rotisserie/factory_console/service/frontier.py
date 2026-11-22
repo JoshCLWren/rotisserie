@@ -314,8 +314,7 @@ def capture(github: GitHub, *, now: datetime) -> Frontier:
         # A partial graph may conceal a higher-priority item or active PR.
         problem = (
             "GitHub open issue/PR listing reached its pagination cap; "
-            "a complete work view cannot be established"
-            + (f"; {problem}" if problem else "")
+            "a complete work view cannot be established" + (f"; {problem}" if problem else "")
         )
     external_wip = len(
         {
