@@ -455,6 +455,13 @@ def test_fork_runner_installs_hook_toolchain_before_committing() -> None:
     assert source.index("install-git-hooks.sh") < source.index("git commit")
 
 
+INGRESS_TESTS = (
+    "tests/test_native_roll_live_ingress.py",
+    "tests/test_native_roll_write_test_guard.py",
+    "tests/test_vercel_deployment.py",
+)
+
+
 def rust_fixture(repo: Path) -> None:
     """Install the real preflight runner in an isolated synthetic git checkout."""
     source = ROOT / "tests/fixtures/adopter-hooks/check-rust-factory-prepush.sh"
@@ -514,7 +521,13 @@ def test_rust_sources_manifests_and_native_rewrites_select_preflight(tmp_path: P
 
 def test_rust_compile_error_blocks_push_and_runs_focused_ingress_guards(tmp_path: Path) -> None:
     """A bad Rust first head is rejected before GitHub Actions."""
-    repo = repo_with(tmp_path, {"native/roll-service/src/queue.rs": "bad rust\n"})
+    repo = repo_with(
+        tmp_path,
+        {
+            "native/roll-service/src/queue.rs": "bad rust\n",
+            **{path: "def test_x():\n    pass\n" for path in INGRESS_TESTS},
+        },
+    )
     rust_fixture(repo)
     bin_dir = rust_stubs(tmp_path, fail_clippy=True)
     result = run_checks(repo, env={"PATH": f"{bin_dir}{os.pathsep}{os.environ['PATH']}"})
@@ -546,9 +559,45 @@ def test_valid_rust_checks_both_crates_and_deletion_still_checks(tmp_path: Path)
 
 def test_vercel_rewrite_only_change_runs_routing_tests_not_cargo(tmp_path: Path) -> None:
     """Vercel changes get the relevant tests without a pointless Rust build."""
-    repo = repo_with(tmp_path, {"vercel.json": '{"rewrites": []}\n'})
+    repo = repo_with(
+        tmp_path,
+        {"vercel.json": '{"rewrites": []}\n', INGRESS_TESTS[2]: "def test_x():\n    pass\n"},
+    )
     bin_dir = rust_stubs(tmp_path)
     result = run_checks(repo, env={"PATH": f"{bin_dir}{os.pathsep}{os.environ['PATH']}"})
     assert result.returncode == 0, result.stdout + result.stderr
     assert not (tmp_path / "cargo.log").exists()
     assert "test_vercel_deployment.py" in (tmp_path / "uv.log").read_text()
+
+
+def test_missing_ingress_contract_tests_are_skipped_not_failed(tmp_path: Path) -> None:
+    """Comic Pile deleted these tests with its Python app (#5641).
+
+    The gate then failed every Rust worker on pytest "file not found", so even a
+    correct `cargo fmt` repair of PR #5629 was rejected as failed validation.
+    """
+    repo = repo_with(tmp_path, {"native/roll-service/src/queue.rs": "fn main() {}\n"})
+    rust_fixture(repo)
+    bin_dir = rust_stubs(tmp_path)
+    result = run_checks(repo, env={"PATH": f"{bin_dir}{os.pathsep}{os.environ['PATH']}"})
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert "native ingress/deployment/write guard tests" not in result.stdout + result.stderr
+    uv_log = tmp_path / "uv.log"
+    assert not uv_log.exists() or "pytest" not in uv_log.read_text()
+
+
+def test_only_present_ingress_contract_tests_run(tmp_path: Path) -> None:
+    repo = repo_with(
+        tmp_path,
+        {
+            "native/roll-service/src/queue.rs": "fn main() {}\n",
+            INGRESS_TESTS[2]: "def test_x():\n    pass\n",
+        },
+    )
+    rust_fixture(repo)
+    bin_dir = rust_stubs(tmp_path)
+    result = run_checks(repo, env={"PATH": f"{bin_dir}{os.pathsep}{os.environ['PATH']}"})
+    assert result.returncode == 0, result.stdout + result.stderr
+    uv_log = (tmp_path / "uv.log").read_text()
+    assert "test_vercel_deployment.py" in uv_log
+    assert "test_native_roll_live_ingress.py" not in uv_log

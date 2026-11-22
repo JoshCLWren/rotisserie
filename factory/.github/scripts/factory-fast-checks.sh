@@ -275,17 +275,26 @@ factory_run_fast_checks() {
 
   # When native routing or Rust handlers change, verify the real Vercel
   # rewrite, HTTP-method registration and POST/PATCH write-path guards.
+  # Only the contract tests the repository still has: an adopter that removed
+  # them (Comic Pile retired its Python app in #5641) must not fail every Rust
+  # worker on "file not found".
   if (( rust_project || rust_ingress )); then
-    if ! _factory_fast_check_ensure_uv; then
+    local ingress_tests=() candidate
+    for candidate in \
+      tests/test_native_roll_live_ingress.py \
+      tests/test_native_roll_write_test_guard.py \
+      tests/test_vercel_deployment.py; do
+      [[ -f "$candidate" ]] && ingress_tests+=("$candidate")
+    done
+    if (( ! ${#ingress_tests[@]} )); then
+      printf '\n== Native ingress and deployment contract tests ==\nskipped: none of these tests exist in this repository\n' >> "$log"
+    elif ! _factory_fast_check_ensure_uv; then
       failures+=('Rust ingress test toolchain (uv)')
     elif ! _factory_fast_check_run "$log" 'Rust ingress test dependency sync' \
       uv sync --frozen --all-extras --quiet; then
       failures+=('Rust ingress test dependencies')
     elif ! _factory_fast_check_run "$log" 'Native ingress and deployment contract tests' \
-      uv run --frozen pytest -q -x --no-cov \
-        tests/test_native_roll_live_ingress.py \
-        tests/test_native_roll_write_test_guard.py \
-        tests/test_vercel_deployment.py; then
+      uv run --frozen pytest -q -x --no-cov "${ingress_tests[@]}"; then
       failures+=('native ingress/deployment/write guard tests')
     fi
   fi
