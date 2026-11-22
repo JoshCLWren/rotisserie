@@ -135,3 +135,17 @@ def test_run_workflow_reads_authors_once_and_reselects_without_more_calls() -> N
     assert selector.index("factory_review_model_guard.py check") < selector.index(
         'echo "runtime_model=$runtime_model"'
     )
+
+
+def test_provider_pinned_reviewer_repick_stays_on_that_provider() -> None:
+    """An operator-pinned provider with an automatic model never crosses the fleet."""
+    selector = WORKFLOW.read_text(encoding="utf-8").split(
+        "- name: Select execution candidate at dispatch time", 1
+    )[1].split("\n      - name:", 1)[0]
+    guard_block = selector.split("factory_review_model_guard.py check", 1)[1].split("done", 1)[0]
+    pinned = guard_block.split('if [[ "$REQUESTED_PROVIDER" == auto ]]; then', 1)[1]
+    fleet, own = pinned.split("else", 1)
+    assert "--eligible-sources-file" in fleet
+    own_branch = own.split("fi", 1)[0]
+    assert "--eligible-sources-file" not in own_branch
+    assert '--attempted "$model"' in own_branch
