@@ -421,6 +421,61 @@ def test_approved_head_without_cross_model_provenance_is_blocked(
     assert all(item["pr_stage"] != "factory:ready" for item in transitions)
     assert "cross-model" in str(posted[-1]["note"])
 
+def test_same_model_approval_returns_to_review_instead_of_blocking(
+    monkeypatch: MonkeyPatch,
+) -> None:
+    """A reviewer from the author's model family cannot count, but the head is fine.
+
+    Regression: hy4-flash-free approved its own hy4-flash-free head; the PR was
+    parked in factory:blocked as "provenance missing" and never reviewed again.
+    """
+    module = load_review_controller()
+    payload = pr_payload(worker="17", branch_worker="43")
+    transitions, posted, _commands = wire_controller(
+        monkeypatch,
+        module,
+        [payload],
+        comments=producer_contribution(),
+        mechanical=True,
+    )
+    monkeypatch.setattr(module, "head_has_cross_model_review", lambda *_a, **_kw: False)
+    monkeypatch.setattr(
+        module,
+        "current_head_author_identity",
+        lambda *_a, **_kw: ("opencode-go-hy4-flash-free", "43"),
+    )
+    monkeypatch.setattr(module, "roster_model_for_worker", lambda _w: "opencode-go/hy4-flash-free")
+    result = module.handle_review(
+        worker="17",
+        pr_number=1390,
+        verdict="approve",
+        reviewed_head=REVIEWED_HEAD,
+        review_log="/tmp/model.log",
+    )
+    assert result["status"] == "same-model-review"
+    assert transitions[-1]["pr_stage"] == "factory:review"
+    assert all(item["pr_stage"] not in ("factory:blocked", "factory:ready") for item in transitions)
+    assert "same model family" in str(posted[-1]["note"])
+
+
+def test_unknown_author_still_blocks_even_with_a_reviewer_model(
+    monkeypatch: MonkeyPatch,
+) -> None:
+    module = load_review_controller()
+    payload = pr_payload(worker="17", branch_worker="43")
+    transitions, _posted, _commands = wire_controller(
+        monkeypatch, module, [payload], comments=producer_contribution(), mechanical=True
+    )
+    monkeypatch.setattr(module, "head_has_cross_model_review", lambda *_a, **_kw: False)
+    monkeypatch.setattr(module, "current_head_author_identity", lambda *_a, **_kw: None)
+    result = module.handle_review(
+        worker="17", pr_number=1390, verdict="approve",
+        reviewed_head=REVIEWED_HEAD, review_log="/tmp/model.log",
+    )  # fmt: skip
+    assert result["status"] == "cross-model-provenance-blocked"
+    assert transitions[-1]["pr_stage"] == "factory:blocked"
+
+
 def test_controller_mechanical_failure_routes_to_repair(
     monkeypatch: MonkeyPatch,
 ) -> None:

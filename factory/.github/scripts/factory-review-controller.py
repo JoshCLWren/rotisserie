@@ -795,6 +795,30 @@ def persist_cross_model_review_marker(
     return marker
 
 
+def same_model_review(*, pr_number: int, head: str, reviewer: str) -> tuple[str, str] | None:
+    """(author model, reviewer model) when the head's author is attested but this
+    reviewer shares its agent or model family, so its approval cannot count.
+
+    Returns ``None`` when the author is unknown or the reviewer model cannot be
+    established: those are real provenance gaps and stay fail closed.
+    """
+    recorded = current_head_author_identity(
+        model_comment_bodies(pr_number), pr=pr_number, head=head
+    )
+    try:
+        reviewer_model = model_for_trusted_review_session(reviewer)
+    except RuntimeError:
+        return None
+    if recorded is None or not reviewer_model:
+        return None
+    author_model, author_agent = recorded
+    if marker_model_token(author_agent) == marker_model_token(reviewer) or (
+        normalize_model_family(author_model) == normalize_model_family(reviewer_model)
+    ):
+        return author_model, reviewer_model
+    return None
+
+
 def redact_review_text(text: str) -> str:
     """Redact common credential shapes before review output reaches GitHub."""
     text = SENSITIVE_ASSIGNMENT_RE.sub(r"\1[REDACTED]", text)
@@ -2220,6 +2244,31 @@ def handle_review(
     if not head_has_cross_model_review(
         model_comment_bodies(pr_number), pr=pr_number, head=reviewed_head
     ):
+        same = same_model_review(pr_number=pr_number, head=reviewed_head, reviewer=worker)
+        if same is not None:
+            # The author is known; this reviewer just cannot count for it. That is
+            # not a provenance fault, and parking the PR in factory:blocked strands
+            # an approvable head forever. Send it back for a different model.
+            author_model, reviewer_model = same
+            return return_to_review(
+                pr_number=pr_number,
+                branch=branch,
+                worker=worker,
+                reviewer=worker,
+                verdict=verdict,
+                excerpt="",
+                note=(
+                    f"This approval came from `{reviewer_model}`, the same model family as "
+                    f"the head's author (`{author_model}`), so it cannot satisfy the "
+                    "cross-model review gate. The unchanged head returns to review for a "
+                    "reviewer from a different model family; no code change is needed."
+                ),
+                status="same-model-review",
+                head=reviewed_head,
+                producer=producer,
+                marker=marker,
+                stage="factory:review",
+            )
         return return_to_review(
             pr_number=pr_number,
             branch=branch,
