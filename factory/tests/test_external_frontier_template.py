@@ -25,7 +25,7 @@ def test_github_frontier_is_manual_and_read_only() -> None:
     assert "pull-requests: write" not in workflow
     assert "checkout@v7" in workflow
     assert "persist-credentials: false" in workflow
-    assert "uv tool run --from ./.rotisserie/runtime rotisserie factory" in workflow
+    assert "uv tool run --with 'asyncpg>=0.30,<1' --from ./.rotisserie/runtime rotisserie factory" in workflow
     assert 'next --repo "$GITHUB_REPOSITORY" --json' in workflow
     assert "actions/upload-artifact@v4" in workflow
     assert "retention-days: 1" in workflow
@@ -48,7 +48,7 @@ def test_installer_inserts_pinned_runtime_before_frontier_query() -> None:
     assert "repository: org/rotisserie" in rendered
     assert f"ref: {sha}" in rendered
     assert "bash .rotisserie/runtime/factory/install/overlay.sh" in rendered
-    assert "uv tool run --from ./.rotisserie/runtime" in rendered
+    assert "uv tool run --with 'asyncpg>=0.30,<1' --from ./.rotisserie/runtime" in rendered
     assert rendered.index("Check out Rotisserie factory runtime") < rendered.index(
         "Read controller-ranked frontier"
     )
