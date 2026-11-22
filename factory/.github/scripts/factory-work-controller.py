@@ -29,7 +29,7 @@ from factory_quota_pause import describe as describe_quota_pause, is_paused as q
 from factory_source_budget import budget_block_reason, worker_sources
 from factory_attempt_history import read_comment_history
 from factory_discovery import canonical_target, discover, update_labels
-from factory_state_ledger import acquire_lease, release_lease, renew_verified_workers, worker_claim
+from factory_state_ledger import acquire_lease, release_lease, renew_verified_workers, worker_claim, external_wip_count
 from factory_state_ledger import enabled as ledger_enabled
 from factory_adopter import repository
 REPO = repository()
@@ -1467,12 +1467,18 @@ def assign_from_pool(worker: str, kinds: tuple[str, ...] | None = None,
             if attempt.kind != 'issue':
                 continue
             issue_retry_counts[attempt.number] = issue_retry_counts.get(attempt.number, 0) + 1
+    try:
+        external_wip = external_wip_count(REPO) if ledger_enabled() else 0
+    except Exception as exc:
+        print(f'[factory-controller] external lease capacity unknown ({type(exc).__name__}); holding new intake', file=sys.stderr)
+        external_wip = FACTORY_PR_WIP_LIMIT
     candidates = build_candidates(
         issues,
         prs,
         no_diff_attempts_by_issue=issue_retry_counts,
         no_diff_attempt_records=attempt_records,
         include_backpressured_issues=operator_force,
+        external_wip=external_wip,
     )
     # A PR-only target never leases new issue work; issue-intake authorization
     # is unnecessary and can fail closed or consume remote calls on every
