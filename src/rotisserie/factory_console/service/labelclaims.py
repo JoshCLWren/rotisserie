@@ -179,6 +179,11 @@ def request(
     return {"event": "claim", "target": target, **outcome}
 
 
+def _covered(claim: Mapping[str, object]) -> list[int]:
+    targets = claim.get("targets")
+    return [int(n) for n in targets if isinstance(n, int)] if isinstance(targets, list) else []
+
+
 def _held_by(github: GitHub, number: int, actor: str) -> dict[str, object] | None:
     try:
         found = _holder(github, number)
@@ -276,7 +281,10 @@ def finish(
             ],
         )
         return {"event": "finish", "operation": operation, **result}
-    _remove(github, number, lp.CLAIMED)
+    # The lease covered the PR and its issue; the doctor projected the label on both.
+    covered = {number, *_covered(claim)}
+    for item in sorted(covered):
+        _remove(github, item, lp.CLAIMED)
     lines = [f"@{actor} finished `{claim.get('action')}`."]
     if operation == "handoff":
         lines.append(f"Handed off {evidence}. The factory takes the next step.")

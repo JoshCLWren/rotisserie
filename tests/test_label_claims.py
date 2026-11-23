@@ -35,6 +35,7 @@ class FakeGitHub:
         self.definitions: list[str] = []
         self.events: dict[int, list[dict[str, Any]]] = {}
         self.closed: set[int] = set()
+        self.updated: dict[int, str] = {}
         self.lock = threading.Lock()
 
     def _row(self, number: int) -> dict[str, Any]:
@@ -43,6 +44,8 @@ class FakeGitHub:
             "state": "closed" if number in self.closed else "open",
             "labels": [{"name": n} for n in sorted(self.items[number])],
         }
+        if number in self.updated:
+            row["updated_at"] = self.updated[number]
         if self.kinds.get(number) == "pr":
             row["pull_request"] = {}
         return row
@@ -239,6 +242,22 @@ def test_doctor_withholds_availability_when_neon_is_unknown() -> None:
     assert github.items[8] == {"factory", "factory:unowned", "factory:claimed"}
 
 
+def test_doctor_ages_a_claim_label_by_the_last_update_when_events_are_missing() -> None:
+    # GitHub stops listing events on a busy item, so the label add can be absent.
+    github = FakeGitHub(
+        {
+            7: {"factory", "factory:unowned", "factory:claimed"},
+            8: {"factory", "factory:unowned", "factory:claimed"},
+        }
+    )
+    github.updated = {7: "2026-11-01T00:00:00Z", 8: NOW.isoformat()}
+    snap = snapshot(offer("issue:7", "implement"), offer("issue:8", "implement"))
+    report = labels.repair(cast(GitHub, github), now=NOW, snapshot=snap)
+    assert "factory:claimed" not in github.items[7]
+    assert "factory:claimed" in github.items[8]
+    assert {"target": "issue:8", "holds": ["claim request not answered yet"]} in report.holds
+
+
 def test_doctor_skips_items_changed_since_audit() -> None:
     github = FakeGitHub({7: {"factory", "factory:unowned"}})
     report, plans = labels.audit(
@@ -431,6 +450,28 @@ def test_finished_claim_with_evidence_hands_off_and_wakes_the_next_stage(
         "target": "pr:12",
         "action": "advance",
     }
+
+
+def test_finish_clears_the_label_on_every_item_the_lease_covered(
+    neon: Neon, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(
+        labelclaims, "_evidence", lambda github, claim: f"https://github.com/{REPO}/pull/12"
+    )
+    github = FakeGitHub(
+        {12: {"factory", "factory:claimed"}, 9: {"factory", "factory:review", "factory:claimed"}}
+    )
+    github.kinds[12] = "pr"
+    labelclaims.handle(
+        cast(GitHub, github), "issues", event("factory:claimed", "labeled", 12), dict(ACTIONS_ENV)
+    )
+    neon.claims[12]["targets"] = [12, 9]
+    github.items[12].discard("factory:claimed")
+    result = labelclaims.handle(
+        cast(GitHub, github), "issues", event("factory:claimed", "unlabeled", 12), dict(ACTIONS_ENV)
+    )
+    assert result["operation"] == "handoff"
+    assert "factory:claimed" not in github.items[9]
 
 
 def test_bot_and_mismatched_senders_are_ignored(neon: Neon) -> None:
