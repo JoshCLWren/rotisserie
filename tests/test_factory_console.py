@@ -2681,7 +2681,7 @@ def test_wait_for_work_uses_the_whole_timeout(fake: FakeGitHub) -> None:
     code, out = invoke(["wait-for-work", "--via", "github", "--timeout", "120"], clock=clock)
     assert code == 3
     assert clock.current - START == timedelta(seconds=120)
-    assert len([call for call in fake.calls if call[0] == "workflow"]) == 2
+    assert len([call for call in fake.calls if call[0] == "workflow"]) == 1
 
 
 def test_advertised_at_is_refused_with_via_github(fake: FakeGitHub) -> None:
@@ -2745,7 +2745,8 @@ def test_wait_for_work_gives_up_after_its_timeout(fake: FakeGitHub) -> None:
     )
     assert code == 3
     assert "No work an outside agent can take" in out
-    assert len([call for call in fake.calls if call[0] == "workflow"]) == 4  # 0, 300, 600, 900s
+    # Checks at 0, 300 and 600s; none starts at the 900s deadline.
+    assert len([call for call in fake.calls if call[0] == "workflow"]) == 3
 
 
 def test_wait_for_work_waits_while_required_ci_runs(fake: FakeGitHub) -> None:

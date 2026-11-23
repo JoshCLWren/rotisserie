@@ -1969,7 +1969,19 @@ def cmd_wait_for_work(context: Context, arguments: argparse.Namespace) -> Outcom
     console = context.console
     started = context.clock.now()
     checks = 0
+    data: dict[str, object] = {}
     while True:
+        waited = (context.clock.now() - started).total_seconds()
+        if arguments.timeout and waited >= arguments.timeout and checks:
+            # No check starts at or after the deadline: a GitHub check is a
+            # workflow run that could keep the caller waiting long past it.
+            console.finish()
+            console.warn(f"No work an outside agent can take after {duration(waited)}.")
+            return Outcome(
+                Result.NO_WORK,
+                EXIT_CODES[Result.NO_WORK],
+                {"status": "none", "checks": checks, "frontier": data},
+            )
         checks += 1
         try:
             data = _snapshot(context, via)
@@ -2010,16 +2022,8 @@ def cmd_wait_for_work(context: Context, arguments: argparse.Namespace) -> Outcom
         waited = (context.clock.now() - started).total_seconds()
         pause = float(interval)
         if arguments.timeout:
-            # Use the whole timeout: the last pause may be shorter.
-            pause = min(pause, arguments.timeout - waited)
-        if pause <= 0:
-            console.finish()
-            console.warn(f"No work an outside agent can take after {duration(waited)}.")
-            return Outcome(
-                Result.NO_WORK,
-                EXIT_CODES[Result.NO_WORK],
-                {"status": "none", "checks": checks, "frontier": data},
-            )
+            # Wait out the whole timeout; the last pause may be shorter.
+            pause = max(0.0, min(pause, arguments.timeout - waited))
         if data.get("authoritative_claim_available") is not True:
             reason = "lease authority unavailable"
         elif not_yet:
