@@ -1173,3 +1173,43 @@ def test_issue_implemented_by_a_pr_opened_after_the_snapshot_is_released(
     assert result["status"] == "conflict"
     assert "no longer eligible" in str(result["reason"])
     assert setup.holder is None
+
+
+@pytest.mark.parametrize(
+    ("body", "labels"),
+    [("Fix\n<!-- factory-execution:manual-only -->", []), ("", ["factory:blocked"])],
+)
+def test_handoff_honors_a_human_hold_added_after_reservation(
+    setup: LedgerDouble, body: str, labels: list[str]
+) -> None:
+    _repair_claim(setup)
+    github = GitHubDouble(head="b" * 40)
+    github.review_labels = ["factory", "factory:changes-requested", "factory:unowned", *labels]
+    github.pr_body = body or "Repair"
+    with pytest.raises(ValueError, match="human hold"):
+        external.claim_action(
+            cast(GitHub, github),
+            client="codebuff",
+            claim_id=TOKEN,
+            operation="handoff",
+            environment=BRIDGE,
+            evidence=f"https://github.com/{REPO}/pull/88",
+        )
+    assert setup.holder == "codebuff"
+    assert github.comments == [] and github.label_writes == 0
+
+
+def test_prerequisite_declared_after_the_snapshot_releases_our_claim(
+    setup: LedgerDouble,
+) -> None:
+    class Declared(GitHubDouble):
+        def repo_api(self, route: str) -> Any:
+            row = super().repo_api(route)
+            if route == "issues/7":
+                row = {**row, "body": "Depends on #99"}
+            return row
+
+    result = external.reserve_next(cast(GitHub, Declared()), client="chatgpt", environment={})
+    assert result["status"] == "conflict"
+    assert "depends on open #99" in str(result["reason"])
+    assert setup.holder is None

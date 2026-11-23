@@ -281,6 +281,11 @@ def _post_claim_change(
         blocked, why = queue.open_blocker(github, int(number_text))
         if blocked:
             return why or "dependency graph changed after reservation"
+        body = string(live, "body")
+        for prerequisite in sorted(core.parse_depends_on_numbers(body) - {int(number_text)}):
+            row = obj(github.repo_api(f"issues/{prerequisite}"))
+            if string(row, "state") == "open":
+                return f"issue now depends on open #{prerequisite}"
         all_labels = labels
     else:
         all_labels = set(labels)
@@ -746,6 +751,8 @@ def _verify_and_project_handoff(
     labels = core.labels_of(pr)
     if core.owner_of(labels) not in (None, "factory:unowned"):
         raise ValueError("handoff PR is owned by another worker")
+    if core.eligibility.is_manual_only(string(pr, "body")) or labels & core.BLOCKED_LABELS:
+        raise ValueError("the PR is on a human hold (manual-only or blocked); nothing was changed")
     stage = core.stage_of(labels)
     head_at_claim = ""
     if action == "implement":
