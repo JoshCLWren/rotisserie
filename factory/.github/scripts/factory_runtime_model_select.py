@@ -83,6 +83,7 @@ def provider_catalog(
 def select(
     source: str, worker: str, catalog: Mapping[str, Any],
     exclusions: Mapping[str, list[str]] | None = None,
+    rotation: int = 0,
 ) -> dict[str, str | bool]:
     """Rank published candidates without a checked-in model inventory."""
     result = discover(source, json.dumps(catalog))
@@ -95,7 +96,7 @@ def select(
         raise CandidateUnavailableError(
             f"{source}: catalog contained no eligible candidates outside cooldown"
         )
-    digest = hashlib.sha256(f"{source}:{worker}".encode()).digest()
+    digest = hashlib.sha256(f"{source}:{worker}:{rotation}".encode()).digest()
     candidate = candidates[int.from_bytes(digest[:8], "big") % len(candidates)]
     return {
         "source": source,
@@ -112,6 +113,7 @@ def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--source", required=True, choices=sorted(ADAPTERS))
     parser.add_argument("--worker", required=True)
+    parser.add_argument("--rotation", type=int, default=0)
     parser.add_argument("--exclusions-file", type=Path)
     parser.add_argument("--catalog-json", type=Path, help="synthetic offline test catalog")
     args = parser.parse_args()
@@ -134,7 +136,7 @@ def main() -> int:
             ):
                 raise CandidateUnavailableError("invalid trusted model cooldown projection")
             excluded = value
-        result = select(args.source, args.worker, raw, excluded)
+        result = select(args.source, args.worker, raw, excluded, args.rotation)
     except (CandidateUnavailableError, OSError, ValueError) as exc:
         print(f"factory catalog: {exc}", file=sys.stderr)
         return 1
