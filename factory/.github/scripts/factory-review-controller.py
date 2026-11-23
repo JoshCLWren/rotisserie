@@ -1376,8 +1376,13 @@ def outside_claim(pr_number: int, pr: Mapping[str, Any]) -> str | None:
     try:
         ledger = importlib.import_module("factory_state_ledger")
         if not ledger.enabled():
-            if os.environ.get("FACTORY_NEON_CONFIGURED") == "true":
+            configured = os.environ.get("FACTORY_NEON_CONFIGURED")
+            if configured == "true":
                 return "outside-agent claims could not be read (Neon configured, not connected)"
+            if configured is None and os.environ.get("GITHUB_ACTIONS") == "true":
+                # A workflow step that never says whether Neon is configured
+                # cannot tell "no claim store" from "store unreachable".
+                return "outside-agent claims could not be read (FACTORY_NEON_CONFIGURED unset)"
             return None
         numbers = [pr_number]
         linked = linked_issue_for_pr(pr_number, str(pr.get("headRefName") or ""))

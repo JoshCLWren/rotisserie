@@ -624,7 +624,7 @@ TOKEN = "11111111-1111-4111-8111-111111111111"
 
 def _repair_claim(setup: LedgerDouble, action: str = "review-findings") -> None:
     setup.holder = "codebuff"
-    setup.claim = {"target": "pr:88", "action": action, "head": "a" * 40, "targets": [88]}
+    setup.claim = {"target": "pr:88", "action": action, "head": "a" * 40, "targets": [7, 88]}
 
 
 @pytest.mark.parametrize(
@@ -695,6 +695,47 @@ def test_repair_handoff_cannot_point_at_another_pr(setup: LedgerDouble) -> None:
             evidence=f"https://github.com/{REPO}/pull/88",
         )
     assert setup.holder == "codebuff"
+
+
+def test_repair_handoff_refuses_a_pr_relinked_to_an_unclaimed_issue(
+    setup: LedgerDouble,
+) -> None:
+    _repair_claim(setup)
+    github = GitHubDouble(head="b" * 40)
+    github.review_labels = ["factory", "factory:changes-requested", "factory:unowned"]
+    github.pr_body = "Closes #9"
+    with pytest.raises(ValueError, match="now links #9"):
+        external.claim_action(
+            cast(GitHub, github),
+            client="codebuff",
+            claim_id=TOKEN,
+            operation="handoff",
+            environment=BRIDGE,
+            evidence=f"https://github.com/{REPO}/pull/88",
+        )
+    assert setup.holder == "codebuff"
+    assert github.comments == []
+    assert github.label_writes == 0
+
+
+@pytest.mark.parametrize("body", ["Repair the build", "Closes #7"])
+def test_repair_handoff_allows_a_dropped_or_closed_link(setup: LedgerDouble, body: str) -> None:
+    _repair_claim(setup)
+    github = GitHubDouble(head="b" * 40)
+    github.review_labels = ["factory", "factory:changes-requested", "factory:unowned"]
+    github.pr_body = body
+    github.branch = "repair-88"
+    github.closed = {7}
+    result = external.claim_action(
+        cast(GitHub, github),
+        client="codebuff",
+        claim_id=TOKEN,
+        operation="handoff",
+        environment=BRIDGE,
+        evidence=f"https://github.com/{REPO}/pull/88",
+    )
+    assert result["handoff_recorded"] is True
+    assert setup.holder is None
 
 
 @pytest.mark.parametrize("route", ["issues/7", "actions/runs/12345"])
@@ -1341,3 +1382,54 @@ def test_conflicted_head_with_settled_ci_is_open_to_merge_conflict_work() -> Non
     assert external._conflict_without_ci(cast(GitHub, Conflicted(settled)), 44, head) is True
     assert external._conflict_without_ci(cast(GitHub, Conflicted(running)), 44, head) is False
     assert external._conflict_without_ci(cast(GitHub, Conflicted(settled)), 44, "b" * 40) is False
+
+
+class RelinkLater(GitHubDouble):
+    """Edits the PR body to link #9 right after the first write of one kind."""
+
+    def __init__(self, trigger: str, **kwargs: Any) -> None:
+        super().__init__(**kwargs)
+        self.trigger = trigger
+
+    def gh(self, *args: str, **kwargs: Any) -> str:
+        result = super().gh(*args, **kwargs)
+        if len(args) > 1 and self.trigger in str(args[1]):
+            self.pr_body = "Closes #9"
+        return result
+
+
+@pytest.mark.parametrize("trigger", ["/comments", "/labels"])
+def test_repair_relinked_during_handoff_keeps_the_claim(setup: LedgerDouble, trigger: str) -> None:
+    _repair_claim(setup)
+    github = RelinkLater(trigger, head="b" * 40)
+    github.review_labels = ["factory", "factory:changes-requested", "factory:unowned"]
+    with pytest.raises(ValueError, match="now links #9"):
+        external.claim_action(
+            cast(GitHub, github),
+            client="codebuff",
+            claim_id=TOKEN,
+            operation="handoff",
+            environment=BRIDGE,
+            evidence=f"https://github.com/{REPO}/pull/88",
+        )
+    assert setup.holder == "codebuff"
+    assert github.label_writes == (0 if trigger == "/comments" else 2)
+
+
+@pytest.mark.parametrize("trigger", ["/comments", "/labels"])
+def test_implementation_relinked_during_handoff_keeps_the_claim(
+    setup: LedgerDouble, trigger: str
+) -> None:
+    github = RelinkLater(trigger)
+    reserved = external.reserve_next(cast(GitHub, github), client="chatgpt", environment={})
+    assert reserved["status"] == "reserved"
+    with pytest.raises(ValueError, match="Closes #N"):
+        external.claim_action(
+            cast(GitHub, github),
+            client="chatgpt",
+            claim_id=TOKEN,
+            operation="handoff",
+            environment=BRIDGE,
+            evidence=f"https://github.com/{REPO}/pull/88",
+        )
+    assert setup.holder is not None
