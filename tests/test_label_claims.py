@@ -13,7 +13,7 @@ from urllib.parse import unquote
 
 import pytest
 
-from rotisserie.factory_console.github import GitHub
+from rotisserie.factory_console.github import GitHub, GitHubNotFoundError
 from rotisserie.factory_console.service import external, frontier, labelclaims, labels
 
 REPO = "acme/widgets"
@@ -90,6 +90,8 @@ class FakeGitHub:
                 return "{}"
             number = int(parts[4])
             name = unquote(parts[6])
+            if name not in self.items[number]:
+                raise GitHubNotFoundError("GitHub says that does not exist or you cannot see it.")
             self.items[number].discard(name)
             self.writes.append(("remove", number, name))
             return "{}"
@@ -670,3 +672,13 @@ def test_claim_on_closed_work_is_dropped_without_a_rejection_label(neon: Neon) -
     assert result["reason"] == "closed"
     assert github.items[7] == {"factory"}
     assert neon.claims == {} and github.comments == {}
+
+
+def test_accepted_claim_on_an_item_without_availability_still_answers(neon: Neon) -> None:
+    """Live bug: removing an absent label raised and left an unanswered Neon claim."""
+    github = FakeGitHub({7: {"factory", "factory:unowned", "factory:claimed"}})
+    result = labelclaims.handle(
+        cast(GitHub, github), "issues", event("factory:claimed", "labeled"), dict(ACTIONS_ENV)
+    )
+    assert result["status"] == "reserved"
+    assert "Accepted: @alice" in github.comments[7][0]["body"]
