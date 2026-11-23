@@ -49,6 +49,8 @@ READ_ONLY = frozenset(
         "review",
         "conflicts",
         "unstick",
+        "runs",
+        "follow",
     )
 )
 MAX_BODY = 4096
@@ -90,6 +92,8 @@ def read_command(name: str, query: Mapping[str, str]) -> list[str]:
         "checks": {"target"},
         "review": {"target"},
         "conflicts": {"target"},
+        "runs": {"target"},
+        "follow": {"target"},
         "report": {"since"},
         "stats": {"window"},
     }
@@ -104,6 +108,10 @@ def read_command(name: str, query: Mapping[str, str]) -> list[str]:
             args.append(_match(target, re.compile(r"^issue:[1-9][0-9]*$"), "target"))
     elif name in ("checks", "review", "conflicts"):
         args.append(_match(_string(query, "target", required=True), PR, "target"))
+    elif name == "runs":
+        args.append(_match(_string(query, "target", required=True), TARGET, "target"))
+    elif name == "follow":
+        args.extend((_match(_string(query, "target", required=True), TARGET, "target"), "--once"))
     elif name == "report":
         since = _string(query, "since") or "12h"
         args.extend(("--since", _match(since, re.compile(r"^[0-9]{1,3}[hd]$"), "since")))
@@ -169,6 +177,18 @@ def write_command(data: Mapping[str, Any]) -> list[str]:
         return ["doctor", "--fix"]
     if name == "release_expired":
         return ["leases", "--release-expired"]
+    if name in ("claim", "finish"):
+        return [name, _match(_string(data, "target", required=True), TARGET, "target"), "--no-wait"]
+    if name == "labels":
+        mode = _string(data, "mode") or "dry-run"
+        flags = {
+            "dry-run": [],
+            "repair": ["--repair"],
+            "delete-legacy": ["--repair", "--delete-legacy"],
+        }
+        if mode not in flags:
+            raise InvalidRequest("Invalid label doctor mode")
+        return ["labels", *flags[mode], "--via", "github", "--no-wait"]
     raise InvalidRequest("Unknown write operation")
 
 

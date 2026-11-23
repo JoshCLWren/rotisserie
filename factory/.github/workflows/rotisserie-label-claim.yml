@@ -1,7 +1,7 @@
 # Installed into adopter by factory/install/install.py. Trusted label claims -> shared Neon (#191).
 # Every trigger here runs the default-branch workflow file, never a PR's copy.
 name: Rotisserie Label Claim Controller
-run-name: Label claim · ${{ github.event_name }} · ${{ github.actor }}
+run-name: Label claim · ${{ github.event.issue.number && format('#{0}', github.event.issue.number) || github.event.pull_request.number && format('#{0}', github.event.pull_request.number) || inputs.mode }} · ${{ github.event_name }} · ${{ github.actor }}
 on:
   issues:
     types: [labeled, unlabeled]
@@ -14,10 +14,14 @@ on:
   workflow_dispatch:
     inputs:
       mode:
-        description: Label doctor mode
+        description: Label doctor mode, or leases to read Neon holders
         type: choice
-        options: [dry-run, repair, delete-legacy]
+        options: [dry-run, repair, delete-legacy, leases]
         default: dry-run
+      targets:
+        description: For leases, space-separated issue:N / pr:N (blank means every lease)
+        type: string
+        required: false
 
 permissions:
   contents: read
@@ -94,6 +98,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           MODE: ${{ inputs.mode }}
+          TARGETS: ${{ inputs.targets }}
         run: |
           set -Eeuo pipefail
           test -f .rotisserie/runtime/pyproject.toml
@@ -104,6 +109,12 @@ jobs:
               case "$MODE" in
                 repair) args=(factory labels --repair) ;;
                 delete-legacy) args=(factory labels --repair --delete-legacy) ;;
+                leases)
+                  read -r -a wanted <<< "${TARGETS:-}"
+                  for item in "${wanted[@]}"; do
+                    [[ "$item" =~ ^(issue|pr):[1-9][0-9]*$ ]] || exit 2
+                  done
+                  args=(factory leases "${wanted[@]}") ;;
                 *) args=(factory labels) ;;
               esac ;;
             *)

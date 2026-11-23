@@ -25,6 +25,8 @@ class GitHubError(RuntimeError):
     """GitHub could not complete a request."""
 
     exit_code = 5
+    # Which call failed, as method and route only (never field values).
+    request: str = ""
 
 
 class GitHubAuthError(GitHubError):
@@ -86,6 +88,35 @@ def _classify(message: str) -> GitHubError:
     return GitHubError(f"GitHub request failed: {detail}")
 
 
+VALUE_FLAGS = frozenset(
+    {"-f", "-F", "--field", "--raw-field", "--input", "--body", "-b", "--jq", "-q"}
+)
+
+
+def describe_request(args: Sequence[str]) -> str:
+    """``gh`` subcommand, method and routes of a call, without any field value."""
+    words: list[str] = []
+    method = "GET"
+    skip = False
+    for index, arg in enumerate(args):
+        if skip:
+            skip = False
+            continue
+        if arg in VALUE_FLAGS:
+            skip = True
+            continue
+        if arg in ("--method", "-X") and index + 1 < len(args):
+            method = args[index + 1]
+            skip = True
+            continue
+        if arg.startswith("-"):
+            continue
+        words.append(arg)
+    if words[:1] == ["api"]:
+        return f"{method} {' '.join(words[1:])}".strip()
+    return " ".join(words)
+
+
 class GitHub:
     """Repository-scoped GitHub access through ``gh``."""
 
@@ -119,7 +150,9 @@ class GitHub:
         except OSError as exc:
             raise GitHubError(f"Could not run the GitHub CLI: {exc}") from None
         if completed.returncode != 0 and not (allow_exit_one and completed.returncode == 1):
-            raise _classify(completed.stderr or completed.stdout)
+            error = _classify(completed.stderr or completed.stdout)
+            error.request = describe_request(args)
+            raise error
         return completed.stdout
 
     def api(self, path: str, *, method: str = "GET", fields: dict[str, str] | None = None) -> JSON:

@@ -97,6 +97,11 @@ When editing:
 - Do not weaken or delete a regression test unless the issue explicitly
   changes the invariant it proves. Add the replacement assertion first.
 - Keep source-reference behavior traceable in commit messages or documentation.
+- Any factory operation you do by hand (a script, a polling loop, or a chain of
+  `gh` commands) becomes a `rotisserie factory` command. Put its logic in a
+  service under `src/rotisserie/factory_console/service/` that returns plain
+  data, so the CLI only renders it and other consumers such as the web UI can
+  call it.
 
 ## Tests
 

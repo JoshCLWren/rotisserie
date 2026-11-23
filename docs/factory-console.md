@@ -575,6 +575,29 @@ outside agent's claim on the target. Agents
 with only GitHub access use the installed **Rotisserie External Claim
 Controller** workflow. Full rules: [external-agent-claims.md](external-agent-claims.md).
 
+### Label claims from the console
+
+These commands drive the label claim controller (#191) and need no Neon
+connection on your machine. Each one waits for the controller's own answer:
+
+```bash
+rotisserie factory claim pr:N                # add factory:claimed, show accepted/rejected
+rotisserie factory finish pr:N               # remove it, show the hand-off or release
+rotisserie factory wait-for-work --claim --via github   # wait, then claim the first item
+rotisserie factory runs pr:N                 # the controller's recent runs and results
+rotisserie factory follow pr:N               # print each stage change until done or held
+rotisserie factory follow pr:N --once        # where it stands now
+rotisserie factory labels --via github [--repair]       # label doctor report
+rotisserie factory leases pr:N --via github  # who holds it in Neon
+rotisserie factory why issue:N --via github  # eligibility plus the Neon holder
+```
+
+`wait-for-work` never offers a review of a PR you authored, because GitHub
+refuses that review. `claim`, `finish` and `labels --via github` take
+`--no-wait` to start and return at once (the web UI uses that form). Any
+GitHub failure now names the request that failed (`failed_request` in
+`--json`), without field values.
+
 ## Other front ends
 
 The console's logic lives in `rotisserie.factory_console.service`, which never
@@ -599,7 +622,8 @@ print(plan.to_dict())
 
 `queue` (why), `unstick` (plan and start), `outcomes` (did it work),
 `catalog` (models offered now), `dispatch` (submit a request),
-`reliability` (track record) and `providers` (setup) are in the service so far.
+`reliability` (track record), `providers` (setup), `labels` (label doctor) and
+`claimops` (label claims, controller runs, following an item) are in the service so far.
 Older commands still mix reading, deciding and printing in `commands.py` and
 move into the service when they are next changed.
 
