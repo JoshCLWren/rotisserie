@@ -895,6 +895,21 @@ def main() -> int:
                    "unavailable_candidates", "healthy_candidates", "degraded_candidates",
                    "delivery_funnel")
     public = {key: snapshot[key] for key in public_keys if key in snapshot}
+    # GitHub user IDs are public identifiers, never credentials. The workflow
+    # independently authorizes each command against this same repo variable.
+    admin_ids = os.environ.get("ROTISSERIE_ADMIN_GITHUB_IDS") or "4014199"
+    public["admin_ids"] = (
+        [int(value) for value in admin_ids.split(",")]
+        if re.fullmatch(r"[0-9]+(?:,[0-9]+)*", admin_ids) else []
+    )
+    public["workers"] = [
+        {key: row[key] for key in (
+            "worker", "activity", "work", "runtime_source", "runtime_model",
+            "attempt_run", "updated", "attempt_outcome", "delivery_outcome",
+            "persisted_work",
+        ) if key in row}
+        for row in snapshot["workers"]
+    ]
     (OUTPUT.parent / "factory-status-snapshot.json").write_text(
         json.dumps(public, ensure_ascii=True, separators=(",", ":")), encoding="utf-8"
     )
