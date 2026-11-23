@@ -458,7 +458,7 @@ jobs:
             fi
             if fallback="$(python3 .github/scripts/factory_model_failover.py \
                 --source "$SOURCE" --worker "$WORKER" \
-                --rotation "${GITHUB_RUN_NUMBER:-0}" \
+                --rotation "${GITHUB_RUN_ID:-0}" \
                 --exclusions-file "$exclusions_file" \
                 --eligible-sources-file "$RUNNER_TEMP/factory-fleet-sources.json" \
                 --fleet-catalog-cache "$RUNNER_TEMP/factory-fleet-catalogs.json" \
@@ -484,7 +484,7 @@ jobs:
               catalog="$RUNNER_TEMP/factory-kilo-catalog"
               if kilo models kilo --refresh > "$catalog"; then
                 selection="$(python3 .github/scripts/factory_kilo_catalog.py \
-                  --catalog "$catalog" --worker "$WORKER" \
+                  --catalog "$catalog" --worker "$WORKER" --rotation "${GITHUB_RUN_ID:-0}" \
                   --exclusions-file "$exclusions_file")" \
                   || fleet_fallback 'Kilo catalog has no eligible candidate'
               else
@@ -498,14 +498,14 @@ jobs:
                 required_model_args+=(--required-model "$REQUESTED_MODEL")
               fi
               selection="$(python3 .github/scripts/factory_opencode_go.py \
-                --worker "$WORKER" --rotation "${GITHUB_RUN_NUMBER:-0}" \
+                --worker "$WORKER" --rotation "${GITHUB_RUN_ID:-0}" \
                 --exclusions-file "$exclusions_file" --catalog-output "$catalog" \
                 "${required_model_args[@]}")" \
                 || fleet_fallback 'Go key or free catalog unavailable'
               ;;
             openrouter-free|vercel-ai-gateway)
               selection="$(python3 .github/scripts/factory_published_model_catalog.py \
-                --source "$SOURCE" --worker "$WORKER" \
+                --source "$SOURCE" --worker "$WORKER" --rotation "${GITHUB_RUN_ID:-0}" \
                 --exclusions-file "$exclusions_file")" \
                 || fleet_fallback 'published catalog has no eligible candidate'
               ;;
@@ -519,12 +519,12 @@ jobs:
                 exit 1
               }
               selection="$(python3 .github/scripts/factory_runtime_model_select.py \
-                --source "$SOURCE" --worker "$WORKER" --catalog-json "$catalog" \
+                --source "$SOURCE" --worker "$WORKER" --rotation "${GITHUB_RUN_ID:-0}" --catalog-json "$catalog" \
                 --exclusions-file "$exclusions_file")"
               ;;
             *)
               selection="$(python3 .github/scripts/factory_runtime_model_select.py \
-                --source "$SOURCE" --worker "$WORKER" \
+                --source "$SOURCE" --worker "$WORKER" --rotation "${GITHUB_RUN_ID:-0}" \
                 --exclusions-file "$exclusions_file")" \
                 || fleet_fallback 'provider catalog has no eligible candidate'
               ;;
@@ -538,7 +538,7 @@ jobs:
           # lane's own pick, and cooled models stay excluded either way.
           if [[ "$REQUESTED_MODEL" == auto && "$selected_source" == "$SOURCE" ]]; then
             proven_args=(--source "$SOURCE" --worker "$WORKER" --proven-only
-              --rotation "${GITHUB_RUN_NUMBER:-0}" --exclusions-file "$exclusions_file")
+              --rotation "${GITHUB_RUN_ID:-0}" --exclusions-file "$exclusions_file")
             case "$SOURCE" in
               opencode-free) proven_args+=(--catalog-json "${catalog:-/nonexistent}") ;;
               kilo-auto) proven_args+=(--catalog-file "${catalog:-/nonexistent}") ;;
@@ -553,7 +553,7 @@ jobs:
           # No extra OpenCode route, worker identity, or provider-wide ban.
           if [[ "$REQUESTED_MODEL" == auto && "$REQUESTED_PROVIDER" == auto && -n "${OPENCODE_API_KEY:-}" ]] &&
              jq -e 'index("opencode-free") != null' "$RUNNER_TEMP/factory-fleet-sources.json" >/dev/null; then
-            go_args=(--worker "$WORKER" --rotation "${GITHUB_RUN_NUMBER:-0}"
+            go_args=(--worker "$WORKER" --rotation "${GITHUB_RUN_ID:-0}"
               --exclusions-file "$exclusions_file")
             if [[ -f "$RUNNER_TEMP/factory-go-catalog.json" ]]; then
               go_args+=(--catalog-json "$RUNNER_TEMP/factory-go-catalog.json")
@@ -589,7 +589,7 @@ jobs:
               fi
               if (( ${#avoided[@]} > 32 )) || ! selection="$(python3 .github/scripts/factory_model_failover.py \
                   --source "$SOURCE" --worker "$WORKER" \
-                  --rotation "${GITHUB_RUN_NUMBER:-0}" \
+                  --rotation "${GITHUB_RUN_ID:-0}" \
                   --exclusions-file "$exclusions_file" \
                   "${repick[@]}" "${avoided[@]}")"; then
                 printf 'model_unavailable\tNo eligible reviewer model outside the PR authors\n' > "$discovery_outcome"
