@@ -255,6 +255,16 @@ def _post_claim_change(
         all_labels = labels
     else:
         all_labels = set(labels)
+        live_link = core.linked_issue_from_pr(
+            {
+                "number": int(number_text),
+                "headRefName": string(obj(live.get("head")), "ref"),
+                "body": string(live, "body"),
+                "title": string(live, "title"),
+            }
+        )
+        if live_link is not None and live_link not in numbers:
+            return "the pull request's linked issue changed after reservation"
         if len(numbers) == 2:
             linked = next(n for n in numbers if n != int(number_text))
             linked_row = obj(github.repo_api(f"issues/{linked}"))
@@ -350,7 +360,6 @@ def handoff_packet(
         "expires_at": expires_at,
         "renew": f"rotisserie factory renew {claim_id} {cli}",
         "release": f"rotisserie factory release {claim_id} {cli}",
-        "handoff_command": f"rotisserie factory handoff {claim_id} {cli} --evidence URL",
         "renew_github": f"{bridge} -f operation=renew",
         "release_github": f"{bridge} -f operation=release",
         "handoff_github": f"{bridge} -f operation=handoff -f evidence=URL",
@@ -558,7 +567,9 @@ def reserve_next(
     return outcome
 
 
-def _project_review_stage(github: GitHub, core: ModuleType, number: int, labels: set[str]) -> None:
+def _project_review_stage(
+    github: GitHub, core: ModuleType, number: int, labels: set[str], head: str
+) -> None:
     """Put a PR into the factory's existing review queue, exactly as a worker would.
 
     A factory worker finishing an implementation or repair leaves its PR in
@@ -580,7 +591,10 @@ def _project_review_stage(github: GitHub, core: ModuleType, number: int, labels:
             "-",
             stdin=json.dumps({"labels": sorted(wanted)}),
         )
-    actual = core.labels_of(obj(github.repo_api(f"pulls/{number}")))
+    final = obj(github.repo_api(f"pulls/{number}"))
+    if string(obj(final.get("head")), "sha") != head:
+        raise ValueError("the pull request moved during handoff; hand off its new head")
+    actual = core.labels_of(final)
     if core.stage_of(actual) != "factory:review" or core.owner_of(actual) != "factory:unowned":
         raise RuntimeError("could not verify the review handoff labels")
 
@@ -620,7 +634,7 @@ def _record_author(
     """
     if environment.get("GITHUB_ACTIONS") != "true":
         raise ValueError(
-            "this handoff must run in the GitHub bridge so the factory records its "
+            "handoffs run in the GitHub bridge so the factory records the head's "
             f"author: gh workflow run {WORKFLOW} --repo {github.repo} --ref main "
             "-f operation=handoff -f client=CLIENT -f claim_id=UUID -f evidence=URL"
         )
@@ -693,12 +707,10 @@ def _verify_and_project_handoff(
     else:
         raise ValueError("unsupported claimed action")
     model = _author_model(github, head)
-    owner_authored = string(obj(pr.get("user")), "login") == github.repo.split("/", 1)[0]
-    if action in REPAIRS or not owner_authored or (environment or {}).get("GITHUB_ACTIONS"):
-        # A repair head, or a PR the review controller cannot attest from its
-        # owner-authored-head rule, needs the bridge's trusted author record.
-        _record_author(github, pr_number, head, model, str(claim["client"]), environment or {})
-    _project_review_stage(github, core, pr_number, labels)
+    # Every handoff gets the bridge's trusted author record for this exact
+    # head; the review controller cannot attest every outside head itself.
+    _record_author(github, pr_number, head, model, str(claim["client"]), environment or {})
+    _project_review_stage(github, core, pr_number, labels, head)
 
 
 def _evidence_pr(github: GitHub, evidence: str) -> int | None:

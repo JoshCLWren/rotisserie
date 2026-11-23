@@ -486,7 +486,7 @@ def test_fenced_implementation_handoff_enrolls_linked_pr_for_independent_review(
         client="chatgpt",
         claim_id="11111111-1111-4111-8111-111111111111",
         operation="handoff",
-        environment={},
+        environment=BRIDGE,
         evidence=f"https://github.com/{REPO}/pull/88",
     )
     assert delivered["handoff_recorded"] is True
@@ -693,7 +693,7 @@ def test_failed_label_projection_never_loses_the_claim(setup: LedgerDouble) -> N
             client="chatgpt",
             claim_id=TOKEN,
             operation="handoff",
-            environment={},
+            environment=BRIDGE,
             evidence=f"https://github.com/{REPO}/pull/88",
         )
     assert setup.holder == "chatgpt"
@@ -900,7 +900,7 @@ def test_handoff_names_the_evidence_pr_for_the_ledger_fence(setup: LedgerDouble)
         client="chatgpt",
         claim_id=TOKEN,
         operation="handoff",
-        environment={},
+        environment=BRIDGE,
         evidence=f"https://github.com/{REPO}/pull/88",
     )
     assert seen == [88]
@@ -951,7 +951,7 @@ def test_closing_another_repositorys_issue_is_not_a_conflict() -> None:
     assert external._closed_issues(REPO, "Closes #7. Fixes other/repo#9") == {7}
 
 
-def test_app_authored_implementation_pr_needs_the_bridge_author_record(
+def test_every_handoff_needs_the_bridge_author_record(
     setup: LedgerDouble,
 ) -> None:
     github = GitHubDouble()
@@ -999,4 +999,56 @@ def test_repair_pr_opted_out_after_the_snapshot_releases_our_claim(
     result = external.reserve_next(cast(GitHub, github), client="chatgpt", environment={})
     assert result["status"] == "conflict"
     assert "no longer eligible" in str(result["reason"])
+    assert setup.holder is None
+
+
+def test_head_that_moves_during_handoff_keeps_the_claim(setup: LedgerDouble) -> None:
+    class Moving(GitHubDouble):
+        def gh(self, *args: str, **kwargs: Any) -> str:
+            result = super().gh(*args, **kwargs)
+            if args[1:2] and str(args[1]).endswith("/labels"):
+                self.head = "c" * 40  # someone pushed right after verification
+            return result
+
+    github = Moving()
+    external.reserve_next(cast(GitHub, github), client="chatgpt", environment={})
+    with pytest.raises(ValueError, match="moved during handoff"):
+        external.claim_action(
+            cast(GitHub, github),
+            client="chatgpt",
+            claim_id=TOKEN,
+            operation="handoff",
+            environment=BRIDGE,
+            evidence=f"https://github.com/{REPO}/pull/88",
+        )
+    assert setup.holder == "chatgpt"
+
+
+def test_pr_link_edited_after_reservation_releases_our_claim(
+    setup: LedgerDouble, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    class Relinked(GitHubDouble):
+        reads = 0
+
+        def repo_api(self, route: str) -> Any:
+            row = super().repo_api(route)
+            if route == "pulls/44":
+                Relinked.reads += 1
+                if Relinked.reads > 1:
+                    row = {**row, "body": "Closes #9"}
+            return row
+
+    offer = replace(
+        make_offer(),
+        target="pr:44",
+        url=f"https://github.com/{REPO}/pull/44",
+        action="review-findings",
+        head_sha="a" * 40,
+    )
+    monkeypatch.setattr(frontier, "capture", lambda *a, **k: make_frontier(offer))
+    github = Relinked()
+    github.review_labels = ["factory", "factory:changes-requested", "factory:unowned"]
+    result = external.reserve_next(cast(GitHub, github), client="chatgpt", environment={})
+    assert result["status"] == "conflict"
+    assert "linked issue changed" in str(result["reason"])
     assert setup.holder is None

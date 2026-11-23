@@ -511,12 +511,15 @@ leases the factory's own workers use:
 rotisserie factory next --json                       # ranked offers, read-only
 rotisserie factory reserve-next --client chatgpt --json
 rotisserie factory renew UUID --client chatgpt
-rotisserie factory handoff UUID --client chatgpt --evidence PR_URL
 rotisserie factory release UUID --client chatgpt
+gh workflow run rotisserie-external-claim.yml --ref main \
+  -f operation=handoff -f client=chatgpt -f claim_id=UUID -f evidence=PR_URL
 rotisserie factory revoke UUID --reason TEXT         # operator: remove a claim
 ```
 
-`run --take-over` also removes an outside agent's claim on the target. Agents
+Handoff always runs in the bridge workflow, which records the head's author
+model so it can never approve its own work. `run --take-over` also removes an
+outside agent's claim on the target. Agents
 with only GitHub access use the installed **Rotisserie External Claim
 Controller** workflow. Full rules: [external-agent-claims.md](external-agent-claims.md).
 

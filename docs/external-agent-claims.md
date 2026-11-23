@@ -27,8 +27,9 @@ Renew before expiration. For example, use the claim UUID returned above:
 ```bash
 rotisserie factory renew UUID --repo JoshCLWren/comic-pile --client chatgpt --json
 rotisserie factory release UUID --repo JoshCLWren/comic-pile --client chatgpt --json
-rotisserie factory handoff UUID --repo JoshCLWren/comic-pile --client chatgpt \
-  --evidence https://github.com/JoshCLWren/comic-pile/pull/123 --json
+gh workflow run rotisserie-external-claim.yml --repo JoshCLWren/comic-pile --ref main \
+  -f operation=handoff -f client=chatgpt -f claim_id=UUID \
+  -f evidence=https://github.com/JoshCLWren/comic-pile/pull/123
 ```
 
 Handoff records evidence in Neon and releases the claim. It **does not**
@@ -73,16 +74,14 @@ names while the factory links by branch first.
 ### Authorship
 
 The handed-off head commit must end with exactly one `Model: <exact model id>`
-trailer, or the handoff is refused and the claim stays held. The factory uses
-it so the model that wrote the work never approves it:
-
-- an implementation PR is attested by the review controller's existing
-  owner-authored-head rule, which reads the same trailer;
-- a repair commit cannot be attested from the PR's author, so the GitHub
-  bridge records a controller-trusted author-model marker for the new head
-  (agent `external-CLIENT`). Only the Actions bot's comments count as author
-  records, so **repair handoffs must run through the GitHub bridge**; the
-  local CLI refuses them and prints the exact `gh workflow run` command.
+trailer, or the handoff is refused and the claim stays held. The bridge then
+writes a controller-trusted author-model marker for that exact head (agent
+`external-CLIENT`), so the model that wrote the work never approves it. Only
+the Actions bot's comments count as author records, so **every handoff runs
+through the GitHub bridge**: a CLI agent reserves, renews and releases from
+the CLI, and `rotisserie factory handoff` prints the exact `gh workflow run`
+command to use instead. If the PR head moves while the handoff runs, it is
+refused and the claim stays held; hand off the new head.
 
 The GitHub account alone is never treated as a model identity.
 
