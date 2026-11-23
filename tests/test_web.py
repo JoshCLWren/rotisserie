@@ -113,9 +113,9 @@ def test_browser_disconnect_after_factory_response_is_not_server_error(
     handler_type = web.make_handler("acme/widgets", "unit-test-session")
     handler = handler_type.__new__(handler_type)
     handler.wfile = DisconnectedWriter()  # type: ignore[assignment]
-    handler._headers = lambda *_args: None  # type: ignore[method-assign]
-    handler._send_json(200, {"exit_code": 0, "result": "completed"})
-    handler._write_body(b"html response")
+    setattr(handler, "_headers", lambda *_args: None)
+    getattr(handler, "_send_json")(200, {"exit_code": 0, "result": "completed"})
+    getattr(handler, "_write_body")(b"html response")
 
 
 def test_unexpected_response_write_failure_is_not_suppressed() -> None:
@@ -126,10 +126,10 @@ def test_unexpected_response_write_failure_is_not_suppressed() -> None:
     handler_type = web.make_handler("acme/widgets", "unit-test-session")
     handler = handler_type.__new__(handler_type)
     handler.wfile = FailingWriter()  # type: ignore[assignment]
-    handler._headers = lambda *_args: None  # type: ignore[method-assign]
+    setattr(handler, "_headers", lambda *_args: None)
 
     with pytest.raises(OSError, match="Unexpected I/O failure"):
-        handler._send_json(200, {"result": "failed"})
+        getattr(handler, "_send_json")(200, {"result": "failed"})
 
 
 def test_entrypoint_exposes_local_web_command() -> None:
