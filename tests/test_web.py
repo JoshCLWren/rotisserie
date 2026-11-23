@@ -100,7 +100,6 @@ def test_writes_refuse_unsupported_or_unsafe_inputs(body: dict[str, Any]) -> Non
         web.write_command(body)
 
 
-
 @pytest.mark.parametrize("disconnect", [BrokenPipeError, ConnectionResetError])
 def test_browser_disconnect_after_factory_response_is_not_server_error(
     disconnect: type[OSError],
