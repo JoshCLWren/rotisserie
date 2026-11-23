@@ -179,6 +179,9 @@ def test_narration_and_tool_output_are_not_repair_findings() -> None:
         "Rust-default API ingress (fragment-derived)\tpass\t17s\thttps://github.com/o/r/actions/runs/1\n"
         '[{"bucket":"pass","completedAt":"2026-11-22T06:32:39Z","description":""}]\n'
         ' lease was released for independent review.\\n\\nWorker: opencode-free\n'
+        "- Let me check the PR on GitHub to understand the changes.\n"
+        "2. Now I'll look at the test file for the new behavior.\n"
+        '"state": "SUCCESS", "name": "CI Summary"\n'
     )
     assert not controller.has_actionable_review_findings(transcript)
 
@@ -189,6 +192,9 @@ def test_narration_and_tool_output_are_not_repair_findings() -> None:
         "The new retry loop never resets its counter, so the second failure aborts the job.",
         "  - The handler returns 200 before the write commits, losing the update on error.",
         "    1. The migration drops the index the new query depends on.",
+        "[P1] The retry counter never resets after a successful attempt.",
+        "The parser treats the literal \\n in titles as a line break, splitting the name.",
+        '"Fixed" is posted before the push lands, so the reviewer sees the old head.',
     ],
 )
 def test_real_findings_survive_the_narration_filter(finding: str) -> None:

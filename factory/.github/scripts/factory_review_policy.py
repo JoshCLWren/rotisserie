@@ -1076,6 +1076,10 @@ NON_FINDING_LINE = re.compile(
 )
 
 
+# A JSON array or object row, not "[P1] finding" prose.
+JSON_LINE = re.compile(r'^(?:\[\s*[{\["\]]|"[^"]*"\s*:)')
+
+
 def has_actionable_review_findings(excerpt: str) -> bool:
     """Require a prose finding, not diff/source material or terminal boilerplate."""
     semantic = excerpt.partition(AUTHORITATIVE_DIFF_EVIDENCE)[0]
@@ -1104,12 +1108,13 @@ def has_actionable_review_findings(excerpt: str) -> bool:
             if not re.match(r"^(?:[-*]|\d+[.)])\s", line):
                 continue
         # One whitespace-free token (a path, a SHA, a URL) is not a finding,
-        # nor tabular CLI output or JSON (raw or as an escaped string).
-        if not re.search(r"\s", line) or "\t" in line or "\\n" in line:
+        # nor tabular CLI output, JSON, or a JSON-escaped string (several
+        # literal "\n"; one may be a finding about escaping).
+        if not re.search(r"\s", line) or "\t" in line or line.count("\\n") >= 2:
             continue
-        if line.startswith(("[", '"')):
+        if JSON_LINE.match(line):
             continue
-        if NON_FINDING_LINE.match(line):
+        if NON_FINDING_LINE.match(re.sub(r"^(?:[-*]|\d+[.)])\s+", "", line)):
             continue
         if line.startswith(("diff --git ", "index ", "--- ", "+++ ", "@@ ", "#", "//", "/*", "{", "}")):
             continue

@@ -32,18 +32,19 @@ WATCHED_STAGES = frozenset({"factory:review", "factory:ci", "factory:ready", CHA
 # The merge gate ignores this retired reviewer's threads; so does this check.
 IGNORED_REVIEWERS = frozenset({"coderabbitai", "coderabbitai[bot]"})
 FACTORY_REPLY = re.compile(r"^\*\*Fixed\*\* in `?[0-9a-f]{7,40}`?")
-SCAN_LIMIT = 40
 
 THREADS = """
 query($owner: String!, $name: String!, $number: Int!) {
   repository(owner: $owner, name: $name) {
     pullRequest(number: $number) {
       reviewThreads(first: 100) {
+        pageInfo { hasNextPage }
         nodes {
           isResolved
           isOutdated
           path
-          comments(first: 50) {
+          comments(first: 100) {
+            pageInfo { hasNextPage }
             nodes { url body author { login } commit { oid } }
           }
         }
@@ -90,12 +91,21 @@ def answered_threads(github: GitHub, number: int, head: str) -> list[Stall]:
         )
     )
     pull = obj(obj(obj(obj(raw).get("data")).get("repository")).get("pullRequest"))
-    threads = obj(pull.get("reviewThreads")).get("nodes")
+    listing = obj(pull.get("reviewThreads"))
+    threads = listing.get("nodes")
     found: list[Stall] = []
+    if obj(listing.get("pageInfo")).get("hasNextPage"):
+        found.append(_unchecked(number, "it has more than 100 review threads"))
     for thread in threads if isinstance(threads, list) else []:
         if not isinstance(thread, dict) or thread.get("isResolved") or thread.get("isOutdated"):
             continue
-        comments = obj(thread.get("comments")).get("nodes")
+        page = obj(thread.get("comments"))
+        if obj(page.get("pageInfo")).get("hasNextPage"):
+            # The newest reply is beyond this page: never guess who spoke last.
+            where = str(thread.get("path") or "a file")
+            found.append(_unchecked(number, f"its thread on {where} has more than 100 comments"))
+            continue
+        comments = page.get("nodes")
         if not isinstance(comments, list) or not comments:
             continue
         reviewer = _login(comments[0])
@@ -129,6 +139,16 @@ def answered_threads(github: GitHub, number: int, head: str) -> list[Stall]:
             )
         )
     return found
+
+
+def _unchecked(number: int, why: str) -> Stall:
+    return Stall(
+        pr=number,
+        kind="unchecked-threads",
+        text=f"PR #{number} could not be fully checked for answered threads: {why}.",
+        hint="Look at its unresolved threads on GitHub.",
+        url="",
+    )
 
 
 def _excerpt(body: str) -> str:
@@ -195,10 +215,10 @@ def inspect(
 
 
 def scan(github: GitHub, pulls: Sequence[Obj]) -> list[Stall]:
-    """Deadlocks across open factory PRs (at most ``SCAN_LIMIT`` of them)."""
+    """Deadlocks across every open factory PR in a watched stage."""
     watched = [
         row for row in pulls if "factory" in label_names(row) and label_names(row) & WATCHED_STAGES
-    ][:SCAN_LIMIT]
+    ]
     found: list[Stall] = []
     for row in watched:
         number = row.get("number")

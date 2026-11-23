@@ -36,12 +36,14 @@ def comment(login: str, body: str, *, oid: str = HEAD, url: str = "u") -> Obj:
     return {"author": {"login": login}, "body": body, "commit": {"oid": oid}, "url": url}
 
 
-def thread(*comments: Obj, resolved: bool = False, outdated: bool = False) -> Obj:
+def thread(
+    *comments: Obj, resolved: bool = False, outdated: bool = False, more: bool = False
+) -> Obj:
     return {
         "isResolved": resolved,
         "isOutdated": outdated,
         "path": "src/app.ts",
-        "comments": {"nodes": list(comments)},
+        "comments": {"pageInfo": {"hasNextPage": more}, "nodes": list(comments)},
     }
 
 
@@ -59,14 +61,14 @@ class Hub:
         self.threads = threads
         self.labels = labels
         self.records = records
+        self.more_threads = False
 
     def gh(self, *args: str) -> str:
         assert args[:2] == ("api", "graphql")
         assert "number=44" in args
         nodes: list[Any] = list(self.threads)
-        return json.dumps(
-            {"data": {"repository": {"pullRequest": {"reviewThreads": {"nodes": nodes}}}}}
-        )
+        listing = {"pageInfo": {"hasNextPage": self.more_threads}, "nodes": nodes}
+        return json.dumps({"data": {"repository": {"pullRequest": {"reviewThreads": listing}}}})
 
     def repo_api(self, route: str) -> Any:
         if route.startswith("pulls/44"):
@@ -126,6 +128,31 @@ def test_an_answered_unresolved_head_thread_is_a_deadlock() -> None:
 )
 def test_other_threads_are_not_deadlocks(shape: Obj) -> None:
     assert inspect(Hub([shape], ["factory:review"], [])) == []
+
+
+def test_a_thread_longer_than_one_page_is_reported_not_guessed() -> None:
+    [found] = inspect(Hub([thread(*ANSWER, more=True)], ["factory:review"], []))
+    assert found.kind == "unchecked-threads"
+    assert "more than 100 comments" in found.text
+
+
+def test_more_threads_than_one_page_is_reported() -> None:
+    hub = Hub([ANSWERED], ["factory:review"], [])
+    hub.more_threads = True
+    found = inspect(hub)
+    assert [stall.kind for stall in found] == ["unchecked-threads", "answered-thread"]
+
+
+def test_the_doctor_scans_every_watched_pr() -> None:
+    class Many(Hub):
+        def repo_api(self, route: str) -> Any:
+            if route.startswith("pulls?state=open"):
+                return [self.pull() for _ in range(60)]
+            return super().repo_api(route)
+
+    found = doctor.review_deadlocks(cast(GitHub, Many([ANSWERED], ["factory:review"], [])))
+    assert found.status == "warn"
+    assert found.text.startswith("60 deadlock(s)")
 
 
 def test_a_finding_free_repair_verdict_is_a_deadlock() -> None:
