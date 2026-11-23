@@ -62,7 +62,8 @@ def _classify(message: str) -> GitHubError:
             retry = int(match.group(1)) if match else None
         return GitHubRateLimitError(
             "GitHub is applying a secondary rate limit."
-            if secondary else "GitHub's API rate limit is exhausted.",
+            if secondary
+            else "GitHub's API rate limit is exhausted.",
             secondary=secondary,
             retry_after_seconds=retry,
         )
