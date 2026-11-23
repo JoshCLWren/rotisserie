@@ -39,6 +39,7 @@
 .github/scripts/factory_discovery.py
 .github/scripts/factory_dispatch_credential_filter.py
 .github/scripts/factory_dynamic_outcome.py
+.github/scripts/factory_external_review.py
 .github/scripts/factory_fleet_console.cjs
 .github/scripts/factory_fleet_style.py
 .github/scripts/factory_fork_control.py
@@ -48,6 +49,7 @@
 .github/scripts/factory_implementation_delivery.py
 .github/scripts/factory_issue_acceptance.py
 .github/scripts/factory_issue_pr_state_policy.py
+.github/scripts/factory_label_policy.py
 .github/scripts/factory_jev_shadow.py
 .github/scripts/factory_kilo_catalog.py
 .github/scripts/factory_live_opencode.py

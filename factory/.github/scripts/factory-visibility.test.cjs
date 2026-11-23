@@ -236,6 +236,35 @@ test('unchanged label reconciliation avoids a write regardless of label order', 
   assert.deepEqual(calls, []);
 });
 
+test('a stage or owner change drops the doctor availability projection (#191)', async () => {
+  const calls = [];
+  const github = githubFor({
+    labels: ['bug', 'factory', 'factory:unowned', 'factory:review', 'factory:available'],
+    setLabels: async input => calls.push(input),
+  });
+  await reconcileLabels(github, contextFor('workflow_dispatch', {}), 12, {
+    owner: 'factory:unowned',
+    stage: 'factory:changes-requested',
+  });
+  assert.deepEqual(
+    new Set(calls[0].labels),
+    new Set(['bug', 'factory', 'factory:unowned', 'factory:changes-requested']),
+  );
+});
+
+test('an unchanged owner and stage keep availability and write nothing', async () => {
+  const calls = [];
+  const github = githubFor({
+    labels: ['factory', 'factory:unowned', 'factory:review', 'factory:available'],
+    setLabels: async input => calls.push(input),
+  });
+  await reconcileLabels(github, contextFor('workflow_dispatch', {}), 12, {
+    owner: 'factory:unowned',
+    stage: 'factory:review',
+  });
+  assert.deepEqual(calls, []);
+});
+
 test('merge-conflict is derived observability, never a stage or blocker', () => {
   assert.equal(MERGE_CONFLICT_LABEL, 'factory:merge-conflict');
   assert.deepEqual([...DERIVED_LABELS], [MERGE_CONFLICT_LABEL]);

@@ -33,6 +33,7 @@ RUNTIME_MODULES = (
     "factory_branch_sync",
     "factory_main_health",
     "factory_review_policy",
+    "factory_label_policy",
 )
 
 # Every file the wheel must carry, keyed by module name, with its checkout path.

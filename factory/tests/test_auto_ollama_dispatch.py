@@ -92,6 +92,8 @@ else:
         ({"BUSY": "1"}, False),
         ({"LEASED": "1"}, False),
         ({"MOVED": "1"}, False),
+        ({"OUTSIDE_CLAIM": "1"}, False),
+        ({"NEON_DOWN": "1"}, False),
     ],
 )
 def test_auto_dispatch_respects_busy_gpu_factory_leases_and_fresh_pr_stage(
@@ -112,9 +114,19 @@ def test_auto_dispatch_respects_busy_gpu_factory_leases_and_fresh_pr_stage(
         "DISPATCH_LOG": str(log),
         **extra,
     })
+    scripts = tmp_path / "work" / ".github" / "scripts"
+    scripts.mkdir(parents=True)
+    for name in ("local_review_contract.py", "factory_issue_acceptance.py"):
+        shutil.copy(ROOT / ".github" / "scripts" / name, scripts / name)
+    (scripts / "factory_state_ledger.py").write_text(
+        "import os\n"
+        "def enabled():\n    return not os.environ.get('NEON_DOWN')\n"
+        "def external_holder(repo, number):\n"
+        "    return {'actor': 'agent'} if os.environ.get('OUTSIDE_CLAIM') else None\n"
+    )
     result = subprocess.run(
         ["bash", "-euo", "pipefail", "-c", dispatch_script()],
-        capture_output=True, text=True, env=env, check=False,
+        capture_output=True, text=True, env=env, check=False, cwd=scripts.parents[1],
     )
     assert result.returncode == 0, result.stderr
     commands = log.read_text(encoding="utf-8") if log.exists() else ""

@@ -11,6 +11,21 @@ such change must be called out here and in its release notes.
 
 ### Added
 
+- GitHub label claims (#191). Agents with write access find work labeled
+  `factory:available`, request it by adding `factory:claimed`, and get an
+  accepted or rejected answer on the item (labels plus one status comment
+  edited in place). The new `rotisserie-label-claim.yml` workflow takes the
+  same Neon fenced lease as `reserve-next`; removing the label hands off on
+  evidence or releases, then dispatches the factory's next step.
+- `rotisserie factory labels`: a label doctor that audits claim and lifecycle
+  labels against Neon and the controller frontier (dry run by default),
+  repairs them with `--repair`, and deletes obsolete label definitions with
+  `--repair --delete-legacy`.
+- Outside agents can now claim `review`. The bridge records the reviewer's
+  declared model and refuses a model that authored the PR, so the approval
+  counts for the merge gate. This changes the #177 rule that outside agents
+  never review.
+
 - `rotisserie factory sync` and `rotisserie factory leases`: Rotisserie now owns
   branch synchronization. A sync takes a short Neon operation lease on the PR's
   target key, so workers can't be assigned it mid-sync and a held PR is never

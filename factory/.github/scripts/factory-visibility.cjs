@@ -37,6 +37,11 @@ const DEFINITIONS = {
   // Derived observability label (issue #3138). It is never a stage: it stays out
   // of STAGE_LABELS, precedence, BLOCKED_LABELS, and queue selection.
   'factory:merge-conflict': ['E99695', 'GitHub reports the exact pull-request head as merge-conflicted'],
+  // Ready-for-work claim labels (issue #191). Projections only: Neon leases
+  // decide ownership, and only the label doctor adds factory:available.
+  'factory:available': ['0E8A16', 'Open for an outside claim on its current next step: add factory:claimed'],
+  'factory:claimed': ['5319E7', 'Claim requested or held; the status comment names the claimant'],
+  'factory:claim-rejected': ['E4E669', 'The last claim request was refused; the status comment says why'],
 };
 
 const OWNER_LABELS = [
@@ -799,9 +804,14 @@ async function reconcileLabels(
   );
   owner = lease.owner;
   stage = lease.stage;
+  const currentOwner = [...current].find(isOwnerLabel);
+  const currentStage = [...current].find(label => STAGE_LABELS.includes(label));
+  // A changed owner or stage invalidates the doctor's availability projection.
+  const transition = (owner && owner !== currentOwner) || (stage && stage !== currentStage);
   const next = [...current].filter(
     label => !isOwnerLabel(label) && !STAGE_LABELS.includes(label)
-      && !DERIVED_LABELS.has(label) && label !== APPROVAL_LABEL,
+      && !DERIVED_LABELS.has(label) && label !== APPROVAL_LABEL
+      && !(transition && label === 'factory:available'),
   );
   if (!next.includes('factory')) next.push('factory');
   if (owner) next.push(owner);

@@ -430,10 +430,11 @@ def test_repair_waits_for_required_ci(monkeypatch: pytest.MonkeyPatch) -> None:
     assert "required CI" in reason
 
 
-def test_review_offers_are_never_reserved_by_outside_agents(
+def test_review_is_claimable_but_only_by_agents_that_can_review(
     setup: LedgerDouble, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """The merge gate cannot count an outside review, so the next offer wins."""
+    """#191: outside agents may review; one that cannot is given the next offer."""
+    assert "review" in external.ACTIONS
     review = replace(
         make_offer(),
         target="pr:44",
@@ -443,18 +444,17 @@ def test_review_offers_are_never_reserved_by_outside_agents(
     )
     second = replace(make_offer(number=8), rank=2)
     monkeypatch.setattr(frontier, "capture", lambda *a, **k: make_frontier(review, second))
-    result = external.reserve_next(cast(GitHub, GitHubDouble()), client="chatgpt", environment={})
+    result = external.reserve_next(
+        cast(GitHub, GitHubDouble()),
+        client="chatgpt",
+        environment={},
+        abilities=frozenset({"implement"}),
+    )
     assert result["status"] == "reserved"
     handoff = result["handoff"]
     assert isinstance(handoff, dict)
     assert handoff["target"] == "issue:8"
-    with pytest.raises(ValueError, match="unsupported agent abilities"):
-        external.reserve_next(
-            cast(GitHub, GitHubDouble()),
-            client="chatgpt",
-            environment={},
-            abilities=frozenset({"review"}),
-        )
+    assert "FACTORY_ACCEPTANCE_V1" in external.EVIDENCE_REQUIRED["review"]
 
 
 def test_capability_filter_picks_highest_offer_the_agent_can_do(

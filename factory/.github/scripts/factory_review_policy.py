@@ -15,7 +15,7 @@ TRUSTED_MARKER_APP_SLUGS = frozenset({"github-actions"})
 REVIEW_MARKER_RE = re.compile(
     r"^<!-- comic-pile-factory-semantic-review-v1:"
     r"pr-(?P<pr>\d+):head-(?P<head>[0-9a-f]{40}):"
-    r"reviewer-(?P<reviewer>\d+|local-[a-z0-9-]{3,80}):producer-(?P<producer>\d+|unknown):"
+    r"reviewer-(?P<reviewer>\d+|local-[a-z0-9-]{3,80}|external-[a-z0-9-]{3,80}):producer-(?P<producer>\d+|unknown):"
     r"verdict-(?P<verdict>approve|repair|reject|obsolete|duplicate|superseded|delivered) -->$"
 )
 BRANCH_PRODUCER_RE = re.compile(r"^factory/(?P<worker>\d+)-\d+-")

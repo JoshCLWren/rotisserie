@@ -81,7 +81,7 @@ def select_review_candidate(prs: list[Mapping[str, Any]]) -> int | None:
         names = {
             str(item.get("name", "")) for item in labels if isinstance(item, dict)
         }
-        if not {"factory:review", "factory:unowned"} <= names:
+        if not {"factory:review", "factory:unowned"} <= names or "factory:claimed" in names:
             continue
         if any(OWNER_RE.fullmatch(name) for name in names):
             continue

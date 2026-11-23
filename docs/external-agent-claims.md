@@ -38,16 +38,21 @@ authorize deployment. Use ordinary controller gates after recording evidence.
 
 ### What an outside agent can take
 
-`implement`, `review-findings`, `ci-repair` and `merge-conflict`. Use the
-repository's exact name (`--repo` is compared with GitHub's `full_name`):
+`implement`, `review`, `review-findings`, `ci-repair` and `merge-conflict`. Use
+the repository's exact name (`--repo` is compared with GitHub's `full_name`):
 lease keys and the advisory lock are built from it. `reserve-next` walks the
 ranking and reserves the highest offer the agent can do that is live right
-now, so a top PR still waiting on CI does not hide lower work. The
-frontier still lists `review` offers, but an outside agent never reserves
-them: the merge gate only counts an approval whose reviewer model the trusted
-runtime recorded, which an outside agent cannot provide. Independent review
-stays with the factory's own reviewers. `--can ACTION` narrows the choice to
-what the agent can do; it still receives the highest-ranked offer of those.
+now, so a top PR still waiting on CI does not hide lower work. `--can ACTION`
+narrows the choice to what the agent can do; it still receives the
+highest-ranked offer of those. Merge and post-merge verification stay with the
+factory: they need merge authorization and production evidence.
+
+An outside review counts for the merge gate (#191). The trusted bridge
+records the reviewer's declared model, and refuses the review when that model
+matches a `Model:` trailer on any commit of the PR or a recorded author model.
+GitHub itself refuses a formal review from the pull request's author. Any
+other login can review with a model that did not author the PR; the factory
+does not compare logins.
 
 ### Handoff evidence
 
@@ -66,6 +71,15 @@ the ledger's locked transaction** that releases the claim: if either fails,
 the transaction rolls back and the claim stays held, and no other claim,
 revoke or factory acquisition can interleave. With no PR to show, `release`
 the claim instead.
+
+- `review`: the claimed PR, with a formal GitHub review by the claimant on the
+  claimed head, submitted as **Approve** or **Request changes**. The review body
+  needs one `Model: <exact model id>` line. An approval also needs the issue's
+  `FACTORY_ACCEPTANCE_V1=` report (the same report factory reviewers write),
+  because the merge gate requires an acceptance record for the exact head.
+  An approval moves the PR to `factory:ci`; a change request moves it to
+  `factory:changes-requested`. Hand off `.../pull/N#pullrequestreview-ID` to
+  name one review, or the PR URL for the claimant's latest one.
 
 The PR body must say `Closes #ISSUE` for the claimed issue, and a factory
 branch name, if used, must name the same issue: GitHub closes what the body
@@ -151,6 +165,76 @@ It requires the GitHub initiating actor to retain write permission, refuses
 reruns and non-manual events, obtains only the existing restricted Neon role,
 and exports no DSN. A read-only GitHub token or a missing Neon connection does
 not grant permission to reserve. GitHub labels are advisory projections.
+
+## Label claims (issue #191)
+
+Any agent with write access can find and claim work with ordinary GitHub
+search and labels. No Rotisserie CLI, workflow dispatch or Neon access is
+needed. The installed `rotisserie-label-claim.yml` workflow answers.
+
+1. **Find work.** Search open issues and PRs labeled `factory:available`, for
+   example `is:open label:factory:available`. The stage label says the next
+   step: no stage on an issue means implement, `factory:review` means review,
+   `factory:changes-requested` means repair review findings, `factory:ci` means
+   repair failing checks, and `factory:merge-conflict` means resolve the
+   conflict. The label doctor sets `factory:available` only when the controller
+   frontier offers that item now and no lease holds it.
+2. **Request a claim.** Add `factory:claimed`. The controller checks your write
+   access, the live frontier and the Neon fenced lease, then answers on the
+   item:
+   - accepted: `factory:claimed` stays and `factory:available` goes;
+   - rejected: `factory:claimed` goes and `factory:claim-rejected` is added.
+
+   One status comment on the item, edited in place, names the claimant, the
+   claim UUID, the expiry and the reason. Do not start work until it says
+   **Accepted** with your login. If `factory:claimed` is already on the item,
+   someone else holds it.
+3. **Work.** Your pushes to the claimed PR and your comments on the claimed
+   item renew the lease. Commits need one `Model: <exact model id>` trailer
+   each.
+4. **Finish.** For `implement`, open a non-draft PR whose body says
+   `Closes #N`; that is the evidence and it hands off at once. For a repair,
+   push the fix. For a review, submit it (see the review evidence above). Then
+   remove `factory:claimed`. The controller hands off on evidence or releases
+   the claim without evidence, and dispatches the factory's next step.
+
+Limits:
+
+- A label claim records only the GitHub login that added the label, with
+  client `label`. Agents that share one GitHub login cannot be told apart, and
+  either can finish the other's claim.
+- Only the claimant (or the operator's `rotisserie factory revoke`) can end a
+  claim. When anyone else removes `factory:claimed`, the controller puts it
+  back.
+- Events from bots, from forks and from reruns are ignored.
+
+### Label doctor
+
+`rotisserie factory labels` audits every open factory issue and PR and prints
+the exact label changes, with reasons, without writing anything.
+`--repair` applies them; `--repair --delete-legacy` also deletes the obsolete
+label definitions it lists. The label claim workflow runs the repair every hour
+and after each claim event. The doctor:
+
+- adds or removes `factory:available` from the frontier and Neon;
+- removes `factory:claimed` that no Neon claim backs, after a 10-minute grace
+  period, and restores it when a label claim exists;
+- clears `factory:claim-rejected` after an hour;
+- collapses several stage labels to the one the work policy already reads,
+  and applies the work policy's own owner and stage rules;
+- removes `factory:merge-conflict` from issues;
+- removes obsolete and malformed labels. A quoted label outside the factory
+  and Ralph names, such as `"bug"`, becomes `bug`; a quoted factory or Ralph
+  label such as `"factory:ready"` is only removed, so the doctor never invents
+  a stage, an owner or a priority;
+- leaves manual-only items untouched, as every factory label writer does;
+- withholds `factory:available` from a PR whose required checks are still
+  running, because a claim on it would be refused.
+
+When Neon cannot be read, the doctor removes `factory:available` everywhere and
+touches no claim. It holds an item with several active owners without changing
+the owners. It writes each item only if its labels are unchanged since it read
+them, so a second run changes nothing.
 
 ## Universal agent instruction
 

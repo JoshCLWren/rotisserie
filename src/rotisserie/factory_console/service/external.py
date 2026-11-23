@@ -7,10 +7,12 @@ code-writing agent is enrolled in the provider/model roster.
 
 from __future__ import annotations
 
+import importlib.util
 import json
 import re
 from collections.abc import Callable
 from datetime import UTC, datetime
+from pathlib import Path
 from types import ModuleType
 from typing import Any
 from urllib.parse import quote
@@ -20,14 +22,16 @@ from rotisserie.factory_console.github import GitHub, GitHubError, obj, string
 from rotisserie.factory_console.service import frontier, queue
 from rotisserie.factory_console.service import sync as branch_sync
 
-# Work an outside agent can finish through the existing factory gates. Review
-# is deliberately absent: the merge gate only counts approvals whose reviewer
-# model the trusted runtime recorded, so an outside agent's review could never
-# satisfy it. Independent review stays with the factory's own reviewers.
-ACTIONS = frozenset({"implement", "review-findings", "ci-repair", "merge-conflict"})
+# Work an outside agent can finish through the existing factory gates. A
+# review counts once the trusted bridge records the agent's declared model
+# (#191); the bridge refuses a model that authored the PR.
+ACTIONS = frozenset({"implement", "review", "review-findings", "ci-repair", "merge-conflict"})
 REPAIRS = frozenset({"review-findings", "ci-repair", "merge-conflict"})
 COMPLETION_STAGES = frozenset({"factory:review", "factory:ci", "factory:changes-requested"})
 WORKFLOW = "rotisserie-external-claim.yml"
+# Events whose workflow file GitHub always takes from the default branch, so a
+# pull request cannot change the code that receives the claim store secret.
+LABEL_EVENTS = ("issues", "pull_request_target", "issue_comment")
 CLAIM_ID = re.compile(r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\Z")
 CLIENT = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]{0,63}\Z")
 # Every form GitHub accepts after a closing keyword: #N, owner/repo#N, issue URL.
@@ -68,7 +72,7 @@ def principal(github: GitHub, environment: dict[str, str]) -> str:
     """
     if environment.get("GITHUB_ACTIONS") == "true":
         if (
-            environment.get("GITHUB_EVENT_NAME") != "workflow_dispatch"
+            environment.get("GITHUB_EVENT_NAME") not in ("workflow_dispatch", *LABEL_EVENTS)
             or environment.get("GITHUB_REPOSITORY") != github.repo
             or environment.get("GITHUB_RUN_ATTEMPT") != "1"
             or environment.get("GITHUB_TRIGGERING_ACTOR", environment.get("GITHUB_ACTOR"))
@@ -377,6 +381,11 @@ EVIDENCE_REQUIRED = {
         "Push a commit resolving the conflict with the base branch, "
         "then hand off the pull request's URL"
     ),
+    "review": (
+        "Submit a formal GitHub review (Approve or Request changes) on this exact head. "
+        "Its body needs one 'Model: <your exact model id>' line; an approval also needs "
+        "the issue's FACTORY_ACCEPTANCE_V1= report. Then hand off the review's URL"
+    ),
 }
 
 
@@ -486,7 +495,13 @@ def reserve_next(
     abilities: frozenset[str] = ACTIONS,
     expected: str = "",
     advertised_at: str = "",
+    pick: str = "",
 ) -> dict[str, object]:
+    """Reserve the highest live offer, or with ``pick`` exactly that target's offer.
+
+    A label claim picks the item the agent labeled: any current candidate the
+    agent can do, whatever its rank, after the same live and post-CAS checks.
+    """
     if not CLIENT.fullmatch(client):
         raise ValueError("client must be a stable non-secret identifier")
     if not abilities or not abilities <= ACTIONS:
@@ -511,7 +526,28 @@ def reserve_next(
             }
     # Walk the ranking: the agent gets the highest offer it can do that is
     # still live now (CI settled, head and rank unchanged), not merely rank 1.
-    able = [o for o in snapshot.offers if o.status == "candidate" and o.action in abilities]
+    if pick:
+        offered = next((o for o in snapshot.offers if o.target == pick), None)
+        if offered is None:
+            return {"status": "conflict", "reason": "not_offered_now", "retry": "refresh_frontier"}
+        if offered.status != "candidate":
+            return {
+                "status": "conflict",
+                "reason": "held: " + "; ".join(offered.hold_reasons),
+                "retry": "refresh_frontier",
+            }
+        if offered.action not in abilities:
+            return {
+                "status": "conflict",
+                "reason": f"action {offered.action} is not claimable",
+                "retry": "refresh_frontier",
+            }
+        expected = pick
+    able = [
+        o
+        for o in snapshot.offers
+        if o.status == "candidate" and o.action in abilities and (not pick or o.target == pick)
+    ]
     if not able:
         return {
             "status": "conflict" if expected else "held",
@@ -660,7 +696,8 @@ def _project_review_stage(
     if missing:
         fields = [arg for label in missing for arg in ("-f", f"labels[]={label}")]
         github.gh("api", f"repos/{github.repo}/issues/{number}/labels", "--method", "POST", *fields)
-    for stale in sorted(labels & set(core.STAGE_LABELS) - {"factory:review"}):
+    stale_labels = labels & (set(core.STAGE_LABELS) - {"factory:review"} | {"factory:available"})
+    for stale in sorted(stale_labels):
         github.gh(
             "api",
             f"repos/{github.repo}/issues/{number}/labels/{quote(stale, safe='')}",
@@ -820,6 +857,17 @@ def _verify_and_project_handoff(
         head_at_claim = str(claim.get("head") or "")
         if stage not in COMPLETION_STAGES:
             raise ValueError("the PR left the factory's completion stages")
+    elif action == "review":
+        if kind != "pr" or pr_number != number:
+            raise ValueError("handoff evidence points to a different PR")
+        if head != claim.get("head"):
+            raise ValueError("the PR moved since the review claim; release it and claim again")
+        if stage != "factory:review":
+            raise ValueError("the PR left factory:review")
+        _check_handoff_scope(github, core, claim, pr_number, pr)
+        review = _claimant_review(github, pr_number, head, str(claim["actor"]), evidence)
+        _record_review(github, pr_number, head, str(claim["actor"]), review, environment or {})
+        return
     else:
         raise ValueError("unsupported claimed action")
 
@@ -836,6 +884,60 @@ def _verify_and_project_handoff(
     # it delivers; the review controller cannot attest every outside head.
     _record_authors(github, pr_number, authors, str(claim["client"]), environment or {})
     _project_review_stage(github, core, pr_number, head, in_scope)
+
+
+REVIEW_ID = re.compile(r"#pullrequestreview-(?P<id>[0-9]+)\Z")
+
+
+def _claimant_review(
+    github: GitHub, pr: int, head: str, actor: str, evidence: str
+) -> dict[str, Any]:
+    """The claimant's latest decisive formal review of the claimed head."""
+    pages = json.loads(
+        github.gh("api", "--paginate", "--slurp", f"repos/{github.repo}/pulls/{pr}/reviews")
+    )
+    reviews = [
+        row
+        for page in (pages if isinstance(pages, list) else [])
+        if isinstance(page, list)
+        for row in page
+        if isinstance(row, dict)
+        and string(obj(row.get("user")), "login") == actor
+        and string(row, "commit_id") == head
+        and string(row, "state") in ("APPROVED", "CHANGES_REQUESTED")
+    ]
+    wanted = REVIEW_ID.search(evidence)
+    if wanted:
+        reviews = [row for row in reviews if str(row.get("id")) == wanted.group("id")]
+    if not reviews:
+        raise ValueError("no Approve or Request changes review by the claimant on the claimed head")
+    return reviews[-1]
+
+
+def _record_review(
+    github: GitHub,
+    pr: int,
+    head: str,
+    actor: str,
+    review: dict[str, Any],
+    environment: dict[str, str],
+) -> None:
+    """Hand the review to the adopter's trusted recorder; only the Actions bot counts."""
+    if environment.get("GITHUB_ACTIONS") != "true":
+        raise ValueError(
+            "review handoffs run in the GitHub bridge so the factory records the reviewer: "
+            f"gh workflow run {WORKFLOW} --repo {github.repo} --ref main "
+            "-f operation=handoff -f client=CLIENT -f claim_id=UUID -f evidence=URL"
+        )
+    script = Path.cwd() / ".github" / "scripts" / "factory_external_review.py"
+    if not script.is_file():
+        raise RuntimeError("the adopter checkout lacks factory_external_review.py")
+    spec = importlib.util.spec_from_file_location("factory_external_review", script)
+    if spec is None or spec.loader is None:
+        raise RuntimeError("could not load the trusted review recorder")
+    recorder = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(recorder)
+    recorder.record(pr_number=pr, head=head, actor=actor, review=review, environment=environment)
 
 
 def _check_handoff_scope(
