@@ -14,8 +14,50 @@
 .view{display:none}.view.active{display:block}.kpis{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:14px;margin-bottom:20px}.kpi{padding:19px 20px;background:var(--panel);border:1px solid var(--line);border-radius:15px;box-shadow:var(--shadow)}.kpi .name{color:var(--muted);font-size:12px;font-weight:680}.kpi .value{font-size:32px;font-weight:780;letter-spacing:-1.2px;line-height:1.3;margin-top:7px}.kpi .detail{color:#91a1b1;font-size:11px;margin-top:4px}
 .panel{background:var(--panel);border:1px solid var(--line);border-radius:16px;box-shadow:var(--shadow);min-width:0}.panel-header{padding:20px 23px 16px;display:flex;justify-content:space-between;align-items:center;gap:12px}.panel h2{font-size:17px;letter-spacing:-.3px;margin:0}.panel h3{font-size:14px;margin:0}.section-desc{color:var(--muted);font-size:12px;margin:5px 0 0}.panel-body{padding:0 23px 23px}.two-col{display:grid;grid-template-columns:minmax(0,1.28fr) minmax(300px,.87fr);gap:19px;align-items:start}.stack{display:flex;flex-direction:column;gap:19px}.form-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:15px}.field{display:flex;flex-direction:column;gap:7px}.field label{font-size:11px;color:#c0cbd3;font-weight:750}.field input,.field select{appearance:auto;color:#e5edf0;border:1px solid #3b4a5a;border-radius:9px;background:#111a25;padding:11px 12px;outline:none;width:100%;min-width:0}.field input:focus,.field select:focus{border-color:var(--ember);box-shadow:0 0 0 2px #fba36b26}.field input::placeholder{color:#718294}.spaced{margin-top:17px}.toggle-row{display:flex;flex-wrap:wrap;gap:16px;margin-top:16px}.toggle{display:inline-flex;align-items:center;gap:8px;color:#bdc8d0;font-size:12px}.toggle input{accent-color:var(--ember);width:16px;height:16px}.hint{font-size:11px;color:#a1b1bf;line-height:1.6}.command{background:#0c131b;border:1px solid #36424c;border-radius:9px;color:#d4e3dc;padding:13px 15px;overflow-wrap:anywhere;font:12px/1.65 ui-monospace,SFMono-Regular,Consolas,monospace}.command span{color:var(--ember2)}.launch-bottom{margin-top:16px;display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap}
 .item{padding:14px 0;border-top:1px solid #2e3c4a}.item:first-child{border-top:0}.item-head{display:flex;justify-content:space-between;gap:10px;align-items:flex-start}.item-title{font-weight:680;color:#eef1f1}.meta{color:var(--muted);font-size:12px;margin-top:5px}.item-actions{display:flex;gap:7px;margin-top:10px;align-items:center;flex-wrap:wrap}.bar{height:5px;background:#344555;border-radius:8px;overflow:hidden;margin-top:12px}.bar i{height:100%;display:block;background:linear-gradient(90deg,#f79a67,#f9cf91);border-radius:8px}.empty{padding:28px 10px;color:var(--muted);text-align:center}.table-wrap{overflow:auto}.table{width:100%;border-collapse:collapse;text-align:left}.table th{color:#93a5b2;font-size:11px;letter-spacing:.5px;padding:12px;font-weight:770;border-bottom:1px solid var(--line)}.table td{padding:13px 12px;border-bottom:1px solid #2a3845;vertical-align:top}.table tr:last-child td{border-bottom:none}.table td small{display:block;color:var(--muted);margin-top:3px}.table a{text-decoration:none}.table a:hover{text-decoration:underline}
-.page-controls{display:flex;align-items:center;gap:9px;flex-wrap:wrap;margin-bottom:16px}.page-controls input,.page-controls select{padding:9px 11px;border:1px solid var(--line);color:var(--text);background:#1b2733;border-radius:9px;max-width:220px}.grid4{display:grid;grid-template-columns:repeat(2,1fr);gap:14px}.mini{border:1px solid var(--line);background:#192633;padding:15px;border-radius:12px}.mini .big{font-size:23px;font-weight:800}.info{padding:11px 13px;background:#223241;border:1px solid #3b5263;border-radius:10px;color:#bcd0db;font-size:12px}.message{margin:0 0 17px;padding:13px 15px;border:1px solid #426f66;background:#1d3736;color:#cdf2e8;border-radius:10px;display:none;overflow-wrap:anywhere}.message.error{border-color:#8e4b57;background:#3b2932;color:#ffd0d3}.message.visible{display:block}.raw{white-space:pre-wrap;overflow-wrap:anywhere;background:#101823;border-radius:10px;padding:16px;color:#c1d1d9;font:12px/1.6 ui-monospace,SFMono-Regular,Consolas,monospace}.footer{text-align:center;color:#7e93a1;font-size:11px;margin-top:30px}
+.page-controls{display:flex;align-items:center;gap:9px;flex-wrap:wrap;margin-bottom:16px}.page-controls input,.page-controls select{padding:9px 11px;border:1px solid var(--line);color:var(--text);background:#1b2733;border-radius:9px;max-width:220px}.grid4{display:grid;grid-template-columns:repeat(2,1fr);gap:14px}.mini{border:1px solid var(--line);background:#192633;padding:15px;border-radius:12px}.mini .big{font-size:23px;font-weight:800}.info{padding:11px 13px;background:#223241;border:1px solid #3b5263;border-radius:10px;color:#bcd0db;font-size:12px}.message{margin:0 0 17px;padding:13px 15px;border:1px solid #426f66;background:#1d3736;color:#cdf2e8;border-radius:10px;display:none;overflow-wrap:anywhere}.message.error{border-color:#8e4b57;background:#3b2932;color:#ffd0d3}.message.visible{display:block}.raw{white-space:pre-wrap;overflow-wrap:anywhere;background:#101823;border-radius:10px;padding:16px;color:#c1d1d9;font:12px/1.6 ui-monospace,SFMono-Regular,Consolas,monospace}.footer{text-align:center;color:#7e93a1;font-size:11px;margin-top:20px}
 @media(max-width:1100px){.two-col{grid-template-columns:1fr}.kpis{grid-template-columns:repeat(2,minmax(0,1fr))}}@media(max-width:740px){.shell{display:block}.sidebar{height:auto;position:static;padding:12px 16px;border-right:0;border-bottom:1px solid var(--line)}.brand{margin:0 0 10px}.nav-heading,.sidebar-bottom{display:none}.nav-menu{display:flex;gap:5px;overflow-x:auto}.nav{min-width:max-content;width:auto;padding:9px 11px}.nav span{width:auto}.main{padding:22px 16px 50px}.top{align-items:flex-start;flex-direction:column}.kpis{gap:9px}.kpi{padding:14px}.kpi .value{font-size:27px}.panel-header{padding:16px}.panel-body{padding:0 16px 18px}.form-grid{grid-template-columns:1fr}.grid4{grid-template-columns:1fr}}
+
+/* Compact operator layout: keep the actual actions visible without long dashboard scrolls. */
+.main{padding-top:18px;padding-bottom:32px}
+.top{margin-bottom:17px}
+.eyebrow{margin-bottom:3px}
+.title{font-size:clamp(24px,2.5vw,32px);margin-bottom:4px}
+.kpis{gap:10px;margin-bottom:14px}
+.kpi{padding:12px 15px;box-shadow:none}
+.kpi .value{font-size:26px;margin-top:3px}
+.kpi .detail{margin-top:1px}
+.two-col,.stack{gap:13px}
+.panel{box-shadow:none}
+.panel-header{padding:14px 16px 10px}
+.panel-body{padding:0 16px 16px}
+.item{padding:10px 0}
+.meta{margin-top:3px}
+.section-desc{margin-top:2px}
+.field input,.field select{padding:9px 10px}
+.form-grid{gap:10px}
+.spaced{margin-top:11px}
+.launch-bottom{margin-top:10px}
+.advanced{border-top:1px solid var(--line);padding-top:10px}
+.advanced summary{cursor:pointer;font-weight:680;color:var(--ember2)}
+.advanced summary .hint{margin-left:6px;font-weight:400}
+.advanced .command{margin-top:10px}
+.button.is-loading::before{content:"";display:inline-block;width:11px;height:11px;margin-right:8px;border:2px solid currentColor;border-right-color:transparent;border-radius:50%;animation:spin .7s linear infinite;vertical-align:-2px}
+@keyframes spin{to{transform:rotate(360deg)}}
+#operation-status:not(:empty){color:var(--ember2);max-width:220px}
+#queue-explain-number{max-width:110px}
+.model-list{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:9px}
+.model-list .mini{padding:11px 13px;min-width:0}
+.model-list .item-title{overflow-wrap:anywhere;font-size:13px}
+.model-list .item-actions{margin-top:5px}
+.model-list .meta{font-size:11px}
+.plan-row{padding:9px 0;border-top:1px solid var(--line)}
+.plan-row:first-child{border-top:0}
+.plan-row .meta{margin-top:2px}
+.plan-details{margin-top:10px}
+.plan-details summary{cursor:pointer;color:var(--muted);font-size:12px}
+.priority-inline{display:flex;gap:8px;align-items:center;margin-top:8px;flex-wrap:wrap}
+.priority-inline select{background:#111a25;color:var(--text);padding:8px;border:1px solid var(--line);border-radius:8px}
+@media(max-width:740px){.main{padding:16px 12px 32px}.model-list{grid-template-columns:1fr}.kpi{padding:10px}.kpi .value{font-size:23px}.advanced summary .hint{display:none}}
 </style>
 </head>
 <body>
@@ -27,7 +69,7 @@
   <button class="nav active" data-view="overview"><span>◫</span> Overview</button>
   <button class="nav" data-view="queue"><span>≡</span> Work queue</button>
   <button class="nav" data-view="workers"><span>✳</span> Workers</button>
-  <button class="nav" data-view="outcomes"><span>↗</span> Outcomes</button>
+  <button class="nav" data-view="outcomes"><span>↗</span> Run history</button>
   <button class="nav" data-view="models"><span>◈</span> Models</button>
   <button class="nav" data-view="settings"><span>⚙</span> Settings</button>
   <button class="nav" data-view="health"><span>♡</span> Diagnostics</button>
@@ -35,7 +77,7 @@
  <div class="sidebar-bottom"><div><span class="spark">●</span> Local operator session</div><strong>GitHub via your existing gh login</strong><div style="margin-top:7px">No separate worker state or credentials stored in the browser.</div></div>
 </aside>
 <main class="main">
- <header class="top"><div><div class="eyebrow">Factory operations</div><h1 class="title" id="page-title">Control room</h1><p class="sub" id="page-sub">Real workers, real claims, and one deliberate place to start work.</p></div><div class="top-actions"><div class="repo" id="repository"></div><button class="button ghost" id="refresh">↻ Refresh</button></div></header>
+ <header class="top"><div><div class="eyebrow">Factory operations</div><h1 class="title" id="page-title">Control room</h1><p class="sub" id="page-sub">Real workers, real claims, and one deliberate place to start work.</p></div><div class="top-actions"><div class="repo" id="repository"></div><span id="operation-status" class="hint" role="status" aria-live="polite"></span><button class="button ghost" id="refresh">↻ Refresh</button></div></header>
  <div role="status" aria-live="polite" class="message" id="message"></div>
  <section class="view active" id="overview">
   <div class="kpis">
@@ -49,31 +91,31 @@
     <section class="panel"><div class="panel-header"><div><h2>Start a worker <span style="color:var(--ember)">↗</span></h2><p class="section-desc">Same dispatch and guardrails as <code>rotisserie factory run</code>.</p></div><span class="pill">Operator action</span></div>
      <div class="panel-body">
       <form id="launcher">
-       <div class="form-grid"><div class="field"><label for="provider">Provider</label><select id="provider" required><option value="">Loading providers…</option></select></div><div class="field"><label for="model">Model</label><input id="model" list="model-options" value="auto" required placeholder="auto or exact model ID"><datalist id="model-options"></datalist></div></div>
+       <div class="form-grid"><div class="field"><label for="provider">Provider</label><select id="provider" required><option value="">Loading providers…</option></select></div><div class="field"><label for="model">Model</label><select id="model" required disabled><option value="auto">Loading models…</option></select></div></div>
        <div class="form-grid spaced"><div class="field"><label for="work-kind">Work selection</label><select id="work-kind"><option value="next">Next eligible task</option><option value="issue">Specific issue</option><option value="pr">Specific pull request</option></select></div><div class="field" id="target-field" hidden><label for="target-number">Issue or PR number</label><input type="number" min="1" step="1" id="target-number" placeholder="e.g. 5673"></div></div>
-       <div class="form-grid spaced"><div class="field" id="action-field" hidden><label for="action">What needs doing?</label><select id="action"><option value="advance">Advance automatically</option><option value="review">Independent review</option><option value="ci-repair">Repair failing CI</option><option value="review-findings">Address review findings</option><option value="merge-conflict">Resolve conflicts</option><option value="implement">Implement</option></select></div><div class="field"><label for="slot">Worker slot (optional)</label><input id="slot" type="number" min="1" step="1" placeholder="Automatic"></div></div>
+       <details class="advanced spaced"><summary>Advanced controls <span class="hint">Specific action, slot and overrides</span></summary><div class="form-grid spaced"><div class="field" id="action-field" hidden><label for="action">What needs doing?</label><select id="action"><option value="advance">Advance automatically</option><option value="review">Independent review</option><option value="ci-repair">Repair failing CI</option><option value="review-findings">Address review findings</option><option value="merge-conflict">Resolve conflicts</option><option value="implement">Implement</option></select></div><div class="field"><label for="slot">Worker slot (optional)</label><input id="slot" type="number" min="1" step="1" placeholder="Automatic"></div></div>
        <div class="toggle-row"><label class="toggle"><input type="checkbox" id="force"> Override scheduling limits</label><label class="toggle"><input type="checkbox" id="take-over"> Take over current claim</label></div>
        <p class="hint" id="force-hint" style="margin:12px 0 14px">Normal scheduling respects factory limits and existing leases. Overrides never silently steal another worker's claim.</p>
-       <div class="command" id="command-preview"></div>
-       <div class="launch-bottom"><span class="hint">Submission is not proof the model started.</span><button class="button primary" type="submit" id="launch">Launch worker →</button></div>
+       <div class="command" id="command-preview"></div></details>
+       <div class="launch-bottom"><span class="hint">Dispatch starts a request, not a confirmed model session.</span><button class="button primary" type="submit" id="launch">Launch worker →</button></div>
       </form>
      </div></section>
     <section class="panel"><div class="panel-header"><div><h2>Working now</h2><p class="section-desc">Live claims, joined to GitHub Actions.</p></div><button class="button small ghost" data-goto="workers">See all</button></div><div class="panel-body" id="overview-workers"><div class="empty">Loading workers…</div></div></section>
    </div>
    <div class="stack">
     <section class="panel"><div class="panel-header"><div><h2>Factory health</h2><p class="section-desc">From <code>factory doctor</code>, not guesses.</p></div><button class="button small ghost" data-goto="health">Details</button></div><div class="panel-body" id="overview-health"><div class="empty">Loading diagnostics…</div></div></section>
-    <section class="panel"><div class="panel-header"><div><h2>Recently delivered</h2><p class="section-desc">Merged PRs over the last 12 hours.</p></div><span class="pill good">GitHub verified</span></div><div class="panel-body" id="overview-merged"><div class="empty">Loading merges…</div></div></section>
-    <section class="panel"><div class="panel-header"><div><h2>Clear the bottleneck</h2><p class="section-desc">Use the factory's live unstick plan.</p></div></div><div class="panel-body"><p class="hint">Review the plan before dispatching. Occupied claims are not reassigned.</p><div class="page-controls"><button class="button" id="view-plan">Preview plan</button><button class="button primary" id="unstick">Run unstick</button></div><div id="unstick-plan"></div></div></section>
+    <section class="panel"><div class="panel-header"><div><h2>Recent merges</h2><p class="section-desc">Verified GitHub merges, last 12 hours.</p></div><a class="button small ghost" id="all-merges" target="_blank" rel="noopener noreferrer">All merges</a></div><div class="panel-body" id="overview-merged"><div class="empty">Loading merges…</div></div></section>
+    <section class="panel"><div class="panel-header"><div><h2>Unblock work</h2><p class="section-desc">Actions the factory can safely take next.</p></div></div><div class="panel-body"><div class="page-controls"><button class="button" id="view-plan">See proposed actions</button><button class="button primary" id="unstick">Unblock work</button></div><div id="unstick-plan"></div></div></section>
    </div>
   </div>
  </section>
- <section class="view" id="queue"><div class="panel"><div class="panel-header"><div><h2>Issue eligibility</h2><p class="section-desc">Why the dispatcher would or would not pick each issue.</p></div><button class="button small" id="queue-refresh">Refresh queue</button></div><div class="panel-body"><div class="page-controls"><input id="queue-filter" placeholder="Search number or title" aria-label="Filter queue"><select id="queue-state" aria-label="Queue status"><option value="all">All issues</option><option value="ready">Ready</option><option value="held">Not starting</option></select><button class="button small" id="queue-explain">Explain issue…</button></div><div id="queue-content" class="empty">Open the queue to load eligibility.</div></div></div>
+ <section class="view" id="queue"><div class="panel"><div class="panel-header"><div><h2>Issue eligibility</h2><p class="section-desc">Why the dispatcher would or would not pick each issue.</p></div><button class="button small" id="queue-refresh">Refresh queue</button></div><div class="panel-body"><div class="page-controls"><input id="queue-filter" placeholder="Search number or title" aria-label="Filter queue"><select id="queue-state" aria-label="Queue status"><option value="all">All issues</option><option value="ready">Ready</option><option value="held">Not starting</option></select><input id="queue-explain-number" type="number" min="1" step="1" placeholder="Issue #" aria-label="Issue number to explain"><button class="button small" id="queue-explain">Explain</button></div><div id="queue-content" class="empty">Open the queue to load eligibility.</div></div></div>
   <section class="panel spaced"><div class="panel-header"><div><h2>Pull request workbench</h2><p class="section-desc">Inspect exact-head checks, review eligibility, and conflicts before changing anything.</p></div></div>
    <div class="panel-body"><div class="page-controls"><input id="pr-number" type="number" min="1" step="1" placeholder="PR number" aria-label="Pull request number"><button class="button small" data-pr-inspect="checks">Checks</button><button class="button small" data-pr-inspect="review">Review gate</button><button class="button small" data-pr-inspect="conflicts">Conflicts</button><button class="button small" id="pr-select">Select for launch</button><button class="button small danger" id="pr-sync">Sync with main</button></div><div id="pr-inspector" class="hint">Choose a PR and an inspection. Sync uses Rotisserie's existing claim protection.</div></div>
   </section></section>
  <section class="view" id="workers"><div class="panel"><div class="panel-header"><div><h2>Workers and claims</h2><p class="section-desc">A request, an assignment, and actual model activity are different stages.</p></div><button class="button small" id="workers-refresh">Refresh workers</button></div><div class="panel-body"><div id="workers-content" class="empty">Loading workers…</div></div></div><section class="panel spaced"><div class="panel-header"><h2>Lease ledger</h2></div><div class="panel-body"><div class="page-controls"><button class="button small" id="leases-refresh">Refresh leases</button><button class="button small danger" id="release-expired">Release expired only</button></div><div id="leases-content"></div></div></section></section>
- <section class="view" id="outcomes"><div class="panel"><div class="panel-header"><div><h2>Did the work happen?</h2><p class="section-desc">Worker results checked against the actual goal, not self-reported success alone.</p></div><button class="button small" id="outcomes-refresh">Refresh outcomes</button></div><div class="panel-body" id="outcomes-content"></div></div><section class="panel spaced"><div class="panel-header"><h2>Reliability</h2><div class="page-controls"><select id="stats-window"><option value="7d">7 days</option><option value="24h">24 hours</option></select></div></div><div class="panel-body" id="stats-content"></div></section></section>
- <section class="view" id="models"><div class="panel"><div class="panel-header"><div><h2>Providers and available models</h2><p class="section-desc">Live discovery. A model being listed does not guarantee account quota or access.</p></div><button class="button small" id="models-refresh">Refresh</button></div><div class="panel-body"><div id="provider-cards" class="grid4"></div><div class="field spaced"><label for="catalog-provider">Explore provider models</label><select id="catalog-provider"></select></div><div id="model-catalog" class="spaced"></div></div></div></section>
+ <section class="view" id="outcomes"><div class="panel"><div class="panel-header"><div><h2>Run results</h2><p class="section-desc">What workers attempted and whether the requested work was delivered.</p></div><button class="button small" id="outcomes-refresh">Refresh results</button></div><div class="panel-body" id="outcomes-content"></div></div><section class="panel spaced"><div class="panel-header"><h2>Reliability</h2><div class="page-controls"><select id="stats-window"><option value="7d">7 days</option><option value="24h">24 hours</option></select></div></div><div class="panel-body" id="stats-content"></div></section></section>
+ <section class="view" id="models"><div class="panel"><div class="panel-header"><div><h2>Available models</h2><p class="section-desc">Actual model IDs discovered from each provider. Listed does not guarantee quota.</p></div><button class="button small" id="models-refresh">Refresh models</button></div><div class="panel-body"><div class="page-controls"><select id="catalog-provider" aria-label="Filter by provider"><option value="">Loading providers…</option></select><input id="model-search" type="search" placeholder="Find a model…" aria-label="Search models"></div><div id="catalog-summary" class="hint"></div><div id="model-catalog" class="model-list spaced"><div class="empty">Select a provider to see its models.</div></div></div></div></section>
  <section class="view" id="settings"><div class="panel"><div class="panel-header"><div><h2>Factory settings</h2><p class="section-desc">Values come from repository variables and factory defaults; updates take effect on the next run.</p></div></div><div class="panel-body" id="settings-content"></div></div></section>
  <section class="view" id="health"><div class="panel"><div class="panel-header"><div><h2>Diagnostics</h2><p class="section-desc">Scheduler freshness, product CI, provider failures and main health.</p></div><button class="button small" id="doctor-refresh">Run checks</button></div><div class="panel-body"><div class="page-controls"><button class="button" id="doctor-fix">Apply safe doctor repairs</button></div><div id="health-content"></div></div></div></section>
  <div class="footer">Rotisserie Control Room · Served locally · All mutations pass through existing factory commands</div>
@@ -88,57 +130,223 @@ const gh=(ref)=>link("https://github.com/"+REPO+(String(ref).startsWith("pr:")?"
 const badge=(text,kind)=>'<span class="pill '+h(kind||"")+'"><span class="dot"></span>'+h(text)+'</span>';
 const empty=(txt)=>'<div class="empty">'+h(txt)+'</div>';
 const raw=(obj)=>'<pre class="raw">'+h(JSON.stringify(obj,null,2))+'</pre>';
-const state={page:"overview",providers:[],queue:null,status:null,report:null,doctor:null};
-const titles={overview:["Control room","Real workers, real claims, and one deliberate place to start work."],queue:["Work queue","Every issue has a reason it can start or must wait."],workers:["Workers","Claims, active runs, and lease ownership."],outcomes:["Outcomes","Evidence that requested work actually happened."],models:["Models","Discover the real provider catalog, never a fixed roster."],settings:["Settings","The factory’s existing limits and priorities."],health:["Diagnostics","Spot the shared problem before sending more workers at it."]};
-function notice(message,error=false){const box=el("message");box.className="message visible"+(error?" error":"");box.textContent=message;box.scrollIntoView({block:"nearest",behavior:"smooth"});}
+const state={page:"overview",providers:[],queue:null,status:null,report:null,doctor:null,catalogModels:[],mutating:false};
+const modelCache=new Map();
+let modelRequestSeq=0;
+let statusRequest=null;
+const titles={overview:["Control room","Start work and monitor the factory."],queue:["Work queue","Which issues are ready and why others are waiting."],workers:["Workers","Real runs and active lease ownership."],outcomes:["Run history","What work was attempted, delivered or failed."],models:["Models","Browse real, provider-discovered model IDs."],settings:["Settings","Factory limits and priorities."],health:["Diagnostics","Find problems before assigning more workers."]};
+function notice(message,error=false){const box=el("message");box.className="message visible"+(error?" error":"");box.textContent=message;}
 async function request(path,body){const opt={headers:{"X-Rotisserie-Token":TOKEN}};if(body){opt.method="POST";opt.headers["Content-Type"]="application/json";opt.body=JSON.stringify(body)}const res=await fetch(path,opt);let data;try{data=await res.json()}catch{throw Error("The console did not return JSON.")}if(!res.ok)throw Error(data.error||"Request rejected");return data}
 async function get(name,params={}){const qs=new URLSearchParams(params);const path="/api/"+name+(qs.size?"?"+qs:"");return request(path)}
-async function act(body,confirmation){if(!window.confirm(confirmation))return;el("message").className="message";try{const data=await request("/api/command",body);if(data.exit_code===0){notice(data.scheduler_url?"Request submitted to GitHub. Worker start is not yet confirmed.":"Rotisserie reports: "+(data.result||"completed")+".");}else{notice(data.error||"Command result: "+data.result+" (exit "+data.exit_code+")",true)}if(data.scheduler_url)notice("Submitted. Track scheduler run: "+data.scheduler_url);await refresh()}catch(err){notice(err.message,true)}}
+async function act(body,source){
+ if(state.mutating)return;
+ state.mutating=true;
+ const button=source&&source.tagName==="BUTTON"?source:null;
+ const operation=({run:"Submitting worker request",unstick:"Preparing recovery",cancel:"Stopping worker",sync:"Synchronizing PR",doctor_fix:"Applying safe repairs",release_expired:"Releasing expired leases",settings:"Saving setting",prioritize:"Setting priority"})[body.operation]||"Applying change";
+ if(button){button.disabled=true;button.classList.add("is-loading");}
+ el("operation-status").textContent=operation+"…";
+ el("message").className="message";
+ try{
+  const data=await request("/api/command",body);
+  if(data.exit_code!==0)throw Error(data.error||"Rotisserie returned "+(data.result||"an error")+" (exit "+data.exit_code+")");
+  if(data.scheduler_url){
+   const message=el("message");message.className="message visible";
+   message.innerHTML="Request submitted. Worker start is not yet confirmed. "+link(data.scheduler_url,"Track GitHub run");
+  }else notice("Rotisserie reports: "+(data.result||"completed")+".");
+  el("operation-status").textContent="Refreshing factory state…";
+  await refresh();
+ }catch(err){notice(err.message||String(err),true)}
+ finally{state.mutating=false;el("operation-status").textContent="";if(button){button.disabled=false;button.classList.remove("is-loading")}}
+}
 function fmtDate(value){if(!value)return "Not recorded";const d=new Date(value);return Number.isNaN(d.getTime())?"Not recorded":d.toLocaleString()}
 function setText(id,value){el(id).textContent=String(value)}
-function renderWorkers(items,large=false){if(!items?.length)return empty("No active worker claims. The factory may be idle.");const rows=items.map(item=>'<div class="item"><div class="item-head"><div><div class="item-title">'+gh(item.ref)+' · '+h(item.title)+'</div><div class="meta">'+h(item.provider||"Unidentified provider")+' · '+h(item.model||"Model not recorded")+' · Worker '+h(item.worker||"?")+'</div></div>'+badge(item.coding_since?"Model working":item.run_url?"Run assigned":"Claim held",item.coding_since?"good":"")+'</div><div class="meta">Claimed run: '+h(fmtDate(item.running_since))+(item.coding_since?" · Model started: "+h(fmtDate(item.coding_since)):"")+'</div><div class="item-actions">'+(item.run_url?link(item.run_url,"View Actions run"):"")+' <button class="button small danger" data-cancel="'+h(item.ref)+'">Stop worker</button></div></div>').join("");return rows;}
-async function loadStatus(){try{const d=await get("status");if(d.exit_code!==0)throw Error(d.error||d.result);state.status=d;const owners=new Set((d.working||[]).map(x=>x.worker||x.ref));setText("k-workers",owners.size);el("overview-workers").innerHTML=renderWorkers((d.working||[]).slice(0,5));el("workers-content").innerHTML=renderWorkers(d.working||[],true)}catch(err){el("overview-workers").innerHTML=empty(err.message);el("workers-content").innerHTML=empty(err.message);setText("k-workers","?")}}
-async function loadReport(){try{const d=await get("report",{since:"12h"});state.report=d;setText("k-merged",(d.merged||[]).length);el("overview-merged").innerHTML=(d.merged||[]).slice(0,6).map(x=>'<div class="item"><div class="item-title">'+link("https://github.com/"+REPO+"/pull/"+x.number,"#"+x.number)+' '+h(x.title)+'</div></div>').join("")||empty("No PRs merged in this window.")}catch(err){setText("k-merged","?");el("overview-merged").innerHTML=empty(err.message)}}
+function renderWorkers(items,large=false){
+ if(!items?.length)return empty("No active workers or claims.");
+ const groups=new Map();
+ for(const item of items){
+  const key=item.run_url||("worker:"+item.worker+":"+(item.running_since||""));
+  if(!groups.has(key))groups.set(key,{...item,refs:[]});
+  if(item.ref&&!groups.get(key).refs.includes(item.ref))groups.get(key).refs.push(item.ref);
+ }
+ const rows=[...groups.values()];
+ const visible=large?rows:rows.slice(0,3);
+ return visible.map(item=>'<div class="item"><div class="item-head"><div><div class="item-title">'+h(item.title||"Worker activity")+'</div><div class="meta">'+item.refs.map(gh).join(" · ")+'</div><div class="meta">'+h(item.provider||"Provider unknown")+' · '+h(item.model&&item.model!=="auto"?item.model:"Automatic model selection")+'</div></div>'+badge(item.coding_since?"Working":item.run_url?"Assigned":"Claim held",item.coding_since?"good":"")+'</div><div class="meta">Started '+h(fmtDate(item.coding_since||item.running_since))+'</div>'+(large?'<div class="item-actions">'+(item.run_url?link(item.run_url,"View run"):"")+' <button class="button small danger" data-cancel="'+h(item.ref)+'">Stop worker</button></div>':"")+'</div>').join("")+(rows.length>visible.length?'<div class="hint">'+h(rows.length-visible.length)+' more active runs. Open Workers to see all.</div>':"");
+}
+function loadStatus(){
+ if(statusRequest)return statusRequest;
+ statusRequest=(async()=>{
+  try{
+   const d=await get("status");
+   if(d.exit_code!==0)throw Error(d.error||d.result);
+   state.status=d;
+   const owners=new Set((d.working||[]).map(x=>x.worker||x.ref));
+   setText("k-workers",owners.size);
+   el("overview-workers").innerHTML=renderWorkers(d.working||[]);
+   el("workers-content").innerHTML=renderWorkers(d.working||[],true);
+  }catch(err){
+   el("overview-workers").innerHTML=empty(err.message);
+   el("workers-content").innerHTML=empty(err.message);
+   setText("k-workers","?");
+  }finally{statusRequest=null}
+ })();
+ return statusRequest;
+}
+async function loadReport(){try{const d=await get("report",{since:"12h"});state.report=d;setText("k-merged",(d.merged||[]).length);el("overview-merged").innerHTML=(d.merged||[]).slice(0,3).map(x=>'<div class="item"><div class="item-title">'+link("https://github.com/"+REPO+"/pull/"+x.number,"#"+x.number)+" "+h(x.title)+"</div></div>").join("")||empty("No recent merges.")}catch(err){setText("k-merged","?");el("overview-merged").innerHTML=empty(err.message)}}
 function renderFindings(d){if(!Array.isArray(d.findings))return raw(d);return d.findings.map(f=>'<div class="item"><div class="item-head"><div><div class="item-title">'+h(f.check)+'</div><div class="meta">'+h(f.text||f.hint||"")+'</div></div>'+badge(f.status,f.status==="ok"?"good":f.status==="fail"?"bad":"")+'</div></div>').join("")||empty("No diagnostic findings.")}
 async function loadDoctor(){try{const d=await get("doctor");state.doctor=d;setText("k-health",(d.findings||[]).filter(x=>x.status!=="ok").length);el("overview-health").innerHTML=renderFindings({...d,findings:(d.findings||[]).filter(x=>x.status!=="ok").slice(0,5)});if(!(d.findings||[]).some(x=>x.status!=="ok"))el("overview-health").innerHTML=empty("All checked systems healthy.");el("health-content").innerHTML=renderFindings(d)}catch(err){setText("k-health","?");el("overview-health").innerHTML=empty(err.message);el("health-content").innerHTML=empty(err.message)}}
 async function loadQueue(){el("queue-content").innerHTML=empty("Evaluating the current work graph…");try{const d=await get("why");state.queue=d;setText("k-ready",(d.ready||[]).length);renderQueue()}catch(err){setText("k-ready","?");el("queue-content").innerHTML=empty(err.message)}}
-function renderQueue(){const d=state.queue;if(!d)return;let issues=d.issues||[],filter=el("queue-filter").value.toLowerCase(),status=el("queue-state").value;issues=issues.filter(x=>{const ready=x.verdict?.status==="ready";return(status==="all"||status==="ready"&&ready||status==="held"&&!ready)&&(String(x.issue).includes(filter)||String(x.title).toLowerCase().includes(filter))});el("queue-content").innerHTML='<div class="hint" style="margin:4px 0 15px">'+h((d.ready||[]).length)+' ready / '+h(d.open_issues||0)+' open issues · '+h(JSON.stringify(d.not_starting||{}))+'</div>'+(issues.map(x=>'<div class="item"><div class="item-head"><div><div class="item-title">'+gh("issue:"+x.issue)+' · '+h(x.title)+'</div><div class="meta">'+h(x.verdict?.category||"")+' '+h(x.verdict?.reasons?.map?.(r=>r.text||r).join("; ")||"")+'</div></div>'+badge(x.verdict?.status||"unknown",x.verdict?.status==="ready"?"good":"")+'</div><div class="item-actions"><button class="button small" data-explain="'+h(x.issue)+'">Why?</button><button class="button small" data-choose="'+h(x.issue)+'">Select for launch</button><button class="button small" data-prioritize="'+h(x.issue)+'">Prioritize</button></div></div>').join("")||empty("No issues match the current filter."));}
+function renderQueue(){
+ const d=state.queue;if(!d)return;
+ let issues=d.issues||[],filter=el("queue-filter").value.toLowerCase(),status=el("queue-state").value;
+ issues=issues.filter(x=>{const ready=x.verdict?.status==="ready";return(status==="all"||status==="ready"&&ready||status==="held"&&!ready)&&(String(x.issue).includes(filter)||String(x.title).toLowerCase().includes(filter))});
+ const counts=Object.entries(d.not_starting||{}).map(([k,v])=>k.replace(/[-_]/g," ")+": "+v).join(" · ");
+ const shown=issues.slice(0,35);
+ el("queue-content").innerHTML='<div class="hint" style="margin:4px 0 12px">'+h((d.ready||[]).length)+' ready / '+h(d.open_issues||0)+' open · '+h(counts)+'</div>'+(shown.map(x=>'<div class="item"><div class="item-head"><div><div class="item-title">'+gh("issue:"+x.issue)+' · '+h(x.title)+'</div><div class="meta">'+h(x.verdict?.reasons?.map?.(r=>r.text||r).join("; ")||"")+'</div></div>'+badge(x.verdict?.status||"unknown",x.verdict?.status==="ready"?"good":"")+'</div><div class="item-actions"><button class="button small" data-explain="'+h(x.issue)+'">Why?</button><button class="button small" data-choose="'+h(x.issue)+'">Assign</button><button class="button small ghost" data-prioritize="'+h(x.issue)+'">Priority</button></div></div>').join("")||empty("No issues match."))+(issues.length>shown.length?'<div class="hint">Showing first 35 of '+h(issues.length)+' matches. Refine the search to narrow the list.</div>':"");
+}
 async function explain(number){try{const d=await get("why",{target:"issue:"+number});notice("#"+number+": "+(d.reasons||[]).join("; ")+(d.error?" · "+d.error:""))}catch(err){notice(err.message,true)}}
-async function loadProviders(){try{const d=await get("providers");if(d.exit_code!==0)throw Error(d.error||d.result);state.providers=d.providers||[];const options=state.providers.map(p=>'<option value="'+h(p.provider)+'">'+h(p.name)+' · '+h(p.setup)+'</option>').join("");el("provider").innerHTML=options||'<option value="">No providers found</option>';el("catalog-provider").innerHTML=options;el("provider-cards").innerHTML=state.providers.map(p=>'<div class="mini"><div class="item-head"><strong>'+h(p.name)+'</strong>'+badge(p.setup,p.setup==="ready"?"good":"bad")+'</div><div class="meta">'+h(p.provider)+' · '+h(p.working_now)+' working</div></div>').join("")||empty("No providers discovered.");await Promise.all([loadModelOptions(),loadCatalog()]);preview()}catch(err){el("provider").innerHTML='<option value="">Provider discovery failed</option>';el("provider-cards").innerHTML=empty(err.message)}}
-async function loadModelOptions(){el("model-options").innerHTML="";const provider=el("provider").value;if(!provider)return;try{const d=await get("models",{provider});el("model-options").innerHTML='<option value="auto"></option>'+(d.models||[]).filter(m=>m.offered!==false).map(m=>'<option value="'+h(m.model)+'"></option>').join("")}catch{}}
-async function loadCatalog(){const provider=el("catalog-provider").value;if(!provider)return;el("model-catalog").innerHTML=empty("Discovering models…");try{const d=await get("models",{provider});el("model-catalog").innerHTML=(d.models||[]).map(m=>'<div class="item"><div class="item-head"><div class="item-title">'+h(m.model)+'</div>'+badge(m.offered===false?"No longer offered":m.offered===true?"Listed":"Unverified",m.offered===true?"good":"")+'</div><div class="meta">'+h(m.track_record||"No recorded deliveries")+' · '+h(m.source||"Unknown source")+'</div><div class="item-actions"><button class="button small" data-use-model="'+h(m.model)+'">Use in launcher</button></div></div>').join("")||empty("No exact models discovered. You can still enter a valid ID or use auto.")}catch(err){el("model-catalog").innerHTML=empty(err.message)}}
+async function loadProviders(){
+ const selected=el("provider").value;
+ const catalogSelected=el("catalog-provider").value;
+ el("provider").disabled=true;
+ try{
+  const d=await get("providers");
+  if(d.exit_code!==0)throw Error(d.error||d.result);
+  state.providers=d.providers||[];
+  const options=state.providers.map(p=>'<option value="'+h(p.provider)+'">'+h(p.name)+' · '+h(p.setup)+'</option>').join("");
+  el("provider").innerHTML=options||'<option value="">No providers found</option>';
+  const preferred=state.providers.find(p=>p.provider===selected)||state.providers.find(p=>p.setup==="ready")||state.providers[0];
+  if(preferred)el("provider").value=preferred.provider;
+  el("provider").disabled=!preferred;
+  el("catalog-provider").innerHTML=options||'<option value="">No providers found</option>';
+  if(catalogSelected&&state.providers.some(p=>p.provider===catalogSelected))el("catalog-provider").value=catalogSelected;
+  else if(preferred)el("catalog-provider").value=preferred.provider;
+  await loadModelOptions();
+  if(state.page==="models")await loadCatalog();
+  preview();
+ }catch(err){
+  el("provider").innerHTML='<option value="">Provider discovery failed</option>';
+  el("catalog-summary").textContent=err.message;
+  el("model").innerHTML='<option value="auto">Automatic selection</option>';
+  el("model").disabled=false;
+ }
+}
+async function fetchModels(provider){
+ if(!modelCache.has(provider))modelCache.set(provider,get("models",{provider}).then(d=>{
+  if(d.exit_code!==undefined&&d.exit_code!==0)throw Error(d.error||"Could not discover models.");
+  return d.models||[];
+ }).catch(err=>{modelCache.delete(provider);throw err}));
+ return modelCache.get(provider);
+}
+async function loadModelOptions(){
+ const provider=el("provider").value;
+ const seq=++modelRequestSeq;
+ const old=el("model").value;
+ el("model").disabled=true;
+ el("model").innerHTML='<option value="auto">Loading models…</option>';
+ if(!provider){el("launch").disabled=true;return;}
+ try{
+  const models=await fetchModels(provider);
+  if(seq!==modelRequestSeq||el("provider").value!==provider)return;
+  const selectable=models.filter(m=>m.offered!==false);
+  el("model").innerHTML='<option value="auto">Automatic selection (recommended)</option>'+models.map(m=>'<option value="'+h(m.model)+'"'+(m.offered===false?" disabled":"")+'>'+h(m.model)+(m.offered===false?" (unavailable)":m.offered!==true?" (unverified)":"")+'</option>').join("");
+  if(selectable.some(m=>m.model===old))el("model").value=old;
+ }catch(err){
+  if(seq!==modelRequestSeq)return;
+  el("model").innerHTML='<option value="auto">Automatic selection (catalog unavailable)</option>';
+  el("catalog-summary").textContent="Model discovery failed: "+err.message;
+ }finally{
+  if(seq===modelRequestSeq){el("model").disabled=false;el("launch").disabled=false;preview();}
+ }
+}
+function renderCatalog(){
+ const list=state.catalogModels||[];
+ const q=el("model-search").value.trim().toLowerCase();
+ const filtered=list.filter(m=>m.model.toLowerCase().includes(q));
+ const displayed=filtered.slice(0,40);
+ el("catalog-summary").textContent=filtered.length+" model"+(filtered.length===1?"":"s")+" found · "+(displayed.length<filtered.length?"showing first 40 · ":"")+"Model listing does not guarantee quota.";
+ el("model-catalog").innerHTML=displayed.map(m=>'<div class="mini"><div class="item-head"><div class="item-title">'+h(m.model)+'</div>'+badge(m.offered===false?"Unavailable":m.offered===true?"Listed":"Unverified",m.offered===true?"good":m.offered===false?"bad":"")+'</div><div class="meta">'+h(m.track_record||"No recorded deliveries")+'</div><div class="item-actions"><button class="button small" data-use-model="'+h(m.model)+'"'+(m.offered===false?" disabled":"")+'>Select model</button></div></div>').join("")||empty("No models match this provider or search.");
+}
+async function loadCatalog(){
+ const provider=el("catalog-provider").value;
+ if(!provider)return;
+ el("model-catalog").innerHTML=empty("Discovering models…");
+ el("catalog-summary").textContent="Loading model catalog…";
+ try{
+  const models=await fetchModels(provider);
+  if(el("catalog-provider").value!==provider)return;
+  state.catalogModels=models;renderCatalog();
+ }catch(err){if(el("catalog-provider").value===provider){el("catalog-summary").textContent="";el("model-catalog").innerHTML=empty("Could not discover models: "+err.message)}}
+}
 async function loadSettings(){el("settings-content").innerHTML=empty("Loading repository settings…");try{const d=await get("settings");el("settings-content").innerHTML=(d.settings||[]).map(s=>'<div class="item"><div class="item-head"><div><div class="item-title">'+h(s.title)+'</div><div class="meta">'+h(s.description)+'<br>'+h(s.name)+' · '+h(s.origin)+'</div></div><div class="item-actions"><input aria-label="'+h(s.title)+'" style="width:85px;padding:9px;background:#111a25;color:#fff;border:1px solid #3b4a5a;border-radius:8px" data-setting-name="'+h(s.name)+'" value="'+h(s.value)+'"><button class="button small" data-save-setting="'+h(s.name)+'">Save</button></div></div></div>').join("")||empty("No settings found.")}catch(err){el("settings-content").innerHTML=empty(err.message)}}
 async function loadOutcomes(){try{const d=await get("outcomes");el("outcomes-content").innerHTML=(d.requests||[]).slice(0,40).map(x=>'<div class="item"><div class="item-head"><div><div class="item-title">'+h(x.target||"Next eligible")+' · '+h(x.action||"advance")+'</div><div class="meta">'+h(x.model||"Auto model")+' · '+h(x.decision||"")+'</div></div>'+badge(x.goal||x.worker_result||"Recorded",x.goal==="met"?"good":"")+'</div></div>').join("")||empty("No targeted requests in the selected period.")}catch(err){el("outcomes-content").innerHTML=empty(err.message)}}
 async function loadStats(){try{const d=await get("stats",{window:el("stats-window").value});el("stats-content").innerHTML=(d.models||[]).slice(0,30).map(x=>'<div class="item"><div class="item-head"><div class="item-title">'+h(x.model)+'</div>'+badge(x.health||"recorded",x.health==="paused"?"bad":"")+'</div><div class="meta">'+h(x.delivered)+' PRs delivered / '+h(x.runs)+' runs · '+h(x.failed)+' failed'+(x.top_failure?" · "+h(x.top_failure):"")+'</div></div>').join("")||empty("No model reliability data published.")}catch(err){el("stats-content").innerHTML=empty(err.message)}}
 async function inspectPr(which){const number=el("pr-number").value;if(!/^[1-9][0-9]*$/.test(number)){notice("Enter a valid PR number.",true);return}el("pr-inspector").innerHTML=empty("Inspecting PR #"+number+"…");try{const d=await get(which,{target:"pr:"+number});el("pr-inspector").innerHTML=raw(d)}catch(err){el("pr-inspector").innerHTML=empty(err.message)}}
 async function loadLeases(){try{const d=await get("leases");el("leases-content").innerHTML='<div class="hint" style="margin-bottom:12px">Source: '+h(d.source||"unavailable")+' · '+h(d.note||"")+'</div>'+(d.rows||[]).map(x=>'<div class="item"><div class="item-head"><div><div class="item-title">'+h(x.target)+' · '+h(x.holder)+'</div><div class="meta">Expires '+h(x.expires_at||"not recorded")+'</div></div>'+badge(x.active?"Active":"Expired",x.active?"good":"")+'</div></div>').join("")||empty("No lease rows found.")}catch(err){el("leases-content").innerHTML=empty(err.message)}}
-async function showPlan(){el("unstick-plan").innerHTML=empty("Preparing a read-only plan…");try{const d=await get("unstick");const p=d.plan||{};const list=[...(p.assignments||[]),...(p.syncs||[])];el("unstick-plan").innerHTML='<div class="info">Fresh plan: '+h(list.length)+' proposed actions. Recomputed when you actually run unstick.</div>'+raw(p)}catch(err){el("unstick-plan").innerHTML=empty(err.message)}}
+function renderPlan(plan){
+ const p=plan||{}, assignments=p.assignments||[], syncs=p.syncs||[],held=p.held||[],problems=p.problems||[],diagnosis=p.diagnosis||[];
+ const total=assignments.length+syncs.length;
+ let html='<div class="info">'+total+' proposed action'+(total===1?"":"s")+(p.needed_to_reopen_intake?" · "+p.needed_to_reopen_intake+" review slots need clearing":"")+'. The plan will be recalculated on execution.</div>';
+ if(assignments.length)html+='<div class="spaced">'+assignments.map(a=>'<div class="plan-row"><strong>'+h((a.task?.action||"advance").replace(/-/g," "))+' '+gh(a.task?.target||"issue:0")+'</strong> · '+h(a.task?.title||"")+'<div class="meta">'+h(a.provider||"")+" · "+h(a.model||"Auto")+(a.task?.why?" · "+h(a.task.why):"")+'</div></div>').join("")+'</div>';
+ if(syncs.length)html+='<div class="spaced">'+syncs.map(x=>'<div class="plan-row"><strong>Sync '+gh(x.target||x.ref||"pr:0")+'</strong><div class="meta">'+h(x.why||"Update branch against main")+'</div></div>').join("")+'</div>';
+ if(!total)html+='<div class="empty">No safe immediate actions. Existing claims remain protected.</div>';
+ const details=[...diagnosis.map(x=>x.text),...held.map(x=>x.text),...problems.map(x=>typeof x==="string"?x:x.text||x.message||"Unclassified diagnostic")].filter(Boolean);
+ if(details.length)html+='<details class="plan-details"><summary>'+details.length+' waiting conditions and other diagnostics</summary>'+details.map(x=>'<div class="plan-row">'+h(x)+'</div>').join("")+'</details>';
+ return html;
+}
+async function showPlan(source){
+ const button=source||el("view-plan");
+ button.disabled=true;button.classList.add("is-loading");
+ el("unstick-plan").innerHTML=empty("Calculating safe actions and checking current claims…");
+ try{const d=await get("unstick");el("unstick-plan").innerHTML=renderPlan(d.plan||{});}
+ catch(err){el("unstick-plan").innerHTML=empty("Could not prepare recovery plan: "+err.message);}
+ finally{button.disabled=false;button.classList.remove("is-loading");}
+}
 function target(){const kind=el("work-kind").value;const number=el("target-number").value;return kind==="next"?"":kind+":"+number}
 function preview(){const kind=el("work-kind").value;el("target-field").hidden=kind==="next";el("action-field").hidden=kind!=="pr";el("take-over").disabled=kind==="next";if(kind==="next")el("take-over").checked=false;const args=["rotisserie","factory","run",el("provider").value||"PROVIDER",el("model").value||"auto"];if(kind!=="next")args.push("--target",target()||kind+":NUMBER");if(kind==="pr"&&el("action").value!=="advance")args.push("--action",el("action").value);if(el("force").checked)args.push("--force");if(el("take-over").checked)args.push("--take-over");if(el("slot").value)args.push("--slot",el("slot").value);args.push("--no-wait");el("command-preview").textContent=args.join(" ");el("force-hint").textContent=el("force").checked?"Override bypasses scheduler pacing and capacity limits, but not another active claim. Takeover is a separate explicit action.":"Normal scheduling respects factory limits and existing leases. Overrides never silently steal another worker's claim."}
-async function refresh(){const page=state.page;el("refresh").disabled=true;try{if(page==="overview")await Promise.all([loadStatus(),loadReport(),loadDoctor(),loadQueue()]);if(page==="queue")await loadQueue();if(page==="workers")await Promise.all([loadStatus(),loadLeases()]);if(page==="outcomes")await Promise.all([loadOutcomes(),loadStats()]);if(page==="models")await loadProviders();if(page==="settings")await loadSettings();if(page==="health")await loadDoctor()}finally{el("refresh").disabled=false}}
+async function refresh(){
+ const page=state.page;
+ el("refresh").disabled=true;el("refresh").classList.add("is-loading");
+ try{
+  if(page==="overview")await Promise.all([loadStatus(),loadReport(),loadDoctor(),loadQueue()]);
+  if(page==="queue")await loadQueue();
+  if(page==="workers")await Promise.all([loadStatus(),loadLeases()]);
+  if(page==="outcomes")await Promise.all([loadOutcomes(),loadStats()]);
+  if(page==="models")await loadCatalog();
+  if(page==="settings")await loadSettings();
+  if(page==="health")await loadDoctor();
+ }finally{el("refresh").disabled=false;el("refresh").classList.remove("is-loading")}
+}
 function go(page){if(!titles[page])return;state.page=page;document.querySelectorAll(".view").forEach(x=>x.classList.toggle("active",x.id===page));document.querySelectorAll(".nav").forEach(x=>x.classList.toggle("active",x.dataset.view===page));setText("page-title",titles[page][0]);setText("page-sub",titles[page][1]);window.scrollTo({top:0,behavior:"smooth"});refresh()}
-el("repository").textContent=REPO;el("nav").addEventListener("click",e=>{const b=e.target.closest("[data-view]");if(b)go(b.dataset.view)});
+el("repository").textContent=REPO;el("all-merges").href="https://github.com/"+REPO+"/pulls?q=is%3Apr+is%3Amerged";el("nav").addEventListener("click",e=>{const b=e.target.closest("[data-view]");if(b)go(b.dataset.view)});
 document.body.addEventListener("click",e=>{const b=e.target.closest("button");if(!b)return;
  if(b.dataset.goto)go(b.dataset.goto);
- if(b.dataset.cancel)act({operation:"cancel",target:b.dataset.cancel},"Stop the worker on "+b.dataset.cancel+"? The claim may need time to release.");
+ if(b.dataset.cancel)act({operation:"cancel",target:b.dataset.cancel},b);
  if(b.dataset.explain)explain(b.dataset.explain);
- if(b.dataset.prioritize){const choice=window.prompt("Priority for issue #"+b.dataset.prioritize+" (critical, high, medium, low, none)","high");if(choice&&["critical","high","medium","low","none"].includes(choice))act({operation:"prioritize",target:"issue:"+b.dataset.prioritize,level:choice},"Set issue #"+b.dataset.prioritize+" priority to "+choice+"?");}
+ if(b.dataset.prioritize){
+  const item=b.closest(".item");if(!item)return;
+  const existing=item.querySelector(".priority-inline");if(existing){existing.remove();return;}
+  item.insertAdjacentHTML("beforeend",'<div class="priority-inline"><label for="priority-'+h(b.dataset.prioritize)+'">Priority</label><select id="priority-'+h(b.dataset.prioritize)+'"><option value="critical">Critical</option><option value="high" selected>High</option><option value="medium">Medium</option><option value="low">Low</option><option value="none">None</option></select><button class="button small" data-priority-apply="'+h(b.dataset.prioritize)+'">Save priority</button></div>');
+ }
+ if(b.dataset.priorityApply){
+  const select=el("priority-"+b.dataset.priorityApply);
+  if(select)act({operation:"prioritize",target:"issue:"+b.dataset.priorityApply,level:select.value},b);
+ }
  if(b.dataset.prInspect)inspectPr(b.dataset.prInspect);
  if(b.dataset.choose){go("overview");el("work-kind").value="issue";el("target-number").value=b.dataset.choose;preview();}
- if(b.dataset.useModel){el("model").value=b.dataset.useModel;el("provider").value=el("catalog-provider").value;go("overview");preview();}
- if(b.dataset.saveSetting){const x=document.querySelector('[data-setting-name="'+b.dataset.saveSetting+'"]');act({operation:"settings",name:b.dataset.saveSetting,value:x.value},"Update "+b.dataset.saveSetting+" to "+x.value+" for future factory runs?")}
+ if(b.dataset.useModel){const selected=b.dataset.useModel;el("provider").value=el("catalog-provider").value;go("overview");loadModelOptions().then(()=>{if([...el("model").options].some(o=>o.value===selected&&!o.disabled))el("model").value=selected;preview()});}
+ if(b.dataset.saveSetting){const x=document.querySelector('[data-setting-name="'+b.dataset.saveSetting+'"]');if(x)act({operation:"settings",name:b.dataset.saveSetting,value:x.value},b)}
 });
-el("launcher").addEventListener("submit",e=>{e.preventDefault();const kind=el("work-kind").value;const number=el("target-number").value;if(kind!=="next"&&(!/^[1-9][0-9]*$/.test(number))){notice("Enter a valid issue or PR number.",true);return}const data={operation:"run",provider:el("provider").value,model:el("model").value||"auto",target:kind==="next"?"":target(),action:kind==="pr"?el("action").value:"advance",force:el("force").checked,take_over:el("take-over").checked};if(el("slot").value)data.slot=Number(el("slot").value);act(data,"Send this request to the real factory?\n\n"+el("command-preview").textContent)});
+el("launcher").addEventListener("submit",e=>{e.preventDefault();if(state.mutating||el("model").disabled)return;const kind=el("work-kind").value;const number=el("target-number").value;if(kind!=="next"&&(!/^[1-9][0-9]*$/.test(number))){notice("Enter a valid issue or PR number.",true);return}const data={operation:"run",provider:el("provider").value,model:el("model").value||"auto",target:kind==="next"?"":target(),action:kind==="pr"?el("action").value:"advance",force:el("force").checked,take_over:el("take-over").checked};if(el("slot").value)data.slot=Number(el("slot").value);act(data,el("launch"))});
 ["provider","model","work-kind","target-number","action","slot","force","take-over"].forEach(id=>el(id).addEventListener("change",()=>{preview();if(id==="provider")loadModelOptions()}));
 el("model").addEventListener("input",preview);el("target-number").addEventListener("input",preview);
-el("refresh").onclick=refresh;el("queue-refresh").onclick=loadQueue;el("workers-refresh").onclick=loadStatus;el("leases-refresh").onclick=loadLeases;el("outcomes-refresh").onclick=loadOutcomes;el("models-refresh").onclick=loadProviders;el("doctor-refresh").onclick=loadDoctor;el("queue-filter").oninput=renderQueue;el("queue-state").onchange=renderQueue;el("stats-window").onchange=loadStats;el("catalog-provider").onchange=loadCatalog;el("view-plan").onclick=showPlan;
+el("refresh").onclick=refresh;el("queue-refresh").onclick=loadQueue;el("workers-refresh").onclick=loadStatus;el("leases-refresh").onclick=loadLeases;el("outcomes-refresh").onclick=loadOutcomes;el("models-refresh").onclick=()=>{modelCache.clear();loadProviders()};el("doctor-refresh").onclick=loadDoctor;el("queue-filter").oninput=renderQueue;el("queue-state").onchange=renderQueue;el("stats-window").onchange=loadStats;el("catalog-provider").onchange=loadCatalog;el("model-search").oninput=renderCatalog;el("view-plan").onclick=()=>showPlan(el("view-plan"));
 el("pr-select").onclick=()=>{const number=el("pr-number").value;if(!/^[1-9][0-9]*$/.test(number)){notice("Enter a valid PR number.",true);return}go("overview");el("work-kind").value="pr";el("target-number").value=number;preview()};
-el("pr-sync").onclick=()=>{const number=el("pr-number").value;if(!/^[1-9][0-9]*$/.test(number)){notice("Enter a valid PR number.",true);return}act({operation:"sync",target:"pr:"+number},"Sync PR #"+number+" with main using Rotisserie's normal lease-aware or queued sync?")};
-el("unstick").onclick=()=>act({operation:"unstick"},"Run Rotisserie's latest unstick plan? It will dispatch real workers and may sync eligible PRs.");
-el("doctor-fix").onclick=()=>act({operation:"doctor_fix"},"Apply the factory doctor's built-in safe repairs?");
-el("release-expired").onclick=()=>act({operation:"release_expired"},"Clean up expired lease rows? Active claims are not released.");
-el("queue-explain").onclick=()=>{const number=window.prompt("Which issue number?");if(number&&/^[1-9][0-9]*$/.test(number))explain(number)};
-setInterval(()=>{if(state.page==="overview"||state.page==="workers")loadStatus()},30000);
-loadProviders().then(()=>refresh());preview();
+el("pr-sync").onclick=()=>{const number=el("pr-number").value;if(!/^[1-9][0-9]*$/.test(number)){notice("Enter a valid PR number.",true);return}act({operation:"sync",target:"pr:"+number},el("pr-sync"))};
+el("unstick").onclick=()=>act({operation:"unstick"},el("unstick"));
+el("doctor-fix").onclick=()=>act({operation:"doctor_fix"},el("doctor-fix"));
+el("release-expired").onclick=()=>act({operation:"release_expired"},el("release-expired"));
+el("queue-explain").onclick=()=>{const number=el("queue-explain-number").value;if(/^[1-9][0-9]*$/.test(number))explain(number);else notice("Enter an issue number to explain.",true)};
+setInterval(()=>{if(!document.hidden&&!state.mutating&&(state.page==="overview"||state.page==="workers"))loadStatus()},30000);
+loadProviders();refresh();preview();
 </script>
 </body></html>

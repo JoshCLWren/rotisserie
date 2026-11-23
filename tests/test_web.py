@@ -100,6 +100,38 @@ def test_writes_refuse_unsupported_or_unsafe_inputs(body: dict[str, Any]) -> Non
         web.write_command(body)
 
 
+@pytest.mark.parametrize("disconnect", [BrokenPipeError, ConnectionResetError])
+def test_browser_disconnect_after_factory_response_is_not_server_error(
+    disconnect: type[OSError],
+) -> None:
+    """The client may leave while a slow CLI call is still running."""
+
+    class DisconnectedWriter:
+        def write(self, data: bytes) -> None:
+            raise disconnect("Browser has closed the connection")
+
+    handler_type = web.make_handler("acme/widgets", "unit-test-session")
+    handler = handler_type.__new__(handler_type)
+    handler.wfile = DisconnectedWriter()  # type: ignore[assignment]
+    setattr(handler, "_headers", lambda *_args: None)
+    getattr(handler, "_send_json")(200, {"exit_code": 0, "result": "completed"})
+    getattr(handler, "_write_body")(b"html response")
+
+
+def test_unexpected_response_write_failure_is_not_suppressed() -> None:
+    class FailingWriter:
+        def write(self, data: bytes) -> None:
+            raise OSError("Unexpected I/O failure")
+
+    handler_type = web.make_handler("acme/widgets", "unit-test-session")
+    handler = handler_type.__new__(handler_type)
+    handler.wfile = FailingWriter()  # type: ignore[assignment]
+    setattr(handler, "_headers", lambda *_args: None)
+
+    with pytest.raises(OSError, match="Unexpected I/O failure"):
+        getattr(handler, "_send_json")(200, {"result": "failed"})
+
+
 def test_entrypoint_exposes_local_web_command() -> None:
     args = cli.parser().parse_args(
         ["web", "--repo", "acme/widgets", "--port", "9000", "--no-browser"]
