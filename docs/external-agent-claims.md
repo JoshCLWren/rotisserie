@@ -113,7 +113,30 @@ gh workflow run rotisserie-external-claim.yml --repo JoshCLWren/comic-pile \
   --ref main -f operation=reserve-next -f client=codebuff-phone
 ```
 
-Use `gh run list --repo JoshCLWren/comic-pile
+The Rotisserie CLI does all of this for you with `--via github`: it starts the
+workflow, waits for its run, downloads the result and shows it exactly as a
+direct call would (a refusal inside the workflow exits 4, as it does locally).
+No Neon connection is needed on the agent's machine:
+
+```bash
+rotisserie factory next --repo JoshCLWren/comic-pile --via github
+rotisserie factory wait-for-work --repo JoshCLWren/comic-pile --can merge-conflict --via github
+rotisserie factory reserve-next --repo JoshCLWren/comic-pile --client claude-code --via github --json
+rotisserie factory renew UUID --repo JoshCLWren/comic-pile --client claude-code --via github
+rotisserie factory handoff UUID --repo JoshCLWren/comic-pile --client claude-code \
+  --evidence https://github.com/JoshCLWren/comic-pile/pull/123 --via github
+```
+
+`wait-for-work` checks the work list until it offers an unheld candidate for an
+action the agent listed with `--can` (by default every supported action), then
+shows it and exits; it never reserves. With `--via github` each check is a
+workflow run, so it checks every 5 minutes by default (`--interval`, at least
+120 seconds) and gives up after an hour (`--timeout`, 0 waits until stopped).
+If a claim run does not finish or publishes no result, the CLI reports
+`unknown` (exit 6) with the run URL: the run may still have reserved work, so
+look before retrying.
+
+By hand, use `gh run list --repo JoshCLWren/comic-pile
 --workflow rotisserie-external-claim.yml` to identify the initiated run and
 `gh run download RUN_ID --repo JoshCLWren/comic-pile` to retrieve its
 machine-readable result. Match the workflow run you triggered, not another

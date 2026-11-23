@@ -42,6 +42,7 @@ from rotisserie.factory_console.github import (
 )
 from rotisserie.factory_console.service import (
     baseline,
+    bridge,
     catalog,
     checks,
     close,
@@ -252,7 +253,38 @@ def add_parser(subcommands: argparse._SubParsersAction[argparse.ArgumentParser])
             "The result is read-only; a separate trusted claim is required before work."
         ),
     )
+    _via(next_work)
     _common(next_work)
+
+    wait_work = commands.add_parser(
+        "wait-for-work",
+        help="wait until there is work an outside agent can reserve",
+        description=(
+            "Check the ranked work list until it offers an unheld candidate for an action "
+            "you can do, then show it. Nothing is reserved: run reserve-next next."
+        ),
+    )
+    wait_work.add_argument(
+        "--can",
+        action="append",
+        choices=sorted(external.ACTIONS),
+        default=[],
+        help="action the agent can perform (repeat; default all supported actions)",
+    )
+    wait_work.add_argument(
+        "--interval",
+        type=int,
+        default=None,
+        help="seconds between checks (default 60, or 300 with --via github)",
+    )
+    wait_work.add_argument(
+        "--timeout",
+        type=int,
+        default=3600,
+        help="give up after this many seconds (default 3600; 0 waits until stopped)",
+    )
+    _via(wait_work)
+    _common(wait_work)
 
     reserve = commands.add_parser(
         "reserve-next",
@@ -270,6 +302,7 @@ def add_parser(subcommands: argparse._SubParsersAction[argparse.ArgumentParser])
         default=[],
         help="action the agent can perform (repeat; default all supported actions)",
     )
+    _via(reserve)
     _common(reserve)
 
     revoke = commands.add_parser(
@@ -287,6 +320,7 @@ def add_parser(subcommands: argparse._SubParsersAction[argparse.ArgumentParser])
             lease.add_argument(
                 "--evidence", required=True, help="same-repository GitHub issue, PR, or run URL"
             )
+        _via(lease)
         _common(lease)
 
     clear = commands.add_parser(
@@ -476,6 +510,18 @@ def add_parser(subcommands: argparse._SubParsersAction[argparse.ArgumentParser])
     _common(models)
 
 
+def _via(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument(
+        "--via",
+        choices=("direct", "github"),
+        default="direct",
+        help=(
+            "direct: use this machine's claim store connection (default); github: run the "
+            "repository's installed workflow and wait for its result (no Neon needed here)"
+        ),
+    )
+
+
 def _common(parser: argparse.ArgumentParser) -> None:
     # Accept global flags after the subcommand too (e.g. 'run ... --json').
     parser.add_argument("--repo", default=argparse.SUPPRESS, help=argparse.SUPPRESS)
@@ -579,11 +625,14 @@ def _help_text() -> str:
             "  rotisserie factory settings      limits, worker counts, priorities",
             "  rotisserie factory why [issue:N] why work is or is not being picked up",
             "  rotisserie factory next         ranked read-only work offers for agents",
+            "  rotisserie factory wait-for-work [--can ACTION]  wait until an agent can take work",
             "  rotisserie factory reserve-next --client AGENT [--can ACTION] [--target pr:N]",
             "  rotisserie factory renew UUID --client AGENT",
             "  rotisserie factory release UUID --client AGENT",
             "  rotisserie factory handoff UUID --client AGENT --evidence GITHUB_URL",
             "  rotisserie factory revoke UUID --reason TEXT  remove an external agent's claim",
+            "    (next, wait-for-work, reserve-next, renew, release, handoff: --via github runs",
+            "     the repository's installed workflow when this machine has no claim store)",
             "  rotisserie factory unstick       start the workers that clear the bottleneck",
             "  rotisserie factory outcomes      did the requested work actually happen",
             "  rotisserie factory checks pr:N   why its checks fail",
@@ -1843,31 +1892,158 @@ def _show_queue(console: Console, summary: queue.QueueSummary) -> None:
 # next -----------------------------------------------------------------------------------
 
 
+def _snapshot(context: Context, via: str) -> dict[str, object]:
+    """The ranked work list, read directly or through the installed workflow."""
+    if via != "github":
+        return frontier.capture(context.github, now=context.clock.now()).to_dict()
+    context.console.waiting("Running the work-list workflow on GitHub")
+    found = bridge.frontier(context.github, context.clock, started=context.progress)
+    context.console.finish()
+    return {**found.data, "bridge": found.summary()}
+
+
+def _show_offers(console: Console, offers: Sequence[object], limit: int = 12) -> None:
+    for offer in offers[:limit]:
+        if not isinstance(offer, dict):
+            continue
+        holds = [str(reason) for reason in offer.get("hold_reasons") or []]
+        state = "held" if holds else "candidate"
+        console.line(
+            f"  {offer.get('rank')}. {offer.get('target')} · {offer.get('action')} · {state}"
+        )
+        console.line(f"     {offer.get('title')}")
+        for reason in holds[:2]:
+            console.line(f"     Hold: {reason}")
+
+
 def cmd_next(context: Context, arguments: argparse.Namespace) -> Outcome:
-    found = frontier.capture(context.github, now=context.clock.now())
-    data = found.to_dict()
+    try:
+        data = _snapshot(context, arguments.via)
+    except bridge.BridgeError as exc:
+        return _bridge_failed(context, exc, "The work list could not be read")
     console = context.console
     console.heading("Next meaningful factory work (read-only)")
-    for offer in found.offers[:12]:
-        held = "held" if offer.hold_reasons else "candidate"
-        console.line(f"  {offer.rank}. {offer.target} · {offer.action} · {held}")
-        console.line(f"     {offer.title}")
-        for reason in offer.hold_reasons[:2]:
-            console.line(f"     Hold: {reason}")
-    if not found.authoritative_claim_available:
+    offers = data.get("offers")
+    _show_offers(console, offers if isinstance(offers, list) else [])
+    if data.get("authoritative_claim_available") is not True:
         console.warn("Lease authority is unavailable; all candidates are held.")
-        console.line(found.authority_note)
+        console.line(str(data.get("authority_note") or ""))
+    _show_bridge(console, data)
     console.line("This list never reserves work. A trusted fenced claim is required.")
     return Outcome(Result.COMPLETED, EXIT_OK, data)
+
+
+def _show_bridge(console: Console, data: dict[str, object]) -> None:
+    run = data.get("bridge")
+    if isinstance(run, dict):
+        console.line(f"  GitHub run: {run.get('url')}")
+
+
+def _bridge_failed(context: Context, exc: bridge.BridgeError, what: str) -> Outcome:
+    context.console.finish()
+    context.console.fail(f"{what}: {exc}")
+    data: dict[str, object] = {"status": "unknown", "reason": str(exc)}
+    if exc.url:
+        data["bridge"] = {"url": exc.url}
+    return Outcome(Result.UNKNOWN, EXIT_CODES[Result.UNKNOWN], data)
+
+
+def cmd_wait_for_work(context: Context, arguments: argparse.Namespace) -> Outcome:
+    via = arguments.via
+    abilities = frozenset(arguments.can) if arguments.can else external.ACTIONS
+    interval = arguments.interval
+    if interval is None:
+        interval = 300 if via == "github" else 60
+    # Each GitHub check is a full workflow run; do not flood Actions.
+    floor = 120 if via == "github" else 15
+    if interval < floor:
+        suffix = " with --via github" if via == "github" else ""
+        raise UsageError(f"--interval must be at least {floor} seconds{suffix}.")
+    if arguments.timeout < 0:
+        raise UsageError("--timeout must be 0 or more.")
+    console = context.console
+    started = context.clock.now()
+    checks = 0
+    while True:
+        checks += 1
+        try:
+            data = _snapshot(context, via)
+        except bridge.BridgeError as exc:
+            return _bridge_failed(context, exc, "The work list could not be read")
+        found = bridge.takeable(data, abilities)
+        if found:
+            console.finish()
+            console.ok(f"Work an outside agent can take ({len(found)})")
+            _show_offers(console, found, limit=5)
+            _show_bridge(console, data)
+            flag = " --via github" if via == "github" else ""
+            console.line(f"Reserve it: rotisserie factory reserve-next --client AGENT{flag}")
+            return Outcome(
+                Result.COMPLETED,
+                EXIT_OK,
+                {"status": "available", "available": found, "checks": checks, "frontier": data},
+            )
+        waited = (context.clock.now() - started).total_seconds()
+        if arguments.timeout and waited + interval > arguments.timeout:
+            console.finish()
+            console.warn(f"No work an outside agent can take after {duration(waited)}.")
+            return Outcome(
+                Result.NO_WORK,
+                EXIT_CODES[Result.NO_WORK],
+                {"status": "none", "checks": checks, "frontier": data},
+            )
+        reason = (
+            "lease authority unavailable"
+            if data.get("authoritative_claim_available") is not True
+            else "every offer is held or needs an action you did not list"
+        )
+        console.waiting(f"No work yet ({reason}); checked {checks}x, next in {duration(interval)}")
+        context.clock.sleep(interval)
 
 
 # external fenced leases ------------------------------------------------------------------
 
 
+def _external_via_github(context: Context, arguments: argparse.Namespace) -> dict[str, object]:
+    verb = arguments.factory_command
+    context.console.waiting(f"Running the claim workflow on GitHub ({verb})")
+    found = bridge.claim(
+        context.github,
+        context.clock,
+        operation=verb,
+        client=arguments.client,
+        claim_id=getattr(arguments, "claim_id", ""),
+        evidence=getattr(arguments, "evidence", ""),
+        abilities=frozenset(getattr(arguments, "can", None) or ()),
+        expected=getattr(arguments, "target", ""),
+        started=context.progress,
+    )
+    context.console.finish()
+    return {**found.data, "bridge": found.summary()}
+
+
 def cmd_external(context: Context, arguments: argparse.Namespace) -> Outcome:
     verb = arguments.factory_command
+    if getattr(arguments, "via", "direct") == "github" and getattr(arguments, "advertised_at", ""):
+        raise UsageError("--advertised-at is not supported with --via github.")
     try:
-        if verb == "revoke":
+        if getattr(arguments, "via", "direct") == "github":
+            try:
+                outcome = _external_via_github(context, arguments)
+            except bridge.BridgeError as exc:
+                # The run may have acted (a reservation may exist); say where to look.
+                return _bridge_failed(context, exc, "The claim workflow gave no result")
+            if outcome.get("result") in ("failed", "invalid", "github_unavailable"):
+                # The workflow ran and refused, exactly as a direct call would.
+                why = outcome.get("reason") or outcome.get("error") or outcome.get("status")
+                context.console.fail(f"External claim refused: {why}")
+                _show_bridge(context.console, outcome)
+                return Outcome(Result.FAILED, 4, outcome)
+            if not outcome.get("status"):
+                context.console.fail("The claim workflow published no status")
+                _show_bridge(context.console, outcome)
+                return Outcome(Result.UNKNOWN, EXIT_CODES[Result.UNKNOWN], outcome)
+        elif verb == "revoke":
             outcome = external.revoke(
                 context.github,
                 claim_id=arguments.claim_id,
@@ -1917,9 +2093,12 @@ def cmd_external(context: Context, arguments: argparse.Namespace) -> Outcome:
             context.console.line(f"  {handoff.get('target')}: {handoff.get('goal')}")
             context.console.line(f"  {handoff.get('url')}")
             context.console.line(f"  Lease: {handoff.get('claim_id')}")
-            context.console.line(f"  Renew: {handoff.get('renew')}")
+            renew = handoff.get("renew_github" if "bridge" in outcome else "renew")
+            context.console.line(f"  Renew: {renew}")
+        _show_bridge(context.console, outcome)
         return Outcome(Result.COMPLETED, EXIT_OK, outcome)
     context.console.warn(f"External claim not acquired: {outcome.get('reason', state)}")
+    _show_bridge(context.console, outcome)
     return Outcome(Result.NO_WORK, EXIT_CODES[Result.NO_WORK], outcome)
 
 
@@ -2781,6 +2960,7 @@ HANDLERS = {
     "prioritize": cmd_prioritize,
     "why": cmd_why,
     "next": cmd_next,
+    "wait-for-work": cmd_wait_for_work,
     "reserve-next": cmd_external,
     "renew": cmd_external,
     "release": cmd_external,
