@@ -33,6 +33,8 @@ permissions:
   contents: read
   issues: write # only the trusted handoff projects verified implementation PRs
   pull-requests: read
+  checks: read # exact-head check runs for the conflicted-without-CI exception
+  statuses: read
   actions: read
 
 env:

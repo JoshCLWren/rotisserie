@@ -1213,3 +1213,22 @@ def test_prerequisite_declared_after_the_snapshot_releases_our_claim(
     assert result["status"] == "conflict"
     assert "depends on open #99" in str(result["reason"])
     assert setup.holder is None
+
+
+def test_take_over_scope_covers_a_prs_linked_issue() -> None:
+    assert external.claim_scope(cast(GitHub, GitHubDouble()), "pr", 88) == [88, 7]
+    assert external.claim_scope(cast(GitHub, GitHubDouble()), "issue", 7) == [7]
+
+
+def test_ci_repair_that_turned_green_after_reservation_is_released(
+    setup: LedgerDouble, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    offer = replace(_pr_offer(), action="ci-repair")
+    monkeypatch.setattr(frontier, "capture", lambda *a, **k: make_frontier(offer))
+    monkeypatch.setattr(external, "_required_checks_outcome", lambda *a, **k: "passed")
+    github = GitHubDouble()
+    github.review_labels = ["factory", "factory:ci", "factory:unowned"]
+    result = external.reserve_next(cast(GitHub, github), client="chatgpt", environment={})
+    assert result["status"] == "conflict"
+    assert "no longer failing" in str(result["reason"])
+    assert setup.holder is None

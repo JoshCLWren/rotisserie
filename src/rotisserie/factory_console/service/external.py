@@ -334,6 +334,8 @@ def _post_claim_change(
             and _conflict_without_ci(github, int(number_text), offer.head_sha)
         ):
             return "required CI became pending or unknown after reservation"
+        if offer.action == "ci-repair" and checks != "failed":
+            return "required CI is no longer failing; nothing to repair"
     if (
         core.priority_rank(all_labels) != offer.priority
         or core.provenance_lane(all_labels, pull_request=(kind == "pr")) != offer.lane
@@ -851,6 +853,25 @@ def claim_action(
 
 class ClaimStoreUnavailable(RuntimeError):
     """This machine has no connection to the shared claim store (Neon)."""
+
+
+def claim_scope(github: GitHub, kind: str, number: int) -> list[int]:
+    """The numbers a claim on this item could sit on: a PR and its linked issue."""
+    if kind != "pr":
+        return [number]
+    try:
+        pr = obj(github.repo_api(f"pulls/{number}"))
+    except GitHubError:
+        return [number]
+    linked = runtime.module("factory_work_policy").linked_issue_from_pr(
+        {
+            "number": number,
+            "headRefName": string(obj(pr.get("head")), "ref"),
+            "body": string(pr, "body"),
+            "title": string(pr, "title"),
+        }
+    )
+    return [number] if linked in (None, number) else [number, int(linked)]
 
 
 def holder(github: GitHub, number: int) -> dict[str, object] | None:

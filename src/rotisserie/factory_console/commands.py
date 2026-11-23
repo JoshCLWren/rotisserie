@@ -697,8 +697,11 @@ def cmd_run(context: Context, arguments: argparse.Namespace) -> Outcome:
     outcome = Outcome(Result.UNKNOWN, EXIT_CODES[Result.UNKNOWN], data)
     stopped_workers: list[str] = []
     attempt = 0
-    if not _take_over_external(context, number, data):
-        return Outcome(Result.FAILED, EXIT_CODES[Result.FAILED], data)
+    # An outside claim may hold the PR's linked issue rather than the PR
+    # itself (an implementation claim that has just opened its PR).
+    for held in external.claim_scope(context.github, kind, number):
+        if not _take_over_external(context, held, data):
+            return Outcome(Result.FAILED, EXIT_CODES[Result.FAILED], data)
     for attempt in range(TAKE_OVER_ATTEMPTS):
         item = lookup(context.github, kind, number)
         if item.owner:
