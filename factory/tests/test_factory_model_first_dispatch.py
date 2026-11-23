@@ -226,8 +226,12 @@ def test_conflicted_pr_without_published_required_checks_can_enter_repair(monkey
     check_runs['check_runs'][0]['status'] = 'in_progress'
     assert controller.candidate_is_live_executable(candidate) is False
     check_runs['check_runs'][0]['status'] = 'completed'
+    # #182: CI that already ran on the conflicted head (GitHub then reports no
+    # required checks) settles nothing the conflict repair waits on.
     check_runs['check_runs'].append({'name': 'CI Summary', 'status': 'completed'})
     check_runs['total_count'] = 3
+    assert controller.candidate_is_live_executable(candidate) is True
+    check_runs['check_runs'][-1]['status'] = 'in_progress'
     assert controller.candidate_is_live_executable(candidate) is False
     check_runs['check_runs'].pop()
     check_runs['total_count'] = 3  # pagination or partial API response

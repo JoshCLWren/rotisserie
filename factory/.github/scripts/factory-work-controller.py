@@ -324,12 +324,15 @@ def required_checks_failed(pr_number: int) -> bool:
 
 
 def conflicted_head_without_published_ci(pr_number: int) -> bool:
-    """Verify a conflict head is missing CI, rather than hiding running checks.
+    """Verify a conflict head has no CI still running, rather than hiding running checks.
 
-    GitHub CLI can emit a non-JSON 'no checks reported' error on a conflicted
-    PR, so gh pr checks alone cannot distinguish absent CI from unknown API
-    evidence. Only the authoritative check-runs endpoint for the current head
-    can make this narrow exception safe. This does not authorize merging.
+    GitHub reports no required checks on a conflicted PR, and gh can emit a
+    non-JSON 'no checks reported' error, so gh pr checks alone cannot tell
+    settled CI from unknown evidence. Only the authoritative check-runs
+    endpoint for the current head can make this narrow exception safe. CI that
+    already ran (a published CI Summary) settles nothing a merge conflict
+    waits on, so only a still-running check holds the repair (#182). This
+    does not authorize merging.
     """
     try:
         live = live_pr_state(pr_number)
@@ -361,13 +364,8 @@ def conflicted_head_without_published_ci(pr_number: int) -> bool:
         # Pagination, malformed data or an unavailable read is not evidence
         # that required CI is absent.
         return False
-    if any(
-        str(run.get('name') or '') == 'CI Summary'
-        or str(run.get('status') or '').lower() != 'completed'
-        for run in runs
-    ):
-        # A published CI Summary, or any still-running head check, must finish
-        # through the normal required-check policy rather than this exception.
+    if any(str(run.get('status') or '').lower() != 'completed' for run in runs):
+        # A still-running head check must finish first.
         return False
     return True
 
