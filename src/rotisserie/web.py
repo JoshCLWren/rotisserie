@@ -230,10 +230,22 @@ def make_handler(
             )
             self.end_headers()
 
+        def _write_body(self, body: bytes) -> None:
+            """A browser can abandon a slow factory read before we respond.
+
+            The operation itself has already run by this point; a disconnected
+            client is not a factory failure. Preserve unexpected I/O errors.
+            """
+            try:
+                self.wfile.write(body)
+            except (BrokenPipeError, ConnectionResetError):
+                # A tab closed, navigated away, or discarded an old response.
+                return
+
         def _send_json(self, code: int, data: Mapping[str, Any]) -> None:
             blob = json.dumps(data, default=str).encode("utf-8")
             self._headers(code, "application/json; charset=utf-8")
-            self.wfile.write(blob)
+            self._write_body(blob)
 
         def _authorized(self) -> bool:
             host = self.headers.get("Host", "")
@@ -261,7 +273,7 @@ def make_handler(
                 page = page.replace("__SESSION_TOKEN__", json.dumps(token))
                 page = page.replace("__REPOSITORY__", json.dumps(repository))
                 self._headers(200, "text/html; charset=utf-8")
-                self.wfile.write(page.encode("utf-8"))
+                self._write_body(page.encode("utf-8"))
                 return
             if not parsed.path.startswith("/api/") or not self._authorized():
                 if parsed.path.startswith("/api/"):
