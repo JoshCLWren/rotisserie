@@ -62,6 +62,39 @@ The repository is taken from `--repo owner/name`, `FACTORY_REPO`, the nearest
 `.rotisserie/config.toml`, or the `origin` remote, in that order. The console
 uses your existing `gh` login (it needs `repo` and `workflow` access).
 
+## Public Pages control room
+
+The public ComicPile dashboard is rendered from the same
+`src/rotisserie/web_ui.html` as `rotisserie web`. A publisher converts
+the existing sanitized factory dashboard into a strictly allowlisted
+`factory-control-room.json` and serves this UI in **hosted mode**.
+The prior detailed telemetry remains available through `?legacy=1`.
+
+GitHub Pages has no privileged backend or authentication cookie. The hosted
+UI only reads the published snapshot, shows a stale-data error after 30
+minutes, and never calls the live GitHub REST API for normal viewing.
+Features requiring live graph, lease, settings, or review reads say so
+instead of fabricating those results.
+
+**Administrator operations use GitHub's own authentication UI.**
+Clicking a hosted operator control copies its allowlisted command JSON and
+navigates to
+[Rotisserie Admin Command](https://github.com/JoshCLWren/comic-pile/actions/workflows/rotisserie-admin-command.yml).
+An administrator signed into GitHub selects `Run workflow` on `main`
+and pastes the JSON into `command_json`. The trusted workflow validates
+the **immutable** GitHub actor ID, using owner ID `4014199` by default
+and optional comma-separated `ROTISSERIE_ADMIN_GITHUB_IDS` repository
+variable. Only after that check does it check out code and run Rotisserie's
+existing `write_command` allowlist and dispatch guards. A contributor
+can view and attempt the UI, but cannot successfully execute this privileged
+workflow through it without explicit authorization.
+
+This is deliberately a GitHub-authenticated handoff, not an in-page
+OAuth session. GitHub's static-page-only OAuth SPA support is not generally
+available. Do not store GitHub tokens in Pages JavaScript or treat a hidden
+button as authorization. The local UI retains its existing immediate
+authenticated CLI actions.
+
 ## Install
 
 Rotisserie is private, so install it from GitHub with your SSH access:
