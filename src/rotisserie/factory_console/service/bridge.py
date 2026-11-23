@@ -16,7 +16,15 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from rotisserie.factory_console.github import GitHub, GitHubError, integer, items, obj, string
+from rotisserie.factory_console.github import (
+    GitHub,
+    GitHubAuthError,
+    GitHubError,
+    GitHubNotFoundError,
+    GitHubRateLimitError,
+    obj,
+    string,
+)
 from rotisserie.factory_console.service.external import ACTIONS
 from rotisserie.factory_console.tracker import Clock
 
@@ -26,7 +34,6 @@ FRONTIER_WORKFLOW = "rotisserie-external-frontier.yml"
 CLAIM_TIMEOUT = 900.0
 FRONTIER_TIMEOUT = 600.0
 POLL_SECONDS = 10.0
-FIND_ATTEMPTS = 20
 
 
 class BridgeError(RuntimeError):
@@ -54,23 +61,12 @@ class BridgeRun:
         }
 
 
-def _titled_runs(github: GitHub, workflow: str, title: str) -> set[int]:
-    runs = items(
-        github.repo_api(f"actions/workflows/{workflow}/runs?event=workflow_dispatch&per_page=50"),
-        "workflow_runs",
-    )
-    found = {integer(run, "id") for run in runs if string(run, "display_title") == title}
-    return {run_id for run_id in found if run_id is not None}
-
-
-def _start(
-    github: GitHub, clock: Clock, workflow: str, inputs: dict[str, str], title: str
-) -> tuple[int, str]:
+def _start(github: GitHub, workflow: str, inputs: dict[str, str]) -> tuple[int, str]:
     listing = f"https://github.com/{github.repo}/actions/workflows/{workflow}"
-    # Runs with our title that already exist can never be ours.
-    earlier = _titled_runs(github, workflow, title)
     try:
         output = github.workflow_run(workflow, inputs)
+    except (GitHubAuthError, GitHubNotFoundError, GitHubRateLimitError):
+        raise  # GitHub refused the request outright: nothing started.
     except GitHubError as exc:
         # A timeout or dropped connection may follow GitHub accepting it.
         raise BridgeError(
@@ -79,32 +75,16 @@ def _start(
             url=listing,
         ) from exc
     match = re.search(r"/actions/runs/(\d+)", output)
-    if match:
-        run_id = int(match.group(1))
-        return run_id, f"https://github.com/{github.repo}/actions/runs/{run_id}"
-    # Older gh prints no run URL. Accept only a single new run with our
-    # title: two of them (the same agent started another request at once)
-    # cannot be told apart, and reading the wrong result would be worse.
-    try:
-        for _ in range(FIND_ATTEMPTS):
-            fresh = _titled_runs(github, workflow, title) - earlier
-            if len(fresh) > 1:
-                raise BridgeError(
-                    f"two runs named {title!r} started at once; check which is yours at {listing}",
-                    url=listing,
-                )
-            if fresh:
-                run_id = fresh.pop()
-                return run_id, f"https://github.com/{github.repo}/actions/runs/{run_id}"
-            clock.sleep(3)
-    except GitHubError as exc:
+    if not match:
+        # Never guess from run names: two requests from one agent share a
+        # name, and reading another request's result would be worse than none.
         raise BridgeError(
-            f"the request was sent but its run could not be read: {exc}", url=listing
-        ) from exc
-    raise BridgeError(
-        f"GitHub accepted the request, but its run did not appear. Check {listing}",
-        url=listing,
-    )
+            "the workflow started, but this GitHub CLI did not say which run it is "
+            f"(upgrade gh to get the run URL). Find it at {listing}",
+            url=listing,
+        )
+    run_id = int(match.group(1))
+    return run_id, f"https://github.com/{github.repo}/actions/runs/{run_id}"
 
 
 def _artifact(github: GitHub, run_id: int, name: str, url: str) -> dict[str, object]:
@@ -143,7 +123,6 @@ def run(
     workflow: str,
     inputs: dict[str, str],
     *,
-    title: str,
     artifact: str,
     timeout: float,
     started: dict[str, object] | None = None,
@@ -154,7 +133,7 @@ def run(
     run's URL as soon as it is known, so an interrupted caller can say where the
     run that may already have acted is.
     """
-    run_id, url = _start(github, clock, workflow, inputs, title)
+    run_id, url = _start(github, workflow, inputs)
     if started is not None:
         started["bridge_run"] = url
     deadline = clock.now().timestamp() + timeout
@@ -201,13 +180,11 @@ def claim(
         inputs["claim_id"] = claim_id
     if evidence:
         inputs["evidence"] = evidence
-    actor = github.whoami()
     return run(
         github,
         clock,
         CLAIM_WORKFLOW,
         inputs,
-        title=f"External {operation} · {actor} / {client}",
         artifact="rotisserie-external-claim-{run_id}",
         timeout=CLAIM_TIMEOUT,
         started=started,
@@ -218,13 +195,11 @@ def frontier(
     github: GitHub, clock: Clock, *, started: dict[str, object] | None = None
 ) -> BridgeRun:
     """Read the ranked work list through the adopter's read-only frontier workflow."""
-    actor = github.whoami()
     return run(
         github,
         clock,
         FRONTIER_WORKFLOW,
         {},
-        title=f"Rotisserie next work · {actor}",
         artifact="rotisserie-work-frontier-{run_id}",
         timeout=FRONTIER_TIMEOUT,
         started=started,

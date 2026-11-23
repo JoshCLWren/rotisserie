@@ -2602,43 +2602,17 @@ def test_a_run_without_its_result_is_unknown_not_success(fake: FakeGitHub) -> No
     assert data["bridge"]["url"].endswith("/actions/runs/900")
 
 
-def _runs_after_dispatch(fake: FakeGitHub, *names: tuple[int, str]) -> Callable[[], JSON]:
-    """The workflow's runs: an old one always, ``names`` once our request is sent."""
-
-    def listing() -> JSON:
-        runs: list[JSON] = [{"id": 800, "display_title": "External release · alice / claude-code"}]
-        if any(call[0] == "workflow" for call in fake.calls):
-            runs += [{"id": run_id, "display_title": title} for run_id, title in names]
-        return {"workflow_runs": runs}
-
-    return listing
-
-
-def test_a_run_found_by_its_title_when_gh_prints_no_url(fake: FakeGitHub) -> None:
+def test_a_run_is_never_guessed_when_gh_prints_no_url(fake: FakeGitHub) -> None:
     bridge_routes(fake)
     fake.dispatch_output = ""
-    fake.routes["actions/workflows/rotisserie-external-claim.yml/runs"] = _runs_after_dispatch(
-        fake,
-        (899, "External release · alice / other"),
-        (900, "External release · alice / claude-code"),
-    )
-    fake.artifacts["rotisserie-external-claim-900"] = {"result": "completed", "status": "released"}
-    code, out = invoke(["release", BRIDGE_CLAIM, "--client", "claude-code", "--via", "github"])
-    assert code == 0, out
-    assert "External claim released" in out
-
-
-def test_two_new_runs_with_our_title_are_never_guessed(fake: FakeGitHub) -> None:
-    bridge_routes(fake)
-    fake.dispatch_output = ""
-    title = "External release · alice / claude-code"
-    fake.routes["actions/workflows/rotisserie-external-claim.yml/runs"] = _runs_after_dispatch(
-        fake, (900, title), (901, title)
-    )
+    fake.routes["actions/workflows/rotisserie-external-claim.yml/runs"] = {
+        "workflow_runs": [{"id": 900, "display_title": "External release · alice / claude-code"}]
+    }
     fake.artifacts["rotisserie-external-claim-900"] = {"result": "completed", "status": "released"}
     code, out = invoke(["release", BRIDGE_CLAIM, "--client", "claude-code", "--via", "github"])
     assert code == 6
-    assert "started at once" in out
+    assert "did not say which run it is" in out
+    assert "actions/workflows/rotisserie-external-claim.yml" in out
     assert not [call for call in fake.calls if call[:2] == ["run", "download"]]
 
 
@@ -2664,12 +2638,43 @@ def test_a_failed_dispatch_may_still_have_started_a_run(fake: FakeGitHub) -> Non
     assert "GitHub may still have started it" in out
 
 
-def test_github_down_before_dispatch_is_not_a_refusal(fake: FakeGitHub) -> None:
+@pytest.mark.parametrize(
+    "error",
+    [GitHubAuthError("gh auth login"), GitHubNotFoundError("workflow not found")],
+)
+def test_a_refused_dispatch_is_github_unavailable_not_unknown(
+    fake: FakeGitHub, error: GitHubError
+) -> None:
+    fake.dispatch_error = error
     code, out = invoke(["--json", "renew", BRIDGE_CLAIM, "--client", "x", "--via", "github"])
     data = json.loads(out)
     assert data["result"] == "github_unavailable"
-    assert code != 4
-    assert not [call for call in fake.calls if call[0] == "workflow"]
+    assert code not in (0, 4, 6)
+
+
+def test_interrupting_a_bridged_claim_shows_its_run(fake: FakeGitHub) -> None:
+    bridge_routes(fake, status="in_progress")
+    clock = FakeClock()
+
+    def stop(count: int) -> None:
+        raise KeyboardInterrupt
+
+    clock.on_sleep = stop
+    code, out = invoke(
+        ["reserve-next", "--client", "codebuff-phone", "--via", "github"], clock=clock
+    )
+    assert code == commands.EXIT_INTERRUPTED
+    assert f"Its result: https://github.com/{REPO}/actions/runs/900" in out
+
+
+def test_wait_for_work_uses_the_whole_timeout(fake: FakeGitHub) -> None:
+    bridge_routes(fake)
+    fake.artifacts["rotisserie-work-frontier-900"] = frontier_snapshot()
+    clock = FakeClock()
+    code, out = invoke(["wait-for-work", "--via", "github", "--timeout", "120"], clock=clock)
+    assert code == 3
+    assert clock.current - START == timedelta(seconds=120)
+    assert len([call for call in fake.calls if call[0] == "workflow"]) == 2
 
 
 def test_advertised_at_is_refused_with_via_github(fake: FakeGitHub) -> None:
@@ -2732,7 +2737,7 @@ def test_wait_for_work_gives_up_after_its_timeout(fake: FakeGitHub) -> None:
     )
     assert code == 3
     assert "No work an outside agent can take" in out
-    assert len([call for call in fake.calls if call[0] == "workflow"]) == 4
+    assert len([call for call in fake.calls if call[0] == "workflow"]) == 4  # 0, 300, 600, 900s
 
 
 def test_wait_for_work_direct_reads_the_frontier_here(

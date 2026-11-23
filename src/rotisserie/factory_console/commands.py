@@ -657,6 +657,10 @@ def _stopped_watching(console: Console, data: dict[str, object]) -> None:
     run = data.get("scheduler_run_id") or data.get("worker_run_id")
     if run:
         console.line(f"  Resume:  rotisserie factory watch {run}")
+    bridged = data.get("bridge_run")
+    if bridged:
+        # A claim run may still reserve or release work: look before retrying.
+        console.line(f"  Its result: {bridged}")
     target = data.get("target_ref")
     if target:
         console.line(f"  Stop it: rotisserie factory cancel {target}")
@@ -1990,7 +1994,11 @@ def cmd_wait_for_work(context: Context, arguments: argparse.Namespace) -> Outcom
                 {"status": "available", "available": found, "checks": checks, "frontier": data},
             )
         waited = (context.clock.now() - started).total_seconds()
-        if arguments.timeout and waited + interval > arguments.timeout:
+        pause = float(interval)
+        if arguments.timeout:
+            # Use the whole timeout: the last pause may be shorter.
+            pause = min(pause, arguments.timeout - waited)
+        if pause <= 0:
             console.finish()
             console.warn(f"No work an outside agent can take after {duration(waited)}.")
             return Outcome(
@@ -2003,8 +2011,8 @@ def cmd_wait_for_work(context: Context, arguments: argparse.Namespace) -> Outcom
             if data.get("authoritative_claim_available") is not True
             else "every offer is held or needs an action you did not list"
         )
-        console.waiting(f"No work yet ({reason}); checked {checks}x, next in {duration(interval)}")
-        context.clock.sleep(interval)
+        console.waiting(f"No work yet ({reason}); checked {checks}x, next in {duration(pause)}")
+        context.clock.sleep(pause)
 
 
 # external fenced leases ------------------------------------------------------------------
