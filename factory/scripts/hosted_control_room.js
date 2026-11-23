@@ -4,7 +4,6 @@
  */
 "use strict";
 (function () {
-  const OWNER_ID = 4014199; // Immutable GitHub ID of the initially allowed administrator.
   const WORKFLOW = "rotisserie-operator.yml";
   const CACHE_MS = 60000;
   let token = null;
@@ -188,10 +187,13 @@
     try {
       const headers = { Authorization: "Bearer " + value.trim() };
       const user = await githubRequest("/user", headers);
-      if (user.id !== OWNER_ID) throw Error("This account is not a Rotisserie administrator.");
+      const published = await snapshot();
+      if (!(published.admin_ids || []).includes(user.id)) {
+        throw Error("This GitHub account is not in the Rotisserie administrator allowlist.");
+      }
       const repo = await githubRequest("/repos/" + REPO, headers);
-      if (!repo.permissions || !repo.permissions.admin) {
-        throw Error("The GitHub token does not have repository administrator access.");
+      if (!repo.permissions || !repo.permissions.push) {
+        throw Error("The GitHub token does not have repository write access.");
       }
       token = value.trim(); identity = user.login;
       document.getElementById("github-connect").textContent = "Disconnect GitHub";
