@@ -43,6 +43,8 @@ class GitHubDouble:
         self.branch = "work-7"
         self.issue_labels: list[str] = []
         self.pr_author = "acme"
+        self.open_prs: list[dict[str, object]] = []
+        self.extra_commits: list[tuple[str, str]] = []
 
     def whoami(self) -> str:
         return "alice"
@@ -59,6 +61,11 @@ class GitHubDouble:
             return {"state": state, "labels": [{"name": n} for n in names]}
         if route.startswith("commits/"):
             return {"commit": {"message": self.message}}
+        if route.startswith("compare/"):
+            since = route.split("/", 1)[1].split("...")[0]
+            shas = [sha for sha, _ in self._commits()]
+            after = shas[shas.index(since) + 1 :] if since in shas else shas
+            return {"commits": [{"sha": sha} for sha in after]}
         if route.startswith("pulls/"):
             return {
                 "state": "open",
@@ -71,9 +78,19 @@ class GitHubDouble:
             }
         raise AssertionError(route)
 
+    def _commits(self) -> list[tuple[str, str]]:
+        earlier = [] if self.head == "a" * 40 else [("a" * 40, "Old\n\nModel: kimi-k3")]
+        return [*earlier, *self.extra_commits, (self.head, self.message)]
+
     def gh(self, *args: str, **kwargs: Any) -> str:
         if args == ("api", f"repos/{REPO}"):
             return json.dumps({"full_name": self.full_name})
+        if args[:2] == ("pr", "list"):
+            return json.dumps(self.open_prs)
+        if args[:3] == ("api", "--paginate", "--slurp") and "/commits" in args[3]:
+            return json.dumps(
+                [[{"sha": sha, "commit": {"message": msg}} for sha, msg in self._commits()]]
+            )
         if args[:2] == ("issue", "comment"):
             self.comments.append(args[-1])
             return ""
@@ -1103,4 +1120,56 @@ def test_linked_issue_owner_after_snapshot_releases_our_claim(
     result = external.reserve_next(cast(GitHub, github), client="chatgpt", environment={})
     assert result["status"] == "conflict"
     assert "linked issue's owner" in str(result["reason"])
+    assert setup.holder is None
+
+
+def test_every_delivered_model_is_recorded(setup: LedgerDouble) -> None:
+    _repair_claim(setup)
+    github = GitHubDouble(head="b" * 40)
+    github.review_labels = ["factory", "factory:changes-requested", "factory:unowned"]
+    github.extra_commits = [("d" * 40, "First half\n\nModel: deepseek-v4")]
+    external.claim_action(
+        cast(GitHub, github),
+        client="codebuff",
+        claim_id=TOKEN,
+        operation="handoff",
+        environment=BRIDGE,
+        evidence=f"https://github.com/{REPO}/pull/88",
+    )
+    assert github.comments == [
+        f"<!-- comic-pile-agent-model-author-v1:pr-88:head-{'d' * 40}:"
+        "model-deepseek-v4:agent-external-codebuff -->",
+        f"<!-- comic-pile-agent-model-author-v1:pr-88:head-{'b' * 40}:"
+        "model-gpt-5.2:agent-external-codebuff -->",
+    ]
+
+
+def test_an_unattributed_delivered_commit_refuses_the_handoff(setup: LedgerDouble) -> None:
+    _repair_claim(setup)
+    github = GitHubDouble(head="b" * 40)
+    github.review_labels = ["factory", "factory:changes-requested", "factory:unowned"]
+    github.extra_commits = [("d" * 40, "No trailer here")]
+    with pytest.raises(ValueError, match=f"commit {'d' * 12} needs exactly one"):
+        external.claim_action(
+            cast(GitHub, github),
+            client="codebuff",
+            claim_id=TOKEN,
+            operation="handoff",
+            environment=BRIDGE,
+            evidence=f"https://github.com/{REPO}/pull/88",
+        )
+    assert setup.holder == "codebuff"
+    assert github.comments == []
+
+
+def test_issue_implemented_by_a_pr_opened_after_the_snapshot_is_released(
+    setup: LedgerDouble,
+) -> None:
+    github = GitHubDouble()
+    github.open_prs = [
+        {"number": 90, "state": "OPEN", "headRefName": "x", "body": "Closes #7", "title": "x"}
+    ]
+    result = external.reserve_next(cast(GitHub, github), client="chatgpt", environment={})
+    assert result["status"] == "conflict"
+    assert "no longer eligible" in str(result["reason"])
     assert setup.holder is None

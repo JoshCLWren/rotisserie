@@ -225,6 +225,33 @@ def _live_offer(
     return True, ""
 
 
+def _implemented_issues(github: GitHub, core: ModuleType) -> set[int]:
+    """Issues an open PR already implements, read live (the controller's rule)."""
+    rows = json.loads(
+        github.gh(
+            "pr",
+            "list",
+            "--repo",
+            github.repo,
+            "--state",
+            "open",
+            "--limit",
+            "500",
+            "--json",
+            "number,headRefName,body,title,state",
+        )
+    )
+    if not isinstance(rows, list) or len(rows) >= 500:
+        raise ValueError("open pull requests could not be listed completely")
+    return {
+        int(linked)
+        for row in rows
+        if isinstance(row, dict)
+        and core.pr_suppresses_issue_candidate(row, {})
+        and (linked := core.linked_issue_from_pr(row)) is not None
+    }
+
+
 def _bypasses_wip(github: GitHub, offer: frontier.Offer) -> bool:
     """The work policy's own WIP bypass (urgent defects) for this issue offer."""
     if offer.action != "implement":
@@ -247,7 +274,9 @@ def _post_claim_change(
     if kind == "issue":
         # The same static gate the controller applies: manual-only, epics,
         # blocked/terminal labels and ownership added since the snapshot.
-        if not core.issue_is_static_candidate({**live, "number": int(number_text)}, set()):
+        if not core.issue_is_static_candidate(
+            {**live, "number": int(number_text)}, _implemented_issues(github, core)
+        ):
             return "issue is no longer eligible (manual-only, blocked or owned)"
         blocked, why = queue.open_blocker(github, int(number_text))
         if blocked:
@@ -618,26 +647,58 @@ def _closed_issues(repo: str, *texts: str) -> set[int]:
     return found
 
 
-def _author_model(github: GitHub, head: str) -> str:
-    """The single ``Model:`` trailer on the handed-off head commit, or refuse."""
-    commit = obj(obj(github.repo_api(f"commits/{head}")).get("commit"))
-    models = runtime.module("factory_review_policy").model_trailer_models(string(commit, "message"))
-    if len(models) != 1:
-        raise ValueError(
-            "the handed-off head commit needs exactly one 'Model: <your model id>' trailer "
-            "so the factory can keep its author from approving it"
-        )
-    return str(next(iter(models)))
+def _delivered_authors(github: GitHub, pr: int, since: str | None) -> list[tuple[str, str]]:
+    """``(commit, model)`` for every commit this handoff delivers, or refuse.
+
+    Delivered commits are the PR's own (not on its base branch); for a repair,
+    only those new since the claimed head. Each must carry exactly one
+    ``Model:`` trailer, so every contributing model is recorded.
+    """
+    policy = runtime.module("factory_review_policy")
+    path = f"repos/{github.repo}/pulls/{pr}/commits?per_page=100"
+    pages = json.loads(github.gh("api", "--paginate", "--slurp", path))
+    own = [
+        c
+        for page in (pages if isinstance(pages, list) else [])
+        if isinstance(page, list)
+        for c in page
+        if isinstance(c, dict)
+    ]
+    if len(own) >= 250:
+        raise ValueError("the pull request has too many commits to attribute (250+)")
+    if since is not None and own:
+        compared = obj(github.repo_api(f"compare/{since}...{string(own[-1], 'sha')}"))
+        listed = compared.get("commits")
+        rows = listed if isinstance(listed, list) else []
+        new = {string(c, "sha") for c in rows if isinstance(c, dict)}
+        own = [c for c in own if string(c, "sha") in new]
+    if not own:
+        raise ValueError("no new commit on the claimed PR; release the claim instead")
+    authors: list[tuple[str, str]] = []
+    for commit in own:
+        models = policy.model_trailer_models(string(obj(commit.get("commit")), "message"))
+        if len(models) != 1:
+            raise ValueError(
+                f"commit {string(commit, 'sha')[:12]} needs exactly one "
+                "'Model: <your model id>' trailer so the factory can keep its author "
+                "from approving this work"
+            )
+        authors.append((string(commit, "sha"), str(next(iter(models)))))
+    return authors
 
 
-def _record_author(
-    github: GitHub, pr: int, head: str, model: str, client: str, environment: dict[str, str]
+def _record_authors(
+    github: GitHub,
+    pr: int,
+    authors: list[tuple[str, str]],
+    client: str,
+    environment: dict[str, str],
 ) -> None:
-    """Write the controller-trusted author-model marker for an outside agent's head.
+    """Write a controller-trusted author-model marker for each delivered commit.
 
     Only the Actions bot's comments count as author records, so this runs in
-    the GitHub bridge. Without it a repair model could later approve its own
-    repair, since a repair commit cannot be attested from the PR's author.
+    the GitHub bridge. Every head of a PR counts toward its known authors, so
+    one marker per commit records each contributing model exactly once.
     """
     if environment.get("GITHUB_ACTIONS") != "true":
         raise ValueError(
@@ -646,10 +707,11 @@ def _record_author(
             "-f operation=handoff -f client=CLIENT -f claim_id=UUID -f evidence=URL"
         )
     policy = runtime.module("factory_review_policy")
-    marker = policy.agent_model_author_marker(
-        pr=pr, head=head, model=model, agent=f"external-{client}"
-    )
-    github.gh("issue", "comment", str(pr), "--repo", github.repo, "--body", marker)
+    for commit, model in authors:
+        marker = policy.agent_model_author_marker(
+            pr=pr, head=commit, model=model, agent=f"external-{client}"
+        )
+        github.gh("issue", "comment", str(pr), "--repo", github.repo, "--body", marker)
 
 
 def _verify_and_project_handoff(
@@ -685,6 +747,7 @@ def _verify_and_project_handoff(
     if core.owner_of(labels) not in (None, "factory:unowned"):
         raise ValueError("handoff PR is owned by another worker")
     stage = core.stage_of(labels)
+    head_at_claim = ""
     if action == "implement":
         if kind != "issue":
             raise ValueError("implementation handoff must originate from an issue")
@@ -709,14 +772,19 @@ def _verify_and_project_handoff(
             raise ValueError("handoff evidence points to a different PR")
         if head == claim.get("head"):
             raise ValueError("no new commit on the claimed PR; release the claim instead")
+        head_at_claim = str(claim.get("head") or "")
         if stage not in COMPLETION_STAGES:
             raise ValueError("the PR left the factory's completion stages")
     else:
         raise ValueError("unsupported claimed action")
-    model = _author_model(github, head)
-    # Every handoff gets the bridge's trusted author record for this exact
-    # head; the review controller cannot attest every outside head itself.
-    _record_author(github, pr_number, head, model, str(claim["client"]), environment or {})
+    authors = _delivered_authors(
+        github, pr_number, None if action == "implement" else head_at_claim
+    )
+    if authors[-1][0] != head:
+        raise ValueError("the pull request moved during handoff; hand off its new head")
+    # Every handoff gets the bridge's trusted author records for the commits
+    # it delivers; the review controller cannot attest every outside head.
+    _record_authors(github, pr_number, authors, str(claim["client"]), environment or {})
     _project_review_stage(github, core, pr_number, labels, head)
 
 

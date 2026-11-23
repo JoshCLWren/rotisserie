@@ -73,10 +73,12 @@ names while the factory links by branch first.
 
 ### Authorship
 
-The handed-off head commit must end with exactly one `Model: <exact model id>`
-trailer, or the handoff is refused and the claim stays held. The bridge then
-writes a controller-trusted author-model marker for that exact head (agent
-`external-CLIENT`), so the model that wrote the work never approves it. Only
+Every delivered commit must end with exactly one `Model: <exact model id>`
+trailer, or the handoff is refused and the claim stays held. Delivered commits
+are the PR's own commits (not on its base branch); for a repair, only those
+new since the claimed head. The bridge writes a controller-trusted
+author-model marker for each (agent `external-CLIENT`), so no model that
+contributed the work can approve it. Only
 the Actions bot's comments count as author records, so **every handoff runs
 through the GitHub bridge**: a CLI agent reserves, renews and releases from
 the CLI, and `rotisserie factory handoff` prints the exact `gh workflow run`
