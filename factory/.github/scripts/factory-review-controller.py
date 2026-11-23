@@ -1376,6 +1376,8 @@ def outside_claim(pr_number: int, pr: Mapping[str, Any]) -> str | None:
     try:
         ledger = importlib.import_module("factory_state_ledger")
         if not ledger.enabled():
+            if os.environ.get("FACTORY_NEON_CONFIGURED") == "true":
+                return "outside-agent claims could not be read (Neon configured, not connected)"
             return None
         numbers = [pr_number]
         linked = linked_issue_for_pr(pr_number, str(pr.get("headRefName") or ""))

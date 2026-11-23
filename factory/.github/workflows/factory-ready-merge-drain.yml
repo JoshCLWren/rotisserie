@@ -56,8 +56,20 @@ jobs:
           python3 .github/scripts/hourly_coderabbit_review.py \
             --repo "$GITHUB_REPOSITORY"
 
+      # Outside agents hold Neon target claims with no GitHub owner label;
+      # merge authorization reads them, so the drain needs the same restricted
+      # connection as the controller (never exposed to model jobs).
+      - name: Configure shared restricted Neon authority
+        uses: ./.github/actions/factory-state-cache
+        with:
+          neon-api-key: ${{ secrets.NEON_API_KEY }}
+          neon-project-id: ${{ vars.NEON_PROJECT_ID }}
+
       - name: Install factory syntax parsers
         uses: ./.github/actions/factory-syntax
+
+      - name: Let factory scripts read outside-agent claims
+        run: python3 -m pip install --quiet --disable-pip-version-check 'asyncpg>=0.30,<1'
 
       - name: Ensure GitHub CLI supports JSON PR checks
         shell: bash
@@ -253,6 +265,8 @@ jobs:
         if: steps.main_health.outputs.state == 'green' || steps.main_health.outputs.state == 'red'
         shell: bash
         env:
+          # A configured but unconnected claim store holds merges closed.
+          FACTORY_NEON_CONFIGURED: ${{ vars.NEON_PROJECT_ID != '' }}
           GH_TOKEN: ${{ github.token }}
           FACTORY_MAIN_CI_WORKFLOWS: ${{ vars.FACTORY_MAIN_CI_WORKFLOWS }}
           MAIN_STATE: ${{ steps.main_health.outputs.state }}

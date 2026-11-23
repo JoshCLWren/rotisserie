@@ -103,3 +103,22 @@ def test_without_neon_configured_nothing_changes(
         ledger, "external_holder", lambda *a: pytest.fail("no claim store to read")
     )
     assert controller.outside_claim(44, pr("factory:ready")) is None
+
+
+def test_configured_but_unconnected_store_holds_merges(
+    controller: ModuleType, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.delenv("FACTORY_STATE_DSN_FILE")
+    monkeypatch.setenv("FACTORY_NEON_CONFIGURED", "true")
+    reason = controller.outside_claim(44, pr("factory:ready"))
+    assert reason == "outside-agent claims could not be read (Neon configured, not connected)"
+
+
+def test_merge_drain_reads_claims_with_the_python_it_runs() -> None:
+    text = (SCRIPTS.parent / "workflows" / "factory-ready-merge-drain.yml").read_text()
+    neon = text.index("uses: ./.github/actions/factory-state-cache")
+    parsers = text.index("uses: ./.github/actions/factory-syntax")
+    reader = text.index("python3 -m pip install --quiet --disable-pip-version-check 'asyncpg")
+    drain = text.index("name: Drain exact-head ready factory PRs")
+    assert neon < parsers < reader < drain
+    assert "FACTORY_NEON_CONFIGURED: ${{ vars.NEON_PROJECT_ID != '' }}" in text[drain:]
