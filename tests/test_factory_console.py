@@ -12,7 +12,8 @@ import re
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
-from typing import Any
+from pathlib import Path
+from typing import Any, cast
 
 import pytest
 
@@ -22,6 +23,7 @@ from rotisserie.factory_console.github import (
     JSON,
     GitHub,
     GitHubAuthError,
+    GitHubError,
     GitHubNotFoundError,
     GitHubRateLimitError,
     Obj,
@@ -130,6 +132,9 @@ class FakeGitHub:
     calls: list[list[str]] = field(default_factory=list)
     dispatch_output: str = f"https://github.com/{REPO}/actions/runs/900\n"
     error: Exception | None = None
+    dispatch_error: Exception | None = None
+    # Artifacts ``gh run download --name NAME`` writes, by artifact name.
+    artifacts: dict[str, object] = field(default_factory=dict)
 
     def __call__(self, github: GitHub, args: Sequence[str], *, stdin: str | None = None) -> str:
         argv = list(args)
@@ -137,6 +142,8 @@ class FakeGitHub:
         if self.error is not None:
             raise self.error
         if argv[0] == "workflow":
+            if self.dispatch_error is not None:
+                raise self.dispatch_error
             return self.dispatch_output
         if argv[0] == "api":
             path = next(
@@ -158,6 +165,16 @@ class FakeGitHub:
             return json.dumps({})
         if argv[:2] == ["run", "cancel"]:
             return ""
+        if argv[:2] == ["run", "download"]:
+            name = argv[argv.index("--name") + 1]
+            if name not in self.artifacts:
+                raise GitHubError(f"no artifact matches {name}")
+            artifact = self.artifacts[name]
+            content = artifact() if callable(artifact) else artifact
+            folder = Path(argv[argv.index("--dir") + 1]) / name
+            folder.mkdir(parents=True)
+            (folder / "result.json").write_text(json.dumps(content))
+            return ""
         if argv[:2] == ["variable", "list"]:
             return "[]"
         if argv[:2] == ["variable", "set"]:
@@ -168,6 +185,9 @@ class FakeGitHub:
             return json.dumps(self.routes.get("issue-list", []))
         if argv[:2] == ["pr", "list"]:
             return json.dumps(self.routes.get("pr-list", []))
+        if argv[:2] == ["pr", "checks"]:
+            checks = self.routes.get("pr-checks", [])
+            return json.dumps(checks() if callable(checks) else checks)
         if argv[:2] == ["secret", "list"]:
             return json.dumps(self.routes.get("secret-list", []))
         return "[]"
@@ -182,7 +202,11 @@ class FakeGitHub:
 @pytest.fixture
 def fake(monkeypatch: pytest.MonkeyPatch) -> FakeGitHub:
     gh = FakeGitHub()
-    monkeypatch.setattr(GitHub, "_run", lambda self, args, stdin=None: gh(self, args, stdin=stdin))
+    monkeypatch.setattr(
+        GitHub,
+        "_run",
+        lambda self, args, stdin=None, allow_exit_one=False: gh(self, args, stdin=stdin),
+    )
     return gh
 
 
@@ -2457,3 +2481,337 @@ def test_claim_store_failure_is_a_redacted_json_hold(
     assert data["retry"] == "check_lease_before_retry"
     assert "ConnectionRefusedError" in data["reason"]
     assert "secret" not in out
+
+
+# --via github: the installed outside-agent workflows ----------------------------------
+
+BRIDGE_CLAIM = "11111111-1111-4111-8111-111111111111"
+
+
+def bridge_routes(fake: FakeGitHub, *, status: str = "completed") -> None:
+    fake.routes["^user$"] = {"login": "alice"}
+    fake.routes["actions/runs/900$"] = {"status": status, "conclusion": "success"}
+
+
+def offer(target: str, action: str, *, held: bool = False) -> dict[str, object]:
+    return {
+        "rank": 1,
+        "target": target,
+        "action": action,
+        "status": "held" if held else "candidate",
+        "title": f"Work on {target}",
+        "hold_reasons": ["held by a worker"] if held else [],
+    }
+
+
+def frontier_snapshot(*offers: dict[str, object], authority: bool = True) -> dict[str, object]:
+    return {
+        "generated_at": "2026-11-21T23:00:00Z",
+        "authoritative_claim_available": authority,
+        "authority_note": "" if authority else "Neon unavailable",
+        "offers": list(offers),
+    }
+
+
+def test_reserve_via_github_runs_the_claim_workflow_and_reads_its_result(
+    fake: FakeGitHub,
+) -> None:
+    bridge_routes(fake)
+    fake.artifacts["rotisserie-external-claim-900"] = {
+        "command": "reserve-next",
+        "result": "completed",
+        "status": "reserved",
+        "claim_id": BRIDGE_CLAIM,
+        "handoff": {
+            "target": "pr:44",
+            "goal": "resolve the merge conflict",
+            "url": f"https://github.com/{REPO}/pull/44",
+            "claim_id": BRIDGE_CLAIM,
+            "renew": "rotisserie factory renew ...",
+            "renew_github": "gh workflow run rotisserie-external-claim.yml ... -f operation=renew",
+        },
+    }
+    code, out = invoke(
+        ["reserve-next", "--client", "codebuff-phone", "--can", "merge-conflict", "--via", "github"]
+    )
+    assert code == 0, out
+    assert fake.dispatch_inputs() == {
+        "operation": "reserve-next",
+        "client": "codebuff-phone",
+        "capabilities": "merge-conflict",
+    }
+    workflow = next(call for call in fake.calls if call[0] == "workflow")
+    assert workflow[2] == "rotisserie-external-claim.yml"
+    assert "Renew: gh workflow run rotisserie-external-claim.yml" in out
+    assert f"GitHub run: https://github.com/{REPO}/actions/runs/900" in out
+
+
+def test_handoff_via_github_sends_the_claim_and_evidence(fake: FakeGitHub) -> None:
+    bridge_routes(fake)
+    fake.artifacts["rotisserie-external-claim-900"] = {
+        "result": "completed",
+        "status": "released",
+        "handoff_recorded": True,
+    }
+    evidence = f"https://github.com/{REPO}/pull/44"
+    code, out = invoke(
+        [
+            "--json",
+            "handoff",
+            BRIDGE_CLAIM,
+            "--client",
+            "claude-code",
+            "--evidence",
+            evidence,
+            "--via",
+            "github",
+        ]
+    )
+    assert code == 0, out
+    assert fake.dispatch_inputs() == {
+        "operation": "handoff",
+        "client": "claude-code",
+        "claim_id": BRIDGE_CLAIM,
+        "evidence": evidence,
+    }
+    data = json.loads(out)
+    assert data["handoff_recorded"] is True
+    assert data["bridge"]["run_id"] == 900
+
+
+def test_a_refusal_inside_the_workflow_fails_like_a_direct_call(fake: FakeGitHub) -> None:
+    bridge_routes(fake)
+    fake.artifacts["rotisserie-external-claim-900"] = {
+        "result": "failed",
+        "status": "held",
+        "reason": "no new commit on the claimed PR; release the claim instead",
+    }
+    code, out = invoke(["renew", BRIDGE_CLAIM, "--client", "claude-code", "--via", "github"])
+    assert code == 4
+    assert "External claim refused: no new commit" in out
+
+
+def test_a_run_that_never_finishes_reports_where_it_is(fake: FakeGitHub) -> None:
+    bridge_routes(fake, status="in_progress")
+    code, out = invoke(["release", BRIDGE_CLAIM, "--client", "claude-code", "--via", "github"])
+    assert code == 6
+    assert "did not finish within 900s; it may still act" in out
+    assert f"https://github.com/{REPO}/actions/runs/900" in out
+
+
+def test_a_run_without_its_result_is_unknown_not_success(fake: FakeGitHub) -> None:
+    bridge_routes(fake)
+    code, out = invoke(["--json", "reserve-next", "--client", "codebuff-phone", "--via", "github"])
+    assert code == 6
+    data = json.loads(out)
+    assert data["status"] == "unknown"
+    assert "could not be downloaded" in data["reason"]
+    assert data["bridge"]["url"].endswith("/actions/runs/900")
+
+
+def test_a_run_is_never_guessed_when_gh_prints_no_url(fake: FakeGitHub) -> None:
+    bridge_routes(fake)
+    fake.dispatch_output = ""
+    fake.routes["actions/workflows/rotisserie-external-claim.yml/runs"] = {
+        "workflow_runs": [{"id": 900, "display_title": "External release · alice / claude-code"}]
+    }
+    fake.artifacts["rotisserie-external-claim-900"] = {"result": "completed", "status": "released"}
+    code, out = invoke(["release", BRIDGE_CLAIM, "--client", "claude-code", "--via", "github"])
+    assert code == 6
+    assert "did not say which run it is" in out
+    assert "actions/workflows/rotisserie-external-claim.yml" in out
+    assert not [call for call in fake.calls if call[:2] == ["run", "download"]]
+
+
+def test_a_lost_connection_after_dispatch_is_unknown_not_refused(fake: FakeGitHub) -> None:
+    bridge_routes(fake)
+
+    def dropped() -> JSON:
+        raise GitHubError("connection reset")
+
+    fake.routes["actions/runs/900$"] = dropped
+    code, out = invoke(["--json", "reserve-next", "--client", "codebuff-phone", "--via", "github"])
+    assert code == 6
+    data = json.loads(out)
+    assert data["status"] == "unknown"
+    assert data["bridge"]["url"].endswith("/actions/runs/900")
+
+
+def test_a_failed_dispatch_may_still_have_started_a_run(fake: FakeGitHub) -> None:
+    bridge_routes(fake)
+    fake.dispatch_error = GitHubError("timed out")
+    code, out = invoke(["release", BRIDGE_CLAIM, "--client", "claude-code", "--via", "github"])
+    assert code == 6
+    assert "GitHub may still have started it" in out
+
+
+@pytest.mark.parametrize(
+    "error",
+    [GitHubAuthError("gh auth login"), GitHubNotFoundError("workflow not found")],
+)
+def test_a_refused_dispatch_is_github_unavailable_not_unknown(
+    fake: FakeGitHub, error: GitHubError
+) -> None:
+    fake.dispatch_error = error
+    code, out = invoke(["--json", "renew", BRIDGE_CLAIM, "--client", "x", "--via", "github"])
+    data = json.loads(out)
+    assert data["result"] == "github_unavailable"
+    assert code not in (0, 4, 6)
+
+
+def test_interrupting_a_bridged_claim_shows_its_run(fake: FakeGitHub) -> None:
+    bridge_routes(fake, status="in_progress")
+    clock = FakeClock()
+
+    def stop(count: int) -> None:
+        raise KeyboardInterrupt
+
+    clock.on_sleep = stop
+    code, out = invoke(
+        ["reserve-next", "--client", "codebuff-phone", "--via", "github"], clock=clock
+    )
+    assert code == commands.EXIT_INTERRUPTED
+    assert f"Its result: https://github.com/{REPO}/actions/runs/900" in out
+
+
+def test_wait_for_work_uses_the_whole_timeout(fake: FakeGitHub) -> None:
+    bridge_routes(fake)
+    fake.artifacts["rotisserie-work-frontier-900"] = frontier_snapshot()
+    clock = FakeClock()
+    code, out = invoke(["wait-for-work", "--via", "github", "--timeout", "120"], clock=clock)
+    assert code == 3
+    assert clock.current - START == timedelta(seconds=120)
+    assert len([call for call in fake.calls if call[0] == "workflow"]) == 1
+
+
+def test_advertised_at_is_refused_with_via_github(fake: FakeGitHub) -> None:
+    bridge_routes(fake)
+    code, out = invoke(
+        [
+            "reserve-next",
+            "--client",
+            "codebuff-phone",
+            "--advertised-at",
+            "2026-11-21T23:00:00Z",
+            "--via",
+            "github",
+        ]
+    )
+    assert code == 2
+    assert not [call for call in fake.calls if call[0] == "workflow"]
+
+
+def test_next_via_github_shows_the_workflow_frontier(fake: FakeGitHub) -> None:
+    bridge_routes(fake)
+    fake.artifacts["rotisserie-work-frontier-900"] = frontier_snapshot(
+        offer("pr:44", "merge-conflict"), offer("pr:45", "ci-repair", held=True)
+    )
+    code, out = invoke(["next", "--via", "github"])
+    assert code == 0, out
+    workflow = next(call for call in fake.calls if call[0] == "workflow")
+    assert workflow[2] == "rotisserie-external-frontier.yml"
+    assert "pr:44 · merge-conflict · candidate" in out
+    assert "pr:45 · ci-repair · held" in out
+    assert "Hold: held by a worker" in out
+
+
+def test_wait_for_work_checks_until_an_offer_fits(fake: FakeGitHub) -> None:
+    bridge_routes(fake)
+    fake.routes["pr-checks"] = [{"state": "SUCCESS"}]
+    snapshots = [
+        frontier_snapshot(authority=False),
+        frontier_snapshot(offer("issue:7", "implement")),
+        frontier_snapshot(offer("issue:7", "implement"), offer("pr:44", "merge-conflict")),
+    ]
+    fake.artifacts["rotisserie-work-frontier-900"] = lambda: snapshots.pop(0)
+    clock = FakeClock()
+    code, out = invoke(
+        ["--json", "wait-for-work", "--can", "merge-conflict", "--via", "github"], clock=clock
+    )
+    assert code == 0, out
+    data = json.loads(out)
+    assert data["checks"] == 3
+    assert [item["target"] for item in data["available"]] == ["pr:44"]
+    assert clock.current - START >= timedelta(seconds=600)
+
+
+def test_wait_for_work_gives_up_after_its_timeout(fake: FakeGitHub) -> None:
+    bridge_routes(fake)
+    fake.artifacts["rotisserie-work-frontier-900"] = frontier_snapshot(
+        offer("pr:44", "merge-conflict", held=True)
+    )
+    code, out = invoke(
+        ["wait-for-work", "--via", "github", "--interval", "300", "--timeout", "900"]
+    )
+    assert code == 3
+    assert "No work an outside agent can take" in out
+    # Checks at 0, 300 and 600s; none starts at the 900s deadline.
+    assert len([call for call in fake.calls if call[0] == "workflow"]) == 3
+
+
+def test_wait_for_work_waits_while_required_ci_runs(fake: FakeGitHub) -> None:
+    bridge_routes(fake)
+    checks_seen: list[str] = []
+
+    def ci() -> JSON:
+        state = "PENDING" if not checks_seen else "SUCCESS"
+        checks_seen.append(state)
+        return [{"state": state}]
+
+    fake.routes["pr-checks"] = ci
+    fake.artifacts["rotisserie-work-frontier-900"] = frontier_snapshot(
+        offer("pr:44", "review-findings")
+    )
+    clock = FakeClock()
+    code, out = invoke(["--json", "wait-for-work", "--via", "github"], clock=clock)
+    assert code == 0, out
+    data = json.loads(out)
+    assert data["checks"] == 2
+    assert checks_seen == ["PENDING", "SUCCESS"]
+
+
+def test_a_check_still_running_at_the_deadline_ends_the_wait(fake: FakeGitHub) -> None:
+    bridge_routes(fake, status="in_progress")
+    clock = FakeClock()
+    code, out = invoke(["wait-for-work", "--via", "github", "--timeout", "120"], clock=clock)
+    assert code == 3
+    assert "the last check was still running" in out
+    assert clock.current - START <= timedelta(seconds=130)
+
+
+def test_wait_for_work_direct_reads_the_frontier_here(
+    fake: FakeGitHub, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from rotisserie.factory_console.service import frontier
+
+    class Snapshot:
+        def to_dict(self) -> dict[str, object]:
+            # Frontier.to_dict keeps offers as a tuple.
+            snapshot = frontier_snapshot(offer("issue:7", "implement"))
+            return {**snapshot, "offers": tuple(cast(list[object], snapshot["offers"]))}
+
+    monkeypatch.setattr(frontier, "capture", lambda github, now: Snapshot())
+    code, out = invoke(["wait-for-work", "--can", "implement", "--can", "ci-repair"])
+    assert code == 0, out
+    assert "Work an outside agent can take (1)" in out
+    assert f"reserve-next --repo {REPO} --client AGENT --can ci-repair --can implement" in out
+    assert not [call for call in fake.calls if call[0] == "workflow"]
+    code, out = invoke(["next"])
+    assert code == 0, out
+    assert "issue:7 · implement · candidate" in out
+
+
+@pytest.mark.parametrize(
+    ("argv", "message"),
+    [
+        (["--via", "github", "--interval", "60"], "at least 120 seconds with --via github"),
+        (["--interval", "5"], "at least 15 seconds"),
+        (["--timeout", "-1"], "--timeout must be 0 or more"),
+    ],
+)
+def test_wait_for_work_rejects_unsafe_settings(
+    fake: FakeGitHub, argv: list[str], message: str
+) -> None:
+    code, out = invoke(["wait-for-work", *argv])
+    assert code == 2
+    assert message in out
