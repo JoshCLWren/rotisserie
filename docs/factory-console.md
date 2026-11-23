@@ -17,39 +17,55 @@ inventing data. The local control room continues to serve those operations.
 
 ### GitHub administrator access
 
-The hosted page deliberately has **no embedded GitHub token or OAuth secret**.
-GitHub Pages cannot securely complete GitHub's OAuth code exchange alone. To
-operate without introducing a new API service, select **Connect GitHub** and
-paste a *short-lived fine-grained personal access token* from
-https://github.com/settings/personal-access-tokens/new, scoped to
-`JoshCLWren/comic-pile` with Actions **read/write** and Metadata **read**.
-Use a short expiration and revoke the token at GitHub when no longer needed.
+The hosted dashboard has a **Sign in with GitHub** button. It opens GitHub's
+normal browser authorization screen and returns the operator to the same
+control room. No personal access token, developer-token creation, or manually
+pasted credential is required.
 
-The browser verifies the GitHub user's immutable numeric ID against the
-published operator allowlist and confirms repository write permission.
-The token exists only in page memory, never in HTML, localStorage, cookies,
-sessionStorage, URLs, or published data; refreshing or closing the tab logs out.
-The hosted write controls submit one JSON request through the GitHub Actions
-`rotisserie-operator.yml` workflow. A successful dispatch is **only** a
-submitted request. Inspect the linked workflow to confirm execution.
+ComicPile's existing Rust service at `comic-pile.vercel.app` supplies only the
+OAuth callback and a narrowly scoped command-dispatch bridge. The GitHub OAuth
+authorization-code flow uses PKCE, a signed, HTTP-only, SameSite=Lax state
+cookie, and a server-side code exchange. The GitHub access token and client
+secret never enter the public HTML or browser. The bridge verifies GitHub's
+`/user` identity and issues a 20-minute signed Rotisserie-only session. The
+public page consumes it from a URL fragment, promptly clears that fragment
+from browser history, and retains only the short-lived Rotisserie session in
+sessionStorage. The session is checked server-side on **every** operator
+request and expires automatically.
 
-The workflow independently verifies `github.actor_id` and `main` **before**
-checking out any executable code. It uses Rotisserie's own
-`web.write_command` validator and CLI, preserving claim, policy and merge
-protections. The public/client allowlist is not an authorization boundary.
+The existing public snapshots remain completely read-only without login.
+Commands from a signed-in administrator go to the Rust bridge, which
+enforces the GitHub user ID allowlist and the exact Pages origin, then
+dispatches a JSON operation to the existing GitHub Actions
+`rotisserie-operator.yml`. The workflow continues to enforce the trusted
+Rotisserie command validator, leases, and factory policies. A successful
+dispatch means **submitted**, not completed; inspect the linked workflow.
 
-By default only GitHub user ID **4014199** (`JoshCLWren`) is allowed. To
-authorize other accounts, a repository administrator may set the GitHub Actions
-repository variable `ROTISSERIE_ADMIN_GITHUB_IDS` to a comma-separated list
-of immutable numeric IDs (for example `4014199,123456`); omit spaces. The
-publisher exposes the same IDs to the client only for UI gating. Authorized
-users must separately have a GitHub token permitted to dispatch workflows.
-Do not put GitHub access tokens in that variable.
+The initial administrator is GitHub user ID **4014199** (`JoshCLWren`).
+Additional administrators require a trusted configuration update to
+`ROTISSERIE_ADMIN_GITHUB_IDS` on the Rust host, not a frontend change.
+The GitHub workflow separately restricts the identity of the service account
+that dispatches it.
 
-Commands run with the workflow's scoped `GITHUB_TOKEN`, not the visitor's
-token or any browser credentials. GitHub may reject operations requiring
-repository-administrator scopes that `GITHUB_TOKEN` does not have; those
-fail visibly in the workflow rather than falling back to a privileged secret.
+#### One-time GitHub OAuth App provisioning
+
+The OAuth client must exist before publishing the hosted sign-in UI.
+
+1. Under GitHub **Settings → Developer settings → OAuth Apps**, register
+   `Rotisserie Factory Control Room`.
+2. Homepage: `https://joshclwren.github.io/comic-pile/`
+3. Authorization callback:
+   `https://comic-pile.vercel.app/api/v2/factory/github/callback`
+4. Add `ROTISSERIE_GITHUB_OAUTH_CLIENT_ID` and the sensitive
+   `ROTISSERIE_GITHUB_OAUTH_CLIENT_SECRET` to ComicPile's **production**
+   Vercel environment, never to GitHub Pages or source control.
+5. Confirm the pre-existing Vercel `GITHUB_TOKEN` has permission to dispatch
+   Actions in `JoshCLWren/comic-pile`, and verify an allowed login, denied
+   login, expired session, and authenticated dispatch before cutting over Pages.
+
+The public UI is intentionally deployed **after** the Rust bridge is
+configured and verified. There are no alternate credential prompts or
+unrequested fallbacks.
 
 ## Local web control room
 

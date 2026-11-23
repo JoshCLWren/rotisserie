@@ -37,9 +37,12 @@ def test_hosted_page_reuses_canonical_local_ui_without_local_session() -> None:
     assert "__REPOSITORY__" not in page
     assert 'const TOKEN=null, REPO="JoshCLWren/comic-pile";' in page
     assert "GitHub Pages · Published snapshot" in page
-    assert "https://api.github.com" in page
+    assert "https://comic-pile.vercel.app" in page
     assert "https://raw.githubusercontent.com" in page
     assert "localStorage" not in page
+    assert "Sign in with GitHub" in page
+    assert "personal-access-tokens" not in page
+    assert "Paste a short-lived" not in page
 
 
 @pytest.mark.parametrize("name", ["../bad", "owner", "owner/repo/extra", "owner/<repo>"])
@@ -73,12 +76,18 @@ def test_workflow_requires_verified_actor_before_executing_commands() -> None:
     assert "persist-credentials: false" in content
 
 
-def test_browser_uses_no_persisted_token_and_only_dispatches_to_actions() -> None:
+def test_browser_uses_real_github_oauth_not_pasted_tokens() -> None:
     content = ADAPTER.read_text(encoding="utf-8")
     assert "localStorage" not in content
-    assert "sessionStorage" not in content
+    assert "window.prompt" not in content
+    assert "personal-access-tokens" not in content
+    assert "rotisserie_session" in content
+    assert 'location.assign(AUTH_BASE + "/start")' in content
+    assert 'authRequest("/session")' in content
+    assert 'authRequest("/dispatch"' in content
+    assert "history.replaceState" in content
+    assert "sessionStorage" in content
     assert "window.hostedRequest" in content
-    assert "/actions/workflows/" in content
-    assert "/dispatches" in content
-    assert "repo.permissions.push" in content
-    assert "published.admin_ids" in content
+    assert "rotisserie-operator.yml" in content
+    assert "/actions/workflows/" not in content
+    assert "Bearer " in content
