@@ -1,13 +1,11 @@
 /* Hosted adapter for the canonical Rotisserie web_ui.html.
- * The public dashboard contains no GitHub credentials. Operator tokens live
- * in memory only; every write is independently authorized by GitHub Actions.
+ * The public dashboard contains no GitHub credentials. GitHub OAuth runs
+ * through ComicPile Rust; Rotisserie keeps all factory operation safeguards.
  */
 "use strict";
 (function () {
   const WORKFLOW = "rotisserie-operator.yml";
   const CACHE_MS = 60000;
-  let token = null;
-  let identity = null;
   let snapshotCache = null;
   let statsCache = null;
 
@@ -153,73 +151,89 @@
     );
   }
 
-  async function githubRequest(path, headers, options) {
-    const response = await fetch("https://api.github.com" + path, Object.assign({
-      headers: Object.assign({ "Accept": "application/vnd.github+json" }, headers)
-    }, options || {}));
-    if (!response.ok) {
-      let message = "GitHub rejected the request (" + response.status + ").";
-      try {
-        const result = await response.json();
-        if (typeof result.message === "string") message += " " + result.message;
-      } catch (_) { /* Do not include raw server output or credentials. */ }
-      if (response.status === 401) disconnect();
-      throw Error(message);
-    }
-    return response.status === 204 ? null : response.json();
-  }
+  // GitHub performs the interactive sign-in. ComicPile's existing Rust
+  // service exchanges the code and issues a short-lived dashboard session.
+  // The browser never receives a GitHub personal or OAuth access token.
+  const AUTH_BASE = "https://comic-pile.vercel.app/api/v2/factory/github";
+  const SESSION_KEY = "rotisserie-github-admin-session";
+  let session = null;
+  let identity = null;
 
   function disconnect() {
-    token = null; identity = null;
+    session = null; identity = null;
+    try { sessionStorage.removeItem(SESSION_KEY); } catch (_) { /* optional */ }
     const button = document.getElementById("github-connect");
     const status = document.getElementById("github-identity");
-    if (button) button.textContent = "Connect GitHub";
-    if (status) status.textContent = "Read-only visitor. Operator token is not stored.";
+    if (button) button.textContent = "Sign in with GitHub";
+    if (status) status.textContent = "Read-only visitor";
   }
-  async function connect() {
-    if (token) { disconnect(); return; }
-    const value = window.prompt(
-      "Paste a short-lived, fine-grained GitHub token scoped to " + REPO +
-      " with Actions: write and Metadata: read. It stays in memory only and " +
-      "disappears when you close or reload the page."
-    );
-    if (!value) return;
+
+  async function authRequest(path, options = {}) {
+    const response = await fetch(AUTH_BASE + path, {
+      ...options, mode:"cors", credentials:"omit",
+      headers: {
+        "Authorization":"Bearer " + session, "Accept":"application/json",
+        ...(options.headers || {})
+      }
+    });
+    if (!response.ok) {
+      const data = await response.json().catch(() => ({}));
+      const message = data.detail || "GitHub request failed (" + response.status + ").";
+      if (response.status === 401 || response.status === 403) disconnect();
+      throw Error(message);
+    }
+    return response.json();
+  }
+
+  async function validateSession() {
+    if (!session) return disconnect();
     try {
-      const headers = { Authorization: "Bearer " + value.trim() };
-      const user = await githubRequest("/user", headers);
-      const published = await snapshot();
-      if (!(published.admin_ids || []).includes(user.id)) {
-        throw Error("This GitHub account is not in the Rotisserie administrator allowlist.");
-      }
-      const repo = await githubRequest("/repos/" + REPO, headers);
-      if (!repo.permissions || !repo.permissions.push) {
-        throw Error("The GitHub token does not have repository write access.");
-      }
-      token = value.trim(); identity = user.login;
-      document.getElementById("github-connect").textContent = "Disconnect GitHub";
+      const profile = await authRequest("/session");
+      identity = profile.login;
+      document.getElementById("github-connect").textContent = "Sign out";
       document.getElementById("github-identity").textContent =
-        "Connected as " + identity + ". Workflow also verifies your GitHub actor ID.";
+        "Signed in with GitHub as " + identity + ". Admin access verified.";
     } catch (error) {
       disconnect();
-      window.alert(error.message || String(error));
+      document.getElementById("github-identity").textContent =
+        error.message || "GitHub sign-in expired.";
     }
   }
+
+  function connect() {
+    if (session) return disconnect();
+    location.assign(AUTH_BASE + "/start");
+  }
+
   async function dispatch(body) {
-    if (!token) {
-      throw Error("Connect your GitHub admin account first. No factory credentials are stored on this page.");
+    if (!session) throw Error("Sign in with GitHub to operate the factory.");
+    if (JSON.stringify(body).length > 4096) throw Error("Factory command too large.");
+    return authRequest("/dispatch", {
+      method:"POST", headers:{"Content-Type":"application/json"},
+      body:JSON.stringify(body)
+    });
+  }
+
+  function bootstrapSession() {
+    const hash = new URLSearchParams(location.hash.replace(/^#/, ""));
+    const granted = hash.get("rotisserie_session");
+    const error = hash.get("rotisserie_error");
+    if (granted || error) history.replaceState(null,"",location.pathname+location.search);
+    if (error) {
+      disconnect();
+      document.getElementById("github-identity").textContent =
+        error === "not_admin" ? "This GitHub account is not an administrator." :
+          "GitHub sign-in was not completed.";
+      return;
     }
-    const payload = JSON.stringify(body);
-    if (payload.length > 4096) throw Error("The factory command is too large.");
-    await githubRequest("/repos/" + REPO + "/actions/workflows/" + WORKFLOW + "/dispatches",
-      { Authorization: "Bearer " + token, "Content-Type": "application/json" },
-      { method: "POST", body: JSON.stringify({
-        ref: "main", inputs: { request: payload }
-      }) });
-    return {
-      result: "submitted", exit_code: 0,
-      scheduler_url: "https://github.com/" + REPO +
-        "/actions/workflows/" + WORKFLOW
-    };
+    if (granted) {
+      session = granted;
+      try { sessionStorage.setItem(SESSION_KEY,granted); } catch (_) { /* optional */ }
+    } else {
+      try { session = sessionStorage.getItem(SESSION_KEY); } catch (_) { /* optional */ }
+    }
+    if (session) void validateSession();
+    else disconnect();
   }
   window.hostedRequest = function (path, body) {
     if (path === "/api/command" && body) return dispatch(body);
@@ -227,4 +241,5 @@
     return Promise.reject(Error("Unsupported hosted operation."));
   };
   document.getElementById("github-connect").addEventListener("click", connect);
+  bootstrapSession();
 })();
