@@ -16,6 +16,7 @@ from rotisserie.factory_console.github import GitHub
 from rotisserie.factory_console.service import external, frontier, queue
 
 REPO = "acme/widgets"
+REAL_LIVE_OFFER = external._live_offer  # before any fixture replaces it
 
 
 class GitHubDouble:
@@ -1286,3 +1287,30 @@ def test_repair_commits_found_across_compare_pages(setup: LedgerDouble) -> None:
     )
     assert len(github.comments) == 4
     assert setup.holder is None
+
+
+def test_reservation_walks_one_capture_so_rank_drift_cannot_hold_it(
+    setup: LedgerDouble, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Live ComicPile: unrelated review PRs entering above shifted every rank."""
+    captures: list[frontier.Frontier] = [
+        make_frontier(replace(make_offer(), rank=3)),
+        make_frontier(replace(make_offer(), rank=5)),
+    ]
+    monkeypatch.setattr(frontier, "capture", lambda *a, **k: captures.pop(0))
+    monkeypatch.setattr(queue, "open_blocker", lambda *a, **k: (False, ""))
+    monkeypatch.setattr(external, "_live_offer", REAL_LIVE_OFFER)
+    result = external.reserve_next(cast(GitHub, GitHubDouble()), client="chatgpt", environment={})
+    assert result["status"] == "reserved", result
+    assert len(captures) == 1  # exactly one capture was used
+
+
+def test_live_offer_ignores_rank_but_not_head_priority_or_lane(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    offered = make_offer()
+    monkeypatch.setattr(queue, "open_blocker", lambda *a, **k: (False, ""))
+    moved = make_frontier(replace(offered, rank=9))
+    assert external._live_offer(cast(GitHub, GitHubDouble()), offered, moved) == (True, "")
+    reprioritized = make_frontier(replace(offered, priority=4))
+    assert external._live_offer(cast(GitHub, GitHubDouble()), offered, reprioritized)[0] is False
