@@ -624,7 +624,7 @@ TOKEN = "11111111-1111-4111-8111-111111111111"
 
 def _repair_claim(setup: LedgerDouble, action: str = "review-findings") -> None:
     setup.holder = "codebuff"
-    setup.claim = {"target": "pr:88", "action": action, "head": "a" * 40, "targets": [88]}
+    setup.claim = {"target": "pr:88", "action": action, "head": "a" * 40, "targets": [7, 88]}
 
 
 @pytest.mark.parametrize(
@@ -695,6 +695,47 @@ def test_repair_handoff_cannot_point_at_another_pr(setup: LedgerDouble) -> None:
             evidence=f"https://github.com/{REPO}/pull/88",
         )
     assert setup.holder == "codebuff"
+
+
+def test_repair_handoff_refuses_a_pr_relinked_to_an_unclaimed_issue(
+    setup: LedgerDouble,
+) -> None:
+    _repair_claim(setup)
+    github = GitHubDouble(head="b" * 40)
+    github.review_labels = ["factory", "factory:changes-requested", "factory:unowned"]
+    github.pr_body = "Closes #9"
+    with pytest.raises(ValueError, match="now links #9"):
+        external.claim_action(
+            cast(GitHub, github),
+            client="codebuff",
+            claim_id=TOKEN,
+            operation="handoff",
+            environment=BRIDGE,
+            evidence=f"https://github.com/{REPO}/pull/88",
+        )
+    assert setup.holder == "codebuff"
+    assert github.comments == []
+    assert github.label_writes == 0
+
+
+@pytest.mark.parametrize("body", ["Repair the build", "Closes #7"])
+def test_repair_handoff_allows_a_dropped_or_closed_link(setup: LedgerDouble, body: str) -> None:
+    _repair_claim(setup)
+    github = GitHubDouble(head="b" * 40)
+    github.review_labels = ["factory", "factory:changes-requested", "factory:unowned"]
+    github.pr_body = body
+    github.branch = "repair-88"
+    github.closed = {7}
+    result = external.claim_action(
+        cast(GitHub, github),
+        client="codebuff",
+        claim_id=TOKEN,
+        operation="handoff",
+        environment=BRIDGE,
+        evidence=f"https://github.com/{REPO}/pull/88",
+    )
+    assert result["handoff_recorded"] is True
+    assert setup.holder is None
 
 
 @pytest.mark.parametrize("route", ["issues/7", "actions/runs/12345"])

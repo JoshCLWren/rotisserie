@@ -104,21 +104,26 @@ def _linked_targets(github: GitHub, offer: frontier.Offer) -> list[int]:
     head = string(obj(live.get("head")), "sha")
     if head != offer.head_sha:
         raise ValueError("pull request head changed")
-    core = runtime.module("factory_work_policy")
-    link = core.linked_issue_from_pr(
+    link = _linked_open_issue(github, number, live)
+    return [link, number] if link is not None else [number]
+
+
+def _linked_open_issue(github: GitHub, number: int, pr: dict[str, Any]) -> int | None:
+    """The open issue a PR is linked to, which a claim on the PR also fences."""
+    link = runtime.module("factory_work_policy").linked_issue_from_pr(
         {
             "number": number,
-            "headRefName": string(obj(live.get("head")), "ref"),
-            "body": string(live, "body"),
-            "title": string(live, "title"),
+            "headRefName": string(obj(pr.get("head")), "ref"),
+            "body": string(pr, "body"),
+            "title": string(pr, "title"),
         }
     )
-    if link is None:
-        return [number]
+    if link is None or int(link) == number:
+        return None
     issue = obj(github.repo_api(f"issues/{link}"))
     if string(issue, "state") != "open" or "pull_request" in issue:
-        return [number]
-    return [int(link), number] if link != number else [number]
+        return None
+    return int(link)
 
 
 def _required_checks_outcome(github: GitHub, number: int) -> str:
@@ -811,6 +816,15 @@ def _verify_and_project_handoff(
         head_at_claim = str(claim.get("head") or "")
         if stage not in COMPLETION_STAGES:
             raise ValueError("the PR left the factory's completion stages")
+        # The claim fenced the PR and the issue it linked at reservation. A
+        # body edited since to link another open issue would hand off (and
+        # release) work this claim never held; a dropped or closed link is fine.
+        link = _linked_open_issue(github, pr_number, pr)
+        if link is not None and link not in [int(n) for n in claim.get("targets") or []]:
+            raise ValueError(
+                f"the PR now links #{link}, which this claim does not hold; "
+                "release the claim and reserve the PR again"
+            )
     else:
         raise ValueError("unsupported claimed action")
     authors = _delivered_authors(
