@@ -19,7 +19,7 @@ REQUEST = re.compile(r"(?m)^async function request\(path,body\)\{[^\n]*\}$")
 
 
 def render(repo: str) -> str:
-    if not re.fullmatch(r"[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+", repo):
+    if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_.-]*/[A-Za-z0-9][A-Za-z0-9_.-]*", repo):
         raise ValueError("Invalid repository name")
     page = UI.read_text(encoding="utf-8")
     page = page.replace("__SESSION_TOKEN__", "null").replace("__REPOSITORY__", json.dumps(repo))
