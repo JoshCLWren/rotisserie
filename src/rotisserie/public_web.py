@@ -253,9 +253,12 @@ def render_page(source_html: str, template: str) -> tuple[str, str]:
         "Served locally · All mutations pass through existing factory commands",
         "Hosted public snapshot · Admin operations run through authenticated GitHub Actions",
     )
+    bootstrap_script = '<script>\n"use strict";\nconst TOKEN='
+    if output.count(bootstrap_script) != 1:
+        raise ValueError("Local UI script boundary changed")
     output = output.replace(
-        "<script>\nconst TOKEN=",
-        PUBLIC_ADAPTER + "<script>\nconst TOKEN=",
+        bootstrap_script,
+        PUBLIC_ADAPTER + bootstrap_script,
         1,
     )
     # Preserve a route to historical fleet telemetry, which otherwise would
