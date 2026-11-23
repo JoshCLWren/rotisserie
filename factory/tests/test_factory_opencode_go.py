@@ -36,12 +36,14 @@ def sample() -> dict:
     }
 
 
-def test_hy4_preferred_only_from_go_zero_cost_catalog():
+def test_go_auto_selection_diversifies_zero_cost_models_by_run():
     assert free_models(sample()) == ["hy4-flash-free", "other-free"]
-    selected = choose(sample(), "41")
+    picks = {choose(sample(), "41", rotation=run)["model"] for run in range(24)}
+    assert picks == {"hy4-flash-free", "other-free"}
+    selected = choose(sample(), "41", rotation=5)
+    assert selected == choose(sample(), "41", rotation=5)
     assert selected["source"] == "opencode-free"  # Preserve durable leases.
-    assert selected["runtime_model"] == "opencode-go/hy4-flash-free"
-    assert selected["model"] == "hy4-flash-free"
+    assert selected["runtime_model"] == f"opencode-go/{selected['model']}"
 
 
 def test_other_zero_cost_go_models_survive_exact_model_cooldown():
@@ -74,7 +76,7 @@ def test_go_first_then_other_provider_if_all_free_go_cooling():
     pools = {"opencode-free": sample(), "nvidia": {"data": [{"id": "sample/backup"}]}}
     picked = select_next_fleet("41", "nvidia", set(), set(), {}, pools,
                                set(pools), proven=set())
-    assert picked["runtime_model"] == "opencode-go/hy4-flash-free"
+    assert picked["runtime_model"] in {"opencode-go/hy4-flash-free", "opencode-go/other-free"}
     picked = select_next_fleet("41", "nvidia", {("opencode-free", "hy4-flash-free")},
                                set(), {"opencode-free": ["other-free"]},
                                pools, set(pools), proven=set())
