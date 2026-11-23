@@ -49,6 +49,7 @@ include = [
   "/factory/.github/scripts/factory_work_policy.py",
   "/factory/.github/scripts/factory_rotisserie_adopter.py",
   "/factory/.github/scripts/factory_review_policy.py",
+  "/factory/.github/scripts/factory_label_policy.py",
   "/factory/.github/scripts/factory_adopter.py",
   "/factory/.github/scripts/factory_branch_sync.py",
   "/factory/.github/scripts/factory_main_health.py",
