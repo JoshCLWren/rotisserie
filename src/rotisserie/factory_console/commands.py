@@ -33,6 +33,7 @@ from rotisserie.factory_console.github import (
     GitHub,
     GitHubError,
     GitHubNotFoundError,
+    GitHubRateLimitError,
     Obj,
     integer,
     items,
@@ -52,6 +53,7 @@ from rotisserie.factory_console.service import (
     external,
     frontier,
     groom,
+    limits,
     outcomes,
     providers,
     queue,
@@ -404,6 +406,11 @@ def add_parser(subcommands: argparse._SubParsersAction[argparse.ArgumentParser])
     )
     _common(health)
 
+    quota = commands.add_parser(
+        "limits", help="show GitHub API usage, reset times and retry information"
+    )
+    _common(quota)
+
     clash = commands.add_parser(
         "conflicts", help="which of a pull request's files main also changed, and where"
     )
@@ -598,6 +605,13 @@ def main(
         console.fail(str(exc))
         data.update(result="invalid", error=str(exc))
         code = EXIT_USAGE
+    except GitHubRateLimitError as exc:
+        console.finish()
+        console.fail(str(exc))
+        if context is not None:
+            data.update(_show_rate_limits(context, blocked=exc))
+        data.update(result="github_unavailable", error=str(exc))
+        code = exc.exit_code
     except GitHubError as exc:
         console.finish()
         console.fail(str(exc))
@@ -641,6 +655,7 @@ def _help_text() -> str:
             "  rotisserie factory sync pr:N     merge main in (never while a worker holds it)",
             "  rotisserie factory leases        who holds which item",
             "  rotisserie factory doctor        is the factory itself healthy",
+            "  rotisserie factory limits        GitHub API quota and reset time",
             "  rotisserie factory close pr:N --reason TEXT   close work that should not be done",
             "  rotisserie factory cancel issue:N",
             "  rotisserie factory watch RUN",
@@ -2402,7 +2417,55 @@ def _show_by_item(
     )
 
 
-# doctor ---------------------------------------------------------------------------------
+# doctor / GitHub quota ------------------------------------------------------------------
+
+
+def _show_rate_limits(
+    context: Context, *, blocked: GitHubRateLimitError | None = None
+) -> dict[str, object]:
+    """Present the authenticated CLI's quota, plus a truthful retry estimate if blocked."""
+    console = context.console
+    now = context.clock.now()
+    report: limits.RateLimits | None
+    try:
+        report = limits.read(context.github)
+    except GitHubError as exc:
+        report = None
+        console.warn(f"Cannot read GitHub API quota: {exc}")
+    if report is not None:
+        console.heading("GitHub API limits (current CLI credential)")
+        for name, bucket in report.resources.items():
+            reset = bucket.reset_at()
+            console.line(
+                f"  {name}: {bucket.remaining:,} / {bucket.limit:,} remaining "
+                f"({bucket.used:,} used); resets {limits.local_deadline(reset)} "
+                f"(in {limits.countdown(reset, now)})"
+            )
+    result: dict[str, object] = {
+        "rate_limits": report.to_dict() if report is not None else None,
+    }
+    if blocked is not None:
+        retry, reason = limits.retry_at(report, blocked, now)
+        if retry is None:
+            console.warn(f"Retry time unknown: {reason}.")
+        else:
+            console.note(
+                f"Earliest known retry: {limits.local_deadline(retry)} "
+                f"(in {limits.countdown(retry, now)}; {reason}). "
+                "GitHub may still impose secondary limits."
+            )
+        result["rate_limit_block"] = {
+            "kind": "secondary" if blocked.secondary else "primary_or_unknown",
+            "retry_after_seconds": blocked.retry_after_seconds,
+            "retry_at": retry.isoformat() if retry is not None else None,
+            "retry_reason": reason,
+        }
+    return result
+
+
+def cmd_limits(context: Context, arguments: argparse.Namespace) -> Outcome:
+    data = _show_rate_limits(context)
+    return Outcome(Result.COMPLETED, EXIT_OK, data)
 
 
 def cmd_doctor(context: Context, arguments: argparse.Namespace) -> Outcome:
@@ -2420,18 +2483,30 @@ def cmd_doctor(context: Context, arguments: argparse.Namespace) -> Outcome:
         if item.hint and item.status != "ok":
             console.line(f"    {item.hint}")
     data: dict[str, object] = {"findings": [i.to_dict() for i in findings]}
+    blocker = next((i for i in findings if i.check == "GitHub API"), None)
+    if blocker is not None:
+        error = GitHubRateLimitError(
+            blocker.text,
+            secondary=blocker.secondary_limit,
+            retry_after_seconds=blocker.retry_after_seconds,
+        )
+        data.update(_show_rate_limits(context, blocked=error))
     fixable = [item for item in findings if item.fix and item.status != "ok"]
-    if fixable and not arguments.fix:
+    if fixable and not arguments.fix and blocker is None:
         console.line()
         console.line("Safe repairs are available: rotisserie factory doctor --fix")
     if arguments.fix:
-        applied = doctor.apply_fixes(context.github, findings)
-        console.line()
-        for change in applied:
-            console.ok(change.text, change.url)
-        if not applied:
-            console.line("Nothing to repair automatically.")
-        data["applied"] = [change.to_dict() for change in applied]
+        if blocker is not None:
+            console.line("Repairs deferred: GitHub is rate limited; no fixes were attempted.")
+            data["applied"] = []
+        else:
+            applied = doctor.apply_fixes(context.github, findings)
+            console.line()
+            for change in applied:
+                console.ok(change.text, change.url)
+            if not applied:
+                console.line("Nothing to repair automatically.")
+            data["applied"] = [change.to_dict() for change in applied]
     worst = "fail" if any(i.status == "fail" for i in findings) else "ok"
     result = Result.FAILED if worst == "fail" else Result.COMPLETED
     return Outcome(result, EXIT_CODES[result], data)
@@ -3057,6 +3132,7 @@ HANDLERS = {
     "sync": cmd_sync,
     "leases": cmd_leases,
     "doctor": cmd_doctor,
+    "limits": cmd_limits,
     "explain": cmd_why,
     "providers": cmd_providers,
     "models": cmd_models,
