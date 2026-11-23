@@ -300,3 +300,39 @@ def test_web_writes_never_block_on_a_bridge_run() -> None:
         web.write_command({"operation": "labels", "mode": "rm -rf"})
     with pytest.raises(web.InvalidRequest):
         web.write_command({"operation": "claim", "target": "pr:5 --force"})
+
+
+def test_bridge_waits_while_a_new_run_still_reads_as_missing(
+    monkeypatch: pytest.MonkeyPatch, artifacts: dict[int, dict[str, Any]]
+) -> None:
+    monkeypatch.setattr(bridge, "_start", lambda github, workflow, inputs: (55, "run-url"))
+    artifacts[55] = {"applied": 0}
+    reads = iter([GitHubNotFoundError("missing"), {"status": "completed", "conclusion": "success"}])
+
+    class Runs:
+        repo = REPO
+
+        def repo_api(self, route: str) -> Any:
+            assert route == "actions/runs/55"
+            value = next(reads)
+            if isinstance(value, Exception):
+                raise value
+            return value
+
+    data = claimops.doctor(cast(GitHub, Runs()), Ticking(), "dry-run")
+    assert data["applied"] == 0
+
+
+def test_bridge_gives_up_on_a_missing_run_at_the_deadline(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(bridge, "_start", lambda github, workflow, inputs: (55, "run-url"))
+
+    class Missing:
+        repo = REPO
+
+        def repo_api(self, route: str) -> Any:
+            raise GitHubNotFoundError("missing")
+
+    with pytest.raises(bridge.BridgeError, match="could not be read"):
+        claimops.doctor(cast(GitHub, Missing()), Ticking(), "dry-run")
