@@ -72,6 +72,7 @@ def catalog_model_ids(source: str, catalog: Mapping[str, Any]) -> list[str]:
 def choose_model(
     source: str, worker: str, catalog: Mapping[str, Any],
     exclusions: set[str] | None = None,
+    rotation: int = 0,
 ) -> str:
     if not worker.isdecimal():
         raise ValueError("worker must be a numeric slot ID")
@@ -81,8 +82,8 @@ def choose_model(
     ]
     if not candidates:
         raise PublishedCatalogUnavailableError(f"{source}: no eligible catalog candidates available")
-    # Deterministic across runs, independent of manually curated roster pins.
-    seed = hashlib.sha256(f"{source}:{worker}".encode()).digest()
+    # Reproducible within a run, diversified across Actions runs.
+    seed = hashlib.sha256(f"{source}:{worker}:{rotation}".encode()).digest()
     return candidates[int.from_bytes(seed[:8], "big") % len(candidates)]
 
 
@@ -116,6 +117,7 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--source", required=True, choices=sorted(PUBLIC_CATALOGS))
     parser.add_argument("--worker", required=True)
+    parser.add_argument("--rotation", type=int, default=0)
     parser.add_argument("--catalog-json", type=Path, help="offline fixture for tests only")
     parser.add_argument("--exclusions-file", type=Path)
     args = parser.parse_args(argv)
@@ -135,7 +137,7 @@ def main(argv: list[str] | None = None) -> int:
             if not isinstance(models, list) or not all(isinstance(x, str) for x in models):
                 raise PublishedCatalogUnavailableError("Neon model exclusions are invalid")
             excluded = set(models)
-        model = choose_model(args.source, args.worker, catalog, excluded)
+        model = choose_model(args.source, args.worker, catalog, excluded, args.rotation)
     except (PublishedCatalogUnavailableError, ValueError, OSError, json.JSONDecodeError) as exc:
         print(f"factory catalog: {exc}", file=sys.stderr)
         return 1
