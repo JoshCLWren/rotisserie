@@ -593,7 +593,7 @@ select_next_eligible_model() {
   fi
   local next_json next_source next_model next_runtime candidate_status pair provider
   local -a select_args=(--source "$ORIGINAL_SOURCE" --worker "$WORKER" \
-    --rotation "$GITHUB_RUN_NUMBER" \
+    --rotation "${GITHUB_RUN_ID:-0}" \
     --exclusions-file "$RUNNER_TEMP/factory-neon-model-exclusions.json" \
     --eligible-sources-file "$RUNNER_TEMP/factory-fleet-sources.json" \
     --fleet-catalog-cache "$RUNNER_TEMP/factory-fleet-catalogs.json")
@@ -685,11 +685,24 @@ no_change_failover_eligible() {
   (( $(remaining) > 540 ))
 }
 
+# Spread automatic first-inference bursts without introducing a lease or a
+# provider attempt. Jitter happens BEFORE the execution-candidate marker.
+factory_inference_jitter() {
+  [[ "${FACTORY_EXACT_MODEL:-auto}" == auto && "${FACTORY_EXACT_SOURCE:-auto}" == auto ]] || return 0
+  (( agent_attempt == 1 )) || return 0
+  [[ "${FACTORY_FORK_STATIC_REVIEW:-0}" != 1 ]] || return 0
+  local jitter_ms
+  jitter_ms=$(( (RANDOM * 32768 + RANDOM) % 5001 ))
+  log "FACTORY_INFERENCE_JITTER: delay_ms=${jitter_ms}"
+  sleep "$(printf '%d.%03d' "$((jitter_ms / 1000))" "$((jitter_ms % 1000))")"
+}
+
 agent_attempt=1
 agent_status=0
 transient_failure=0
 FAST_FAILOVER_SECONDS="${FACTORY_FAST_FAILOVER_SECONDS:-180}"
 while :; do
+  factory_inference_jitter
   log "FACTORY_EXECUTION_CANDIDATE: source=$SOURCE model=$MODEL runtime=$RUNTIME_MODEL"
   mark_worker_via_task
   : > "/tmp/opencode-factory-${WORKER}.log"
