@@ -46,11 +46,9 @@ def render(repo: str) -> str:
         "</aside>",
         '<div class="sidebar-bottom" id="hosted-admin">'
         '<strong>GitHub operator access</strong>'
-        '<p class="hint">Connect a short-lived, fine-grained GitHub token '
-        'to use the existing controls. Never stored in your browser.</p>'
-        '<button class="button small" id="github-connect">Connect GitHub</button> '
-        '<a href="https://github.com/settings/personal-access-tokens/new" '
-        'target="_blank" rel="noopener noreferrer">Create token</a>'
+        '<p class="hint">Use your existing GitHub account. '
+        'Only approved administrators can control the factory.</p>'
+        '<button class="button small" id="github-connect">Sign in with GitHub</button>'
         '<div class="hint" id="github-identity">Read-only visitor</div>'
         '</div></aside>',
         1,
@@ -61,7 +59,7 @@ def render(repo: str) -> str:
         '<meta http-equiv="Content-Security-Policy" '
         'content="default-src &#39;none&#39;; script-src &#39;unsafe-inline&#39;; '
         'style-src &#39;unsafe-inline&#39;; connect-src https://raw.githubusercontent.com '
-        'https://api.github.com; img-src data:; base-uri &#39;none&#39;; '
+        'https://comic-pile.vercel.app; img-src data:; base-uri &#39;none&#39;; '
         'form-action &#39;none&#39;; frame-ancestors &#39;none&#39;">'
         "</head>",
         1,
