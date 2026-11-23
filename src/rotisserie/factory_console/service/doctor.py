@@ -75,6 +75,8 @@ class Finding:
     hint: str = ""
     fix: str = ""  # a safe repair `apply_fixes` can make; empty when none
     targets: tuple[str, ...] = ()  # what the fix acts on, e.g. "pr:N@HEAD"
+    secondary_limit: bool = False
+    retry_after_seconds: int | None = None
 
     def to_dict(self) -> dict[str, object]:
         return asdict(self)
@@ -430,7 +432,15 @@ def run_checks(github: GitHub, *, now: datetime, clock: Clock | None = None) -> 
             found.append(check())
         except GitHubRateLimitError as exc:
             found.append(Finding(name, "warn", "not checked: GitHub API is rate limited"))
-            found.append(Finding("GitHub API", "fail", str(exc)))
+            found.append(
+                Finding(
+                    "GitHub API",
+                    "fail",
+                    str(exc),
+                    secondary_limit=exc.secondary,
+                    retry_after_seconds=exc.retry_after_seconds,
+                )
+            )
             skipped = [label for label, _ in checks[index + 1 :]]
             if skipped:
                 found.append(
