@@ -217,9 +217,12 @@ class Runs:
 
     repo = REPO
 
-    def __init__(self, runs: list[tuple[str, str]]) -> None:
+    def __init__(
+        self, runs: list[tuple[str, str]], *, finished: str = "2026-11-23T06:20:00Z"
+    ) -> None:
         # (conclusion, failing step name or "")
         self.runs = runs
+        self.finished = finished
         self.routes: list[str] = []
 
     def repo_api(self, route: str) -> Any:
@@ -227,32 +230,49 @@ class Runs:
         if route.startswith("actions/workflows/"):
             return {
                 "workflow_runs": [
-                    {"id": index, "conclusion": conclusion}
+                    {"id": index, "conclusion": conclusion, "updated_at": self.finished}
                     for index, (conclusion, _step) in enumerate(self.runs, start=1)
                 ]
             }
         run_id = int(route.split("/")[2])
         _conclusion, step = self.runs[run_id - 1]
         steps = [{"name": step, "conclusion": "failure"}] if step else []
-        return {"jobs": [{"name": "run / factory", "steps": steps}]}
+        worker = "success" if step == "ran" else "failure"
+        if step == "ran":
+            steps = []
+        return {
+            "jobs": [
+                {
+                    "name": "Persist trusted worker outcome in Neon",
+                    "steps": [
+                        {
+                            "name": "Classify and persist this completed worker",
+                            "conclusion": "failure",
+                        }
+                    ],
+                },
+                {"name": "run / factory", "conclusion": worker, "steps": steps},
+            ]
+        }
 
 
-def availability(runs: list[tuple[str, str]]) -> doctor.Finding:
+def availability(runs: list[tuple[str, str]], **kwargs: str) -> doctor.Finding:
     from datetime import UTC, datetime
 
     from rotisserie.factory_console.tracker import Tracker
 
-    hub = Runs(runs)
+    hub = Runs(runs, **kwargs)
     github = cast(GitHub, hub)
     found = doctor.model_availability(
         github, datetime(2026, 11, 23, 6, 30, tzinfo=UTC), Tracker(github)
     )
-    assert "created=2026-11-23T05:30:00Z..2026-11-23T06:30:00Z" in hub.routes[0]
+    # Workers run up to two hours: starts are read three hours back.
+    assert "created=2026-11-23T03:30:00Z..2026-11-23T06:30:00Z" in hub.routes[0]
     return found
 
 
 PICK = doctor.MODEL_PICK_STEP
-SESSION = "Run continuous fixed-model factory session"
+SESSION = doctor.SESSION_STEP
 
 
 def test_a_fleet_where_no_worker_succeeds_fails_the_doctor() -> None:
@@ -260,10 +280,35 @@ def test_a_fleet_where_no_worker_succeeds_fails_the_doctor() -> None:
     assert found.status == "fail"
     assert found.text == (
         "0 of the last 15 finished workers succeeded; 5 could not pick any model (every "
-        "candidate cooling down, used up, or an author of the PR); 10 failed during their "
-        "session (mostly provider capacity)"
+        "candidate cooling down, used up, or an author of the PR); 10 failed during their session"
     )
     assert "factory-model-health-reset.yml" in found.hint
+
+
+def test_cancelled_workers_are_not_successes() -> None:
+    found = availability([("failure", PICK)] * 5 + [("cancelled", "")] * 10)
+    assert found.status == "fail"
+    assert "10 were cancelled or timed out" in found.text
+
+
+def test_a_failure_elsewhere_is_named_not_blamed_on_providers() -> None:
+    found = availability([("failure", "Checkout main")] * 3 + [("success", "")])
+    assert found.status == "warn"
+    assert "3 failed at 'Checkout main'" in found.text
+    assert found.hint == "rotisserie factory report shows the failed runs"
+
+
+def test_a_worker_that_ran_but_failed_its_outcome_had_a_model() -> None:
+    found = availability([("failure", "ran")] * 3 + [("success", "")])
+    assert found.status == "warn"
+    assert "3 ran their session but ended without a successful outcome" in found.text
+    assert "could not pick" not in found.text and "failed at" not in found.text
+
+
+def test_workers_that_finished_over_an_hour_ago_are_not_counted() -> None:
+    found = availability([("failure", PICK)] * 3, finished="2026-11-23T05:00:00Z")
+    assert found.status == "ok"
+    assert found.text == "no worker finished in the last hour"
 
 
 def test_some_workers_without_a_model_is_a_warning() -> None:
