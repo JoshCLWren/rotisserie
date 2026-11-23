@@ -27,6 +27,7 @@ from rotisserie.factory_console import runtime
 from rotisserie.factory_console.github import (
     GitHub,
     GitHubError,
+    GitHubRateLimitError,
     Obj,
     integer,
     items,
@@ -424,9 +425,23 @@ def run_checks(github: GitHub, *, now: datetime, clock: Clock | None = None) -> 
         ("shared failures", lambda: shared_failures(github, now)),
         ("review deadlocks", lambda: review_deadlocks(github)),
     ]
-    for name, check in checks:
+    for index, (name, check) in enumerate(checks):
         try:
             found.append(check())
+        except GitHubRateLimitError as exc:
+            found.append(Finding(name, "warn", "not checked: GitHub API is rate limited"))
+            found.append(Finding("GitHub API", "fail", str(exc)))
+            skipped = [label for label, _ in checks[index + 1 :]]
+            if skipped:
+                found.append(
+                    Finding(
+                        "checks skipped",
+                        "warn",
+                        f"{len(skipped)} checks not run because GitHub is rate limited: "
+                        + ", ".join(skipped),
+                    )
+                )
+            break  # Do not continue hammering a throttled GitHub API.
         except GitHubError as exc:
             found.append(Finding(name, "warn", f"could not check: {exc}"))
     return found
