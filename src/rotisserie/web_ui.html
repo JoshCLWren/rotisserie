@@ -104,7 +104,7 @@
    </div>
    <div class="stack">
     <section class="panel"><div class="panel-header"><div><h2>Factory health</h2><p class="section-desc">From <code>factory doctor</code>, not guesses.</p></div><button class="button small ghost" data-goto="health">Details</button></div><div class="panel-body" id="overview-health"><div class="empty">Loading diagnostics…</div></div></section>
-    <section class="panel"><div class="panel-header"><div><h2>Recent merges</h2><p class="section-desc">Verified GitHub merges, last 12 hours.</p></div><a class="button small ghost" target="_blank" rel="noopener noreferrer" href="https://github.com/JoshCLWren/comic-pile/pulls?q=is%3Apr+is%3Amerged">All merges</a></div><div class="panel-body" id="overview-merged"><div class="empty">Loading merges…</div></div></section>
+    <section class="panel"><div class="panel-header"><div><h2>Recent merges</h2><p class="section-desc">Verified GitHub merges, last 12 hours.</p></div><a class="button small ghost" id="all-merges" target="_blank" rel="noopener noreferrer">All merges</a></div><div class="panel-body" id="overview-merged"><div class="empty">Loading merges…</div></div></section>
     <section class="panel"><div class="panel-header"><div><h2>Unblock work</h2><p class="section-desc">Actions the factory can safely take next.</p></div></div><div class="panel-body"><div class="page-controls"><button class="button" id="view-plan">See proposed actions</button><button class="button primary" id="unstick">Unblock work</button></div><div id="unstick-plan"></div></div></section>
    </div>
   </div>
@@ -187,6 +187,7 @@ function renderQueue(){
 async function explain(number){try{const d=await get("why",{target:"issue:"+number});notice("#"+number+": "+(d.reasons||[]).join("; ")+(d.error?" · "+d.error:""))}catch(err){notice(err.message,true)}}
 async function loadProviders(){
  const selected=el("provider").value;
+ const catalogSelected=el("catalog-provider").value;
  el("provider").disabled=true;
  try{
   const d=await get("providers");
@@ -198,7 +199,8 @@ async function loadProviders(){
   if(preferred)el("provider").value=preferred.provider;
   el("provider").disabled=!preferred;
   el("catalog-provider").innerHTML=options||'<option value="">No providers found</option>';
-  if(preferred)el("catalog-provider").value=preferred.provider;
+  if(catalogSelected&&state.providers.some(p=>p.provider===catalogSelected))el("catalog-provider").value=catalogSelected;
+  else if(preferred)el("catalog-provider").value=preferred.provider;
   await loadModelOptions();
   if(state.page==="models")await loadCatalog();
   preview();
@@ -296,7 +298,7 @@ async function refresh(){
  }finally{el("refresh").disabled=false;el("refresh").classList.remove("is-loading")}
 }
 function go(page){if(!titles[page])return;state.page=page;document.querySelectorAll(".view").forEach(x=>x.classList.toggle("active",x.id===page));document.querySelectorAll(".nav").forEach(x=>x.classList.toggle("active",x.dataset.view===page));setText("page-title",titles[page][0]);setText("page-sub",titles[page][1]);window.scrollTo({top:0,behavior:"smooth"});refresh()}
-el("repository").textContent=REPO;el("nav").addEventListener("click",e=>{const b=e.target.closest("[data-view]");if(b)go(b.dataset.view)});
+el("repository").textContent=REPO;el("all-merges").href="https://github.com/"+REPO+"/pulls?q=is%3Apr+is%3Amerged";el("nav").addEventListener("click",e=>{const b=e.target.closest("[data-view]");if(b)go(b.dataset.view)});
 document.body.addEventListener("click",e=>{const b=e.target.closest("button");if(!b)return;
  if(b.dataset.goto)go(b.dataset.goto);
  if(b.dataset.cancel)act({operation:"cancel",target:b.dataset.cancel},b);
@@ -312,7 +314,7 @@ document.body.addEventListener("click",e=>{const b=e.target.closest("button");if
  }
  if(b.dataset.prInspect)inspectPr(b.dataset.prInspect);
  if(b.dataset.choose){go("overview");el("work-kind").value="issue";el("target-number").value=b.dataset.choose;preview();}
- if(b.dataset.useModel){el("model").value=b.dataset.useModel;el("provider").value=el("catalog-provider").value;go("overview");preview();}
+ if(b.dataset.useModel){const selected=b.dataset.useModel;el("provider").value=el("catalog-provider").value;go("overview");loadModelOptions().then(()=>{if([...el("model").options].some(o=>o.value===selected&&!o.disabled))el("model").value=selected;preview()});}
  if(b.dataset.saveSetting){const x=document.querySelector('[data-setting-name="'+b.dataset.saveSetting+'"]');if(x)act({operation:"settings",name:b.dataset.saveSetting,value:x.value},b)}
 });
 el("launcher").addEventListener("submit",e=>{e.preventDefault();if(state.mutating||el("model").disabled)return;const kind=el("work-kind").value;const number=el("target-number").value;if(kind!=="next"&&(!/^[1-9][0-9]*$/.test(number))){notice("Enter a valid issue or PR number.",true);return}const data={operation:"run",provider:el("provider").value,model:el("model").value||"auto",target:kind==="next"?"":target(),action:kind==="pr"?el("action").value:"advance",force:el("force").checked,take_over:el("take-over").checked};if(el("slot").value)data.slot=Number(el("slot").value);act(data,el("launch"))});
