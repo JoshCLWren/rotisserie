@@ -280,3 +280,38 @@ def test_policy_wip_exemption_reserves_an_urgent_issue_at_the_limit(neon: str) -
         observed_wip=8, wip_limit=8, wip_exempt=True,
     )
     assert urgent["status"] == "reserved"
+
+
+def test_factory_claims_after_the_snapshot_count_against_outside_intake(neon: str) -> None:
+    snapshot = "2026-01-01T00:00:00+00:00"
+    _sql(
+        """INSERT INTO public.factory_state_kv (cache_key, payload, fetched_at, expires_at)
+           VALUES ($1, '[{"claim_id": "w", "worker": "5", "targets": [70]}]'::jsonb,
+                   now(), now() + interval '1 hour')""",
+        f"factory-lease-v1:{REPO}:worker:5",
+    )
+    full = _reserve(
+        "agent-a", [7], target="issue:7", action="implement", head=None,
+        observed_wip=7, wip_limit=8, offer_at=snapshot,
+    )
+    assert full["reason"] == "wip_capacity_changed"
+    room = _reserve(
+        "agent-a", [7], target="issue:7", action="implement", head=None,
+        observed_wip=6, wip_limit=8, offer_at=snapshot,
+    )
+    assert room["status"] == "reserved"
+
+
+def test_handoff_refuses_an_evidence_pr_someone_else_holds(neon: str) -> None:
+    claim = _reserve("agent-a", [7], target="issue:7", action="implement", head=None)
+    other = _reserve("agent-b", [88])
+    assert other["status"] == "reserved"
+    called: list[object] = []
+    refused = ledger.external_lease_action(
+        REPO, "alice", "agent-a", claim["claim_id"], operation="handoff",
+        evidence=f"https://github.com/{REPO}/pull/88", verify=called.append,
+        evidence_target=88,
+    )
+    assert refused == {"status": "conflict", "reason": "evidence_target_held"}
+    assert called == []
+    assert any(key.endswith(":target:7") for key in _keys())

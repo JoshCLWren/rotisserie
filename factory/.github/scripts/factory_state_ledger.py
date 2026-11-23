@@ -1008,8 +1008,16 @@ async def _reserve_external(
                      AND payload->0->>'wip' = 'true'""",
                 f"{LEASE_PREFIX}{repo}:external:",
             )
+            # Factory workers that claimed anything since the offer snapshot
+            # may have taken the slot the snapshot counted as free.
+            newer = await conn.fetchval(
+                """SELECT count(*) FROM public.factory_state_kv
+                   WHERE starts_with(cache_key, $1) AND expires_at > now()
+                     AND fetched_at > $2::timestamptz""",
+                f"{LEASE_PREFIX}{repo}:worker:", datetime.fromisoformat(offer_at),
+            )
             if (action == "implement" and not wip_exempt
-                    and observed_wip + int(count or 0) >= wip_limit):
+                    and observed_wip + int(count or 0) + int(newer or 0) >= wip_limit):
                 return {
                     "status": "conflict", "reason": "wip_capacity_changed",
                     "retry": "refresh_frontier",
@@ -1080,6 +1088,12 @@ def reserve_external(
             or not 300 <= ttl <= 3600 or not 1 <= wip_limit <= 10000
             or not 0 <= observed_wip <= 10000 or not offer_at):
         raise ValueError("invalid external reservation request")
+    try:
+        offered = datetime.fromisoformat(offer_at)
+    except ValueError:
+        raise ValueError("invalid external offer snapshot time") from None
+    if offered.tzinfo is None:
+        raise ValueError("invalid external offer snapshot time")
     if not enabled():
         raise RuntimeError("trusted external claims require Neon")
     return asyncio.run(_reserve_external(
@@ -1093,6 +1107,7 @@ async def _finish_external(
     repo: str, actor: str, client: str, token: str, *,
     operation: str, evidence: str, ttl: int,
     verify: Callable[[dict[str, Any]], None] | None,
+    evidence_target: int | None = None,
 ) -> dict[str, Any]:
     key = _external_key(repo, token)
     conn = await measured_connect(dsn=_dsn(), timeout=8, command_timeout=12)
@@ -1122,6 +1137,15 @@ async def _finish_external(
             )
             if len(confirmed) != len(keys) or any(row["id"] != token for row in confirmed):
                 return {"status": "conflict", "reason": "stale_target_fence"}
+            if evidence_target is not None and evidence_target not in numbers:
+                # The handed-off PR is outside this claim; it must not be held
+                # by any other worker, operation or outside agent right now.
+                held = await conn.fetchval(
+                    "SELECT 1 FROM public.factory_state_kv WHERE cache_key=$1",
+                    _target_key(repo, evidence_target),
+                )
+                if held:
+                    return {"status": "conflict", "reason": "evidence_target_held"}
             if verify is not None:
                 # Runs while this transaction holds the repository lock and
                 # the verified fences: no other claim, revoke or factory
@@ -1183,6 +1207,7 @@ def external_lease_action(
     repo: str, actor: str, client: str, claim_id: str, *,
     operation: str, evidence: str = "", ttl: int = 1800,
     verify: Callable[[dict[str, Any]], None] | None = None,
+    evidence_target: int | None = None,
 ) -> dict[str, Any]:
     """Renew, release or hand off one claim, fenced by UUID, actor and client.
 
@@ -1198,15 +1223,17 @@ def external_lease_action(
         raise ValueError("invalid external lease operation")
     if operation == "handoff" and not evidence.strip():
         raise ValueError("handoff requires durable evidence")
-    if verify is not None and operation != "handoff":
+    if (verify is not None or evidence_target is not None) and operation != "handoff":
         raise ValueError("only a handoff verifies evidence")
+    if evidence_target is not None and (type(evidence_target) is not int or evidence_target < 1):
+        raise ValueError("invalid handoff evidence target")
     if len(evidence) > 2000 or any(c in evidence for c in "\r\n"):
         raise ValueError("invalid external evidence")
     if not enabled():
         raise RuntimeError("trusted external claims require Neon")
     return asyncio.run(_finish_external(
         repo, actor, client, claim_id, operation=operation, evidence=evidence, ttl=ttl,
-        verify=verify,
+        verify=verify, evidence_target=evidence_target,
     ))
 
 

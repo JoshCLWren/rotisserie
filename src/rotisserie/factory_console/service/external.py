@@ -103,6 +103,7 @@ def _linked_targets(github: GitHub, offer: frontier.Offer) -> list[int]:
             "number": number,
             "headRefName": string(obj(live.get("head")), "ref"),
             "body": string(live, "body"),
+            "title": string(live, "title"),
         }
     )
     if link is None:
@@ -238,6 +239,10 @@ def _post_claim_change(
         return "another worker became the GitHub owner after reservation"
     kind, number_text = offer.target.split(":")
     if kind == "issue":
+        # The same static gate the controller applies: manual-only, epics,
+        # blocked/terminal labels and ownership added since the snapshot.
+        if not core.issue_is_static_candidate({**live, "number": int(number_text)}, set()):
+            return "issue is no longer eligible (manual-only, blocked or owned)"
         blocked, why = queue.open_blocker(github, int(number_text))
         if blocked:
             return why or "dependency graph changed after reservation"
@@ -495,15 +500,9 @@ def reserve_next(
         if changed:
             raise ValueError(changed)
     except (GitHubError, ValueError) as exc:
-        rolled_back = store.external_lease_action(
-            github.repo,
-            actor,
-            client,
-            claim_id,
-            operation="release",
-            evidence="post-reservation-revalidation-failed",
-        )
-        if rolled_back.get("status") != "released":
+        if not _rollback(
+            store, github, actor, client, claim_id, "post-reservation-revalidation-failed"
+        ):
             return {
                 "status": "held",
                 "reason": "claim rollback could not be verified",
@@ -521,14 +520,13 @@ def reserve_next(
             linked_issue = next(number for number in numbers if number != int(number_text))
             issue_body = string(obj(github.repo_api(f"issues/{linked_issue}")), "body")
     except GitHubError as exc:
-        store.external_lease_action(
-            github.repo,
-            actor,
-            client,
-            claim_id,
-            operation="release",
-            evidence="handoff-preparation-failed",
-        )
+        if not _rollback(store, github, actor, client, claim_id, "handoff-preparation-failed"):
+            return {
+                "status": "held",
+                "reason": "claim rollback could not be verified",
+                "claim_id": claim_id,
+                "retry": "check_lease_before_retry",
+            }
         return {"status": "conflict", "reason": str(exc), "retry": "refresh_frontier"}
     outcome["handoff"] = handoff_packet(
         github,
@@ -670,6 +668,25 @@ def _verify_and_project_handoff(
     _project_review_stage(github, core, pr_number, labels)
 
 
+def _evidence_pr(github: GitHub, evidence: str) -> int | None:
+    """The PR number a handoff URL names, so the ledger can check nobody holds it."""
+    route = evidence.removeprefix(f"https://github.com/{github.repo}/").split("#", 1)[0]
+    return int(route.split("/")[1]) if route.startswith("pull/") else None
+
+
+def _rollback(
+    store: ModuleType, github: GitHub, actor: str, client: str, claim_id: str, why: str
+) -> bool:
+    """Release our own just-acquired claim; False when that cannot be confirmed."""
+    try:
+        result: dict[str, object] = store.external_lease_action(
+            github.repo, actor, client, claim_id, operation="release", evidence=why
+        )
+    except Exception:  # noqa: BLE001 - the caller reports the claim it still holds
+        return False
+    return result.get("status") == "released"
+
+
 def claim_action(
     github: GitHub,
     *,
@@ -700,6 +717,7 @@ def claim_action(
             if operation == "handoff"
             else None
         ),
+        evidence_target=_evidence_pr(github, evidence) if operation == "handoff" else None,
     )
     return result
 

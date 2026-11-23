@@ -860,3 +860,60 @@ def test_required_check_states_match_the_dispatcher() -> None:
     assert outcome(cast(GitHub, Checks(["STALE"])), 1) == "failed"
     assert outcome(cast(GitHub, Checks(["ACTION_REQUIRED"])), 1) == "waiting"
     assert outcome(cast(GitHub, Checks(["SUCCESS", "SKIPPED"])), 1) == "passed"
+
+
+def test_issue_opted_out_after_the_snapshot_releases_our_claim(setup: LedgerDouble) -> None:
+    github = GitHubDouble()
+    github.issue_labels = ["factory:blocked"]
+    result = external.reserve_next(cast(GitHub, github), client="chatgpt", environment={})
+    assert result["status"] == "conflict"
+    assert "no longer eligible" in str(result["reason"])
+    assert setup.holder is None
+
+
+def test_title_linked_repair_reserves_its_issue_too(setup: LedgerDouble) -> None:
+    class TitleLinked(GitHubDouble):
+        def repo_api(self, route: str) -> Any:
+            row = super().repo_api(route)
+            if route.startswith("pulls/"):
+                row = {**row, "title": "Fix #7 crash", "body": "No closing words"}
+            return row
+
+    offer = replace(make_offer(), target="pr:44", action="review-findings", head_sha="a" * 40)
+    assert external._linked_targets(cast(GitHub, TitleLinked()), offer) == [7, 44]
+
+
+def test_handoff_names_the_evidence_pr_for_the_ledger_fence(setup: LedgerDouble) -> None:
+    seen: list[object] = []
+    original = setup.external_lease_action
+
+    def capture(*args: Any, **kwargs: Any) -> dict[str, object]:
+        seen.append(kwargs.get("evidence_target"))
+        return original(*args, **kwargs)
+
+    setup.external_lease_action = capture  # type: ignore[method-assign]
+    external.reserve_next(cast(GitHub, GitHubDouble()), client="chatgpt", environment={})
+    external.claim_action(
+        cast(GitHub, GitHubDouble()),
+        client="chatgpt",
+        claim_id=TOKEN,
+        operation="handoff",
+        environment={},
+        evidence=f"https://github.com/{REPO}/pull/88",
+    )
+    assert seen == [88]
+
+
+def test_failed_rollback_still_reports_the_claim_we_hold(setup: LedgerDouble) -> None:
+    def broken(*args: Any, **kwargs: Any) -> dict[str, object]:
+        raise ConnectionResetError("network gone")
+
+    setup.external_lease_action = broken  # type: ignore[method-assign]
+    result = external.reserve_next(
+        cast(GitHub, GitHubDouble(priority="ralph-priority:critical")),
+        client="chatgpt",
+        environment={},
+    )
+    assert result["status"] == "held"
+    assert result["claim_id"] == TOKEN
+    assert result["retry"] == "check_lease_before_retry"
