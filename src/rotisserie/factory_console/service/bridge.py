@@ -142,6 +142,12 @@ def run(
     while True:
         try:
             status = obj(github.repo_api(f"actions/runs/{run_id}"))
+        except GitHubNotFoundError as exc:
+            # A run created seconds ago can read as missing for a short time.
+            if clock.now().timestamp() >= deadline:
+                raise BridgeError(f"the run's state could not be read: {exc}", url=url) from exc
+            clock.sleep(POLL_SECONDS)
+            continue
         except GitHubError as exc:
             # The run exists and may act; never let this read as a refusal.
             raise BridgeError(f"the run's state could not be read: {exc}", url=url) from exc

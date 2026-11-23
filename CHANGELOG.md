@@ -47,6 +47,10 @@ such change must be called out here and in its release notes.
 
 ### Fixed
 
+- Console commands that run a factory workflow (`labels --via github`,
+  `leases --via github`, `claim` and the others on the bridge) now wait while a
+  run created seconds ago still reads as missing. Before, they stopped at once
+  with "the run's state could not be read" while the run went on (#191).
 - Finishing a label claim now removes `factory:claimed` from every item the
   lease covered, not only the claimed item. Before, a PR claim left the label on
   the linked issue, which blocked that issue's wakeups (#191).
