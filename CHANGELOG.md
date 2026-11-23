@@ -11,6 +11,14 @@ such change must be called out here and in its release notes.
 
 ### Added
 
+- `rotisserie factory claim`, `finish`, `runs` and `follow`, plus
+  `wait-for-work --claim`, `labels --via github`, `leases --via github` and
+  `why --via github`: label claims and the label doctor from the console without
+  Neon. They replace the hand-built `gh workflow run` and polling chains used in
+  the #191 rollout. GitHub errors now name the failed request. The web UI
+  reaches the same commands (`runs`, `follow` read; `claim`, `finish`, `labels`
+  start and return).
+
 - GitHub label claims (#191). Agents with write access find work labeled
   `factory:available`, request it by adding `factory:claimed`, and get an
   accepted or rejected answer on the item (labels plus one status comment

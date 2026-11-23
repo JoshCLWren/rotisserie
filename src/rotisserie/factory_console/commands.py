@@ -46,6 +46,7 @@ from rotisserie.factory_console.service import (
     bridge,
     catalog,
     checks,
+    claimops,
     close,
     conflicts,
     dispatch,
@@ -247,6 +248,7 @@ def add_parser(subcommands: argparse._SubParsersAction[argparse.ArgumentParser])
         ),
     )
     explain.add_argument("what", nargs="?", help="issue:N (or just N); omit for every open issue")
+    _via(explain)
     _common(explain)
 
     next_work = commands.add_parser(
@@ -288,8 +290,48 @@ def add_parser(subcommands: argparse._SubParsersAction[argparse.ArgumentParser])
         default=3600,
         help="give up after this many seconds (default 3600; 0 waits until stopped)",
     )
+    wait_work.add_argument(
+        "--claim",
+        action="store_true",
+        help="claim the first takeable item by label and show the controller's answer",
+    )
     _via(wait_work)
     _common(wait_work)
+
+    claim_work = commands.add_parser(
+        "claim",
+        help="request an item by adding factory:claimed and show the controller's answer",
+    )
+    claim_work.add_argument("what", help="issue:N or pr:N")
+    claim_work.add_argument("--no-wait", action="store_true", help="add the label and return")
+    claim_work.add_argument("--timeout", type=int, default=600, help="seconds to wait (600)")
+    _common(claim_work)
+
+    finish_work = commands.add_parser(
+        "finish",
+        help="end your label claim (remove factory:claimed) and show the hand-off result",
+    )
+    finish_work.add_argument("what", help="issue:N or pr:N")
+    finish_work.add_argument("--no-wait", action="store_true", help="remove the label and return")
+    finish_work.add_argument("--timeout", type=int, default=600, help="seconds to wait (600)")
+    _common(finish_work)
+
+    controller_runs = commands.add_parser(
+        "runs", help="recent label-claim controller runs for an item, with their results"
+    )
+    controller_runs.add_argument("what", help="issue:N or pr:N")
+    controller_runs.add_argument("--limit", type=int, default=5, help="runs to show (5)")
+    _common(controller_runs)
+
+    track = commands.add_parser(
+        "follow",
+        help="show each lifecycle change of an item until it finishes or is held",
+    )
+    track.add_argument("what", help="issue:N or pr:N")
+    track.add_argument("--once", action="store_true", help="show the current state and exit")
+    track.add_argument("--interval", type=int, default=60, help="seconds between checks (60)")
+    track.add_argument("--timeout", type=int, default=3600, help="give up after (3600; 0 never)")
+    _common(track)
 
     reserve = commands.add_parser(
         "reserve-next",
@@ -423,6 +465,10 @@ def add_parser(subcommands: argparse._SubParsersAction[argparse.ArgumentParser])
         action="store_true",
         help="with --repair, also delete the obsolete label definitions it lists",
     )
+    tags.add_argument(
+        "--no-wait", action="store_true", help="with --via github, start the run and return"
+    )
+    _via(tags)
     _common(tags)
 
     event = commands.add_parser(
@@ -480,6 +526,7 @@ def add_parser(subcommands: argparse._SubParsersAction[argparse.ArgumentParser])
         action="store_true",
         help="delete lease rows that expired over an hour ago (never an active claim)",
     )
+    _via(holds)
     _common(holds)
 
     groom = commands.add_parser(
@@ -634,8 +681,10 @@ def main(
         code = exc.exit_code
     except GitHubError as exc:
         console.finish()
-        console.fail(str(exc))
+        console.fail(str(exc) + (f" ({exc.request})" if exc.request else ""))
         data.update(result="github_unavailable", error=str(exc))
+        if exc.request:
+            data["failed_request"] = exc.request
         code = exc.exit_code
     except runtime.RuntimeUnavailableError as exc:
         console.finish()
@@ -675,6 +724,8 @@ def _help_text() -> str:
             "  rotisserie factory sync pr:N     merge main in (never while a worker holds it)",
             "  rotisserie factory leases        who holds which item",
             "  rotisserie factory doctor        is the factory itself healthy",
+            "  rotisserie factory claim pr:N    request work by label; finish pr:N ends it",
+            "  rotisserie factory follow pr:N   each lifecycle change until done; runs pr:N",
             "  rotisserie factory limits        GitHub API quota and reset time",
             "  rotisserie factory close pr:N --reason TEXT   close work that should not be done",
             "  rotisserie factory cancel issue:N",
@@ -1838,6 +1889,23 @@ def cmd_why(context: Context, arguments: argparse.Namespace) -> Outcome:
     data = answer.to_dict()
     data["ref"] = f"issue:{number}"
     data["reasons"] = [reason.text for reason in answer.verdict.reasons]
+    if arguments.via == "github":
+        context.console.waiting("Reading who holds it through the label claim workflow")
+        try:
+            held = claimops.leases(
+                context.github, context.clock, [f"issue:{number}"], started=context.progress
+            )
+        except bridge.BridgeError as exc:
+            context.console.finish()
+            context.console.warn(f"Could not read Neon holders: {exc}")
+        else:
+            context.console.finish()
+            rows = _rows(held.get("rows"))
+            data["holders"] = rows
+            for row in rows:
+                context.console.line(f"  Held by {row.get('holder')} ({row.get('expires_at')})")
+            if not rows:
+                context.console.line("  No Neon lease holds it.")
     return Outcome(Result.COMPLETED, EXIT_OK, data)
 
 
@@ -2010,6 +2078,7 @@ def cmd_wait_for_work(context: Context, arguments: argparse.Namespace) -> Outcom
     started = context.clock.now()
     checks = 0
     data: dict[str, object] = {}
+    login: str | None = None
     while True:
         waited = (context.clock.now() - started).total_seconds()
         if arguments.timeout and waited >= arguments.timeout and checks:
@@ -2048,6 +2117,14 @@ def cmd_wait_for_work(context: Context, arguments: argparse.Namespace) -> Outcom
         found: list[dict[str, object]] = []
         not_yet = ""
         for offer in bridge.takeable(data, abilities):
+            if login is None and offer.get("action") == "review":
+                login = context.github.whoami()
+            if login is not None and claimops.own_review(context.github, offer, login):
+                if not not_yet:
+                    not_yet = (
+                        f"{offer.get('target')}: you authored it, so GitHub refuses your review"
+                    )
+                continue
             live, why = external.live_now(
                 context.github,
                 str(offer.get("target")),
@@ -2063,6 +2140,14 @@ def cmd_wait_for_work(context: Context, arguments: argparse.Namespace) -> Outcom
             console.ok(f"Work an outside agent can take ({len(found)})")
             _show_offers(console, found, limit=5)
             _show_bridge(console, data)
+            if arguments.claim:
+                target = str(found[0].get("target"))
+                console.waiting(f"Claiming {target} and waiting for the controller")
+                answer = claimops.claim(context.github, context.clock, target)
+                console.finish()
+                shown = _show_claim_answer(console, answer)
+                shown.data = {**shown.data, "available": found, "checks": checks}
+                return shown
             # Keep the agent's own scope, or reserve-next may pick other work.
             scope = "".join(f" --can {action}" for action in sorted(abilities))
             flag = " --via github" if via == "github" else ""
@@ -2532,6 +2617,134 @@ def cmd_doctor(context: Context, arguments: argparse.Namespace) -> Outcome:
     return Outcome(result, EXIT_CODES[result], data)
 
 
+# claim / finish / runs / follow -----------------------------------------------------------
+
+
+def _show_claim_answer(console: Console, data: dict[str, object]) -> Outcome:
+    status = str(data.get("status") or "unknown")
+    comment = str(data.get("status_comment") or "")
+    run = data.get("run")
+    if status in ("reserved", "released", "already-held"):
+        console.ok(f"{data.get('target')}: {status}")
+    elif status in ("requested",):
+        console.ok(f"{data.get('target')}: label changed; the controller answers on the item")
+    else:
+        console.warn(f"{data.get('target')}: {status} ({data.get('reason', 'no reason given')})")
+    for line in comment.splitlines():
+        if line.strip() and not line.startswith("**"):
+            console.line(f"  {line.strip()}")
+    if isinstance(run, dict):
+        console.line(f"  Controller run: {run.get('url')}")
+    if data.get("follow"):
+        console.line(f"  Follow: {data['follow']}")
+    good = status in ("reserved", "released", "already-held", "requested")
+    result = (
+        Result.COMPLETED if good else Result.NO_WORK if status == "conflict" else Result.UNKNOWN
+    )
+    return Outcome(result, EXIT_OK if good else EXIT_CODES[result], data)
+
+
+def cmd_claim(context: Context, arguments: argparse.Namespace) -> Outcome:
+    claimops.parse_target(arguments.what)
+    context.console.waiting(f"Requesting {arguments.what} and waiting for the controller")
+    data = claimops.claim(
+        context.github,
+        context.clock,
+        arguments.what,
+        wait=not arguments.no_wait,
+        timeout=float(arguments.timeout),
+    )
+    context.console.finish()
+    return _show_claim_answer(context.console, data)
+
+
+def cmd_finish(context: Context, arguments: argparse.Namespace) -> Outcome:
+    claimops.parse_target(arguments.what)
+    context.console.waiting(f"Finishing {arguments.what} and waiting for the hand-off")
+    data = claimops.finish(
+        context.github,
+        context.clock,
+        arguments.what,
+        wait=not arguments.no_wait,
+        timeout=float(arguments.timeout),
+    )
+    context.console.finish()
+    return _show_claim_answer(context.console, data)
+
+
+def cmd_runs(context: Context, arguments: argparse.Namespace) -> Outcome:
+    _, number = claimops.parse_target(arguments.what)
+    if not 1 <= arguments.limit <= 20:
+        raise UsageError("--limit must be between 1 and 20")
+    rows = claimops.item_runs(context.github, number, limit=arguments.limit)
+    console = context.console
+    console.heading(f"Label claim controller runs for {arguments.what}")
+    for row in rows:
+        row["result"] = claimops.run_result(context.github, row)
+        outcome = row["result"] if isinstance(row["result"], dict) else {}
+        verdict = outcome.get("status") or outcome.get("result") or row.get("conclusion")
+        reason = outcome.get("reason") or outcome.get("error") or ""
+        failed = outcome.get("failed_request")
+        detail = f"{reason} ({failed})" if failed else str(reason)
+        console.line(
+            f"  {row.get('created_at')} {row.get('event')} by {row.get('actor')}: "
+            f"{verdict}{' - ' + detail if detail else ''}"
+        )
+        console.line(f"    {row.get('url')}")
+    if not rows:
+        console.line("  No controller run for this item in the last 50 runs.")
+    comment = claimops.status_comment(context.github, number)
+    data: dict[str, object] = {"target": arguments.what, "runs": rows, "status_comment": comment}
+    return Outcome(Result.COMPLETED, EXIT_OK, data)
+
+
+def _describe_view(view: dict[str, object]) -> str:
+    parts = [str(view.get("state"))]
+    for key in ("stage", "owner", "checks"):
+        if view.get(key):
+            parts.append(f"{key} {view[key]}")
+    if view.get("merged"):
+        parts.append("merged")
+    claims = view.get("claim_labels")
+    if claims:
+        parts.append(", ".join(map(str, _rows_or_list(claims))))
+    issue = view.get("issue")
+    if isinstance(issue, dict):
+        parts.append(
+            f"{issue.get('target')} {issue.get('state')} {issue.get('stage') or ''}".strip()
+        )
+    return "; ".join(parts)
+
+
+def cmd_follow(context: Context, arguments: argparse.Namespace) -> Outcome:
+    claimops.parse_target(arguments.what)
+    console = context.console
+    if arguments.once:
+        view = claimops.snapshot(context.github, arguments.what)
+        console.line(f"{arguments.what}: {_describe_view(view)}")
+        return Outcome(Result.COMPLETED, EXIT_OK, view)
+    if arguments.interval < 15 or arguments.timeout < 0:
+        raise UsageError("--interval must be at least 15 seconds and --timeout 0 or more")
+
+    def changed(view: dict[str, object], keys: list[str]) -> None:
+        stamp = context.clock.now().strftime("%H:%M:%S")
+        console.line(f"{stamp} {arguments.what}: {_describe_view(view)}")
+
+    data = claimops.follow(
+        context.github,
+        context.clock,
+        arguments.what,
+        interval=float(arguments.interval),
+        timeout=float(arguments.timeout),
+        on_change=changed,
+    )
+    if data["status"] == "finished":
+        console.ok(f"Done following {arguments.what}: {data.get('reason')}")
+        return Outcome(Result.COMPLETED, EXIT_OK, data)
+    console.warn(f"Stopped following {arguments.what} after {arguments.timeout}s")
+    return Outcome(Result.NO_WORK, EXIT_CODES[Result.NO_WORK], data)
+
+
 # labels ---------------------------------------------------------------------------------
 
 
@@ -2540,35 +2753,78 @@ def cmd_labels(context: Context, arguments: argparse.Namespace) -> Outcome:
     if arguments.delete_legacy and not arguments.repair:
         console.fail("--delete-legacy needs --repair")
         return Outcome(Result.FAILED, 2, {})
-    try:
-        if arguments.repair:
-            report = labels.repair(
-                context.github, delete_legacy=arguments.delete_legacy, now=context.clock.now()
+    mode = (
+        "delete-legacy" if arguments.delete_legacy else "repair" if arguments.repair else "dry-run"
+    )
+    if arguments.via == "github":
+        if not arguments.no_wait:
+            console.waiting("Running the label doctor workflow on GitHub")
+        try:
+            data = claimops.doctor(
+                context.github,
+                context.clock,
+                mode,
+                wait=not arguments.no_wait,
+                started=context.progress,
             )
-        else:
-            report, _ = labels.audit(context.github, now=context.clock.now())
-    except (RuntimeError, ValueError) as exc:
-        console.fail(f"Label doctor could not run: {exc}")
-        return Outcome(Result.FAILED, 4, {"reason": str(exc)})
-    data = report.to_dict()
-    console.heading(f"Label doctor ({report.mode})")
-    console.line(f"Authority: {report.authority}")
-    for change in report.items:
-        reasons = "; ".join(str(reason) for reason in change["reasons"])  # type: ignore[attr-defined]
-        console.line(f"  {change['target']}: +{change['add']} -{change['remove']} ({reasons})")
-    for hold in report.holds:
-        console.warn(f"  {hold['target']}: held ({'; '.join(hold['holds'])})")  # type: ignore[arg-type]
-    if report.legacy_definitions:
-        verb = "Deleted" if report.deleted_definitions else "Obsolete definitions"
-        names = report.deleted_definitions or report.legacy_definitions
-        console.line(f"{verb}: {', '.join(names)}")
-    for skip in report.skipped:
-        console.warn(f"  skipped {skip['target']}: {skip['reason']}")
-    if not report.items:
+        except bridge.BridgeError as exc:
+            return _bridge_failed(context, exc, "The label doctor did not report")
+        console.finish()
+        if arguments.no_wait:
+            _show_bridge(console, data)
+            return Outcome(Result.SUBMITTED, EXIT_OK, data)
+    else:
+        if arguments.no_wait:
+            raise UsageError("--no-wait needs --via github")
+        try:
+            if arguments.repair:
+                report = labels.repair(
+                    context.github, delete_legacy=arguments.delete_legacy, now=context.clock.now()
+                )
+            else:
+                report, _ = labels.audit(context.github, now=context.clock.now())
+        except (RuntimeError, ValueError) as exc:
+            console.fail(f"Label doctor could not run: {exc}")
+            return Outcome(Result.FAILED, 4, {"reason": str(exc)})
+        data = report.to_dict()
+    _show_label_report(console, data)
+    if not data.get("changes") and not data.get("applied"):
         console.ok("No label changes needed.")
-    elif not arguments.repair:
-        console.line("Apply these changes: rotisserie factory labels --repair")
+    elif mode == "dry-run":
+        suffix = " --via github" if arguments.via == "github" else ""
+        console.line(f"Apply these changes: rotisserie factory labels --repair{suffix}")
     return Outcome(Result.COMPLETED, EXIT_OK, data)
+
+
+def _rows(value: object) -> list[dict[str, object]]:
+    return [row for row in value if isinstance(row, dict)] if isinstance(value, list) else []
+
+
+def _show_label_report(console: Console, data: dict[str, object]) -> None:
+    console.heading(f"Label doctor ({data.get('mode', '?')})")
+    console.line(f"Authority: {data.get('authority', '?')}")
+    shown = _rows(data.get("applied")) or _rows(data.get("changes"))
+    for change in shown:
+        reasons = "; ".join(str(reason) for reason in _rows_or_list(change.get("reasons")))
+        console.line(
+            f"  {change.get('target')}: +{change.get('add')} -{change.get('remove')} ({reasons})"
+        )
+    for hold in _rows(data.get("holds")):
+        held = "; ".join(map(str, _rows_or_list(hold.get("holds"))))
+        console.warn(f"  {hold.get('target')}: held ({held})")
+    legacy = _rows_or_list(data.get("deleted_definitions")) or _rows_or_list(
+        data.get("legacy_definitions")
+    )
+    if legacy:
+        verb = "Deleted" if data.get("deleted_definitions") else "Obsolete definitions"
+        console.line(f"{verb}: {', '.join(map(str, legacy))}")
+    for skip in _rows(data.get("skipped")):
+        console.warn(f"  skipped {skip.get('target')}: {skip.get('reason')}")
+    _show_bridge(console, data)
+
+
+def _rows_or_list(value: object) -> list[object]:
+    return list(value) if isinstance(value, (list, tuple)) else []
 
 
 def cmd_label_event(context: Context, arguments: argparse.Namespace) -> Outcome:
@@ -2702,21 +2958,42 @@ def cmd_leases(context: Context, arguments: argparse.Namespace) -> Outcome:
             return Outcome(Result.NO_WORK, EXIT_CODES[Result.NO_WORK], {"note": why})
         console.ok(f"Removed {purged} lease row(s) that expired over an hour ago.")
         return Outcome(Result.COMPLETED, EXIT_OK, {"released": purged})
-    report = branch_sync.lease_report(context.github, numbers=numbers)
-    if report.note:
-        console.warn(f"{report.note}. Showing owner labels instead.")
-    console.heading(f"Leases ({'Neon' if report.source == 'neon' else 'owner labels'})")
-    if not report.rows:
+    if arguments.via == "github":
+        console.waiting("Reading Neon leases through the label claim workflow on GitHub")
+        try:
+            data = claimops.leases(
+                context.github, context.clock, list(arguments.what), started=context.progress
+            )
+        except bridge.BridgeError as exc:
+            return _bridge_failed(context, exc, "The leases could not be read")
+        console.finish()
+    else:
+        data = branch_sync.lease_report(context.github, numbers=numbers).to_dict()
+    _show_leases(console, data)
+    return Outcome(Result.COMPLETED, EXIT_OK, data)
+
+
+def _show_leases(console: Console, data: dict[str, object]) -> None:
+    if data.get("note"):
+        console.warn(f"{data['note']}. Showing owner labels instead.")
+    console.heading(f"Leases ({'Neon' if data.get('source') == 'neon' else 'owner labels'})")
+    rows = _rows(data.get("rows"))
+    if not rows:
         console.line("Nothing is held.")
     else:
         console.table(
             ["Item", "Held by", "State", "Expires"],
             [
-                [row.target, row.holder, "active" if row.active else "expired", row.expires_at]
-                for row in report.rows
+                [
+                    str(row.get("target")),
+                    str(row.get("holder")),
+                    "active" if row.get("active") else "expired",
+                    str(row.get("expires_at")),
+                ]
+                for row in rows
             ],
         )
-    return Outcome(Result.COMPLETED, EXIT_OK, report.to_dict())
+    _show_bridge(console, data)
 
 
 # checks ---------------------------------------------------------------------------------
@@ -3212,6 +3489,10 @@ HANDLERS = {
     "doctor": cmd_doctor,
     "limits": cmd_limits,
     "labels": cmd_labels,
+    "claim": cmd_claim,
+    "finish": cmd_finish,
+    "runs": cmd_runs,
+    "follow": cmd_follow,
     "label-event": cmd_label_event,
     "explain": cmd_why,
     "providers": cmd_providers,
