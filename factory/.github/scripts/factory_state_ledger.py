@@ -1008,12 +1008,14 @@ async def _reserve_external(
                      AND payload->0->>'wip' = 'true'""",
                 f"{LEASE_PREFIX}{repo}:external:",
             )
-            # Factory workers that claimed anything since the offer snapshot
-            # may have taken the slot the snapshot counted as free.
+            # Factory workers that claimed anything since shortly before the
+            # offer snapshot may hold a slot the snapshot could not see yet
+            # (their GitHub owner labels are written after the Neon claim).
+            # Counting them can only make outside intake stricter.
             newer = await conn.fetchval(
                 """SELECT count(*) FROM public.factory_state_kv
                    WHERE starts_with(cache_key, $1) AND expires_at > now()
-                     AND fetched_at > $2::timestamptz""",
+                     AND fetched_at > $2::timestamptz - interval '5 minutes'""",
                 f"{LEASE_PREFIX}{repo}:worker:", datetime.fromisoformat(offer_at),
             )
             if (action == "implement" and not wip_exempt

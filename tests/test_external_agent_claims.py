@@ -42,6 +42,7 @@ class GitHubDouble:
         self.pr_body = ""
         self.branch = "work-7"
         self.issue_labels: list[str] = []
+        self.pr_author = "acme"
 
     def whoami(self) -> str:
         return "alice"
@@ -63,6 +64,7 @@ class GitHubDouble:
                 "state": "open",
                 "title": "Implement issue",
                 "body": self.pr_body or f"Closes #{self.review_issue}",
+                "user": {"login": self.pr_author},
                 "draft": False,
                 "labels": [{"name": x} for x in self.review_labels],
                 "head": {"sha": self.head, "ref": self.branch},
@@ -917,3 +919,84 @@ def test_failed_rollback_still_reports_the_claim_we_hold(setup: LedgerDouble) ->
     assert result["status"] == "held"
     assert result["claim_id"] == TOKEN
     assert result["retry"] == "check_lease_before_retry"
+
+
+@pytest.mark.parametrize(
+    "body",
+    [
+        "Closes #7\nCloses #9",
+        "Fixes #7 and resolves acme/widgets#9",
+        "Closes #7, closes https://github.com/acme/widgets/issues/9",
+    ],
+)
+def test_implementation_pr_may_close_nothing_but_the_claimed_issue(
+    setup: LedgerDouble, body: str
+) -> None:
+    github = GitHubDouble()
+    github.pr_body = body
+    external.reserve_next(cast(GitHub, github), client="chatgpt", environment={})
+    with pytest.raises(ValueError, match="nothing else"):
+        external.claim_action(
+            cast(GitHub, github),
+            client="chatgpt",
+            claim_id=TOKEN,
+            operation="handoff",
+            environment={},
+            evidence=f"https://github.com/{REPO}/pull/88",
+        )
+    assert setup.holder == "chatgpt"
+
+
+def test_closing_another_repositorys_issue_is_not_a_conflict() -> None:
+    assert external._closed_issues(REPO, "Closes #7. Fixes other/repo#9") == {7}
+
+
+def test_app_authored_implementation_pr_needs_the_bridge_author_record(
+    setup: LedgerDouble,
+) -> None:
+    github = GitHubDouble()
+    github.pr_author = "codebuff[bot]"
+    external.reserve_next(cast(GitHub, github), client="codebuff", environment={})
+    with pytest.raises(ValueError, match="GitHub bridge"):
+        external.claim_action(
+            cast(GitHub, github),
+            client="codebuff",
+            claim_id=TOKEN,
+            operation="handoff",
+            environment={},
+            evidence=f"https://github.com/{REPO}/pull/88",
+        )
+    assert setup.holder == "codebuff"
+    done = external.claim_action(
+        cast(GitHub, github),
+        client="codebuff",
+        claim_id=TOKEN,
+        operation="handoff",
+        environment=BRIDGE,
+        evidence=f"https://github.com/{REPO}/pull/88",
+    )
+    assert done["handoff_recorded"] is True
+    assert github.comments == [
+        f"<!-- comic-pile-agent-model-author-v1:pr-88:head-{'a' * 40}:"
+        "model-gpt-5.2:agent-external-codebuff -->"
+    ]
+
+
+def test_repair_pr_opted_out_after_the_snapshot_releases_our_claim(
+    setup: LedgerDouble, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    offer = replace(
+        make_offer(),
+        target="pr:44",
+        url=f"https://github.com/{REPO}/pull/44",
+        action="review-findings",
+        head_sha="a" * 40,
+    )
+    monkeypatch.setattr(frontier, "capture", lambda *a, **k: make_frontier(offer))
+    github = GitHubDouble()
+    github.review_labels = ["factory", "factory:changes-requested", "factory:unowned"]
+    github.pr_body = "<!-- factory-execution:manual-only -->"
+    result = external.reserve_next(cast(GitHub, github), client="chatgpt", environment={})
+    assert result["status"] == "conflict"
+    assert "no longer eligible" in str(result["reason"])
+    assert setup.holder is None

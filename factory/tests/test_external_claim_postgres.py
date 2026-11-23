@@ -315,3 +315,19 @@ def test_handoff_refuses_an_evidence_pr_someone_else_holds(neon: str) -> None:
     assert refused == {"status": "conflict", "reason": "evidence_target_held"}
     assert called == []
     assert any(key.endswith(":target:7") for key in _keys())
+
+
+def test_factory_claims_long_before_the_snapshot_are_already_in_its_count(neon: str) -> None:
+    from datetime import UTC, datetime
+
+    _sql(
+        """INSERT INTO public.factory_state_kv (cache_key, payload, fetched_at, expires_at)
+           VALUES ($1, '[{"claim_id": "w", "worker": "5", "targets": [70]}]'::jsonb,
+                   now() - interval '10 minutes', now() + interval '1 hour')""",
+        f"factory-lease-v1:{REPO}:worker:5",
+    )
+    room = _reserve(
+        "agent-a", [7], target="issue:7", action="implement", head=None,
+        observed_wip=7, wip_limit=8, offer_at=datetime.now(UTC).isoformat(),
+    )
+    assert room["status"] == "reserved"

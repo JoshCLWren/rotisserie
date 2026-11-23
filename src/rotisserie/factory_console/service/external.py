@@ -28,6 +28,12 @@ COMPLETION_STAGES = frozenset({"factory:review", "factory:ci", "factory:changes-
 WORKFLOW = "rotisserie-external-claim.yml"
 CLAIM_ID = re.compile(r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\Z")
 CLIENT = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]{0,63}\Z")
+# Every form GitHub accepts after a closing keyword: #N, owner/repo#N, issue URL.
+CLOSING = re.compile(
+    r"(?i)\b(?:close[sd]?|fix(?:e[sd])?|resolve[sd]?):?\s+"
+    r"(?:https://github\.com/(?P<url_repo>[\w.-]+/[\w.-]+)/issues/(?P<url_n>\d+)"
+    r"|(?P<repo>[\w.-]+/[\w.-]+)?#(?P<n>\d+))"
+)
 EVIDENCE = re.compile(
     r"https://github\.com/[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+/(?:issues|pull|actions/runs)/[1-9][0-9]*(?:#(?:issuecomment|discussion_r|pullrequestreview)-[0-9]+)?\Z"
 )
@@ -255,6 +261,17 @@ def _post_claim_change(
             if string(linked_row, "state") != "open":
                 return "linked issue changed after reservation"
             all_labels.update(core.labels_of(linked_row))
+        row = {
+            "number": int(number_text),
+            "state": string(live, "state"),
+            "isDraft": live.get("draft") is True,
+            "body": string(live, "body"),
+            "title": string(live, "title"),
+            "headRefName": string(obj(live.get("head")), "ref"),
+            "labels": live.get("labels") or [],
+        }
+        if not core.pr_is_static_candidate(row, {}):
+            return "pull request is no longer eligible (manual-only, draft, blocked or owned)"
         conflicting = (
             live.get("mergeable") is False or string(live, "mergeable_state").upper() == "DIRTY"
         )
@@ -568,6 +585,18 @@ def _project_review_stage(github: GitHub, core: ModuleType, number: int, labels:
         raise RuntimeError("could not verify the review handoff labels")
 
 
+def _closed_issues(repo: str, *texts: str) -> set[int]:
+    """Every issue in ``repo`` that GitHub would close from these PR texts."""
+    found: set[int] = set()
+    for text in texts:
+        for match in CLOSING.finditer(text):
+            other = match.group("url_repo") or match.group("repo")
+            if other and other.lower() != repo.lower():
+                continue
+            found.add(int(match.group("url_n") or match.group("n")))
+    return found
+
+
 def _author_model(github: GitHub, head: str) -> str:
     """The single ``Model:`` trailer on the handed-off head commit, or refuse."""
     commit = obj(obj(github.repo_api(f"commits/{head}")).get("commit"))
@@ -591,7 +620,7 @@ def _record_author(
     """
     if environment.get("GITHUB_ACTIONS") != "true":
         raise ValueError(
-            "repair handoffs must run in the GitHub bridge so the factory records their "
+            "this handoff must run in the GitHub bridge so the factory records its "
             f"author: gh workflow run {WORKFLOW} --repo {github.repo} --ref main "
             "-f operation=handoff -f client=CLIENT -f claim_id=UUID -f evidence=URL"
         )
@@ -649,6 +678,7 @@ def _verify_and_project_handoff(
         if (
             core.issue_explicitly_closed_by_pr(row) != number
             or core.linked_issue_from_pr(row) != number
+            or _closed_issues(github.repo, string(pr, "body"), string(pr, "title")) != {number}
         ):
             raise ValueError("PR body must say 'Closes #N' for the claimed issue and nothing else")
         if stage not in (None, "factory:review"):
@@ -663,7 +693,10 @@ def _verify_and_project_handoff(
     else:
         raise ValueError("unsupported claimed action")
     model = _author_model(github, head)
-    if action in REPAIRS:
+    owner_authored = string(obj(pr.get("user")), "login") == github.repo.split("/", 1)[0]
+    if action in REPAIRS or not owner_authored or (environment or {}).get("GITHUB_ACTIONS"):
+        # A repair head, or a PR the review controller cannot attest from its
+        # owner-authored-head rule, needs the bridge's trusted author record.
         _record_author(github, pr_number, head, model, str(claim["client"]), environment or {})
     _project_review_stage(github, core, pr_number, labels)
 
