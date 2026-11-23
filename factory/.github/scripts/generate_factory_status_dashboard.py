@@ -496,7 +496,8 @@ def collect_snapshot() -> dict[str, Any]:
     # Allocator telemetry lives in the completion drain's Actions job summary.
     # Issue #1093 is retired as a registry; the dashboard never reads it.
     funnel: dict[str, str] = {}
-    credits = merge_credit(recently_merged_prs(completion))
+    recent_prs = recently_merged_prs(completion)
+    credits = merge_credit(recent_prs)
     worker_rows = build_worker_rows(
         manifest_rows,
         capacity_rows=capacity.get("candidates") or [],
@@ -523,6 +524,12 @@ def collect_snapshot() -> dict[str, Any]:
 
     return {
         "delivery_funnel": delivery_rows,
+        "merged_prs": [
+            {"number": int(pr.get("number") or 0),
+             "title": str(pr.get("title") or ""),
+             "merged_at": str(pr.get("mergedAt") or "")}
+            for pr in recent_prs
+        ],
         "delivery_funnel_error": delivery_error,
         "heartbeat_health": heartbeat_report,
         "generated_at": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
@@ -880,6 +887,17 @@ def main() -> int:
     page = page.replace("</head>", f"<style>{css}</style></head>", 1)
     page = page.replace("</body>", f'<script id="fleet-snapshot" type="application/json">{payload}</script><script>{js}</script></body>', 1)
     OUTPUT.write_text(page, encoding="utf-8")
+    # Safe public projection for the shared Rotisserie browser UI. Never publish
+    # runner environment, secrets, GitHub tokens, Neon credentials or raw logs.
+    public_keys = ("repo", "generated_at", "workers", "merged_prs", "open_prs",
+                   "open_issues", "busy_workers", "idle_workers", "pipeline",
+                   "throughput", "executable_slot_capacity", "cooling_candidates",
+                   "unavailable_candidates", "healthy_candidates", "degraded_candidates",
+                   "delivery_funnel")
+    public = {key: snapshot[key] for key in public_keys if key in snapshot}
+    (OUTPUT.parent / "factory-status-snapshot.json").write_text(
+        json.dumps(public, ensure_ascii=True, separators=(",", ":")), encoding="utf-8"
+    )
     print(json.dumps(snapshot, sort_keys=True))
     return 0
 
