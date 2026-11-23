@@ -46,7 +46,13 @@ from rotisserie.factory_console.service import (
     stalls,
     unstick,
 )
-from rotisserie.factory_console.tracker import DISPATCH_WORKFLOW, Clock, Tracker, failure_reasons
+from rotisserie.factory_console.tracker import (
+    DISPATCH_WORKFLOW,
+    WORKER_WORKFLOW,
+    Clock,
+    Tracker,
+    failure_reasons,
+)
 
 DASHBOARD_WORKFLOW = "factory-status-pages.yml"
 STATS_STALE = timedelta(hours=1)
@@ -148,6 +154,109 @@ def _scheduler(github: GitHub, now: datetime) -> Finding:
             "rotisserie factory report shows its last runs",
         )
     return Finding("scheduler", "ok", "running")
+
+
+# The worker step that picks a provider and model. When it fails, the worker
+# had no model it was allowed to use (every candidate cooling down, used up,
+# or an author of the PR) and released its lease without working.
+MODEL_PICK_STEP = "Select execution candidate at dispatch time"
+SESSION_STEP = "Run continuous fixed-model factory session"
+WORKER_JOB = "run / factory"
+MODEL_PICK_WINDOW = timedelta(hours=1)
+# Workers may run up to two hours, so look for starts well before the window.
+MODEL_PICK_LOOKBACK = timedelta(hours=3)
+MODEL_PICK_SAMPLE = 15
+
+
+def _first_failed_step(jobs: list[Obj]) -> str:
+    """The first failing step of the worker job (else of any job), or ""."""
+    ordered = sorted(jobs, key=lambda job: string(job, "name") != WORKER_JOB)
+    for job in ordered:
+        for step in items(job, "steps"):
+            if string(step, "conclusion") == "failure":
+                return string(step, "name")
+    return ""
+
+
+def model_availability(github: GitHub, now: datetime, tracker: Tracker) -> Finding:
+    """Are workers getting a model and finishing? Every worker failing stalls the factory.
+
+    A worker that fails at the model-pick step had no model it was allowed to
+    use. The other checks only see workers that finished their session, so a
+    fleet where every worker failed this way looked healthy. Counts workers
+    that finished in the last hour, whenever they started.
+    """
+    start = (now - MODEL_PICK_LOOKBACK).strftime("%Y-%m-%dT%H:%M:%SZ")
+    until = now.strftime("%Y-%m-%dT%H:%M:%SZ")
+    listed = items(
+        github.repo_api(
+            f"actions/workflows/{WORKER_WORKFLOW}/runs?status=completed"
+            f"&created={start}..{until}&per_page=100"
+        ),
+        "workflow_runs",
+    )
+    finished = [
+        run
+        for run in listed
+        if (done := timestamp(run, "updated_at")) is not None
+        and now - MODEL_PICK_WINDOW <= done <= now
+    ]
+    finished.sort(key=lambda run: string(run, "updated_at"), reverse=True)
+    runs = finished[:MODEL_PICK_SAMPLE]
+    if not runs:
+        return Finding("model availability", "ok", "no worker finished in the last hour")
+    succeeded = no_model = in_session = ran = 0
+    elsewhere: Counter[str] = Counter()
+    other = 0  # cancelled, timed out, skipped: not a success, cause unknown
+    for run in runs:
+        conclusion = string(run, "conclusion")
+        if conclusion == "success":
+            succeeded += 1
+            continue
+        run_id = integer(run, "id")
+        if conclusion != "failure" or run_id is None:
+            other += 1
+            continue
+        jobs = tracker.jobs(run_id)
+        worker = next((job for job in jobs if string(job, "name") == WORKER_JOB), None)
+        if worker is not None and string(worker, "conclusion") == "success":
+            # The worker had a model and ran; the run failed afterwards (its
+            # recorded outcome, e.g. no change delivered).
+            ran += 1
+            continue
+        step = _first_failed_step(jobs)
+        if step == MODEL_PICK_STEP:
+            no_model += 1
+        elif step == SESSION_STEP:
+            in_session += 1
+        else:
+            elsewhere[step or "an unknown step"] += 1
+    unsuccessful = len(runs) - succeeded
+    if no_model == 0 and unsuccessful * 2 <= len(runs):
+        return Finding("model availability", "ok", "workers are finding models and finishing")
+    parts = [f"{succeeded} of the last {len(runs)} finished workers succeeded"]
+    if no_model:
+        parts.append(
+            f"{no_model} could not pick any model (every candidate cooling down, used up, "
+            "or an author of the PR)"
+        )
+    if in_session:
+        parts.append(f"{in_session} failed during their session")
+    if ran:
+        parts.append(f"{ran} ran their session but ended without a successful outcome")
+    for step, count in elsewhere.most_common(2):
+        parts.append(f"{count} failed at '{step}'")
+    if other:
+        parts.append(f"{other} were cancelled or timed out")
+    hint = "rotisserie factory report shows the failed runs"
+    if no_model or in_session:
+        hint = (
+            "rotisserie factory stats shows provider health; cooldowns clear by themselves. "
+            "If they are wrong: gh workflow run factory-model-health-reset.yml"
+        )
+    # No worker succeeding means nothing is being delivered at all.
+    status = "fail" if succeeded == 0 else "warn"
+    return Finding("model availability", status, "; ".join(parts), hint)
 
 
 def _intake(github: GitHub, now: datetime) -> Finding:
@@ -311,6 +420,7 @@ def run_checks(github: GitHub, *, now: datetime, clock: Clock | None = None) -> 
         ("main verification", lambda: main_verification(github)),
         ("rotisserie intake", lambda: _intake(github, now)),
         ("worker rejections", rejections),
+        ("model availability", lambda: model_availability(github, now, tracker)),
         ("shared failures", lambda: shared_failures(github, now)),
         ("review deadlocks", lambda: review_deadlocks(github)),
     ]
