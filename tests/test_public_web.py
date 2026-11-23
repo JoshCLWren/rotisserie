@@ -44,7 +44,12 @@ def snapshot() -> dict[str, object]:
         ],
         "candidate_health": {
             "models": [
-                {"source": "example", "model": "example/free", "status": "healthy", "api_key": "never-expose"}
+                {
+                    "source": "example",
+                    "model": "example/free",
+                    "status": "healthy",
+                    "api_key": "never-expose",
+                }
             ]
         },
         "private_metadata": "never-expose",
