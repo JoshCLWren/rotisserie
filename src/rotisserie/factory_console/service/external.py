@@ -156,7 +156,7 @@ def _required_checks_outcome(github: GitHub, number: int) -> str:
 
 
 def _conflict_without_ci(github: GitHub, number: int, head: str | None) -> bool:
-    """Narrow existing controller exception for a conflicted head with no CI."""
+    """Narrow controller exception: a conflicted head whose CI is not running."""
     if head is None:
         return False
     try:
@@ -179,10 +179,9 @@ def _conflict_without_ci(github: GitHub, number: int, head: str | None) -> bool:
         or response["total_count"] != len(runs)
     ):
         return False
+    # Same rule as the dispatcher (#182): only a still-running check waits.
     return not any(
-        not isinstance(run, dict)
-        or run.get("name") == "CI Summary"
-        or str(run.get("status", "")).lower() != "completed"
+        not isinstance(run, dict) or str(run.get("status", "")).lower() != "completed"
         for run in runs
     )
 

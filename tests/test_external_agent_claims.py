@@ -1314,3 +1314,27 @@ def test_live_offer_ignores_rank_but_not_head_priority_or_lane(
     assert external._live_offer(cast(GitHub, GitHubDouble()), offered, moved) == (True, "")
     reprioritized = make_frontier(replace(offered, priority=4))
     assert external._live_offer(cast(GitHub, GitHubDouble()), offered, reprioritized)[0] is False
+
+
+def test_conflicted_head_with_settled_ci_is_open_to_merge_conflict_work() -> None:
+    """#182: GitHub reports no required checks on a conflicted PR."""
+
+    class Conflicted(GitHubDouble):
+        def __init__(self, runs: list[dict[str, str]]) -> None:
+            super().__init__()
+            self.runs = runs
+
+        def repo_api(self, route: str) -> Any:
+            if route.startswith("pulls/"):
+                return {"state": "open", "mergeable": False, "mergeable_state": "dirty",
+                        "head": {"sha": self.head}}  # fmt: skip
+            if "/check-runs" in route:
+                return {"total_count": len(self.runs), "check_runs": self.runs}
+            return super().repo_api(route)
+
+    settled = [{"name": "CI Summary", "status": "completed"}, {"name": "x", "status": "completed"}]
+    running = [{"name": "CI Summary", "status": "in_progress"}]
+    head = "a" * 40
+    assert external._conflict_without_ci(cast(GitHub, Conflicted(settled)), 44, head) is True
+    assert external._conflict_without_ci(cast(GitHub, Conflicted(running)), 44, head) is False
+    assert external._conflict_without_ci(cast(GitHub, Conflicted(settled)), 44, "b" * 40) is False
