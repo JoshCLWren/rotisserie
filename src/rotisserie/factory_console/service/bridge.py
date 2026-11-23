@@ -39,9 +39,11 @@ POLL_SECONDS = 10.0
 class BridgeError(RuntimeError):
     """The workflow run could not be started, found, finished or read."""
 
-    def __init__(self, message: str, *, url: str = "") -> None:
+    def __init__(self, message: str, *, url: str = "", unfinished: bool = False) -> None:
         super().__init__(message)
         self.url = url
+        # The run exists but was still going when the caller stopped waiting.
+        self.unfinished = unfinished
 
 
 @dataclass(frozen=True)
@@ -149,6 +151,7 @@ def run(
             raise BridgeError(
                 f"the run did not finish within {int(timeout)}s; it may still act. Follow {url}",
                 url=url,
+                unfinished=True,
             )
         clock.sleep(POLL_SECONDS)
     conclusion = string(status, "conclusion") or "unknown"
@@ -192,7 +195,11 @@ def claim(
 
 
 def frontier(
-    github: GitHub, clock: Clock, *, started: dict[str, object] | None = None
+    github: GitHub,
+    clock: Clock,
+    *,
+    started: dict[str, object] | None = None,
+    timeout: float = FRONTIER_TIMEOUT,
 ) -> BridgeRun:
     """Read the ranked work list through the adopter's read-only frontier workflow."""
     return run(
@@ -201,7 +208,7 @@ def frontier(
         FRONTIER_WORKFLOW,
         {},
         artifact="rotisserie-work-frontier-{run_id}",
-        timeout=FRONTIER_TIMEOUT,
+        timeout=timeout,
         started=started,
     )
 

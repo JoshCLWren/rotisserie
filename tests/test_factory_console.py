@@ -2770,6 +2770,15 @@ def test_wait_for_work_waits_while_required_ci_runs(fake: FakeGitHub) -> None:
     assert checks_seen == ["PENDING", "SUCCESS"]
 
 
+def test_a_check_still_running_at_the_deadline_ends_the_wait(fake: FakeGitHub) -> None:
+    bridge_routes(fake, status="in_progress")
+    clock = FakeClock()
+    code, out = invoke(["wait-for-work", "--via", "github", "--timeout", "120"], clock=clock)
+    assert code == 3
+    assert "the last check was still running" in out
+    assert clock.current - START <= timedelta(seconds=130)
+
+
 def test_wait_for_work_direct_reads_the_frontier_here(
     fake: FakeGitHub, monkeypatch: pytest.MonkeyPatch
 ) -> None:

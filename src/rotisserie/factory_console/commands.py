@@ -1896,12 +1896,16 @@ def _show_queue(console: Console, summary: queue.QueueSummary) -> None:
 # next -----------------------------------------------------------------------------------
 
 
-def _snapshot(context: Context, via: str) -> dict[str, object]:
+def _snapshot(
+    context: Context, via: str, timeout: float = bridge.FRONTIER_TIMEOUT
+) -> dict[str, object]:
     """The ranked work list, read directly or through the installed workflow."""
     if via != "github":
         return frontier.capture(context.github, now=context.clock.now()).to_dict()
     context.console.waiting("Running the work-list workflow on GitHub")
-    found = bridge.frontier(context.github, context.clock, started=context.progress)
+    found = bridge.frontier(
+        context.github, context.clock, started=context.progress, timeout=timeout
+    )
     context.console.finish()
     return {**found.data, "bridge": found.summary()}
 
@@ -1983,10 +1987,26 @@ def cmd_wait_for_work(context: Context, arguments: argparse.Namespace) -> Outcom
                 {"status": "none", "checks": checks, "frontier": data},
             )
         checks += 1
+        limit = bridge.FRONTIER_TIMEOUT
+        if arguments.timeout:
+            # A check never keeps the caller past the deadline.
+            limit = min(limit, arguments.timeout - waited)
         try:
-            data = _snapshot(context, via)
+            data = _snapshot(context, via, limit)
         except bridge.BridgeError as exc:
-            return _bridge_failed(context, exc, "The work list could not be read")
+            if not (exc.unfinished and arguments.timeout):
+                return _bridge_failed(context, exc, "The work list could not be read")
+            # Read-only: a check cut off by the deadline simply found nothing in time.
+            console.finish()
+            console.warn(
+                f"No work an outside agent can take within {duration(arguments.timeout)}; "
+                f"the last check was still running: {exc.url}"
+            )
+            return Outcome(
+                Result.NO_WORK,
+                EXIT_CODES[Result.NO_WORK],
+                {"status": "none", "checks": checks, "frontier": data, "unfinished": exc.url},
+            )
         # The same live checks reserve-next makes (dependencies, CI), so
         # this never reports work the reservation would then refuse.
         found: list[dict[str, object]] = []
