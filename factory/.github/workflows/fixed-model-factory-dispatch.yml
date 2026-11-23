@@ -458,9 +458,13 @@ jobs:
         if: steps.api_budget.outputs.allow == 'true' && !(inputs.target || inputs.provider)
         shell: bash
         env:
+          # Outside-agent claims hold promotion; a configured but unconnected
+          # claim store holds it closed.
+          FACTORY_NEON_CONFIGURED: ${{ vars.NEON_PROJECT_ID != '' }}
           GH_TOKEN: ${{ github.token }}
         run: |
           set -Eeuo pipefail
+          python3 -m pip install --quiet --disable-pip-version-check 'asyncpg>=0.30,<1'
           python3 .github/scripts/factory-review-controller.py reconcile-ci
 
       # Rotisserie owns branch synchronization: `rotisserie factory sync` (or an

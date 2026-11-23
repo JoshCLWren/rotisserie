@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import importlib
 import importlib.util
+import re
 import sys
 from pathlib import Path
 from types import ModuleType
@@ -33,6 +34,8 @@ def controller(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> ModuleType:
     dsn = tmp_path / "dsn"
     dsn.write_text("postgresql://role@host/factory_state")
     monkeypatch.setenv("FACTORY_STATE_DSN_FILE", str(dsn))
+    monkeypatch.delenv("FACTORY_NEON_CONFIGURED", raising=False)
+    monkeypatch.delenv("GITHUB_ACTIONS", raising=False)
     monkeypatch.setattr(module, "linked_issue_for_pr", lambda number, branch: 7)
     return module
 
@@ -122,3 +125,45 @@ def test_merge_drain_reads_claims_with_the_python_it_runs() -> None:
     drain = text.index("name: Drain exact-head ready factory PRs")
     assert neon < parsers < reader < drain
     assert "FACTORY_NEON_CONFIGURED: ${{ vars.NEON_PROJECT_ID != '' }}" in text[drain:]
+
+
+@pytest.mark.parametrize(("configured", "held"), [(None, True), ("false", False)])
+def test_a_workflow_step_must_say_whether_neon_is_configured(
+    controller: ModuleType,
+    monkeypatch: pytest.MonkeyPatch,
+    configured: str | None,
+    held: bool,
+) -> None:
+    monkeypatch.delenv("FACTORY_STATE_DSN_FILE")
+    monkeypatch.setenv("GITHUB_ACTIONS", "true")
+    if configured is not None:
+        monkeypatch.setenv("FACTORY_NEON_CONFIGURED", configured)
+    reason = controller.outside_claim(44, pr("factory:ci"))
+    if held:
+        assert reason == "outside-agent claims could not be read (FACTORY_NEON_CONFIGURED unset)"
+    else:
+        assert reason is None
+
+
+def _steps(text: str) -> list[str]:
+    return re.split(r"\n(?=      - (?:name|uses|id):)", text)
+
+
+def test_every_claim_gated_controller_step_reads_outside_claims() -> None:
+    """Steps that promote or authorize PRs must see outside-agent claims."""
+    gated = re.compile(r"\b(?:reconcile-ci|authorized)\b")
+    found = 0
+    for workflow in sorted((SCRIPTS.parent / "workflows").glob("*.yml")):
+        text = workflow.read_text()
+        steps = _steps(text)
+        for index, step in enumerate(steps):
+            if "factory-review-controller" not in step or not gated.search(step):
+                continue
+            found += 1
+            assert "FACTORY_NEON_CONFIGURED: ${{ vars.NEON_PROJECT_ID != '' }}" in step, (
+                workflow.name
+            )
+            earlier = "".join(steps[:index])
+            assert "uses: ./.github/actions/factory-state-cache" in earlier, workflow.name
+            assert "asyncpg" in earlier + step, workflow.name
+    assert found == 3

@@ -21,3 +21,8 @@ os.environ["GITHUB_REPOSITORY"] = "JoshCLWren/comic-pile"
 os.environ["GH_TOKEN"] = "invalid-test-token"
 os.environ["GITHUB_TOKEN"] = "invalid-test-token"
 os.environ["GH_CONFIG_DIR"] = tempfile.mkdtemp(prefix="factory-tests-gh-")
+
+# The suite has no outside-agent claim store. Say so explicitly: inside
+# Actions, an unset setting makes claim-gated controller steps hold closed.
+# Tests of that rule set or clear it themselves.
+os.environ["FACTORY_NEON_CONFIGURED"] = "false"
