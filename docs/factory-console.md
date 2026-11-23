@@ -54,6 +54,7 @@ rotisserie factory checks pr:N # why its checks fail, in one line each
 rotisserie factory review pr:N # whose approval counts: known self-review vs missing metadata
 rotisserie factory groom inventory  # the whole open backlog, with evidence per item
 rotisserie factory doctor      # is the factory itself healthy
+rotisserie factory limits      # GitHub API requests remaining and reset times
 rotisserie factory conflicts pr:N  # which of its files main also changed, and where
 ```
 
@@ -550,6 +551,24 @@ print(plan.to_dict())
 `reliability` (track record) and `providers` (setup) are in the service so far.
 Older commands still mix reading, deciding and printing in `commands.py` and
 move into the service when they are next changed.
+
+## GitHub API limits and retry times
+
+`rotisserie factory limits` shows REST core, GraphQL, and search quotas for the
+**authenticated local GitHub CLI credential**, including used/remaining requests,
+local reset times and countdowns. `rotisserie factory limits --json` exposes the
+same resource counters and UTC reset timestamps as structured data. Factory
+worker GitHub App installation tokens may have **different limits**.
+
+If GitHub rate-limits an operation, Rotisserie consults the quota endpoint and
+prints the earliest **known** retry time. A primary REST quota reset is shown
+only if the REST core bucket is confirmed exhausted. For secondary throttling,
+the server's Retry-After is used when available; otherwise the retry time is
+**unknown**. A quota reset is not a promise that GitHub will lift a separate
+secondary limit. If even the quota endpoint fails, the CLI reports that instead
+of guessing an ETA. `doctor` stops querying GitHub after a throttle and marks
+later health checks as **not checked**, not as unhealthy. `doctor --fix` does
+not attempt repairs until it can read GitHub.
 
 ## Exit codes
 
