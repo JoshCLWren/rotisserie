@@ -1052,3 +1052,49 @@ def test_pr_link_edited_after_reservation_releases_our_claim(
     assert result["status"] == "conflict"
     assert "linked issue changed" in str(result["reason"])
     assert setup.holder is None
+
+
+def _pr_offer() -> frontier.Offer:
+    return replace(
+        make_offer(),
+        target="pr:44",
+        url=f"https://github.com/{REPO}/pull/44",
+        action="review-findings",
+        head_sha="a" * 40,
+    )
+
+
+def test_repair_of_a_pr_whose_issue_closed_reserves_just_the_pr(
+    setup: LedgerDouble, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(frontier, "capture", lambda *a, **k: make_frontier(_pr_offer()))
+    monkeypatch.setattr(external, "_required_checks_outcome", lambda *a, **k: "passed")
+    github = GitHubDouble()
+    github.closed = {7}
+    github.review_labels = ["factory", "factory:changes-requested", "factory:unowned"]
+    result = external.reserve_next(cast(GitHub, github), client="chatgpt", environment={})
+    assert result["status"] == "reserved", result
+    assert setup.holder == "chatgpt"
+
+
+def test_linked_issue_owner_after_snapshot_releases_our_claim(
+    setup: LedgerDouble, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    class Owned(GitHubDouble):
+        reads = 0
+
+        def repo_api(self, route: str) -> Any:
+            row = super().repo_api(route)
+            if route == "issues/7":
+                Owned.reads += 1
+                if Owned.reads > 1:
+                    row = {**row, "labels": [*row["labels"], {"name": "factory:42"}]}
+            return row
+
+    monkeypatch.setattr(frontier, "capture", lambda *a, **k: make_frontier(_pr_offer()))
+    github = Owned()
+    github.review_labels = ["factory", "factory:changes-requested", "factory:unowned"]
+    result = external.reserve_next(cast(GitHub, github), client="chatgpt", environment={})
+    assert result["status"] == "conflict"
+    assert "linked issue's owner" in str(result["reason"])
+    assert setup.holder is None

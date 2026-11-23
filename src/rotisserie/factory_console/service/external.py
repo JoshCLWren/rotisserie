@@ -264,13 +264,20 @@ def _post_claim_change(
             }
         )
         if live_link is not None and live_link not in numbers:
-            return "the pull request's linked issue changed after reservation"
+            # A closed linked issue is not leased (the factory leases only the
+            # PR then); any open one we did not fence means the link changed.
+            relinked = obj(github.repo_api(f"issues/{live_link}"))
+            if string(relinked, "state") == "open" and "pull_request" not in relinked:
+                return "the pull request's linked issue changed after reservation"
         if len(numbers) == 2:
             linked = next(n for n in numbers if n != int(number_text))
             linked_row = obj(github.repo_api(f"issues/{linked}"))
             if string(linked_row, "state") != "open":
                 return "linked issue changed after reservation"
-            all_labels.update(core.labels_of(linked_row))
+            linked_labels = core.labels_of(linked_row)
+            if core.owner_of(linked_labels) not in (None, "factory:unowned"):
+                return "another worker became the linked issue's owner after reservation"
+            all_labels.update(linked_labels)
         row = {
             "number": int(number_text),
             "state": string(live, "state"),
