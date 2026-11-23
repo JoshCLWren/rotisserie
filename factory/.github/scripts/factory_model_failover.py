@@ -118,16 +118,16 @@ def select_next(
     elif source == "kilo-auto":
         from factory_kilo_catalog import choose
 
-        selected = choose(catalog_text or "", worker, excluded)
+        selected = choose(catalog_text or "", worker, excluded, rotation)
     elif source == "openrouter-free":
         from factory_published_model_catalog import choose_model
 
-        model = choose_model(source, worker, catalog_json, excluded)
+        model = choose_model(source, worker, catalog_json, excluded, rotation)
         selected = {"model": model, "runtime_model": f"openrouter/{model}"}
     else:
         from factory_runtime_model_select import select
 
-        selected = select(source, worker, catalog_json or {}, {source: sorted(excluded)})
+        selected = select(source, worker, catalog_json or {}, {source: sorted(excluded)}, rotation)
     # Every caller reads .source; the OpenCode selector only reports provider.
     return {**selected, "source": source}
 

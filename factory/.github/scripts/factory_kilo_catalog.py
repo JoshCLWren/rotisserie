@@ -45,12 +45,13 @@ def discover_models(catalog_text: str) -> list[str]:
 
 def choose(
     catalog_text: str, worker: str, excluded: set[str] | None = None,
+    rotation: int = 0,
 ) -> dict[str, str]:
     selectors = _selectors(catalog_text)
     candidates = [item for item in sorted(selectors) if item not in (excluded or set())]
     if not candidates:
         raise ValueError("Kilo CLI reported no eligible catalog candidates")
-    offset = int.from_bytes(hashlib.sha256(worker.encode()).digest()[:8], "big")
+    offset = int.from_bytes(hashlib.sha256(f"{worker}:{rotation}".encode()).digest()[:8], "big")
     selected = candidates[offset % len(candidates)]
     return {"model": selected, "runtime_model": selectors[selected], "source": "kilo-auto",
             "reason": "selected-from-live-kilo-cli"}
@@ -60,6 +61,7 @@ def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--catalog", type=Path, required=True)
     parser.add_argument("--worker", required=True)
+    parser.add_argument("--rotation", type=int, default=0)
     parser.add_argument("--exclusions-file", type=Path)
     args = parser.parse_args()
     try:
@@ -69,7 +71,7 @@ def main() -> int:
             if not isinstance(data, dict) or not isinstance(data.get("kilo-auto", []), list):
                 raise ValueError("invalid model exclusion projection")
             excluded = set(data.get("kilo-auto", []))
-        result = choose(args.catalog.read_text(encoding="utf-8"), args.worker, excluded)
+        result = choose(args.catalog.read_text(encoding="utf-8"), args.worker, excluded, args.rotation)
     except (OSError, ValueError) as exc:
         print(f"Kilo catalog: {exc}", file=sys.stderr)
         return 1
