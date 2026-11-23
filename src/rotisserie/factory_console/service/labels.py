@@ -89,8 +89,15 @@ def open_items(github: GitHub) -> list[dict[str, Any]]:
     return rows
 
 
-def label_age(github: GitHub, number: int, label: str, now: datetime) -> int | None:
-    """Seconds since ``label`` was last added to the item, or None when unknown."""
+def label_age(
+    github: GitHub, number: int, label: str, now: datetime, updated_at: str = ""
+) -> int | None:
+    """Seconds since ``label`` was last added to the item, or None when unknown.
+
+    GitHub stops listing events on a busy item, so the latest label add can be
+    missing. The item's last update is never older than that add, which makes
+    ``now - updated_at`` a safe lower bound for the label's age.
+    """
     try:
         pages = json.loads(
             github.gh(
@@ -113,8 +120,10 @@ def label_age(github: GitHub, number: int, label: str, now: datetime) -> int | N
         and event["label"].get("name") == label
     ]
     if not stamps or not isinstance(stamps[-1], str):
-        return None
-    added = datetime.fromisoformat(stamps[-1].replace("Z", "+00:00"))
+        if not updated_at:
+            return None
+        stamps = [updated_at]
+    added = datetime.fromisoformat(str(stamps[-1]).replace("Z", "+00:00"))
     return max(0, int((now - added).total_seconds()))
 
 
@@ -161,10 +170,14 @@ def audit(
         else:
             holder = lp.holder_from_lease(leases.get(number))
         claimed_age = (
-            label_age(github, number, lp.CLAIMED, instant) if lp.CLAIMED in labels else None
+            label_age(github, number, lp.CLAIMED, instant, string(row, "updated_at"))
+            if lp.CLAIMED in labels
+            else None
         )
         rejected_age = (
-            label_age(github, number, lp.REJECTED, instant) if lp.REJECTED in labels else None
+            label_age(github, number, lp.REJECTED, instant, string(row, "updated_at"))
+            if lp.REJECTED in labels
+            else None
         )
         status = offer.status if offer else None
         if (

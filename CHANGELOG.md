@@ -47,6 +47,12 @@ such change must be called out here and in its release notes.
 
 ### Fixed
 
+- Finishing a label claim now removes `factory:claimed` from every item the
+  lease covered, not only the claimed item. Before, a PR claim left the label on
+  the linked issue, which blocked that issue's wakeups (#191).
+- The label doctor now ages a claim label by the item's last update when GitHub
+  no longer lists the item's label events. Before, a stale `factory:claimed` on
+  a busy issue was held forever as an unanswered request (#191).
 - Factory merges are serialized, and each resulting main commit is verified
   before the next merge. The ready-merge drain merges at most one PR per run,
   and only onto a main commit whose product CI passed. An exclusive claim on
