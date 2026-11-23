@@ -31,8 +31,11 @@ on:
 
 permissions:
   contents: read
-  issues: write # only the trusted handoff projects verified implementation PRs
-  pull-requests: read
+  # Handoff only, after the actor and fenced claim are verified: review-stage
+  # labels and the trusted author-model comment on the handed-off PR. A PR's
+  # comments need pull-requests: write. This job runs no PR code.
+  issues: write
+  pull-requests: write
   checks: read # exact-head check runs for the conflicted-without-CI exception
   statuses: read
   actions: read

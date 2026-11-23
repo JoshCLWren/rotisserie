@@ -17,11 +17,14 @@ def test_manual_neon_claim_workflow_is_a_controller_not_a_factory_worker() -> No
     assert "workflow_run:" not in content
     assert "issue_comment:" not in content
     assert "contents: read" in content
-    assert "issues: write" in content  # verified PR handoff labels only
-    assert "pull-requests: read" in content
+    assert "issues: write" in content  # verified handoff labels
+    assert "pull-requests: write" in content  # trusted author comment on the PR
     assert "checks: read" in content
     assert "contents: write" not in content
-    assert "pull-requests: write" not in content
+    assert "actions: write" not in content
+    # The bridge never runs PR code: it checks out main and the pinned runtime.
+    assert "ref: main" in content
+    assert "github.event.pull_request" not in content
     assert "NEON_API_KEY" in content
     assert "uses: ./.github/actions/factory-state-cache" in content
     assert "test -s \"$FACTORY_STATE_DSN_FILE\"" in content

@@ -122,6 +122,8 @@ with the same `client`, `claim_id` and (for handoff) a same-repository
 `evidence` URL.
 
 The manual workflow is a trusted **controller**, not a coding-worker workflow.
+Its token can write issues and pull requests only for a verified handoff
+(review-stage labels and the trusted author-model comment); it runs no PR code.
 It requires the GitHub initiating actor to retain write permission, refuses
 reruns and non-manual events, obtains only the existing restricted Neon role,
 and exports no DSN. A read-only GitHub token or a missing Neon connection does
