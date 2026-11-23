@@ -125,9 +125,7 @@ def test_doctor_json_describes_deferred_work_and_retry(
     result = json.loads(out)
     assert code == 4
     assert result["rate_limit_block"]["kind"] == "primary_or_unknown"
-    assert result["rate_limit_block"]["retry_at"] == datetime.fromtimestamp(
-        RESET, UTC
-    ).isoformat()
+    assert result["rate_limit_block"]["retry_at"] == datetime.fromtimestamp(RESET, UTC).isoformat()
     assert result["applied"] == []
     assert any(f["check"] == "checks skipped" for f in result["findings"])
 
@@ -176,9 +174,7 @@ def test_missing_quota_endpoint_keeps_retry_time_unknown(
 
 
 def test_rate_limit_classification_keeps_secondary_retry_after() -> None:
-    error = _classify(
-        "gh: You have exceeded a secondary rate limit. Retry-After: 90 (HTTP 403)"
-    )
+    error = _classify("gh: You have exceeded a secondary rate limit. Retry-After: 90 (HTTP 403)")
     assert isinstance(error, GitHubRateLimitError)
     assert error.secondary is True
     assert error.retry_after_seconds == 90
