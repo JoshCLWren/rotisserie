@@ -971,7 +971,7 @@ def redact_review_text(text: str) -> str:
     return API_KEY_RE.sub("[REDACTED_API_KEY]", text)
 
 
-AUTHORITATIVE_DIFF_EVIDENCE = "# comic-pile-factory-authoritative-diff-evidence"
+AUTHORITATIVE_DIFF_EVIDENCE = _review_policy.AUTHORITATIVE_DIFF_EVIDENCE
 
 
 def semantic_review_excerpt(text: str) -> str:
@@ -1026,58 +1026,9 @@ def review_acceptance_report(path: str | None, *, worker: str) -> Mapping[str, A
     return issue_acceptance.report_from_text(trusted_review_log(path, worker=worker))
 
 
-def has_actionable_review_findings(excerpt: str) -> bool:
-    """Require a prose finding, not diff/source material or terminal boilerplate."""
-    semantic = excerpt.partition(AUTHORITATIVE_DIFF_EVIDENCE)[0]
-    semantic = re.split(r"(?m)^diff --git ", semantic, maxsplit=1)[0]
-    boilerplate = {
-        "semantic blockers remain",
-        "the pr is returning to repair",
-        "semantic blockers remain. the pr is returning to repair",
-        "repair required",
-        "factory_gate_blocked",
-        "factory_gate_not_ready",
-        "factory_gate_ready",
-        "factory_gate_reject",
-    }
-    in_code = False
-    for raw in semantic.splitlines():
-        line = raw.strip()
-        if line.startswith("```"):
-            in_code = not in_code
-            continue
-        if in_code or not line:
-            continue
-        if line.startswith(("diff --git ", "index ", "--- ", "+++ ", "@@ ", "#", "//", "/*", "{", "}")):
-            continue
-        # OpenCode streams tool activity together with the model's final
-        # explanation. A command transcript is evidence of inspection, not an
-        # actionable diagnosis, even when its text contains English words.
-        if line.startswith(("> ", "→ ", "$ ", "↳ ")):
-            continue
-        if re.match(r"^[0-9a-f]{7,40}\s", line):
-            continue
-        if re.match(r"^(?:commit |Author:|Date:|On branch |nothing to commit|working tree clean)", line, re.I):
-            continue
-        if re.match(r"^\S+\s+\|\s+\d+\s", line) or re.match(
-            r"^\d+ files? changed(?:,|$)", line
-        ):
-            continue
-        # Unified diff additions/deletions and standalone source expressions
-        # are not a model diagnosis, even when they contain English words.
-        if re.match(r"^[+-](?:[^ ]| {2,})", line):
-            continue
-        line = re.sub(r"^[-*]\s+", "", line).strip().strip("*` .")
-        if line.casefold() in boilerplate or not line:
-            continue
-        if re.match(
-            r"^(?:import|from|const|let|var|def|class|function|export|return|raise|assert|await|async|if|for|while)\b",
-            line,
-        ):
-            continue
-        if len(re.findall(r"[A-Za-z]{2,}", line)) >= 2:
-            return True
-    return False
+# Shared with the Rotisserie CLI, which explains PRs stuck on such verdicts.
+NON_FINDING_LINE = _review_policy.NON_FINDING_LINE
+has_actionable_review_findings = _review_policy.has_actionable_review_findings
 
 
 def post_review_comment(

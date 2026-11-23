@@ -2815,3 +2815,53 @@ def test_wait_for_work_rejects_unsafe_settings(
     code, out = invoke(["wait-for-work", *argv])
     assert code == 2
     assert message in out
+
+
+def test_review_shows_a_deadlock_and_what_clears_it(fake: FakeGitHub) -> None:
+    head = "b" * 40
+    fake.routes["pulls/44$"] = {
+        "number": 44,
+        "head": {"sha": head},
+        "labels": [{"name": "factory"}, {"name": "factory:review"}],
+    }
+    fake.routes["issues/44/comments"] = []
+    fake.routes["graphql"] = {
+        "data": {
+            "repository": {
+                "pullRequest": {
+                    "reviewThreads": {
+                        "nodes": [
+                            {
+                                "isResolved": False,
+                                "isOutdated": False,
+                                "path": "src/app.ts",
+                                "comments": {
+                                    "nodes": [
+                                        {
+                                            "author": {"login": "greptile-apps"},
+                                            "body": "P0: never awaited",
+                                            "commit": {"oid": head},
+                                            "url": "a",
+                                        },
+                                        {
+                                            "author": {"login": "github-actions"},
+                                            "body": f"**Fixed** in `{head}`",
+                                            "commit": {"oid": head},
+                                            "url": "https://github.com/acme/widgets/pull/44#r1",
+                                        },
+                                    ]
+                                },
+                            }
+                        ]
+                    }
+                }
+            }
+        }
+    }
+    code, out = invoke(["review", "pr:44"])
+    assert code == 0, out
+    assert "PR #44 (factory:review)" in out
+    assert "Deadlock: PR #44: greptile-apps's thread on src/app.ts" in out
+    assert "resolve the thread" in out
+    code, out = invoke(["--json", "review", "pr:44"])
+    assert json.loads(out)["deadlocks"][0]["kind"] == "answered-thread"

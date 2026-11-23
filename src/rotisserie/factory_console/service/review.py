@@ -121,7 +121,8 @@ def inspect(
     rows = list(records) if records is not None else comment_records(github, number)
     head = string(obj(raw.get("head")), "sha")
     labels = label_names(raw)
-    stage = next((label for label in sorted(labels) if label in _STAGES), "")
+    # The factory's own stage rule, so every stage (and precedence) matches it.
+    stage = runtime.module("factory_work_policy").stage_of(labels) or ""
     owner = next(
         (label for label in sorted(labels) if label.startswith("factory:") and _is_owner(label)),
         "",
@@ -208,15 +209,15 @@ def requeue(github: GitHub, report: ReviewReport) -> Requeued:
     )
 
 
+def open_pulls(github: GitHub) -> list[Obj]:
+    """Every open pull request (100 per request)."""
+    return _pages(github, "pulls?state=open")
+
+
 def blocked_candidates(github: GitHub, *, pulls: Sequence[Obj] | None = None) -> list[Obj]:
     """Open factory PRs parked in ``factory:blocked``, from one list call."""
     rows = list(pulls) if pulls is not None else _pages(github, "pulls?state=open")
     return [row for row in rows if {"factory", BLOCKED} <= label_names(row)]
-
-
-_STAGES = frozenset(
-    {"factory:review", "factory:ci", "factory:ready", "factory:repair", BLOCKED, "factory:work"}
-)
 
 
 def _is_owner(label: str) -> bool:
