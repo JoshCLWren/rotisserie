@@ -24,7 +24,7 @@ window.rotisserieHosted = (() => {
   let statePromise;
   const load = () => {
     if (!statePromise) {
-      statePromise = fetch("./factory-control-room.json", {cache: "no-store"})
+      statePromise = fetch("https://raw.githubusercontent.com/" + REPO + "/factory-status-live/factory-control-room.json", {cache: "no-store"})
         .then(response => {
           if (!response.ok) throw Error("Published factory snapshot unavailable (" + response.status + ")");
           return response.json();
@@ -103,13 +103,13 @@ window.rotisserieHosted = (() => {
     } catch {
       window.prompt("Copy this command JSON, then paste it into GitHub Actions:", json);
     }
-    const win = window.open(WORKFLOW, "_blank", "noopener,noreferrer");
+    
     const box = document.getElementById("message");
     if (box) {
       box.className = "message visible";
       box.textContent = "Command copied. In the GitHub Actions page, choose Run workflow on main and paste it into command_json. GitHub verifies administrator access before running.";
     }
-    if (!win) window.location.assign(WORKFLOW);
+    window.location.assign(WORKFLOW);
   }
   return {request, dispatch};
 })();
@@ -225,12 +225,6 @@ def render_page(source_html: str, template: str) -> tuple[str, str]:
     )
     output = output.replace(
         '<script>\nconst TOKEN=', PUBLIC_ADAPTER + '<script>\nconst TOKEN=', 1,
-    )
-    output = output.replace(
-        '</main>\n', '</main>\n', 1,
-    )
-    output = output.replace(
-        'const titles={', 'const titles={', 1,
     )
     # Preserve a route to historical fleet telemetry, which otherwise would
     # disappear when the shared control room becomes the public homepage.
