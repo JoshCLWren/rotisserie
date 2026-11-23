@@ -46,12 +46,12 @@ jobs:
           echo "Authorized GitHub user ${ACTOR} (id ${ACTOR_ID})"
 
       - name: Check out adopter main
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           ref: main
 
       - name: Check out Rotisserie operator runtime
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           repository: JoshCLWren/rotisserie
           ref: main
