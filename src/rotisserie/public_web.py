@@ -26,16 +26,21 @@ window.rotisserieHosted = (() => {
   let statePromise;
   const load = () => {
     if (!statePromise) {
-      statePromise = fetch("https://raw.githubusercontent.com/" + REPO + "/factory-status-live/factory-control-room.json", {cache: "no-store"})
+      const snapshotUrl = "https://raw.githubusercontent.com/" + REPO +
+        "/factory-status-live/factory-control-room.json";
+      statePromise = fetch(snapshotUrl, {cache: "no-store"})
         .then(response => {
-          if (!response.ok) throw Error("Published factory snapshot unavailable (" + response.status + ")");
+          if (!response.ok) {
+            throw Error("Published factory snapshot unavailable (" + response.status + ")");
+          }
           return response.json();
         }).catch(error => {statePromise = null; throw error;});
     }
     return statePromise;
   };
   function requireDetailedView(name) {
-    throw Error(name + " is not present in the sanitized public snapshot. Open the local control room for live diagnostics or use GitHub Actions.");
+    throw Error(name + " is not present in the sanitized public snapshot. " +
+      "Open the local control room for live diagnostics or use GitHub Actions.");
   }
   function modelsFrom(snapshot, provider) {
     const found = new Map();
@@ -47,7 +52,8 @@ window.rotisserieHosted = (() => {
     for (const item of snapshot.candidate_models || []) {
       if (item.source !== provider || !item.model) continue;
       const old = found.get(item.model) || {model:item.model};
-      old.offered = item.status === "retired" || item.status === "unavailable" || item.status === "cooling" ? false : undefined;
+      old.offered = ["retired", "unavailable", "cooling"].includes(item.status)
+        ? false : undefined;
       old.track_record = "Published status: " + (item.status || "unverified");
       found.set(item.model, old);
     }
@@ -90,7 +96,8 @@ window.rotisserieHosted = (() => {
       check:"Published snapshot (not a live doctor run)", status:"warning",
       text:"Generated " + snapshot.generated_at + ". " +
         snapshot.cooling_slots + " cooling slots, " +
-        snapshot.unavailable_slots + " unavailable slots. Run rotisserie factory doctor locally for full checks."
+        snapshot.unavailable_slots + " unavailable slots. " +
+        "Run rotisserie factory doctor locally for full checks."
     }]};
     requireDetailedView(key);
   }
@@ -109,7 +116,9 @@ window.rotisserieHosted = (() => {
     const box = document.getElementById("message");
     if (box) {
       box.className = "message visible";
-      box.textContent = "Command copied. In the GitHub Actions page, choose Run workflow on main and paste it into command_json. GitHub verifies administrator access before running.";
+      box.textContent = "Command copied. In GitHub Actions, choose Run workflow " +
+        "on main and paste it into command_json. GitHub verifies administrator " +
+        "access before running.";
     }
     window.location.assign(WORKFLOW);
   }
