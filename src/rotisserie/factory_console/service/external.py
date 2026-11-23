@@ -12,6 +12,7 @@ import re
 from datetime import UTC, datetime
 from types import ModuleType
 from typing import Any
+from urllib.parse import quote
 
 from rotisserie.factory_console import runtime
 from rotisserie.factory_console.github import GitHub, GitHubError, obj, string
@@ -610,33 +611,42 @@ def reserve_next(
     return outcome
 
 
-def _project_review_stage(
-    github: GitHub, core: ModuleType, number: int, labels: set[str], head: str
-) -> None:
+def _human_hold(core: ModuleType, pr: dict[str, Any]) -> bool:
+    labels = core.labels_of(pr)
+    return bool(core.eligibility.is_manual_only(string(pr, "body")) or labels & core.BLOCKED_LABELS)
+
+
+def _project_review_stage(github: GitHub, core: ModuleType, number: int, head: str) -> None:
     """Put a PR into the factory's existing review queue, exactly as a worker would.
 
     A factory worker finishing an implementation or repair leaves its PR in
     ``factory:review`` with no owner. This is that same projection: labels
     are hints for the existing controllers, never ownership or approval.
+    Labels are added and removed one by one from a fresh read, so a hold or
+    any other label someone adds meanwhile is never overwritten.
     """
-    wanted = (labels - set(core.STAGE_LABELS) - {"factory:unowned"}) | {
-        "factory",
-        "factory:review",
-        "factory:unowned",
-    }
-    if wanted != labels:
+    fresh = obj(github.repo_api(f"pulls/{number}"))
+    if _human_hold(core, fresh):
+        raise ValueError("the PR is on a human hold (manual-only or blocked); nothing was changed")
+    labels = core.labels_of(fresh)
+    if core.owner_of(labels) not in (None, "factory:unowned"):
+        raise ValueError("handoff PR is owned by another worker")
+    missing = sorted({"factory", "factory:review", "factory:unowned"} - labels)
+    if missing:
+        fields = [arg for label in missing for arg in ("-f", f"labels[]={label}")]
+        github.gh("api", f"repos/{github.repo}/issues/{number}/labels", "--method", "POST", *fields)
+    for stale in sorted(labels & set(core.STAGE_LABELS) - {"factory:review"}):
         github.gh(
             "api",
-            f"repos/{github.repo}/issues/{number}/labels",
+            f"repos/{github.repo}/issues/{number}/labels/{quote(stale, safe='')}",
             "--method",
-            "PUT",
-            "--input",
-            "-",
-            stdin=json.dumps({"labels": sorted(wanted)}),
+            "DELETE",
         )
     final = obj(github.repo_api(f"pulls/{number}"))
     if string(obj(final.get("head")), "sha") != head:
         raise ValueError("the pull request moved during handoff; hand off its new head")
+    if _human_hold(core, final):
+        raise ValueError("a human hold was added during handoff; the claim stays held")
     actual = core.labels_of(final)
     if core.stage_of(actual) != "factory:review" or core.owner_of(actual) != "factory:unowned":
         raise RuntimeError("could not verify the review handoff labels")
@@ -674,10 +684,15 @@ def _delivered_authors(github: GitHub, pr: int, since: str | None) -> list[tuple
     if len(own) >= 250:
         raise ValueError("the pull request has too many commits to attribute (250+)")
     if since is not None and own:
-        compared = obj(github.repo_api(f"compare/{since}...{string(own[-1], 'sha')}"))
-        listed = compared.get("commits")
-        rows = listed if isinstance(listed, list) else []
-        new = {string(c, "sha") for c in rows if isinstance(c, dict)}
+        route = f"repos/{github.repo}/compare/{since}...{string(own[-1], 'sha')}?per_page=100"
+        compared = json.loads(github.gh("api", "--paginate", "--slurp", route))
+        new = {
+            string(c, "sha")
+            for page in (compared if isinstance(compared, list) else [])
+            if isinstance(page, dict) and isinstance(page.get("commits"), list)
+            for c in page["commits"]
+            if isinstance(c, dict)
+        }
         own = [c for c in own if string(c, "sha") in new]
     if not own:
         raise ValueError("no new commit on the claimed PR; release the claim instead")
@@ -753,7 +768,7 @@ def _verify_and_project_handoff(
     labels = core.labels_of(pr)
     if core.owner_of(labels) not in (None, "factory:unowned"):
         raise ValueError("handoff PR is owned by another worker")
-    if core.eligibility.is_manual_only(string(pr, "body")) or labels & core.BLOCKED_LABELS:
+    if _human_hold(core, pr):
         raise ValueError("the PR is on a human hold (manual-only or blocked); nothing was changed")
     stage = core.stage_of(labels)
     head_at_claim = ""
@@ -794,7 +809,7 @@ def _verify_and_project_handoff(
     # Every handoff gets the bridge's trusted author records for the commits
     # it delivers; the review controller cannot attest every outside head.
     _record_authors(github, pr_number, authors, str(claim["client"]), environment or {})
-    _project_review_stage(github, core, pr_number, labels, head)
+    _project_review_stage(github, core, pr_number, head)
 
 
 def _evidence_pr(github: GitHub, evidence: str) -> int | None:

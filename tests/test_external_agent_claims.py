@@ -8,6 +8,7 @@ from concurrent.futures import ThreadPoolExecutor
 from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 from typing import Any, cast
+from urllib.parse import unquote
 
 import pytest
 
@@ -94,11 +95,22 @@ class GitHubDouble:
         if args[:2] == ("issue", "comment"):
             self.comments.append(args[-1])
             return ""
+        if args[:3] == ("api", "--paginate", "--slurp") and "/compare/" in args[3]:
+            since = args[3].split("/compare/")[1].split("...")[0]
+            shas = [sha for sha, _ in self._commits()]
+            after = shas[shas.index(since) + 1 :] if since in shas else shas
+            pages = [after[i : i + 1] for i in range(len(after))] or [[]]
+            return json.dumps([{"commits": [{"sha": sha} for sha in page]} for page in pages])
         assert args[:1] == ("api",)
-        assert args[1].endswith("/labels")
-        assert args[2:4] == ("--method", "PUT")
+        assert "/labels" in args[1]
         self.label_writes += 1
-        self.review_labels = list(json.loads(kwargs["stdin"])["labels"])
+        if args[2:4] == ("--method", "POST"):
+            added = [a.removeprefix("labels[]=") for a in args[4:] if a != "-f"]
+            self.review_labels = [*self.review_labels, *added]
+        else:
+            assert args[2:4] == ("--method", "DELETE")
+            name = unquote(args[1].rsplit("/", 1)[1])
+            self.review_labels = [x for x in self.review_labels if x != name]
         return "{}"
 
 
@@ -644,7 +656,7 @@ def test_repair_handoff_returns_pr_to_review_like_a_worker(
         "factory:review",
         "factory:unowned",
     ]
-    assert github.label_writes == (0 if stage == "factory:review" else 1)
+    assert github.label_writes == (0 if stage == "factory:review" else 2)
     assert setup.holder is None
 
 
@@ -1231,4 +1243,46 @@ def test_ci_repair_that_turned_green_after_reservation_is_released(
     result = external.reserve_next(cast(GitHub, github), client="chatgpt", environment={})
     assert result["status"] == "conflict"
     assert "no longer failing" in str(result["reason"])
+    assert setup.holder is None
+
+
+def test_hold_added_while_authors_are_recorded_stops_the_handoff(setup: LedgerDouble) -> None:
+    class HoldLater(GitHubDouble):
+        def gh(self, *args: str, **kwargs: Any) -> str:
+            result = super().gh(*args, **kwargs)
+            if args[:2] == ("issue", "comment"):
+                self.review_labels = [*self.review_labels, "factory:blocked"]
+            return result
+
+    _repair_claim(setup)
+    github = HoldLater(head="b" * 40)
+    github.review_labels = ["factory", "factory:changes-requested", "factory:unowned"]
+    with pytest.raises(ValueError, match="human hold"):
+        external.claim_action(
+            cast(GitHub, github),
+            client="codebuff",
+            claim_id=TOKEN,
+            operation="handoff",
+            environment=BRIDGE,
+            evidence=f"https://github.com/{REPO}/pull/88",
+        )
+    assert setup.holder == "codebuff"
+    assert github.label_writes == 0
+    assert "factory:blocked" in github.review_labels
+
+
+def test_repair_commits_found_across_compare_pages(setup: LedgerDouble) -> None:
+    _repair_claim(setup)
+    github = GitHubDouble(head="b" * 40)
+    github.review_labels = ["factory", "factory:changes-requested", "factory:unowned"]
+    github.extra_commits = [(f"{n:040x}", f"Part {n}\n\nModel: gpt-5.2") for n in range(1, 4)]
+    external.claim_action(
+        cast(GitHub, github),
+        client="codebuff",
+        claim_id=TOKEN,
+        operation="handoff",
+        environment=BRIDGE,
+        evidence=f"https://github.com/{REPO}/pull/88",
+    )
+    assert len(github.comments) == 4
     assert setup.holder is None
