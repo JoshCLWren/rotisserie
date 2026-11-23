@@ -32,7 +32,18 @@ class GitHubAuthError(GitHubError):
 
 
 class GitHubRateLimitError(GitHubError):
-    """GitHub refused because the API rate limit is used up."""
+    """GitHub throttled the request. A retry time may or may not be known."""
+
+    def __init__(
+        self,
+        message: str,
+        *,
+        secondary: bool = False,
+        retry_after_seconds: int | None = None,
+    ) -> None:
+        super().__init__(message)
+        self.secondary = secondary
+        self.retry_after_seconds = retry_after_seconds
 
 
 class GitHubNotFoundError(GitHubError):
@@ -41,9 +52,19 @@ class GitHubNotFoundError(GitHubError):
 
 def _classify(message: str) -> GitHubError:
     lower = message.lower()
-    if "rate limit" in lower or "secondary rate" in lower:
+    if "rate limit" in lower or "abuse detection" in lower:
+        secondary = "secondary rate limit" in lower or "abuse detection" in lower
+        # `gh` may include the server's Retry-After response in the error text.
+        match = re.search(r"retry[- ]after\\s*[:=]?\\s*(\\d+)\\s*(?:seconds?|s)?", lower)
+        retry = int(match.group(1)) if match else None
+        if retry is None:
+            match = re.search(r"retry (?:the request )?after (\\d+) seconds?", lower)
+            retry = int(match.group(1)) if match else None
         return GitHubRateLimitError(
-            "GitHub's API limit is used up for now. Try again after it resets."
+            "GitHub is applying a secondary rate limit."
+            if secondary else "GitHub's API rate limit is exhausted.",
+            secondary=secondary,
+            retry_after_seconds=retry,
         )
     if (
         "gh auth login" in lower
