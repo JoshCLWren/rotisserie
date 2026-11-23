@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import json
 import re
+from collections.abc import Callable
 from datetime import UTC, datetime
 from types import ModuleType
 from typing import Any
@@ -624,7 +625,13 @@ def _human_hold(core: ModuleType, pr: dict[str, Any]) -> bool:
     return bool(core.eligibility.is_manual_only(string(pr, "body")) or labels & core.BLOCKED_LABELS)
 
 
-def _project_review_stage(github: GitHub, core: ModuleType, number: int, head: str) -> None:
+def _project_review_stage(
+    github: GitHub,
+    core: ModuleType,
+    number: int,
+    head: str,
+    in_scope: Callable[[dict[str, Any]], None],
+) -> None:
     """Put a PR into the factory's existing review queue, exactly as a worker would.
 
     A factory worker finishing an implementation or repair leaves its PR in
@@ -636,6 +643,7 @@ def _project_review_stage(github: GitHub, core: ModuleType, number: int, head: s
     fresh = obj(github.repo_api(f"pulls/{number}"))
     if _human_hold(core, fresh):
         raise ValueError("the PR is on a human hold (manual-only or blocked); nothing was changed")
+    in_scope(fresh)
     labels = core.labels_of(fresh)
     if core.owner_of(labels) not in (None, "factory:unowned"):
         raise ValueError("handoff PR is owned by another worker")
@@ -655,6 +663,7 @@ def _project_review_stage(github: GitHub, core: ModuleType, number: int, head: s
         raise ValueError("the pull request moved during handoff; hand off its new head")
     if _human_hold(core, final):
         raise ValueError("a human hold was added during handoff; the claim stays held")
+    in_scope(final)
     actual = core.labels_of(final)
     if core.stage_of(actual) != "factory:review" or core.owner_of(actual) != "factory:unowned":
         raise RuntimeError("could not verify the review handoff labels")
@@ -792,6 +801,48 @@ def _verify_and_project_handoff(
     if action == "implement":
         if kind != "issue":
             raise ValueError("implementation handoff must originate from an issue")
+        if stage not in (None, "factory:review"):
+            raise ValueError("handoff PR is already in a different factory stage")
+    elif action in REPAIRS:
+        if kind != "pr" or pr_number != number:
+            raise ValueError("handoff evidence points to a different PR")
+        if head == claim.get("head"):
+            raise ValueError("no new commit on the claimed PR; release the claim instead")
+        head_at_claim = str(claim.get("head") or "")
+        if stage not in COMPLETION_STAGES:
+            raise ValueError("the PR left the factory's completion stages")
+    else:
+        raise ValueError("unsupported claimed action")
+
+    def in_scope(live: dict[str, Any]) -> None:
+        _check_handoff_scope(github, core, claim, pr_number, live)
+
+    in_scope(pr)
+    authors = _delivered_authors(
+        github, pr_number, None if action == "implement" else head_at_claim
+    )
+    if authors[-1][0] != head:
+        raise ValueError("the pull request moved during handoff; hand off its new head")
+    # Every handoff gets the bridge's trusted author records for the commits
+    # it delivers; the review controller cannot attest every outside head.
+    _record_authors(github, pr_number, authors, str(claim["client"]), environment or {})
+    _project_review_stage(github, core, pr_number, head, in_scope)
+
+
+def _check_handoff_scope(
+    github: GitHub,
+    core: ModuleType,
+    claim: dict[str, Any],
+    pr_number: int,
+    pr: dict[str, Any],
+) -> None:
+    """Refuse a handoff whose PR now links work outside the claim's fence.
+
+    A body edit leaves the head unchanged, so this runs on every read of the
+    PR during the handoff, including the final one before the claim releases.
+    """
+    number = int(str(claim["target"]).split(":")[1])
+    if claim["action"] == "implement":
         row = {
             "number": pr_number,
             "headRefName": string(obj(pr.get("head")), "ref"),
@@ -806,36 +857,16 @@ def _verify_and_project_handoff(
             or _closed_issues(github.repo, string(pr, "body"), string(pr, "title")) != {number}
         ):
             raise ValueError("PR body must say 'Closes #N' for the claimed issue and nothing else")
-        if stage not in (None, "factory:review"):
-            raise ValueError("handoff PR is already in a different factory stage")
-    elif action in REPAIRS:
-        if kind != "pr" or pr_number != number:
-            raise ValueError("handoff evidence points to a different PR")
-        if head == claim.get("head"):
-            raise ValueError("no new commit on the claimed PR; release the claim instead")
-        head_at_claim = str(claim.get("head") or "")
-        if stage not in COMPLETION_STAGES:
-            raise ValueError("the PR left the factory's completion stages")
-        # The claim fenced the PR and the issue it linked at reservation. A
-        # body edited since to link another open issue would hand off (and
-        # release) work this claim never held; a dropped or closed link is fine.
-        link = _linked_open_issue(github, pr_number, pr)
-        if link is not None and link not in [int(n) for n in claim.get("targets") or []]:
-            raise ValueError(
-                f"the PR now links #{link}, which this claim does not hold; "
-                "release the claim and reserve the PR again"
-            )
-    else:
-        raise ValueError("unsupported claimed action")
-    authors = _delivered_authors(
-        github, pr_number, None if action == "implement" else head_at_claim
-    )
-    if authors[-1][0] != head:
-        raise ValueError("the pull request moved during handoff; hand off its new head")
-    # Every handoff gets the bridge's trusted author records for the commits
-    # it delivers; the review controller cannot attest every outside head.
-    _record_authors(github, pr_number, authors, str(claim["client"]), environment or {})
-    _project_review_stage(github, core, pr_number, head)
+        return
+    # A repair claim fenced the PR and the issue it linked at reservation. A
+    # body edited since to link another open issue would hand off (and
+    # release) work this claim never held; a dropped or closed link is fine.
+    link = _linked_open_issue(github, pr_number, pr)
+    if link is not None and link not in [int(n) for n in claim.get("targets") or []]:
+        raise ValueError(
+            f"the PR now links #{link}, which this claim does not hold; "
+            "release the claim and reserve the PR again"
+        )
 
 
 def _evidence_pr(github: GitHub, evidence: str) -> int | None:
