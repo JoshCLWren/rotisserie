@@ -1,4 +1,5 @@
 """Safety and parity checks for the hosted edition of the real control room."""
+
 from __future__ import annotations
 
 import json
