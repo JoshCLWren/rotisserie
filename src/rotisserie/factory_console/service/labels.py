@@ -16,7 +16,13 @@ from typing import Any
 from urllib.parse import quote
 
 from rotisserie.factory_console import runtime
-from rotisserie.factory_console.github import GitHub, GitHubError, obj, string
+from rotisserie.factory_console.github import (
+    GitHub,
+    GitHubError,
+    GitHubNotFoundError,
+    obj,
+    string,
+)
 from rotisserie.factory_console.service import external, frontier
 
 LIST_CAP = 3000
@@ -235,9 +241,8 @@ def _write(github: GitHub, number: int, add: tuple[str, ...], remove: tuple[str,
                 "--method",
                 "DELETE",
             )
-        except GitHubError as exc:
-            if "404" not in str(exc) and "not found" not in str(exc).lower():
-                raise
+        except GitHubNotFoundError:
+            pass  # already gone: the change we wanted
 
 
 def repair(

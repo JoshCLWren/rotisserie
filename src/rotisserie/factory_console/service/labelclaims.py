@@ -18,7 +18,13 @@ from typing import Any
 from urllib.parse import quote
 
 from rotisserie.factory_console import runtime
-from rotisserie.factory_console.github import GitHub, GitHubError, obj, string
+from rotisserie.factory_console.github import (
+    GitHub,
+    GitHubError,
+    GitHubNotFoundError,
+    obj,
+    string,
+)
 from rotisserie.factory_console.service import external, labels
 
 STATUS_MARKER = "<!-- rotisserie-label-claim-status-v1 -->"
@@ -59,9 +65,8 @@ def _remove(github: GitHub, number: int, *names: str) -> None:
                 "--method",
                 "DELETE",
             )
-        except GitHubError as exc:
-            if "404" not in str(exc) and "not found" not in str(exc).lower():
-                raise
+        except GitHubNotFoundError:
+            pass  # already gone: the change we wanted
 
 
 def status_comment(github: GitHub, number: int, lines: list[str]) -> None:
@@ -125,6 +130,11 @@ def request(
     """Answer one claim request: exactly one Neon lease wins, the label never decides."""
     lp = _lp()
     target = f"{kind}:{number}"
+    if string(obj(github.repo_api(f"issues/{number}")), "state") != "open":
+        # Closed or merged work needs no answer on the item; the doctor never
+        # reads closed items, so a rejection label there would never clear.
+        _remove(github, number, lp.CLAIMED)
+        return {"event": "claim", "target": target, "status": "ignored", "reason": "closed"}
     try:
         outcome = external.reserve_next(
             github, client=lp.LABEL_CLIENT, environment=environment, pick=target
