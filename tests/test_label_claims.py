@@ -34,11 +34,13 @@ class FakeGitHub:
         self.dispatched: list[dict[str, str]] = []
         self.definitions: list[str] = []
         self.events: dict[int, list[dict[str, Any]]] = {}
+        self.closed: set[int] = set()
         self.lock = threading.Lock()
 
     def _row(self, number: int) -> dict[str, Any]:
         row: dict[str, Any] = {
             "number": number,
+            "state": "closed" if number in self.closed else "open",
             "labels": [{"name": n} for n in sorted(self.items[number])],
         }
         if self.kinds.get(number) == "pr":
@@ -657,3 +659,14 @@ def test_review_hand_off_refuses_without_a_decisive_review_or_outside_actions(
             cast(GitHub, moved), claim, url, {"GITHUB_ACTIONS": "true"}
         )
     assert not called.exists()
+
+
+def test_claim_on_closed_work_is_dropped_without_a_rejection_label(neon: Neon) -> None:
+    github = FakeGitHub({7: {"factory", "factory:claimed"}})
+    github.closed.add(7)
+    result = labelclaims.handle(
+        cast(GitHub, github), "issues", event("factory:claimed", "labeled"), dict(ACTIONS_ENV)
+    )
+    assert result["reason"] == "closed"
+    assert github.items[7] == {"factory"}
+    assert neon.claims == {} and github.comments == {}

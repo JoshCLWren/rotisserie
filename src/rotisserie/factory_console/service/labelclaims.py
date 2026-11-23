@@ -125,6 +125,11 @@ def request(
     """Answer one claim request: exactly one Neon lease wins, the label never decides."""
     lp = _lp()
     target = f"{kind}:{number}"
+    if string(obj(github.repo_api(f"issues/{number}")), "state") != "open":
+        # Closed or merged work needs no answer on the item; the doctor never
+        # reads closed items, so a rejection label there would never clear.
+        _remove(github, number, lp.CLAIMED)
+        return {"event": "claim", "target": target, "status": "ignored", "reason": "closed"}
     try:
         outcome = external.reserve_next(
             github, client=lp.LABEL_CLIENT, environment=environment, pick=target
