@@ -185,6 +185,9 @@ class FakeGitHub:
             return json.dumps(self.routes.get("issue-list", []))
         if argv[:2] == ["pr", "list"]:
             return json.dumps(self.routes.get("pr-list", []))
+        if argv[:2] == ["pr", "checks"]:
+            checks = self.routes.get("pr-checks", [])
+            return json.dumps(checks() if callable(checks) else checks)
         if argv[:2] == ["secret", "list"]:
             return json.dumps(self.routes.get("secret-list", []))
         return "[]"
@@ -199,7 +202,11 @@ class FakeGitHub:
 @pytest.fixture
 def fake(monkeypatch: pytest.MonkeyPatch) -> FakeGitHub:
     gh = FakeGitHub()
-    monkeypatch.setattr(GitHub, "_run", lambda self, args, stdin=None: gh(self, args, stdin=stdin))
+    monkeypatch.setattr(
+        GitHub,
+        "_run",
+        lambda self, args, stdin=None, allow_exit_one=False: gh(self, args, stdin=stdin),
+    )
     return gh
 
 
@@ -2710,6 +2717,7 @@ def test_next_via_github_shows_the_workflow_frontier(fake: FakeGitHub) -> None:
 
 def test_wait_for_work_checks_until_an_offer_fits(fake: FakeGitHub) -> None:
     bridge_routes(fake)
+    fake.routes["pr-checks"] = [{"state": "SUCCESS"}]
     snapshots = [
         frontier_snapshot(authority=False),
         frontier_snapshot(offer("issue:7", "implement")),
@@ -2738,6 +2746,27 @@ def test_wait_for_work_gives_up_after_its_timeout(fake: FakeGitHub) -> None:
     assert code == 3
     assert "No work an outside agent can take" in out
     assert len([call for call in fake.calls if call[0] == "workflow"]) == 4  # 0, 300, 600, 900s
+
+
+def test_wait_for_work_waits_while_required_ci_runs(fake: FakeGitHub) -> None:
+    bridge_routes(fake)
+    checks_seen: list[str] = []
+
+    def ci() -> JSON:
+        state = "PENDING" if not checks_seen else "SUCCESS"
+        checks_seen.append(state)
+        return [{"state": state}]
+
+    fake.routes["pr-checks"] = ci
+    fake.artifacts["rotisserie-work-frontier-900"] = frontier_snapshot(
+        offer("pr:44", "review-findings")
+    )
+    clock = FakeClock()
+    code, out = invoke(["--json", "wait-for-work", "--via", "github"], clock=clock)
+    assert code == 0, out
+    data = json.loads(out)
+    assert data["checks"] == 2
+    assert checks_seen == ["PENDING", "SUCCESS"]
 
 
 def test_wait_for_work_direct_reads_the_frontier_here(

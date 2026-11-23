@@ -214,21 +214,30 @@ def _live_offer(
         return False, "head, priority, stage or action changed"
     if found.status != "candidate":
         return False, "offer no longer eligible: " + "; ".join(found.hold_reasons)
-    kind, number_text = previous.target.split(":")
+    return live_now(github, previous.target, previous.action, previous.head_sha)
+
+
+def live_now(github: GitHub, target: str, action: str, head_sha: str | None) -> tuple[bool, str]:
+    """The live GitHub conditions reserve-next checks before reserving a candidate.
+
+    Open dependencies for an issue; for a PR, required CI that is still
+    running (except a conflicted PR with no CI to wait for) or, for a CI
+    repair, no terminal failure to repair.
+    """
+    kind, number_text = target.split(":")
     number = int(number_text)
     if kind == "issue":
         blocked, problem = queue.open_blocker(github, number)
         if blocked:
             return False, problem or "issue dependencies changed"
-    else:
-        checks = _required_checks_outcome(github, number)
-        if checks == "waiting" and not (
-            previous.action == "merge-conflict"
-            and _conflict_without_ci(github, number, previous.head_sha)
-        ):
-            return False, "required CI is still running or unknown"
-        if previous.action == "ci-repair" and checks != "failed":
-            return False, "current head has no terminal required CI failure"
+        return True, ""
+    checks = _required_checks_outcome(github, number)
+    if checks == "waiting" and not (
+        action == "merge-conflict" and _conflict_without_ci(github, number, head_sha)
+    ):
+        return False, "required CI is still running or unknown"
+    if action == "ci-repair" and checks != "failed":
+        return False, "current head has no terminal required CI failure"
     return True, ""
 
 

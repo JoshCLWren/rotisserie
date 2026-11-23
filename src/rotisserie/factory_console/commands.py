@@ -1975,7 +1975,21 @@ def cmd_wait_for_work(context: Context, arguments: argparse.Namespace) -> Outcom
             data = _snapshot(context, via)
         except bridge.BridgeError as exc:
             return _bridge_failed(context, exc, "The work list could not be read")
-        found = bridge.takeable(data, abilities)
+        # The same live checks reserve-next makes (dependencies, CI), so
+        # this never reports work the reservation would then refuse.
+        found: list[dict[str, object]] = []
+        not_yet = ""
+        for offer in bridge.takeable(data, abilities):
+            live, why = external.live_now(
+                context.github,
+                str(offer.get("target")),
+                str(offer.get("action")),
+                str(offer.get("head_sha") or "") or None,
+            )
+            if live:
+                found.append(offer)
+            elif not not_yet:
+                not_yet = f"{offer.get('target')}: {why}"
         if found:
             console.finish()
             console.ok(f"Work an outside agent can take ({len(found)})")
@@ -2006,11 +2020,12 @@ def cmd_wait_for_work(context: Context, arguments: argparse.Namespace) -> Outcom
                 EXIT_CODES[Result.NO_WORK],
                 {"status": "none", "checks": checks, "frontier": data},
             )
-        reason = (
-            "lease authority unavailable"
-            if data.get("authoritative_claim_available") is not True
-            else "every offer is held or needs an action you did not list"
-        )
+        if data.get("authoritative_claim_available") is not True:
+            reason = "lease authority unavailable"
+        elif not_yet:
+            reason = not_yet
+        else:
+            reason = "every offer is held or needs an action you did not list"
         console.waiting(f"No work yet ({reason}); checked {checks}x, next in {duration(pause)}")
         context.clock.sleep(pause)
 
