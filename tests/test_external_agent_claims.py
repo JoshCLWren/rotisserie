@@ -94,8 +94,11 @@ class GitHubDouble:
                 [[{"sha": sha, "commit": {"message": msg}} for sha, msg in self._commits()]]
             )
         if args[:2] == ("issue", "comment"):
-            self.comments.append(args[-1])
-            return ""
+            raise AssertionError("GraphQL addComment is not available to the bridge token")
+        if len(args) > 1 and args[1].endswith("/comments") and "POST" in args:
+            assert args[1] == f"repos/{REPO}/issues/{args[1].split('/')[-2]}/comments"
+            self.comments.append(args[-1].removeprefix("body="))
+            return "{}"
         if args[:3] == ("api", "--paginate", "--slurp") and "/compare/" in args[3]:
             since = args[3].split("/compare/")[1].split("...")[0]
             shas = [sha for sha, _ in self._commits()]
@@ -1251,7 +1254,7 @@ def test_hold_added_while_authors_are_recorded_stops_the_handoff(setup: LedgerDo
     class HoldLater(GitHubDouble):
         def gh(self, *args: str, **kwargs: Any) -> str:
             result = super().gh(*args, **kwargs)
-            if args[:2] == ("issue", "comment"):
+            if len(args) > 1 and str(args[1]).endswith("/comments"):
                 self.review_labels = [*self.review_labels, "factory:blocked"]
             return result
 

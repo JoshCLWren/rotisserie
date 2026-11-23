@@ -736,7 +736,16 @@ def _record_authors(
         marker = policy.agent_model_author_marker(
             pr=pr, head=commit, model=model, agent=f"external-{client}"
         )
-        github.gh("issue", "comment", str(pr), "--repo", github.repo, "--body", marker)
+        # REST, not `gh issue comment`: its GraphQL addComment needs
+        # pull-requests: write, which the bridge's token does not hold.
+        github.gh(
+            "api",
+            f"repos/{github.repo}/issues/{pr}/comments",
+            "--method",
+            "POST",
+            "-f",
+            f"body={marker}",
+        )
 
 
 def _verify_and_project_handoff(
