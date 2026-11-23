@@ -37,7 +37,9 @@ def _keys(repo: str, worker: str, numbers: list[int]) -> list[str]:
     ]
 
 
-async def _acquire(repo: str, worker: str, numbers: list[int], ttl: int) -> str | None:
+async def _acquire(
+    repo: str, worker: str, numbers: list[int], ttl: int, external_wip_seen: int | None = None,
+) -> str | None:
 
     token = str(uuid.uuid4())
     keys = _keys(repo, worker, numbers)
@@ -54,6 +56,17 @@ async def _acquire(repo: str, worker: str, numbers: list[int], ttl: int) -> str 
             )
             if busy:
                 return None
+            if external_wip_seen is not None:
+                # The caller chose new intake against this many outside-agent
+                # WIP claims. If one appeared since, its slot is already taken:
+                # back off rather than start work past the shared WIP limit.
+                current = await conn.fetchval(
+                    """SELECT count(*) FROM public.factory_state_kv
+                       WHERE starts_with(cache_key, $1) AND payload->0->>'wip' = 'true'""",
+                    f"{LEASE_PREFIX}{repo}:external:",
+                )
+                if int(current or 0) > external_wip_seen:
+                    return None
             from factory_state_operations import _roster, reserve_capacity
             if not await reserve_capacity(conn, repo, worker, token, ttl):
                 return None
@@ -87,8 +100,14 @@ async def _acquire(repo: str, worker: str, numbers: list[int], ttl: int) -> str 
         await conn.close()
 
 
-def acquire_lease(repo: str, worker: str, numbers: list[int], ttl: int = FIXED_LEASE_TTL_SECONDS) -> str | None:
+def acquire_lease(
+    repo: str, worker: str, numbers: list[int], ttl: int = FIXED_LEASE_TTL_SECONDS,
+    *, external_wip_seen: int | None = None,
+) -> str | None:
     """Return claim UUID on success, None on conflict, '' without Neon.
+
+    ``external_wip_seen`` (new issue intake) is the outside-agent WIP count the
+    caller planned against; a larger count under the lock is a conflict.
 
     In trusted Actions with a configured DSN, connection failures are fatal:
     silently falling back after a failed database claim would split ownership.
@@ -101,7 +120,7 @@ def acquire_lease(repo: str, worker: str, numbers: list[int], ttl: int = FIXED_L
         if os.environ.get("FACTORY_NEON_LEASE_REQUIRED") == "true":
             raise RuntimeError("trusted factory dispatcher requires Neon transaction lease connection")
         return ""
-    return asyncio.run(_acquire(repo, worker, numbers, ttl))
+    return asyncio.run(_acquire(repo, worker, numbers, ttl, external_wip_seen))
 
 
 async def _release(repo: str, worker: str, token: str, reason: str) -> bool:
@@ -961,7 +980,7 @@ def _external_key(repo: str, token: str) -> str:
 async def _reserve_external(
     repo: str, actor: str, client: str, numbers: list[int], *,
     target: str, action: str, head: str | None, ttl: int,
-    observed_wip: int, wip_limit: int, offer_at: str,
+    observed_wip: int, wip_limit: int, offer_at: str, wip_exempt: bool,
 ) -> dict[str, Any]:
     token = str(uuid.uuid4())
     keys = [_target_key(repo, n) for n in numbers]
@@ -989,7 +1008,8 @@ async def _reserve_external(
                      AND payload->0->>'wip' = 'true'""",
                 f"{LEASE_PREFIX}{repo}:external:",
             )
-            if action == "implement" and observed_wip + int(count or 0) >= wip_limit:
+            if (action == "implement" and not wip_exempt
+                    and observed_wip + int(count or 0) >= wip_limit):
                 return {
                     "status": "conflict", "reason": "wip_capacity_changed",
                     "retry": "refresh_frontier",
@@ -1048,9 +1068,12 @@ async def _reserve_external(
 def reserve_external(
     repo: str, actor: str, client: str, numbers: list[int], *,
     target: str, action: str, head: str | None, ttl: int = 1800,
-    observed_wip: int, wip_limit: int, offer_at: str,
+    observed_wip: int, wip_limit: int, offer_at: str, wip_exempt: bool = False,
 ) -> dict[str, Any]:
-    """Atomically fence one external claim using the factory's existing keys."""
+    """Atomically fence one external claim using the factory's existing keys.
+
+    ``wip_exempt`` carries the work policy's own WIP bypass for urgent issues.
+    """
     numbers = _external_request(repo, actor, client, numbers)
     if (action not in EXTERNAL_ACTIONS or not re.fullmatch(r"(issue|pr):[1-9][0-9]*", target)
             or (head is not None and not re.fullmatch(r"[0-9a-f]{40}", head))
@@ -1062,7 +1085,7 @@ def reserve_external(
     return asyncio.run(_reserve_external(
         repo, actor, client, numbers, target=target, action=action,
         head=head, ttl=ttl, observed_wip=observed_wip, wip_limit=wip_limit,
-        offer_at=offer_at,
+        offer_at=offer_at, wip_exempt=wip_exempt,
     ))
 
 

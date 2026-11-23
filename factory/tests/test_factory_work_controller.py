@@ -639,10 +639,10 @@ def test_assign_candidate_refuses_second_active_lease(
 ) -> None:
     """assign_candidate must refuse when the worker already holds an active lease."""
     monkeypatch.setattr(controller, "issue_has_open_blocker", lambda _n, *, live=False: False)
-    monkeypatch.setattr(controller, "acquire_lease", lambda *_args: "synthetic-lease")
+    monkeypatch.setattr(controller, "acquire_lease", lambda *_args, **_kwargs: "synthetic-lease")
     monkeypatch.setattr(controller, "worker_has_active_lease", lambda w: w == "99")
     monkeypatch.setattr(controller, "issue_has_open_blocker", lambda n, *, live=False: False)
-    monkeypatch.setattr(controller, "acquire_lease", lambda *_args: "test-lease")
+    monkeypatch.setattr(controller, "acquire_lease", lambda *_args, **_kwargs: "test-lease")
     monkeypatch.setattr(controller, "target_still_unowned", lambda n: True)
     monkeypatch.setattr(controller, "replace_factory_labels", lambda *a, **k: None)
     monkeypatch.setattr(controller, "target_owned_by", lambda num, owner: True)
@@ -657,6 +657,39 @@ def test_assign_candidate_refuses_second_active_lease(
 
     assert controller.assign_candidate(FakeCandidate(), "99") is False
     assert controller.assign_candidate(FakeCandidate(), "1") is True
+
+
+def test_issue_intake_rechecks_outside_agent_wip_under_the_lease_lock(
+    controller: types.ModuleType, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """New issue work passes the planned outside WIP count; PR work does not."""
+    seen: list[object] = []
+    monkeypatch.setattr(controller, "issue_has_open_blocker", lambda n, *, live=False: False)
+    monkeypatch.setattr(
+        controller,
+        "acquire_lease",
+        lambda *_args, external_wip_seen=None: seen.append(external_wip_seen),
+    )
+    monkeypatch.setattr(controller, "worker_has_active_lease", lambda w: False)
+    monkeypatch.setattr(controller, "target_still_unowned", lambda n: True)
+    monkeypatch.setattr(controller, "candidate_is_live_executable", lambda c: True)
+    monkeypatch.setattr(controller, "EXTERNAL_WIP_SEEN", 2)
+    monkeypatch.delenv("GITHUB_ACTIONS", raising=False)
+
+    class Issue:
+        number = 1
+        kind = "issue"
+        linked_issue = None
+        conflicted = False
+        stage = None
+
+    class Pr(Issue):
+        kind = "pr"
+        stage = "factory:review"
+
+    assert controller.assign_candidate(Issue(), "1") is False
+    assert controller.assign_candidate(Pr(), "1") is False
+    assert seen == [2, None]
 
 
 def test_selective_conflict_recovery_canonical_pr_plus_stray_issue(
@@ -1666,7 +1699,7 @@ def test_assign_candidate_forwards_jev_source_to_the_issue_lease(
 ) -> None:
     """The controller must pass issue-selection provenance into the lease write."""
     monkeypatch.setattr(controller, "issue_has_open_blocker", lambda _n, *, live=False: False)
-    monkeypatch.setattr(controller, "acquire_lease", lambda *_args: "synthetic-lease")
+    monkeypatch.setattr(controller, "acquire_lease", lambda *_args, **_kwargs: "synthetic-lease")
     candidate = controller.Candidate(
         "issue", 35301, 3, 2, "2026-10-30T12:00:00Z"
     )
@@ -1675,7 +1708,7 @@ def test_assign_candidate_forwards_jev_source_to_the_issue_lease(
     monkeypatch.setattr(controller, "target_owned_by", lambda _n, _o: True)
     monkeypatch.setattr(controller, "worker_has_active_lease", lambda _w: False)
     monkeypatch.setattr(controller, "issue_has_open_blocker", lambda _n, *, live=False: False)
-    monkeypatch.setattr(controller, "acquire_lease", lambda *_args: "test-lease")
+    monkeypatch.setattr(controller, "acquire_lease", lambda *_args, **_kwargs: "test-lease")
     monkeypatch.setattr(
         controller, "replace_factory_labels", lambda *_a, **_k: None
     )

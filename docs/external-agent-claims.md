@@ -37,7 +37,11 @@ authorize deployment. Use ordinary controller gates after recording evidence.
 
 ### What an outside agent can take
 
-`implement`, `review-findings`, `ci-repair` and `merge-conflict`. The
+`implement`, `review-findings`, `ci-repair` and `merge-conflict`. Use the
+repository's exact name (`--repo` is compared with GitHub's `full_name`):
+lease keys and the advisory lock are built from it. `reserve-next` walks the
+ranking and reserves the highest offer the agent can do that is live right
+now, so a top PR still waiting on CI does not hide lower work. The
 frontier still lists `review` offers, but an outside agent never reserves
 them: the merge gate only counts an approval whose reviewer model the trusted
 runtime recorded, which an outside agent cannot provide. Independent review
@@ -62,13 +66,25 @@ the transaction rolls back and the claim stays held, and no other claim,
 revoke or factory acquisition can interleave. With no PR to show, `release`
 the claim instead.
 
+The PR body must say `Closes #ISSUE` for the claimed issue, and a factory
+branch name, if used, must name the same issue: GitHub closes what the body
+names while the factory links by branch first.
+
 ### Authorship
 
-End every commit message with a `Model: <exact model id>` trailer. The
-factory's review controller reads it from the owner-authored head and records
-the author model, so the model that wrote the work never approves it. With no
-trailer the author is unknown and any reviewer may approve, per the existing
-review policy. The GitHub account alone is not treated as a model identity.
+The handed-off head commit must end with exactly one `Model: <exact model id>`
+trailer, or the handoff is refused and the claim stays held. The factory uses
+it so the model that wrote the work never approves it:
+
+- an implementation PR is attested by the review controller's existing
+  owner-authored-head rule, which reads the same trailer;
+- a repair commit cannot be attested from the PR's author, so the GitHub
+  bridge records a controller-trusted author-model marker for the new head
+  (agent `external-CLIENT`). Only the Actions bot's comments count as author
+  records, so **repair handoffs must run through the GitHub bridge**; the
+  local CLI refuses them and prints the exact `gh workflow run` command.
+
+The GitHub account alone is never treated as a model identity.
 
 Do not put Neon credentials into a model session, its prompt, tool output,
 artifact, commit, or issue comment. The local direct CLI is only available to

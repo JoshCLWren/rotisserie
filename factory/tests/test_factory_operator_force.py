@@ -165,7 +165,7 @@ def test_forced_claim_records_operator_provenance_and_rolls_back(monkeypatch):
     monkeypatch.setattr(controller, 'target_json', lambda n: issue(n, labels[n]))
     monkeypatch.setattr(controller, 'list_prs', lambda: [])
     monkeypatch.setattr(controller, 'worker_has_active_lease', lambda _w: False)
-    monkeypatch.setattr(controller, 'acquire_lease', lambda *a: 'claim-token')
+    monkeypatch.setattr(controller, 'acquire_lease', lambda *a, **_kwargs: 'claim-token')
 
     def relabel(number, owner, stage=None, **_kw):
         labels[number] = [owner] + ([stage] if stage else [])

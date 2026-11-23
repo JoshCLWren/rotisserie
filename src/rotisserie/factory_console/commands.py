@@ -1896,6 +1896,16 @@ def cmd_external(context: Context, arguments: argparse.Namespace) -> Outcome:
             4,
             {"status": "held", "reason": str(exc), "retry": "refresh_frontier"},
         )
+    except Exception as exc:  # noqa: BLE001 - claim store or network failure
+        # Database and network errors can carry connection details; report
+        # only their type. Nothing was reserved unless the ledger said so.
+        reason = f"claim store unavailable ({type(exc).__name__}); check leases before retrying"
+        context.console.fail(f"External claim refused: {reason}")
+        return Outcome(
+            Result.FAILED,
+            4,
+            {"status": "held", "reason": reason, "retry": "check_lease_before_retry"},
+        )
     state = str(outcome.get("status"))
     if state in ("reserved", "renewed", "released", "revoked"):
         context.console.ok(f"External claim {state}")

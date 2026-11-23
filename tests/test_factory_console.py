@@ -2439,3 +2439,21 @@ def test_revoke_command_reports_a_refusal(
     code, out = invoke(["revoke", "11111111-1111-4111-8111-111111111111", "--reason", "x"])
     assert code == 4
     assert "write access" in out
+
+
+def test_claim_store_failure_is_a_redacted_json_hold(
+    fake: FakeGitHub, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from rotisserie.factory_console.service import external
+
+    def reserve(github: object, **kwargs: object) -> dict[str, object]:
+        raise ConnectionRefusedError("postgresql://role:secret@host/db refused")
+
+    monkeypatch.setattr(external, "reserve_next", reserve)
+    code, out = invoke(["--json", "reserve-next", "--client", "chatgpt"])
+    assert code == 4
+    data = json.loads(out)
+    assert data["status"] == "held"
+    assert data["retry"] == "check_lease_before_retry"
+    assert "ConnectionRefusedError" in data["reason"]
+    assert "secret" not in out

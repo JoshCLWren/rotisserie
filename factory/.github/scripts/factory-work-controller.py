@@ -486,6 +486,11 @@ def record_controller_lease_activity(
     run_gh(['issue', 'comment', str(number), '--repo', REPO, '--body', marker])
 
 
+# Outside-agent WIP claims the current pass planned new intake against. New
+# issue leases re-check it under the ledger lock (None: no plan, no check).
+EXTERNAL_WIP_SEEN: int | None = None
+
+
 def assign_candidate(
     candidate: Candidate,
     worker: str,
@@ -532,7 +537,10 @@ def assign_candidate(
     # Acquire one atomic worker + issue/PR reservation before mutating GitHub.
     # GitHub live checks remain required; a Neon conflict never grants a claim.
     try:
-        claim_token = acquire_lease(REPO, worker, numbers, FIXED_LEASE_TTL_SECONDS)
+        claim_token = acquire_lease(
+            REPO, worker, numbers, FIXED_LEASE_TTL_SECONDS,
+            external_wip_seen=EXTERNAL_WIP_SEEN if candidate.kind == 'issue' else None,
+        )
     except Exception as exc:
         print(f'[factory-controller] Neon lease unavailable; refusing duplicate-risk assignment ({type(exc).__name__})', file=sys.stderr)
         return False
@@ -1467,11 +1475,13 @@ def assign_from_pool(worker: str, kinds: tuple[str, ...] | None = None,
             if attempt.kind != 'issue':
                 continue
             issue_retry_counts[attempt.number] = issue_retry_counts.get(attempt.number, 0) + 1
+    global EXTERNAL_WIP_SEEN
     try:
         external_wip = external_wip_count(REPO) if ledger_enabled() else 0
     except Exception as exc:
         print(f'[factory-controller] external lease capacity unknown ({type(exc).__name__}); holding new intake', file=sys.stderr)
         external_wip = FACTORY_PR_WIP_LIMIT
+    EXTERNAL_WIP_SEEN = external_wip
     candidates = build_candidates(
         issues,
         prs,

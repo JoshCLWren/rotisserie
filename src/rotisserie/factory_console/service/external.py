@@ -72,6 +72,11 @@ def principal(github: GitHub, environment: dict[str, str]) -> str:
         actor = github.whoami()
     if not CLIENT.fullmatch(actor):
         raise ValueError("GitHub identity could not be verified")
+    # Lease keys and the advisory lock are built from this exact name; another
+    # spelling of the same repository would get a separate lock and keys.
+    canonical = string(obj(json.loads(github.gh("api", f"repos/{github.repo}"))), "full_name")
+    if canonical != github.repo:
+        raise ValueError(f"use the repository's exact name: --repo {canonical or '?'}")
     permission = string(obj(github.repo_api(f"collaborators/{actor}/permission")), "permission")
     if permission not in ("admin", "maintain", "write"):
         raise ValueError("GitHub actor lacks verified write access to this repository")
@@ -135,8 +140,8 @@ def _required_checks_outcome(github: GitHub, number: int) -> str:
     ]
     if len(states) != len(values):
         return "waiting"
-    passed = {"SUCCESS", "NEUTRAL", "SKIPPED"}
-    failed = {"FAILURE", "TIMED_OUT", "CANCELLED", "ACTION_REQUIRED", "STARTUP_FAILURE"}
+    passed = {"SUCCESS", "NEUTRAL", "SKIPPED"}  # the dispatcher's passing states
+    failed = set(runtime.module("factory_work_policy").REQUIRED_CHECK_FAILURE_STATES)
     if any(value not in passed | failed for value in states):
         return "waiting"
     return "failed" if any(value in failed for value in states) else "passed"
@@ -174,9 +179,12 @@ def _conflict_without_ci(github: GitHub, number: int, head: str | None) -> bool:
     )
 
 
-def _live_offer(github: GitHub, previous: frontier.Offer) -> tuple[bool, str]:
+def _live_offer(
+    github: GitHub, previous: frontier.Offer, latest: frontier.Frontier | None = None
+) -> tuple[bool, str]:
     """Reject moved heads, priority/stage changes, new dependencies and holds."""
-    latest = frontier.capture(github, now=datetime.now(UTC))
+    if latest is None:
+        latest = frontier.capture(github, now=datetime.now(UTC))
     if not latest.authoritative_claim_available:
         return False, "Neon ownership became unavailable"
     found = next((o for o in latest.offers if o.target == previous.target), None)
@@ -208,6 +216,16 @@ def _live_offer(github: GitHub, previous: frontier.Offer) -> tuple[bool, str]:
         if previous.action == "ci-repair" and checks != "failed":
             return False, "current head has no terminal required CI failure"
     return True, ""
+
+
+def _bypasses_wip(github: GitHub, offer: frontier.Offer) -> bool:
+    """The work policy's own WIP bypass (urgent defects) for this issue offer."""
+    if offer.action != "implement":
+        return False
+    core = runtime.module("factory_work_policy")
+    issue = obj(github.repo_api(f"issues/{offer.target.split(':')[1]}"))
+    saturated = offer.capacity.get("review_backlog", 0) >= offer.capacity.get("review_limit", 1)
+    return bool(core.issue_bypasses_wip_limit(issue, review_backlog_saturated=saturated))
 
 
 def _post_claim_change(
@@ -401,14 +419,31 @@ def reserve_next(
                 "reason": "offer_snapshot_expired",
                 "retry": "refresh_frontier",
             }
-    chosen = next(
-        (o for o in snapshot.offers if o.status == "candidate" and o.action in abilities),
-        None,
-    )
-    if chosen is None:
+    # Walk the ranking: the agent gets the highest offer it can do that is
+    # still live now (CI settled, head and rank unchanged), not merely rank 1.
+    able = [o for o in snapshot.offers if o.status == "candidate" and o.action in abilities]
+    if not able:
         return {
             "status": "conflict" if expected else "held",
             "reason": "expected_offer_no_longer_eligible" if expected else "no_eligible_offer",
+            "retry": "refresh_frontier",
+        }
+    latest = frontier.capture(github, now=datetime.now(UTC))
+    chosen: frontier.Offer | None = None
+    passed_over: list[dict[str, str]] = []
+    for offered in able:
+        okay, reason = _live_offer(github, offered, latest)
+        if okay:
+            chosen = offered
+            break
+        passed_over.append({"target": offered.target, "reason": reason})
+        if expected and offered.target == expected:
+            return {"status": "conflict", "reason": reason, "retry": "refresh_frontier"}
+    if chosen is None:
+        return {
+            "status": "conflict" if expected else "held",
+            "reason": "no offer is live now: "
+            + "; ".join(f"{row['target']} ({row['reason']})" for row in passed_over[:5]),
             "retry": "refresh_frontier",
         }
     if expected and chosen.target != expected:
@@ -419,9 +454,6 @@ def reserve_next(
             "current": chosen.target,
             "retry": "refresh_frontier",
         }
-    okay, reason = _live_offer(github, chosen)
-    if not okay:
-        return {"status": "conflict", "reason": reason, "retry": "refresh_frontier"}
     try:
         numbers = _linked_targets(github, chosen)
     except ValueError as exc:
@@ -437,6 +469,7 @@ def reserve_next(
         observed_wip=chosen.capacity["pr_wip"],
         wip_limit=chosen.capacity["wip_limit"],
         offer_at=snapshot.generated_at,
+        wip_exempt=_bypasses_wip(github, chosen),
     )
     if outcome.get("status") != "reserved":
         return outcome
@@ -537,7 +570,46 @@ def _project_review_stage(github: GitHub, core: ModuleType, number: int, labels:
         raise RuntimeError("could not verify the review handoff labels")
 
 
-def _verify_and_project_handoff(github: GitHub, claim: dict[str, Any], evidence: str) -> None:
+def _author_model(github: GitHub, head: str) -> str:
+    """The single ``Model:`` trailer on the handed-off head commit, or refuse."""
+    commit = obj(obj(github.repo_api(f"commits/{head}")).get("commit"))
+    models = runtime.module("factory_review_policy").model_trailer_models(string(commit, "message"))
+    if len(models) != 1:
+        raise ValueError(
+            "the handed-off head commit needs exactly one 'Model: <your model id>' trailer "
+            "so the factory can keep its author from approving it"
+        )
+    return str(next(iter(models)))
+
+
+def _record_author(
+    github: GitHub, pr: int, head: str, model: str, client: str, environment: dict[str, str]
+) -> None:
+    """Write the controller-trusted author-model marker for an outside agent's head.
+
+    Only the Actions bot's comments count as author records, so this runs in
+    the GitHub bridge. Without it a repair model could later approve its own
+    repair, since a repair commit cannot be attested from the PR's author.
+    """
+    if environment.get("GITHUB_ACTIONS") != "true":
+        raise ValueError(
+            "repair handoffs must run in the GitHub bridge so the factory records their "
+            f"author: gh workflow run {WORKFLOW} --repo {github.repo} --ref main "
+            "-f operation=handoff -f client=CLIENT -f claim_id=UUID -f evidence=URL"
+        )
+    policy = runtime.module("factory_review_policy")
+    marker = policy.agent_model_author_marker(
+        pr=pr, head=head, model=model, agent=f"external-{client}"
+    )
+    github.gh("issue", "comment", str(pr), "--repo", github.repo, "--body", marker)
+
+
+def _verify_and_project_handoff(
+    github: GitHub,
+    claim: dict[str, Any],
+    evidence: str,
+    environment: dict[str, str] | None = None,
+) -> None:
     """Validate evidence against the fenced task, then hand the PR to review.
 
     Runs inside the ledger's locked handoff transaction: if anything here
@@ -568,16 +640,19 @@ def _verify_and_project_handoff(github: GitHub, claim: dict[str, Any], evidence:
     if action == "implement":
         if kind != "issue":
             raise ValueError("implementation handoff must originate from an issue")
-        linked_issue = core.linked_issue_from_pr(
-            {
-                "number": pr_number,
-                "headRefName": string(obj(pr.get("head")), "ref"),
-                "body": string(pr, "body"),
-                "title": string(pr, "title"),
-            }
-        )
-        if linked_issue != number:
-            raise ValueError("PR must explicitly close or link the claimed issue")
+        row = {
+            "number": pr_number,
+            "headRefName": string(obj(pr.get("head")), "ref"),
+            "body": string(pr, "body"),
+            "title": string(pr, "title"),
+        }
+        # GitHub closes what the body names; the factory links by branch first.
+        # Both must name the claimed issue.
+        if (
+            core.issue_explicitly_closed_by_pr(row) != number
+            or core.linked_issue_from_pr(row) != number
+        ):
+            raise ValueError("PR body must say 'Closes #N' for the claimed issue and nothing else")
         if stage not in (None, "factory:review"):
             raise ValueError("handoff PR is already in a different factory stage")
     elif action in REPAIRS:
@@ -589,6 +664,9 @@ def _verify_and_project_handoff(github: GitHub, claim: dict[str, Any], evidence:
             raise ValueError("the PR left the factory's completion stages")
     else:
         raise ValueError("unsupported claimed action")
+    model = _author_model(github, head)
+    if action in REPAIRS:
+        _record_author(github, pr_number, head, model, str(claim["client"]), environment or {})
     _project_review_stage(github, core, pr_number, labels)
 
 
@@ -618,7 +696,7 @@ def claim_action(
         operation=operation,
         evidence=evidence,
         verify=(
-            (lambda claim: _verify_and_project_handoff(github, claim, evidence))
+            (lambda claim: _verify_and_project_handoff(github, claim, evidence, environment))
             if operation == "handoff"
             else None
         ),

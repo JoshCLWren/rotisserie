@@ -36,6 +36,12 @@ class GitHubDouble:
         self.review_issue = 7
         self.closed: set[int] = set()
         self.label_writes = 0
+        self.full_name = REPO
+        self.message = "Fix it\n\nModel: gpt-5.2"
+        self.comments: list[str] = []
+        self.pr_body = ""
+        self.branch = "work-7"
+        self.issue_labels: list[str] = []
 
     def whoami(self) -> str:
         return "alice"
@@ -48,25 +54,43 @@ class GitHubDouble:
         if route.startswith("issues/"):
             number = int(route.split("/")[1])
             state = "closed" if number in self.closed else "open"
-            return {"state": state, "labels": [{"name": self.priority}]}
+            names = [self.priority, *self.issue_labels]
+            return {"state": state, "labels": [{"name": n} for n in names]}
+        if route.startswith("commits/"):
+            return {"commit": {"message": self.message}}
         if route.startswith("pulls/"):
             return {
                 "state": "open",
                 "title": "Implement issue",
-                "body": f"Closes #{self.review_issue}",
+                "body": self.pr_body or f"Closes #{self.review_issue}",
                 "draft": False,
                 "labels": [{"name": x} for x in self.review_labels],
-                "head": {"sha": self.head, "ref": "work-7"},
+                "head": {"sha": self.head, "ref": self.branch},
             }
         raise AssertionError(route)
 
     def gh(self, *args: str, **kwargs: Any) -> str:
+        if args == ("api", f"repos/{REPO}"):
+            return json.dumps({"full_name": self.full_name})
+        if args[:2] == ("issue", "comment"):
+            self.comments.append(args[-1])
+            return ""
         assert args[:1] == ("api",)
         assert args[1].endswith("/labels")
         assert args[2:4] == ("--method", "PUT")
         self.label_writes += 1
         self.review_labels = list(json.loads(kwargs["stdin"])["labels"])
         return "{}"
+
+
+BRIDGE = {
+    "GITHUB_ACTIONS": "true",
+    "GITHUB_EVENT_NAME": "workflow_dispatch",
+    "GITHUB_REPOSITORY": REPO,
+    "GITHUB_ACTOR": "alice",
+    "GITHUB_TRIGGERING_ACTOR": "alice",
+    "GITHUB_RUN_ATTEMPT": "1",
+}
 
 
 class LedgerDouble:
@@ -82,6 +106,7 @@ class LedgerDouble:
         }
         self.rows: list[dict[str, object]] = []
         self.revoked: list[tuple[str, str]] = []
+        self.requests: list[dict[str, Any]] = []
 
     def list_leases(self, repo: str) -> list[dict[str, object]]:
         assert repo == REPO
@@ -100,6 +125,7 @@ class LedgerDouble:
         assert actor == "alice"
         with self.lock:
             self.calls += 1
+            self.requests.append(kwargs)
             if self.holder:
                 return {
                     "status": "conflict",
@@ -585,10 +611,14 @@ def test_repair_handoff_returns_pr_to_review_like_a_worker(
         client="codebuff",
         claim_id=TOKEN,
         operation="handoff",
-        environment={},
+        environment=BRIDGE,
         evidence=f"https://github.com/{REPO}/pull/88",
     )
     assert result["handoff_recorded"] is True
+    assert github.comments == [
+        f"<!-- comic-pile-agent-model-author-v1:pr-88:head-{'b' * 40}:"
+        "model-gpt-5.2:agent-external-codebuff -->"
+    ]
     assert sorted(github.review_labels) == [
         "area:api",
         "factory",
@@ -650,7 +680,9 @@ def test_only_the_pull_request_is_handoff_evidence(setup: LedgerDouble, route: s
 def test_failed_label_projection_never_loses_the_claim(setup: LedgerDouble) -> None:
     class BrokenLabels(GitHubDouble):
         def gh(self, *args: str, **kwargs: Any) -> str:
-            raise RuntimeError("GitHub refused the label write")
+            if args[1].endswith("/labels"):
+                raise RuntimeError("GitHub refused the label write")
+            return super().gh(*args, **kwargs)
 
     external.reserve_next(cast(GitHub, BrokenLabels()), client="chatgpt", environment={})
     with pytest.raises(RuntimeError, match="refused"):
@@ -705,3 +737,126 @@ def test_handoff_packet_carries_lease_identity_and_both_bridges(setup: LedgerDou
     assert "Closes #N" in str(handoff["evidence_required"])
     assert "Model:" in str(handoff["provenance"])
     assert "not approval" in str(handoff["review_and_merge_gates"])
+
+
+def test_another_spelling_of_the_repository_is_refused(setup: LedgerDouble) -> None:
+    github = GitHubDouble()
+    github.full_name = "Acme/Widgets"
+    with pytest.raises(ValueError, match="exact name: --repo Acme/Widgets"):
+        external.reserve_next(cast(GitHub, github), client="chatgpt", environment={})
+    assert setup.calls == 0
+
+
+def test_a_top_offer_waiting_on_ci_does_not_hide_lower_work(
+    setup: LedgerDouble, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    waiting = replace(
+        make_offer(),
+        target="pr:44",
+        url=f"https://github.com/{REPO}/pull/44",
+        action="review-findings",
+        head_sha="a" * 40,
+    )
+    second = replace(make_offer(number=8), rank=2)
+    snapshot = make_frontier(waiting, second)
+    monkeypatch.setattr(frontier, "capture", lambda *a, **k: snapshot)
+    monkeypatch.setattr(
+        external,
+        "_live_offer",
+        lambda g, o, latest=None: (
+            (False, "required CI is still running or unknown")
+            if o.target == "pr:44"
+            else (True, "")
+        ),
+    )
+    result = external.reserve_next(cast(GitHub, GitHubDouble()), client="chatgpt", environment={})
+    handoff = result["handoff"]
+    assert isinstance(handoff, dict)
+    assert handoff["target"] == "issue:8"
+    # An agent that asked for exactly the waiting offer is told why, not moved.
+    refused = external.reserve_next(
+        cast(GitHub, GitHubDouble()), client="codebuff", environment={}, expected="pr:44"
+    )
+    assert refused["status"] == "conflict"
+    assert "CI" in str(refused["reason"])
+
+
+def test_policy_wip_bypass_reaches_the_ledger(setup: LedgerDouble) -> None:
+    github = GitHubDouble()
+    github.issue_labels = ["main-breakage"]
+    external.reserve_next(cast(GitHub, github), client="chatgpt", environment={})
+    assert setup.requests[-1]["wip_exempt"] is True
+    setup.holder = None
+    external.reserve_next(cast(GitHub, GitHubDouble()), client="chatgpt", environment={})
+    assert setup.requests[-1]["wip_exempt"] is False
+
+
+def test_implementation_pr_must_close_exactly_the_claimed_issue(setup: LedgerDouble) -> None:
+    github = GitHubDouble()
+    github.branch = "factory/3-7-fix"
+    github.pr_body = "Closes #99"
+    external.reserve_next(cast(GitHub, github), client="chatgpt", environment={})
+    with pytest.raises(ValueError, match="Closes #N"):
+        external.claim_action(
+            cast(GitHub, github),
+            client="chatgpt",
+            claim_id=TOKEN,
+            operation="handoff",
+            environment={},
+            evidence=f"https://github.com/{REPO}/pull/88",
+        )
+    assert setup.holder == "chatgpt"
+    assert github.label_writes == 0
+
+
+@pytest.mark.parametrize("message", ["No trailer", "x\n\nModel: a\nModel: b"])
+def test_handoff_needs_one_model_trailer(setup: LedgerDouble, message: str) -> None:
+    github = GitHubDouble()
+    github.message = message
+    external.reserve_next(cast(GitHub, github), client="chatgpt", environment={})
+    with pytest.raises(ValueError, match="exactly one 'Model:"):
+        external.claim_action(
+            cast(GitHub, github),
+            client="chatgpt",
+            claim_id=TOKEN,
+            operation="handoff",
+            environment={},
+            evidence=f"https://github.com/{REPO}/pull/88",
+        )
+    assert setup.holder == "chatgpt"
+
+
+def test_repair_handoff_outside_the_bridge_is_refused_and_keeps_the_claim(
+    setup: LedgerDouble,
+) -> None:
+    _repair_claim(setup)
+    github = GitHubDouble(head="b" * 40)
+    github.review_labels = ["factory", "factory:changes-requested", "factory:unowned"]
+    with pytest.raises(ValueError, match="GitHub bridge"):
+        external.claim_action(
+            cast(GitHub, github),
+            client="codebuff",
+            claim_id=TOKEN,
+            operation="handoff",
+            environment={},
+            evidence=f"https://github.com/{REPO}/pull/88",
+        )
+    assert setup.holder == "codebuff"
+    assert github.comments == []
+    assert github.label_writes == 0
+
+
+def test_required_check_states_match_the_dispatcher() -> None:
+    class Checks(GitHubDouble):
+        def __init__(self, states: list[str]) -> None:
+            super().__init__()
+            self.states = states
+
+        def gh(self, *args: str, **kwargs: Any) -> str:
+            return json.dumps([{"state": state} for state in self.states])
+
+    outcome = external._required_checks_outcome
+    assert outcome(cast(GitHub, Checks(["SUCCESS", "ERROR"])), 1) == "failed"
+    assert outcome(cast(GitHub, Checks(["STALE"])), 1) == "failed"
+    assert outcome(cast(GitHub, Checks(["ACTION_REQUIRED"])), 1) == "waiting"
+    assert outcome(cast(GitHub, Checks(["SUCCESS", "SKIPPED"])), 1) == "passed"

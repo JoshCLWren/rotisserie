@@ -263,3 +263,20 @@ def test_no_credentials_leave_the_connection_file(neon: str) -> None:
     assert os.environ["FACTORY_STATE_DSN_FILE"]
     claim = _reserve("agent-a", [44])
     assert "postgres" not in json.dumps(claim)
+
+
+def test_factory_intake_backs_off_when_an_outside_claim_took_the_slot(neon: str) -> None:
+    """The controller planned against N outside WIP claims; N+1 now exist."""
+    assert _reserve(
+        "agent-a", [9], target="issue:9", action="implement", head=None
+    )["status"] == "reserved"
+    assert ledger.acquire_lease(REPO, "3", [12], 600, external_wip_seen=0) is None
+    assert not any(":worker:" in key or key.endswith(":target:12") for key in _keys())
+
+
+def test_policy_wip_exemption_reserves_an_urgent_issue_at_the_limit(neon: str) -> None:
+    urgent = _reserve(
+        "agent-a", [7], target="issue:7", action="implement", head=None,
+        observed_wip=8, wip_limit=8, wip_exempt=True,
+    )
+    assert urgent["status"] == "reserved"

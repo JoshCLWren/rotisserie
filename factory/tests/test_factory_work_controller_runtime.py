@@ -648,7 +648,7 @@ def test_ci_starting_during_lease_releases_reservation_before_mutations(
     monkeypatch.setattr(controller, "candidate_is_live_executable", lambda item: next(statuses))
     monkeypatch.setattr(controller, "target_still_unowned", lambda number: True)
     monkeypatch.setattr(controller, "worker_has_active_lease", lambda worker: False)
-    monkeypatch.setattr(controller, "acquire_lease", lambda *args: "ci-race-lease")
+    monkeypatch.setattr(controller, "acquire_lease", lambda *args, **_kwargs: "ci-race-lease")
     released: list[tuple[object, ...]] = []
     monkeypatch.setattr(controller, "release_lease", lambda *args: released.append(args))
     monkeypatch.setattr(
@@ -1213,7 +1213,7 @@ def test_issue_assignment_rechecks_dependency_at_mutation_boundary(
     monkeypatch.setattr(controller, "target_still_unowned", lambda number: True)
     monkeypatch.setattr(controller, "issue_has_open_blocker",
                         lambda number, *, live=False: lookups.append((number, live)) or True)
-    monkeypatch.setattr(controller, "acquire_lease", lambda *args: lease_writes.append(args))
+    monkeypatch.setattr(controller, "acquire_lease", lambda *args, **_kwargs: lease_writes.append(args))
     assert controller.assign_candidate(issue, "20") is False
     assert lookups == [(4737, True)]
     assert lease_writes == []
