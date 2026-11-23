@@ -151,6 +151,12 @@ def _unchecked(number: int, why: str) -> Stall:
     )
 
 
+def _review_again(number: int) -> str:
+    command = f"rotisserie factory run PROVIDER auto --force --target pr:{number} --action review"
+    choose = "pick PROVIDER from 'rotisserie factory stats'"
+    return f"Review it again: {command} ({choose}; add --take-over if a worker holds it)"
+
+
 def _excerpt(body: str) -> str:
     if "```text\n" not in body:
         return ""
@@ -184,7 +190,7 @@ def empty_repair_verdict(
                 f"PR #{number} is in repair on a {verdict} verdict that names no finding "
                 "(only tool output and narration), so repair workers have nothing to fix."
             ),
-            hint=f"Review it again: rotisserie factory run --target pr:{number} --action review",
+            hint=_review_again(number),
             url=string(record, "html_url") or url,
         )
     return None

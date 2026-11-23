@@ -164,7 +164,8 @@ def test_a_finding_free_repair_verdict_is_a_deadlock() -> None:
     [found] = inspect(hub)
     assert found.kind == "empty-repair-verdict"
     assert "names no finding" in found.text
-    assert "run --target pr:44 --action review" in found.hint
+    assert "run PROVIDER auto --force --target pr:44 --action review" in found.hint
+    assert "rotisserie factory stats" in found.hint
     assert found.url == "https://x/c1"
 
 
