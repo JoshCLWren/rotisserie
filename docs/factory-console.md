@@ -1,5 +1,56 @@
 # Factory operator console
 
+## Hosted control room (GitHub Pages)
+
+The hosted ComicPile dashboard at https://joshclwren.github.io/comic-pile/
+is generated from the **same** `src/rotisserie/web_ui.html` as `rotisserie web`.
+The public GitHub Pages interface reads sanitized factory snapshots from the
+`factory-status-live` branch, and does not use a separate controller or
+database. The publishing workflow preserves the previous detailed status HTML
+as `legacy-dashboard.html` and publishes `factory-status-snapshot.json`
+alongside `factory-stats.json`.
+
+**Snapshots are not live operator evaluations.** Their timestamps are shown;
+pages that require live queue eligibility, individual check inspection, lease
+ledger reads or mutable settings explicitly report unavailable instead of
+inventing data. The local control room continues to serve those operations.
+
+### GitHub administrator access
+
+The hosted page deliberately has **no embedded GitHub token or OAuth secret**.
+GitHub Pages cannot securely complete GitHub's OAuth code exchange alone. To
+operate without introducing a new API service, select **Connect GitHub** and
+paste a *short-lived fine-grained personal access token* from
+https://github.com/settings/personal-access-tokens/new, scoped to
+`JoshCLWren/comic-pile` with Actions **read/write** and Metadata **read**.
+Use a short expiration and revoke the token at GitHub when no longer needed.
+
+The browser verifies the GitHub user's immutable numeric ID against the
+published operator allowlist and confirms repository write permission.
+The token exists only in page memory, never in HTML, localStorage, cookies,
+sessionStorage, URLs, or published data; refreshing or closing the tab logs out.
+The hosted write controls submit one JSON request through the GitHub Actions
+`rotisserie-operator.yml` workflow. A successful dispatch is **only** a
+submitted request. Inspect the linked workflow to confirm execution.
+
+The workflow independently verifies `github.actor_id` and `main` **before**
+checking out any executable code. It uses Rotisserie's own
+`web.write_command` validator and CLI, preserving claim, policy and merge
+protections. The public/client allowlist is not an authorization boundary.
+
+By default only GitHub user ID **4014199** (`JoshCLWren`) is allowed. To
+authorize other accounts, a repository administrator may set the GitHub Actions
+repository variable `ROTISSERIE_ADMIN_GITHUB_IDS` to a comma-separated list
+of immutable numeric IDs (for example `4014199,123456`); omit spaces. The
+publisher exposes the same IDs to the client only for UI gating. Authorized
+users must separately have a GitHub token permitted to dispatch workflows.
+Do not put GitHub access tokens in that variable.
+
+Commands run with the workflow's scoped `GITHUB_TOKEN`, not the visitor's
+token or any browser credentials. GitHub may reject operations requiring
+repository-administrator scopes that `GITHUB_TOKEN` does not have; those
+fail visibly in the workflow rather than falling back to a privileged secret.
+
 ## Local web control room
 
 The browser interface uses the same `rotisserie factory` commands and your existing `gh`

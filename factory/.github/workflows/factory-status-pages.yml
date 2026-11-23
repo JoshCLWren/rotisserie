@@ -25,6 +25,7 @@ on:
       - '.github/workflows/factory-status-pages.yml'
 
 env:
+  ROTISSERIE_ADMIN_GITHUB_IDS: ${{ vars.ROTISSERIE_ADMIN_GITHUB_IDS }}
   # Operator settings (rotisserie factory settings) reach every factory script.
   FACTORY_REPO_VARS: >-
     {"FACTORY_SLOTS_PER_PROVIDER": "${{ vars.FACTORY_SLOTS_PER_PROVIDER }}", "FACTORY_PR_WIP_LIMIT": "${{ vars.FACTORY_PR_WIP_LIMIT }}", "FACTORY_REVIEW_BACKLOG_LIMIT": "${{ vars.FACTORY_REVIEW_BACKLOG_LIMIT }}", "FACTORY_OMNIROUTE_FREE_ENTRY_CAP": "${{ vars.FACTORY_OMNIROUTE_FREE_ENTRY_CAP }}", "FACTORY_NO_DIFF_RETRY_LIMIT": "${{ vars.FACTORY_NO_DIFF_RETRY_LIMIT }}", "FACTORY_NO_DIFF_RETRY_RESET_SECONDS": "${{ vars.FACTORY_NO_DIFF_RETRY_RESET_SECONDS }}", "FACTORY_REVIEW_FAILURE_COOLDOWN_SECONDS": "${{ vars.FACTORY_REVIEW_FAILURE_COOLDOWN_SECONDS }}", "FACTORY_FIXED_LEASE_TTL_SECONDS": "${{ vars.FACTORY_FIXED_LEASE_TTL_SECONDS }}", "FACTORY_LOCAL_LEASE_TTL_SECONDS": "${{ vars.FACTORY_LOCAL_LEASE_TTL_SECONDS }}", "FACTORY_PRIORITY_ORDER": "${{ vars.FACTORY_PRIORITY_ORDER }}"}
@@ -131,6 +132,13 @@ jobs:
           OMNIROUTE_BASE_URL: ${{ vars.OMNIROUTE_BASE_URL }}
         run: python3 .github/scripts/generate_factory_status_dashboard.py
 
+      - name: Build the hosted canonical Rotisserie control room
+        run: |
+          set -euo pipefail
+          cp site/index.html site/legacy-dashboard.html
+          python3 .rotisserie/runtime/factory/scripts/build_hosted_control_room.py \
+            --repo "$GITHUB_REPOSITORY" --output site/index.html
+
       - name: Export provider and model reliability counts
         continue-on-error: true
         env:
@@ -197,6 +205,10 @@ jobs:
             stats_sha="$(gh api "repos/${GITHUB_REPOSITORY}/contents/factory-stats.json?ref=${branch}" --jq '.sha' 2>/dev/null || true)"
             publish_snapshot site/factory-stats.json factory-stats.json 'chore: refresh factory reliability counts' "$stats_sha"
           fi
+          snapshot_sha="$(gh api "repos/${GITHUB_REPOSITORY}/contents/factory-status-snapshot.json?ref=${branch}" --jq '.sha' 2>/dev/null || true)"
+          publish_snapshot site/factory-status-snapshot.json factory-status-snapshot.json 'chore: refresh public factory state snapshot' "$snapshot_sha"
+          legacy_sha="$(gh api "repos/${GITHUB_REPOSITORY}/contents/legacy-dashboard.html?ref=${branch}" --jq '.sha' 2>/dev/null || true)"
+          publish_snapshot site/legacy-dashboard.html legacy-dashboard.html 'chore: preserve detailed legacy metrics' "$legacy_sha"
 
   build-pages-shell:
     if: github.event_name == 'push'
@@ -230,7 +242,7 @@ jobs:
                       const response = await fetch(`${source}?v=${Date.now()}`, { cache: 'no-store' });
                       if (!response.ok) throw new Error(`live snapshot returned ${response.status}`);
                       const html = await response.text();
-                      const marker = 'Can the fleet move work, and which factories are actually useful?';
+                      const marker = 'Rotisserie · Control room';
                       if (!html.includes(marker)) throw new Error('live snapshot is not the factory dashboard');
                       const refreshingHtml = html.replace(
                         '</head>',
@@ -291,7 +303,7 @@ jobs:
           set -euo pipefail
           page_url="${PAGE_URL%/}/?factory-pages-check=${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
           live_url="https://raw.githubusercontent.com/${GITHUB_REPOSITORY}/factory-status-live/index.html?factory-live-check=${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
-          marker='Can the fleet move work, and which factories are actually useful?'
+          marker='Rotisserie · Control room'
           loader='factory-status-live/index.html'
 
           for _ in {1..18}; do
@@ -299,8 +311,10 @@ jobs:
               -H 'Cache-Control: no-cache' -H 'Pragma: no-cache' "$page_url" 2>/dev/null || true)"
             live="$(curl --fail --silent --show-error --location \
               -H 'Cache-Control: no-cache' -H 'Pragma: no-cache' "$live_url" 2>/dev/null || true)"
-            generated="$(grep -oE 'Generated [0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9:.]+Z' <<<"$live" \
-              | head -n 1 | cut -d' ' -f2)"
+            snapshot_url="https://raw.githubusercontent.com/${GITHUB_REPOSITORY}/factory-status-live/factory-status-snapshot.json?factory-live-check=${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+            snapshot="$(curl --fail --silent --show-error --location \
+              -H 'Cache-Control: no-cache' -H 'Pragma: no-cache' "$snapshot_url" 2>/dev/null || true)"
+            generated="$(jq -r '.generated_at // empty' <<<"$snapshot" 2>/dev/null || true)"
 
             if grep -Fq "$loader" <<<"$shell" \
               && grep -Fq "$marker" <<<"$live" \

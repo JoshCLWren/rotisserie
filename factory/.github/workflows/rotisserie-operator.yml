@@ -1,0 +1,99 @@
+name: Rotisserie Operator
+
+on:
+  workflow_dispatch:
+    inputs:
+      request:
+        description: 'One JSON Rotisserie control-room command (not a shell command)'
+        required: true
+        type: string
+
+# The browser never receives a privileged factory credential.
+env:
+  FACTORY_REPO_VARS: >-
+    {"FACTORY_SLOTS_PER_PROVIDER": "${{ vars.FACTORY_SLOTS_PER_PROVIDER }}", "FACTORY_PR_WIP_LIMIT": "${{ vars.FACTORY_PR_WIP_LIMIT }}", "FACTORY_REVIEW_BACKLOG_LIMIT": "${{ vars.FACTORY_REVIEW_BACKLOG_LIMIT }}", "FACTORY_OMNIROUTE_FREE_ENTRY_CAP": "${{ vars.FACTORY_OMNIROUTE_FREE_ENTRY_CAP }}", "FACTORY_NO_DIFF_RETRY_LIMIT": "${{ vars.FACTORY_NO_DIFF_RETRY_LIMIT }}", "FACTORY_NO_DIFF_RETRY_RESET_SECONDS": "${{ vars.FACTORY_NO_DIFF_RETRY_RESET_SECONDS }}", "FACTORY_REVIEW_FAILURE_COOLDOWN_SECONDS": "${{ vars.FACTORY_REVIEW_FAILURE_COOLDOWN_SECONDS }}", "FACTORY_FIXED_LEASE_TTL_SECONDS": "${{ vars.FACTORY_FIXED_LEASE_TTL_SECONDS }}", "FACTORY_LOCAL_LEASE_TTL_SECONDS": "${{ vars.FACTORY_LOCAL_LEASE_TTL_SECONDS }}", "FACTORY_PRIORITY_ORDER": "${{ vars.FACTORY_PRIORITY_ORDER }}"}
+
+permissions:
+  contents: read
+  actions: write
+  issues: write
+  pull-requests: write
+
+jobs:
+  operate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Authorize GitHub actor before checking out executable code
+        env:
+          ACTOR_ID: ${{ github.actor_id }}
+          ACTOR: ${{ github.actor }}
+          REQUESTED_REF: ${{ github.ref }}
+          ALLOWED_ADMIN_IDS: ${{ vars.ROTISSERIE_ADMIN_GITHUB_IDS }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ "$REQUESTED_REF" != "refs/heads/main" ]]; then
+            echo "::error::Factory administration is restricted to main"
+            exit 1
+          fi
+          # Immutable numeric IDs, not mutable GitHub logins.
+          allowed="${ALLOWED_ADMIN_IDS:-4014199}"
+          if [[ ! "$allowed" =~ ^[0-9]+(,[0-9]+)*$ ]]; then
+            echo "::error::ROTISSERIE_ADMIN_GITHUB_IDS is malformed"
+            exit 1
+          fi
+          if [[ ",${allowed}," != *,"${ACTOR_ID}",* ]]; then
+            echo "::error::GitHub actor ${ACTOR} is not a Rotisserie administrator"
+            exit 1
+          fi
+          echo "Authorized GitHub user ${ACTOR} (id ${ACTOR_ID})"
+
+      - name: Check out adopter main
+        uses: actions/checkout@v7
+        with:
+          ref: main
+
+      - name: Check out Rotisserie operator runtime
+        uses: actions/checkout@v7
+        with:
+          repository: JoshCLWren/rotisserie
+          ref: main
+          path: .rotisserie/runtime
+          persist-credentials: false
+
+      - name: Execute exactly one validated Rotisserie command
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ROTISSERIE_REQUEST: ${{ inputs.request }}
+          PYTHONPATH: .rotisserie/runtime/src
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json
+          import os
+          import subprocess
+          import sys
+
+          from rotisserie.web import InvalidRequest, write_command
+
+          request = os.environ["ROTISSERIE_REQUEST"]
+          if len(request.encode("utf-8")) > 4096:
+              raise SystemExit("Factory request exceeds 4096 bytes")
+          try:
+              body = json.loads(request)
+              if not isinstance(body, dict):
+                  raise InvalidRequest("Expected one JSON object")
+              arguments = write_command(body)
+          except (ValueError, InvalidRequest) as exc:
+              raise SystemExit(f"Rejected factory command: {exc}") from exc
+
+          command = [
+              sys.executable, "-m", "rotisserie", "factory",
+              "--repo", os.environ["GITHUB_REPOSITORY"], "--json", *arguments,
+          ]
+          print("Operation:", arguments[0], "(authorized GitHub actor, factory policy still enforced)")
+          result = subprocess.run(command, check=False, timeout=600)
+          raise SystemExit(result.returncode)
+          PY
