@@ -46,7 +46,13 @@ from rotisserie.factory_console.service import (
     stalls,
     unstick,
 )
-from rotisserie.factory_console.tracker import DISPATCH_WORKFLOW, Clock, Tracker, failure_reasons
+from rotisserie.factory_console.tracker import (
+    DISPATCH_WORKFLOW,
+    WORKER_WORKFLOW,
+    Clock,
+    Tracker,
+    failure_reasons,
+)
 
 DASHBOARD_WORKFLOW = "factory-status-pages.yml"
 STATS_STALE = timedelta(hours=1)
@@ -148,6 +154,66 @@ def _scheduler(github: GitHub, now: datetime) -> Finding:
             "rotisserie factory report shows its last runs",
         )
     return Finding("scheduler", "ok", "running")
+
+
+# The worker step that picks a provider and model. When it fails, the worker
+# had no model it was allowed to use (every candidate cooling down, used up,
+# or an author of the PR) and released its lease without working.
+MODEL_PICK_STEP = "Select execution candidate at dispatch time"
+MODEL_PICK_WINDOW = timedelta(hours=1)
+MODEL_PICK_SAMPLE = 15
+
+
+def model_availability(github: GitHub, now: datetime, tracker: Tracker) -> Finding:
+    """Are workers getting a model and finishing? Every worker failing stalls the factory.
+
+    A worker that fails at the model-pick step had no model it was allowed to
+    use; one that fails later mostly hit provider capacity mid-session. The
+    other checks only see workers that finished their session, so a fleet
+    where every worker fails this way looked healthy.
+    """
+    since = (now - MODEL_PICK_WINDOW).strftime("%Y-%m-%dT%H:%M:%SZ")
+    until = now.strftime("%Y-%m-%dT%H:%M:%SZ")
+    runs = items(
+        github.repo_api(
+            f"actions/workflows/{WORKER_WORKFLOW}/runs?status=completed"
+            f"&created={since}..{until}&per_page={MODEL_PICK_SAMPLE}"
+        ),
+        "workflow_runs",
+    )
+    if not runs:
+        return Finding("model availability", "ok", "no worker finished in the last hour")
+    no_model = failed = 0
+    for run in runs:
+        run_id = integer(run, "id")
+        if run_id is None or string(run, "conclusion") != "failure":
+            continue
+        steps = [step for job in tracker.jobs(run_id) for step in items(job, "steps")]
+        if any(
+            string(step, "name") == MODEL_PICK_STEP and string(step, "conclusion") == "failure"
+            for step in steps
+        ):
+            no_model += 1
+        else:
+            failed += 1
+    succeeded = len(runs) - no_model - failed
+    if no_model == 0 and failed * 2 <= len(runs):
+        return Finding("model availability", "ok", "workers are finding models and finishing")
+    parts = [f"{succeeded} of the last {len(runs)} finished workers succeeded"]
+    if no_model:
+        parts.append(
+            f"{no_model} could not pick any model (every candidate cooling down, used up, "
+            "or an author of the PR)"
+        )
+    if failed:
+        parts.append(f"{failed} failed during their session (mostly provider capacity)")
+    hint = (
+        "rotisserie factory stats shows provider health; cooldowns clear by themselves. "
+        "If they are wrong: gh workflow run factory-model-health-reset.yml"
+    )
+    # No worker succeeding means nothing is being delivered at all.
+    status = "fail" if succeeded == 0 else "warn"
+    return Finding("model availability", status, "; ".join(parts), hint)
 
 
 def _intake(github: GitHub, now: datetime) -> Finding:
@@ -311,6 +377,7 @@ def run_checks(github: GitHub, *, now: datetime, clock: Clock | None = None) -> 
         ("main verification", lambda: main_verification(github)),
         ("rotisserie intake", lambda: _intake(github, now)),
         ("worker rejections", rejections),
+        ("model availability", lambda: model_availability(github, now, tracker)),
         ("shared failures", lambda: shared_failures(github, now)),
         ("review deadlocks", lambda: review_deadlocks(github)),
     ]

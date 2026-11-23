@@ -207,3 +207,79 @@ def test_doctor_names_the_deadlocked_prs() -> None:
     assert "review pr:N" in found.hint
     clean = doctor.review_deadlocks(cast(GitHub, Hub([], ["factory:review"], [])))
     assert clean.status == "ok"
+
+
+# Model availability: workers failing before or during their session ------------------
+
+
+class Runs:
+    """Worker runs and their jobs, as the Actions API returns them."""
+
+    repo = REPO
+
+    def __init__(self, runs: list[tuple[str, str]]) -> None:
+        # (conclusion, failing step name or "")
+        self.runs = runs
+        self.routes: list[str] = []
+
+    def repo_api(self, route: str) -> Any:
+        self.routes.append(route)
+        if route.startswith("actions/workflows/"):
+            return {
+                "workflow_runs": [
+                    {"id": index, "conclusion": conclusion}
+                    for index, (conclusion, _step) in enumerate(self.runs, start=1)
+                ]
+            }
+        run_id = int(route.split("/")[2])
+        _conclusion, step = self.runs[run_id - 1]
+        steps = [{"name": step, "conclusion": "failure"}] if step else []
+        return {"jobs": [{"name": "run / factory", "steps": steps}]}
+
+
+def availability(runs: list[tuple[str, str]]) -> doctor.Finding:
+    from datetime import UTC, datetime
+
+    from rotisserie.factory_console.tracker import Tracker
+
+    hub = Runs(runs)
+    github = cast(GitHub, hub)
+    found = doctor.model_availability(
+        github, datetime(2026, 11, 23, 6, 30, tzinfo=UTC), Tracker(github)
+    )
+    assert "created=2026-11-23T05:30:00Z..2026-11-23T06:30:00Z" in hub.routes[0]
+    return found
+
+
+PICK = doctor.MODEL_PICK_STEP
+SESSION = "Run continuous fixed-model factory session"
+
+
+def test_a_fleet_where_no_worker_succeeds_fails_the_doctor() -> None:
+    found = availability([("failure", PICK)] * 5 + [("failure", SESSION)] * 10)
+    assert found.status == "fail"
+    assert found.text == (
+        "0 of the last 15 finished workers succeeded; 5 could not pick any model (every "
+        "candidate cooling down, used up, or an author of the PR); 10 failed during their "
+        "session (mostly provider capacity)"
+    )
+    assert "factory-model-health-reset.yml" in found.hint
+
+
+def test_some_workers_without_a_model_is_a_warning() -> None:
+    found = availability([("success", "")] * 4 + [("failure", PICK)])
+    assert found.status == "warn"
+    assert found.text.startswith("4 of the last 5 finished workers succeeded; 1 could not")
+
+
+@pytest.mark.parametrize(
+    "runs",
+    [
+        [],
+        [("success", "")] * 3,
+        # A minority of in-session failures is normal churn.
+        [("success", "")] * 3 + [("failure", SESSION)],
+    ],
+)
+def test_healthy_or_idle_fleets_are_ok(runs: list[tuple[str, str]]) -> None:
+    assert availability(runs).status == "ok"
