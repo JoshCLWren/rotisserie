@@ -40,9 +40,7 @@ def test_hosted_page_reuses_canonical_local_ui_without_local_session():
     assert "localStorage" not in page
 
 
-@pytest.mark.parametrize(
-    "name", ["../bad", "owner", "owner/repo/extra", "owner/<repo>"]
-)
+@pytest.mark.parametrize("name", ["../bad", "owner", "owner/repo/extra", "owner/<repo>"])
 def test_hosted_page_rejects_invalid_repo(name):
     with pytest.raises(ValueError):
         builder().render(name)
@@ -58,9 +56,7 @@ def test_hosted_scripts_parse_without_dependencies(tmp_path):
     for i, script in enumerate(scripts):
         path = tmp_path / f"hosted-{i}.js"
         path.write_text(script, encoding="utf-8")
-        subprocess.run(
-            [node, "--check", str(path)], check=True, capture_output=True, text=True
-        )
+        subprocess.run([node, "--check", str(path)], check=True, capture_output=True, text=True)
 
 
 def test_workflow_requires_verified_actor_before_executing_commands():
@@ -68,9 +64,7 @@ def test_workflow_requires_verified_actor_before_executing_commands():
     assert "github.actor_id" in content
     assert "ROTISSERIE_ADMIN_GITHUB_IDS" in content
     assert "refs/heads/main" in content
-    assert content.index("Authorize GitHub actor") < content.index(
-        "Check out Rotisserie"
-    )
+    assert content.index("Authorize GitHub actor") < content.index("Check out Rotisserie")
     assert "write_command(body)" in content
     assert "subprocess.run(command" in content
     assert "shell=True" not in content
