@@ -4,6 +4,7 @@ The hosted edition has no credential or mutation authority. It reads a
 sanitized, already-published snapshot and sends human operators to GitHub's
 authenticated workflow_dispatch interface. The workflow revalidates identity.
 """
+
 from __future__ import annotations
 
 import argparse
