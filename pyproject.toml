@@ -75,6 +75,7 @@ packages = ["src/rotisserie"]
 "factory/.github/scripts/factory_work_policy.py" = "rotisserie/factory_console/factory_runtime/factory_work_policy.py"
 "factory/.github/scripts/factory_rotisserie_adopter.py" = "rotisserie/factory_console/factory_runtime/factory_rotisserie_adopter.py"
 "factory/.github/scripts/factory_review_policy.py" = "rotisserie/factory_console/factory_runtime/factory_review_policy.py"
+"factory/.github/scripts/factory_label_policy.py" = "rotisserie/factory_console/factory_runtime/factory_label_policy.py"
 "factory/.github/scripts/factory_adopter.py" = "rotisserie/factory_console/factory_runtime/factory_adopter.py"
 "factory/.github/scripts/factory_branch_sync.py" = "rotisserie/factory_console/factory_runtime/factory_branch_sync.py"
 "factory/.github/scripts/factory_main_health.py" = "rotisserie/factory_console/factory_runtime/factory_main_health.py"

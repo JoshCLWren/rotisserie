@@ -79,7 +79,7 @@ replace_labels() {
   local labels target
   labels="$(gh api "repos/${GITHUB_REPOSITORY}/issues/${number}/labels?per_page=100" --jq '[.[].name]')"
   target="$(jq -c --arg owner "$owner" --arg stage "$stage" --arg owner_re "$OWNER_RE" --arg stage_re "$STAGE_RE" '
-    map(select((test($owner_re)|not) and (test($stage_re)|not) and . != "factory"))
+    map(select((test($owner_re)|not) and (test($stage_re)|not) and . != "factory" and . != "factory:available"))
     + ["factory", $owner, $stage] | unique' <<< "$labels")"
   gh api --method PUT "repos/${GITHUB_REPOSITORY}/issues/${number}/labels" \
     --input - <<< "{\"labels\":${target}}" >/dev/null
@@ -308,7 +308,7 @@ claim_issue() {
     return 1
   fi
   target="$(jq -c --arg owner "$OWNER" --arg owner_re "$OWNER_RE" --arg stage_re "$STAGE_RE" '
-    map(select((test($owner_re)|not) and (test($stage_re)|not) and . != "factory"))
+    map(select((test($owner_re)|not) and (test($stage_re)|not) and . != "factory" and . != "factory:available"))
     + ["factory", $owner, "factory:building"] | unique' <<< "$labels")"
   gh api --method PUT "repos/${GITHUB_REPOSITORY}/issues/${number}/labels" \
     --input - <<< "{\"labels\":${target}}" >/dev/null

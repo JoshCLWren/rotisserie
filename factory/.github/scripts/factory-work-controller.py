@@ -250,7 +250,8 @@ def replace_factory_labels(
     final_owner = norm_owner
 
     # Remove all existing owner labels (including factory:unowned) and stage labels
-    labels = [label for label in current if not OWNER_RE.fullmatch(label) and label not in STAGE_LABELS and (label != 'factory')]
+    # factory:available is only ever re-derived by the label doctor (#191).
+    labels = [label for label in current if not OWNER_RE.fullmatch(label) and label not in STAGE_LABELS and label not in ('factory', 'factory:available')]
     labels.extend(['factory', final_owner])
     if final_stage:
         labels.append(final_stage)

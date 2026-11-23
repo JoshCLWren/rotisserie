@@ -19,9 +19,13 @@ concurrency:
 
 jobs:
   wake:
+    # Claim labels belong to the label claim controller; waking a factory
+    # worker on them would race the agent that asked for the item.
     if: >-
       github.event.issue.state == 'open' &&
-      contains(github.event.issue.labels.*.name, 'factory:unowned')
+      contains(github.event.issue.labels.*.name, 'factory:unowned') &&
+      !contains(github.event.issue.labels.*.name, 'factory:claimed') &&
+      !contains(fromJSON('["factory:available","factory:claimed","factory:claim-rejected"]'), github.event.label.name)
     runs-on: ubuntu-latest
     steps:
       - name: Offer changed issue to trusted dispatcher

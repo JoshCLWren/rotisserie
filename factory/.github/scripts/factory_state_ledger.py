@@ -951,10 +951,10 @@ if __name__ == "__main__":
 # provider reservations. An expired external claim is intentionally still a
 # hold until its identity-fenced release or verified operator reconciliation.
 EXTERNAL_ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$")
-# Review is not offered: the merge gate only counts approvals whose reviewer
-# model the trusted runtime recorded, which an outside agent cannot provide.
+# Review is offered since #191: the trusted bridge records the outside
+# reviewer's declared model, so the merge gate can check its independence.
 EXTERNAL_ACTIONS = frozenset({
-    "implement", "review-findings", "ci-repair", "merge-conflict",
+    "implement", "review", "review-findings", "ci-repair", "merge-conflict",
 })
 EXTERNAL_WIP_ACTIONS = frozenset({
     "implement", "review-findings", "ci-repair", "merge-conflict",

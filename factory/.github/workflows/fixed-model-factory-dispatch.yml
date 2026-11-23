@@ -848,6 +848,19 @@ jobs:
             echo "PR #${pr} changed ownership or stage; skipping Ollama dispatch"
             exit 0
           fi
+          # Outside-agent claims (#191) set no owner label; only Neon knows.
+          if ! PR="$pr" python3 - <<'PY'
+          import os, sys
+          sys.path.insert(0, ".github/scripts")
+          import factory_state_ledger as ledger
+          if not ledger.enabled():
+              sys.exit(1)
+          sys.exit(1 if ledger.external_holder(os.environ["GITHUB_REPOSITORY"], int(os.environ["PR"])) else 0)
+          PY
+          then
+            echo "PR #${pr} is held by an outside claim, or claims are unreadable; skipping Ollama"
+            exit 0
+          fi
           echo "Dispatching automatic local Ollama review of PR #${pr}"
           gh workflow run local-ollama-review.yml \
             --repo "$GITHUB_REPOSITORY" --ref main -f "pr=${pr}"

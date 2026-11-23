@@ -53,6 +53,8 @@ from rotisserie.factory_console.service import (
     external,
     frontier,
     groom,
+    labelclaims,
+    labels,
     limits,
     outcomes,
     providers,
@@ -410,6 +412,24 @@ def add_parser(subcommands: argparse._SubParsersAction[argparse.ArgumentParser])
         "limits", help="show GitHub API usage, reset times and retry information"
     )
     _common(quota)
+
+    tags = commands.add_parser(
+        "labels",
+        help="audit claim and lifecycle labels against Neon and the frontier (dry run)",
+    )
+    tags.add_argument("--repair", action="store_true", help="apply the planned label changes")
+    tags.add_argument(
+        "--delete-legacy",
+        action="store_true",
+        help="with --repair, also delete the obsolete label definitions it lists",
+    )
+    _common(tags)
+
+    event = commands.add_parser(
+        "label-event", help="handle one GitHub label-claim event (trusted Actions only)"
+    )
+    event.add_argument("--event-path", required=True, help="the GITHUB_EVENT_PATH payload")
+    _common(event)
 
     clash = commands.add_parser(
         "conflicts", help="which of a pull request's files main also changed, and where"
@@ -2512,6 +2532,64 @@ def cmd_doctor(context: Context, arguments: argparse.Namespace) -> Outcome:
     return Outcome(result, EXIT_CODES[result], data)
 
 
+# labels ---------------------------------------------------------------------------------
+
+
+def cmd_labels(context: Context, arguments: argparse.Namespace) -> Outcome:
+    console = context.console
+    if arguments.delete_legacy and not arguments.repair:
+        console.fail("--delete-legacy needs --repair")
+        return Outcome(Result.FAILED, 2, {})
+    try:
+        if arguments.repair:
+            report = labels.repair(
+                context.github, delete_legacy=arguments.delete_legacy, now=context.clock.now()
+            )
+        else:
+            report, _ = labels.audit(context.github, now=context.clock.now())
+    except (RuntimeError, ValueError) as exc:
+        console.fail(f"Label doctor could not run: {exc}")
+        return Outcome(Result.FAILED, 4, {"reason": str(exc)})
+    data = report.to_dict()
+    console.heading(f"Label doctor ({report.mode})")
+    console.line(f"Authority: {report.authority}")
+    for change in report.items:
+        reasons = "; ".join(str(reason) for reason in change["reasons"])  # type: ignore[attr-defined]
+        console.line(f"  {change['target']}: +{change['add']} -{change['remove']} ({reasons})")
+    for hold in report.holds:
+        console.warn(f"  {hold['target']}: held ({'; '.join(hold['holds'])})")  # type: ignore[arg-type]
+    if report.legacy_definitions:
+        verb = "Deleted" if report.deleted_definitions else "Obsolete definitions"
+        names = report.deleted_definitions or report.legacy_definitions
+        console.line(f"{verb}: {', '.join(names)}")
+    for skip in report.skipped:
+        console.warn(f"  skipped {skip['target']}: {skip['reason']}")
+    if not report.items:
+        console.ok("No label changes needed.")
+    elif not arguments.repair:
+        console.line("Apply these changes: rotisserie factory labels --repair")
+    return Outcome(Result.COMPLETED, EXIT_OK, data)
+
+
+def cmd_label_event(context: Context, arguments: argparse.Namespace) -> Outcome:
+    environment = dict(os.environ)
+    if environment.get("GITHUB_ACTIONS") != "true":
+        context.console.fail("label-event runs only in trusted Actions")
+        return Outcome(Result.FAILED, 4, {"status": "refused"})
+    payload = json.loads(Path(arguments.event_path).read_text())
+    result = labelclaims.handle(
+        context.github, environment.get("GITHUB_EVENT_NAME", ""), payload, environment
+    )
+    if result.get("status") != "ignored":
+        try:
+            _, number = labelclaims._target(payload)
+            result["doctor"] = labelclaims.doctor_after(context.github, number)
+        except Exception as exc:  # noqa: BLE001 - the periodic doctor repairs later
+            result["doctor"] = {"status": "skipped", "reason": type(exc).__name__}
+    context.console.line(json.dumps(result, default=str))
+    return Outcome(Result.COMPLETED, EXIT_OK, result)
+
+
 # conflicts ------------------------------------------------------------------------------
 
 
@@ -3133,6 +3211,8 @@ HANDLERS = {
     "leases": cmd_leases,
     "doctor": cmd_doctor,
     "limits": cmd_limits,
+    "labels": cmd_labels,
+    "label-event": cmd_label_event,
     "explain": cmd_why,
     "providers": cmd_providers,
     "models": cmd_models,

@@ -166,4 +166,4 @@ def test_every_claim_gated_controller_step_reads_outside_claims() -> None:
             earlier = "".join(steps[:index])
             assert "uses: ./.github/actions/factory-state-cache" in earlier, workflow.name
             assert "asyncpg" in earlier + step, workflow.name
-    assert found == 3
+    assert found == 4

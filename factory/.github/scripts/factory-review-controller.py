@@ -248,6 +248,7 @@ def replace_factory_labels(number: int, owner: str, stage: str) -> None:
                 label
                 for label in current
                 if not OWNER_RE.fullmatch(label) and label not in STAGE_LABELS and label != "factory"
+                and label != "factory:available"
                 and not (label == "factory:approved" and stage in {"factory:building", "factory:changes-requested"})
             }
             labels.update({"factory", owner, stage})
