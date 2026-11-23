@@ -10,6 +10,7 @@ import argparse
 import json
 import re
 from pathlib import Path
+from typing import Any
 
 SNAPSHOT_PATTERN = re.compile(
     r'<script id="fleet-snapshot" type="application/json">([\s\S]*?)</script>'
@@ -141,7 +142,7 @@ PUBLIC_REPORT = """async function loadReport(){
 """
 
 
-def sanitized_snapshot(source_html: str) -> dict[str, object]:
+def sanitized_snapshot(source_html: str) -> dict[str, Any]:
     """Allowlist fields; public publishing must never gain new data implicitly."""
     match = SNAPSHOT_PATTERN.search(source_html)
     if not match:
