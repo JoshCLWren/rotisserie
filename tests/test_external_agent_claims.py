@@ -1071,7 +1071,13 @@ def test_repair_of_a_pr_whose_issue_closed_reserves_just_the_pr(
     monkeypatch.setattr(external, "_required_checks_outcome", lambda *a, **k: "passed")
     github = GitHubDouble()
     github.closed = {7}
-    github.review_labels = ["factory", "factory:changes-requested", "factory:unowned"]
+    # The issue is closed, so the PR's own labels carry its ranked priority.
+    github.review_labels = [
+        "factory",
+        "factory:changes-requested",
+        "factory:unowned",
+        "ralph-priority:low",
+    ]
     result = external.reserve_next(cast(GitHub, github), client="chatgpt", environment={})
     assert result["status"] == "reserved", result
     assert setup.holder == "chatgpt"
