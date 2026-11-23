@@ -13,7 +13,7 @@ from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 import pytest
 
@@ -132,6 +132,7 @@ class FakeGitHub:
     calls: list[list[str]] = field(default_factory=list)
     dispatch_output: str = f"https://github.com/{REPO}/actions/runs/900\n"
     error: Exception | None = None
+    dispatch_error: Exception | None = None
     # Artifacts ``gh run download --name NAME`` writes, by artifact name.
     artifacts: dict[str, object] = field(default_factory=dict)
 
@@ -141,6 +142,8 @@ class FakeGitHub:
         if self.error is not None:
             raise self.error
         if argv[0] == "workflow":
+            if self.dispatch_error is not None:
+                raise self.dispatch_error
             return self.dispatch_output
         if argv[0] == "api":
             path = next(
@@ -2599,23 +2602,74 @@ def test_a_run_without_its_result_is_unknown_not_success(fake: FakeGitHub) -> No
     assert data["bridge"]["url"].endswith("/actions/runs/900")
 
 
+def _runs_after_dispatch(fake: FakeGitHub, *names: tuple[int, str]) -> Callable[[], JSON]:
+    """The workflow's runs: an old one always, ``names`` once our request is sent."""
+
+    def listing() -> JSON:
+        runs: list[JSON] = [{"id": 800, "display_title": "External release · alice / claude-code"}]
+        if any(call[0] == "workflow" for call in fake.calls):
+            runs += [{"id": run_id, "display_title": title} for run_id, title in names]
+        return {"workflow_runs": runs}
+
+    return listing
+
+
 def test_a_run_found_by_its_title_when_gh_prints_no_url(fake: FakeGitHub) -> None:
     bridge_routes(fake)
     fake.dispatch_output = ""
-    fake.routes["actions/workflows/rotisserie-external-claim.yml/runs"] = {
-        "workflow_runs": [
-            {"id": 899, "display_title": "External release · alice / other", "created_at": "1"},
-            {
-                "id": 900,
-                "display_title": "External release · alice / claude-code",
-                "created_at": "2",
-            },
-        ]
-    }
+    fake.routes["actions/workflows/rotisserie-external-claim.yml/runs"] = _runs_after_dispatch(
+        fake,
+        (899, "External release · alice / other"),
+        (900, "External release · alice / claude-code"),
+    )
     fake.artifacts["rotisserie-external-claim-900"] = {"result": "completed", "status": "released"}
     code, out = invoke(["release", BRIDGE_CLAIM, "--client", "claude-code", "--via", "github"])
     assert code == 0, out
     assert "External claim released" in out
+
+
+def test_two_new_runs_with_our_title_are_never_guessed(fake: FakeGitHub) -> None:
+    bridge_routes(fake)
+    fake.dispatch_output = ""
+    title = "External release · alice / claude-code"
+    fake.routes["actions/workflows/rotisserie-external-claim.yml/runs"] = _runs_after_dispatch(
+        fake, (900, title), (901, title)
+    )
+    fake.artifacts["rotisserie-external-claim-900"] = {"result": "completed", "status": "released"}
+    code, out = invoke(["release", BRIDGE_CLAIM, "--client", "claude-code", "--via", "github"])
+    assert code == 6
+    assert "started at once" in out
+    assert not [call for call in fake.calls if call[:2] == ["run", "download"]]
+
+
+def test_a_lost_connection_after_dispatch_is_unknown_not_refused(fake: FakeGitHub) -> None:
+    bridge_routes(fake)
+
+    def dropped() -> JSON:
+        raise GitHubError("connection reset")
+
+    fake.routes["actions/runs/900$"] = dropped
+    code, out = invoke(["--json", "reserve-next", "--client", "codebuff-phone", "--via", "github"])
+    assert code == 6
+    data = json.loads(out)
+    assert data["status"] == "unknown"
+    assert data["bridge"]["url"].endswith("/actions/runs/900")
+
+
+def test_a_failed_dispatch_may_still_have_started_a_run(fake: FakeGitHub) -> None:
+    bridge_routes(fake)
+    fake.dispatch_error = GitHubError("timed out")
+    code, out = invoke(["release", BRIDGE_CLAIM, "--client", "claude-code", "--via", "github"])
+    assert code == 6
+    assert "GitHub may still have started it" in out
+
+
+def test_github_down_before_dispatch_is_not_a_refusal(fake: FakeGitHub) -> None:
+    code, out = invoke(["--json", "renew", BRIDGE_CLAIM, "--client", "x", "--via", "github"])
+    data = json.loads(out)
+    assert data["result"] == "github_unavailable"
+    assert code != 4
+    assert not [call for call in fake.calls if call[0] == "workflow"]
 
 
 def test_advertised_at_is_refused_with_via_github(fake: FakeGitHub) -> None:
@@ -2688,14 +2742,19 @@ def test_wait_for_work_direct_reads_the_frontier_here(
 
     class Snapshot:
         def to_dict(self) -> dict[str, object]:
-            return frontier_snapshot(offer("issue:7", "implement"))
+            # Frontier.to_dict keeps offers as a tuple.
+            snapshot = frontier_snapshot(offer("issue:7", "implement"))
+            return {**snapshot, "offers": tuple(cast(list[object], snapshot["offers"]))}
 
     monkeypatch.setattr(frontier, "capture", lambda github, now: Snapshot())
-    code, out = invoke(["wait-for-work"])
+    code, out = invoke(["wait-for-work", "--can", "implement", "--can", "ci-repair"])
     assert code == 0, out
     assert "Work an outside agent can take (1)" in out
-    assert "reserve-next --client AGENT" in out
+    assert f"reserve-next --repo {REPO} --client AGENT --can ci-repair --can implement" in out
     assert not [call for call in fake.calls if call[0] == "workflow"]
+    code, out = invoke(["next"])
+    assert code == 0, out
+    assert "issue:7 · implement · candidate" in out
 
 
 @pytest.mark.parametrize(

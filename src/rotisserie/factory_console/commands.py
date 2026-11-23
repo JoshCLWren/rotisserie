@@ -1924,7 +1924,8 @@ def cmd_next(context: Context, arguments: argparse.Namespace) -> Outcome:
     console = context.console
     console.heading("Next meaningful factory work (read-only)")
     offers = data.get("offers")
-    _show_offers(console, offers if isinstance(offers, list) else [])
+    # A direct capture keeps offers as a tuple; a workflow's JSON has a list.
+    _show_offers(console, offers if isinstance(offers, (list, tuple)) else [])
     if data.get("authoritative_claim_available") is not True:
         console.warn("Lease authority is unavailable; all candidates are held.")
         console.line(str(data.get("authority_note") or ""))
@@ -1976,8 +1977,13 @@ def cmd_wait_for_work(context: Context, arguments: argparse.Namespace) -> Outcom
             console.ok(f"Work an outside agent can take ({len(found)})")
             _show_offers(console, found, limit=5)
             _show_bridge(console, data)
+            # Keep the agent's own scope, or reserve-next may pick other work.
+            scope = "".join(f" --can {action}" for action in sorted(abilities))
             flag = " --via github" if via == "github" else ""
-            console.line(f"Reserve it: rotisserie factory reserve-next --client AGENT{flag}")
+            console.line(
+                f"Reserve it: rotisserie factory reserve-next --repo {context.repo} "
+                f"--client AGENT{scope}{flag}"
+            )
             return Outcome(
                 Result.COMPLETED,
                 EXIT_OK,
@@ -2023,27 +2029,37 @@ def _external_via_github(context: Context, arguments: argparse.Namespace) -> dic
 
 
 def cmd_external(context: Context, arguments: argparse.Namespace) -> Outcome:
-    verb = arguments.factory_command
-    if getattr(arguments, "via", "direct") == "github" and getattr(arguments, "advertised_at", ""):
+    if getattr(arguments, "via", "direct") != "github":
+        direct = _external_direct(context, arguments)
+        return direct if isinstance(direct, Outcome) else _show_external(context, direct)
+    if getattr(arguments, "advertised_at", ""):
         raise UsageError("--advertised-at is not supported with --via github.")
+    # Outside the refusal handler: a GitHub failure before the request is sent
+    # is "GitHub unavailable", and one after it is "unknown", never "refused".
     try:
-        if getattr(arguments, "via", "direct") == "github":
-            try:
-                outcome = _external_via_github(context, arguments)
-            except bridge.BridgeError as exc:
-                # The run may have acted (a reservation may exist); say where to look.
-                return _bridge_failed(context, exc, "The claim workflow gave no result")
-            if outcome.get("result") in ("failed", "invalid", "github_unavailable"):
-                # The workflow ran and refused, exactly as a direct call would.
-                why = outcome.get("reason") or outcome.get("error") or outcome.get("status")
-                context.console.fail(f"External claim refused: {why}")
-                _show_bridge(context.console, outcome)
-                return Outcome(Result.FAILED, 4, outcome)
-            if not outcome.get("status"):
-                context.console.fail("The claim workflow published no status")
-                _show_bridge(context.console, outcome)
-                return Outcome(Result.UNKNOWN, EXIT_CODES[Result.UNKNOWN], outcome)
-        elif verb == "revoke":
+        outcome = _external_via_github(context, arguments)
+    except bridge.BridgeError as exc:
+        # The run may have acted (a reservation may exist); say where to look.
+        return _bridge_failed(context, exc, "The claim workflow gave no result")
+    if outcome.get("result") in ("failed", "invalid", "github_unavailable"):
+        # The workflow ran and refused, exactly as a direct call would.
+        why = outcome.get("reason") or outcome.get("error") or outcome.get("status")
+        context.console.fail(f"External claim refused: {why}")
+        _show_bridge(context.console, outcome)
+        return Outcome(Result.FAILED, 4, outcome)
+    if not outcome.get("status"):
+        context.console.fail("The claim workflow published no status")
+        _show_bridge(context.console, outcome)
+        return Outcome(Result.UNKNOWN, EXIT_CODES[Result.UNKNOWN], outcome)
+    return _show_external(context, outcome)
+
+
+def _external_direct(
+    context: Context, arguments: argparse.Namespace
+) -> dict[str, object] | Outcome:
+    verb = arguments.factory_command
+    try:
+        if verb == "revoke":
             outcome = external.revoke(
                 context.github,
                 claim_id=arguments.claim_id,
@@ -2085,6 +2101,10 @@ def cmd_external(context: Context, arguments: argparse.Namespace) -> Outcome:
             4,
             {"status": "held", "reason": reason, "retry": "check_lease_before_retry"},
         )
+    return outcome
+
+
+def _show_external(context: Context, outcome: dict[str, object]) -> Outcome:
     state = str(outcome.get("status"))
     if state in ("reserved", "renewed", "released", "revoked"):
         context.console.ok(f"External claim {state}")

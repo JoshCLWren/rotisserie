@@ -437,19 +437,14 @@ class Tracker:
             return ""
 
     def find_submitted_run(
-        self,
-        submitted_at: datetime,
-        title: str,
-        *,
-        attempts: int = 20,
-        workflow: str = DISPATCH_WORKFLOW,
+        self, submitted_at: datetime, title: str, *, attempts: int = 20
     ) -> int | None:
-        """Find the run GitHub created for our ``workflow_dispatch`` request."""
+        """Find the scheduler run GitHub created for our request."""
         since = (submitted_at - timedelta(seconds=5)).strftime("%Y-%m-%dT%H:%M:%SZ")
         for _ in range(attempts):
             runs = items(
                 self.github.repo_api(
-                    f"actions/workflows/{workflow}/runs?event=workflow_dispatch&created=%3E%3D{since}&per_page=30"
+                    f"actions/workflows/{DISPATCH_WORKFLOW}/runs?event=workflow_dispatch&created=%3E%3D{since}&per_page=30"
                 ),
                 "workflow_runs",
             )
