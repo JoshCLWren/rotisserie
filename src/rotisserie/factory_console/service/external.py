@@ -203,8 +203,9 @@ def _live_offer(
         or found.head_sha != previous.head_sha
         or found.priority != previous.priority
         or found.lane != previous.lane
-        or found.rank != previous.rank
     ):
+        # Rank is not compared: unrelated offers enter and leave above this
+        # one all the time. The caller walks one fresh capture in its order.
         return False, "head, priority, stage or action changed"
     if found.status != "candidate":
         return False, "offer no longer eligible: " + "; ".join(found.hold_reasons)
@@ -503,11 +504,14 @@ def reserve_next(
             "reason": "expected_offer_no_longer_eligible" if expected else "no_eligible_offer",
             "retry": "refresh_frontier",
         }
-    latest = frontier.capture(github, now=datetime.now(UTC))
+    # One authoritative capture, walked in its own order: the agent gets the
+    # highest offer it can do in the current ranking. A second capture would
+    # only reorder unrelated work; head, priority, lane, ownership and CI are
+    # revalidated live below and again after the CAS.
     chosen: frontier.Offer | None = None
     passed_over: list[dict[str, str]] = []
     for offered in able:
-        okay, reason = _live_offer(github, offered, latest)
+        okay, reason = _live_offer(github, offered, snapshot)
         if okay:
             chosen = offered
             break
