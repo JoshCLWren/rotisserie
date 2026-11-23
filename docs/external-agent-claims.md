@@ -185,6 +185,12 @@ access to the repository. Removal is fenced by the claim UUID, so a newer claim
 on the same item is never touched, and the event log records who removed whose
 claim and why. Nothing removes an outside agent's claim automatically.
 
+Outside claims set no GitHub owner label, so the factory's label-based gates
+read Neon instead: while an outside claim holds a PR or its linked issue, CI
+reconciliation leaves the PR alone and merge authorization waits (the PR keeps
+`factory:ready` and merges after release, handoff or revoke). An unreadable
+claim store holds closed.
+
 External claims count in normal factory WIP and completion backpressure; they
 do not consume fictitious numeric provider slots. Owner-promoted priorities and
 review independence remain in force. Completing the task needs independent
