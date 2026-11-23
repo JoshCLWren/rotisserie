@@ -1366,12 +1366,44 @@ def persist_repair_handoff(
 
 
 @comment_snapshot
+def outside_claim(pr_number: int, pr: Mapping[str, Any]) -> str | None:
+    """Describe an outside agent's shared claim on this PR or its linked issue.
+
+    Outside agents hold Neon target leases but set no GitHub owner label, so
+    label-based gates cannot see them. Promotion and merge must wait until the
+    claim is released, handed off or revoked. Unreadable claims hold closed.
+    """
+    try:
+        ledger = importlib.import_module("factory_state_ledger")
+        if not ledger.enabled():
+            if os.environ.get("FACTORY_NEON_CONFIGURED") == "true":
+                return "outside-agent claims could not be read (Neon configured, not connected)"
+            return None
+        numbers = [pr_number]
+        linked = linked_issue_for_pr(pr_number, str(pr.get("headRefName") or ""))
+        if linked is not None and linked != pr_number:
+            numbers.append(int(linked))
+        for number in numbers:
+            holder = ledger.external_holder(REPO, number)
+            if holder:
+                return (
+                    f"outside agent {holder.get('client')} ({holder.get('actor')}) holds "
+                    f"#{number} under claim {holder.get('claim_id')}"
+                )
+    except Exception as exc:  # noqa: BLE001 - unknown claim state must not merge
+        return f"outside-agent claims could not be read ({type(exc).__name__})"
+    return None
+
+
 def reconcile_ci_pr(pr_number: int) -> dict[str, Any]:
     """Reconcile one CI PR using exact-head controller authorities."""
     pr = pr_json(pr_number)
     labels = labels_of(pr)
     if str(pr.get("state")) != "OPEN" or "factory:ci" not in labels:
         return {"pr": pr_number, "status": "skipped"}
+    held = outside_claim(pr_number, pr)
+    if held is not None:
+        return {"pr": pr_number, "status": "owned", "reason": held}
 
     owner = active_factory_owner(labels)
     if owner is not None:
@@ -2633,6 +2665,10 @@ def authorize_ready(pr_number: int) -> dict[str, Any]:
     pr = pr_json(pr_number)
     branch = str(pr.get("headRefName") or "")
     head = str(pr.get("headRefOid") or "")
+    held = outside_claim(pr_number, pr)
+    if held is not None:
+        # Not a demotion: the PR stays ready and merges after the claim ends.
+        return {"authorized": False, "head": head, "reason": held, "outside_claim": True}
     producer = producer_worker_from_pr(branch=branch, body=str(pr.get("body") or ""))
     comments = review_comment_bodies(pr_number)
     model_comments = model_comment_bodies(pr_number)

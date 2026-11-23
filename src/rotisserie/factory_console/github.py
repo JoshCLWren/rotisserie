@@ -75,7 +75,9 @@ class GitHub:
         self.timeout = timeout
         self.calls = 0
 
-    def _run(self, args: Sequence[str], *, stdin: str | None = None) -> str:
+    def _run(
+        self, args: Sequence[str], *, stdin: str | None = None, allow_exit_one: bool = False
+    ) -> str:
         if shutil.which(self.executable) is None:
             raise GitHubAuthError(
                 "The GitHub CLI (gh) is not installed. See https://cli.github.com"
@@ -94,7 +96,7 @@ class GitHub:
             raise GitHubError("GitHub did not answer in time. Check your connection.") from None
         except OSError as exc:
             raise GitHubError(f"Could not run the GitHub CLI: {exc}") from None
-        if completed.returncode != 0:
+        if completed.returncode != 0 and not (allow_exit_one and completed.returncode == 1):
             raise _classify(completed.stderr or completed.stdout)
         return completed.stdout
 
@@ -126,7 +128,9 @@ class GitHub:
         output = self._run(["api", "--allow-escape-sequences", f"repos/{self.repo}/{path}"])
         return ANSI.sub("", output)
 
-    def gh(self, *args: str, stdin: str | None = None) -> str:
+    def gh(self, *args: str, stdin: str | None = None, allow_exit_one: bool = False) -> str:
+        if allow_exit_one:
+            return self._run(list(args), stdin=stdin, allow_exit_one=True)
         return self._run(list(args), stdin=stdin)
 
     def workflow_run(self, workflow: str, inputs: dict[str, str], *, ref: str = "main") -> str:

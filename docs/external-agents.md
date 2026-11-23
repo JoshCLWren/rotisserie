@@ -49,9 +49,10 @@ not an untrusted or floating remote package. The existing restricted
 `factory_state` database connection is supplied only to the trusted runner;
 agents obtain only secret-free JSON.
 
-GitHub-only write/claim support is still outstanding in #177 and must be
-implemented through the authorized, fenced controller bridge. Do not attempt
-to claim by editing labels or issue comments.
+To actually reserve work from GitHub alone, use the trusted claim bridge
+(`rotisserie-external-claim.yml`) described in
+[external-agent-claims.md](external-agent-claims.md). Never claim by editing
+labels or issue comments.
 
 ## Universal external-agent instruction
 
@@ -64,16 +65,9 @@ to claim by editing labels or issue comments.
 > If a trusted claim interface is unavailable, report that missing access
 > and **do not start changing code**.
 
-## Remaining delivery under #177
+## Reserving work
 
-The read-only `next` command is the initial upstream boundary, **not** full
-external-agent support. It does not offer `claim`, `renew`, `release` or
-`complete` yet. The remaining work is to implement those operations in the
-trusted controller using fenced Neon transactions and current capacity rules,
-install a GitHub Actions `workflow_dispatch` bridge for GitHub-only agents,
-publish a bounded GitHub-visible queue, prove revocation and two-client race
-behavior, and dogfood a real PR through independent review and deployment.
-
-Until that work lands, `next` is a diagnostic/integration format, **never a
-license to run external work**. No new active Rotisserie Actions workflows,
-provider roster entries, or adopter mutations are part of this slice.
+`next` never reserves anything. Reservation, renewal, release, handoff and
+operator recovery are `reserve-next`, `renew`, `release`, `handoff` and
+`revoke`, over the same Neon target leases the factory uses. See
+[external-agent-claims.md](external-agent-claims.md).

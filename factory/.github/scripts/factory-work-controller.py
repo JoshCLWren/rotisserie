@@ -29,7 +29,7 @@ from factory_quota_pause import describe as describe_quota_pause, is_paused as q
 from factory_source_budget import budget_block_reason, worker_sources
 from factory_attempt_history import read_comment_history
 from factory_discovery import canonical_target, discover, update_labels
-from factory_state_ledger import acquire_lease, release_lease, renew_verified_workers, worker_claim
+from factory_state_ledger import acquire_lease, release_lease, renew_verified_workers, worker_claim, external_wip_count
 from factory_state_ledger import enabled as ledger_enabled
 from factory_adopter import repository
 REPO = repository()
@@ -486,6 +486,11 @@ def record_controller_lease_activity(
     run_gh(['issue', 'comment', str(number), '--repo', REPO, '--body', marker])
 
 
+# Outside-agent WIP claims the current pass planned new intake against. New
+# issue leases re-check it under the ledger lock (None: no plan, no check).
+EXTERNAL_WIP_SEEN: int | None = None
+
+
 def assign_candidate(
     candidate: Candidate,
     worker: str,
@@ -532,7 +537,10 @@ def assign_candidate(
     # Acquire one atomic worker + issue/PR reservation before mutating GitHub.
     # GitHub live checks remain required; a Neon conflict never grants a claim.
     try:
-        claim_token = acquire_lease(REPO, worker, numbers, FIXED_LEASE_TTL_SECONDS)
+        claim_token = acquire_lease(
+            REPO, worker, numbers, FIXED_LEASE_TTL_SECONDS,
+            external_wip_seen=EXTERNAL_WIP_SEEN if candidate.kind == 'issue' else None,
+        )
     except Exception as exc:
         print(f'[factory-controller] Neon lease unavailable; refusing duplicate-risk assignment ({type(exc).__name__})', file=sys.stderr)
         return False
@@ -1467,12 +1475,20 @@ def assign_from_pool(worker: str, kinds: tuple[str, ...] | None = None,
             if attempt.kind != 'issue':
                 continue
             issue_retry_counts[attempt.number] = issue_retry_counts.get(attempt.number, 0) + 1
+    global EXTERNAL_WIP_SEEN
+    try:
+        external_wip = external_wip_count(REPO) if ledger_enabled() else 0
+    except Exception as exc:
+        print(f'[factory-controller] external lease capacity unknown ({type(exc).__name__}); holding new intake', file=sys.stderr)
+        external_wip = FACTORY_PR_WIP_LIMIT
+    EXTERNAL_WIP_SEEN = external_wip
     candidates = build_candidates(
         issues,
         prs,
         no_diff_attempts_by_issue=issue_retry_counts,
         no_diff_attempt_records=attempt_records,
         include_backpressured_issues=operator_force,
+        external_wip=external_wip,
     )
     # A PR-only target never leases new issue work; issue-intake authorization
     # is unnecessary and can fail closed or consume remote calls on every

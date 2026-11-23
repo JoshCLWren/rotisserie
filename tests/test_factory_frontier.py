@@ -260,6 +260,7 @@ def test_capture_passes_repository_capacity_to_shared_policy(
     monkeypatch.setattr(runtime, "module", lambda name: policy)
     monkeypatch.setattr(providers, "repository_variables", lambda gh: {})
     monkeypatch.setattr(frontier, "_active_leases", lambda repo: ({}, ""))
+    monkeypatch.setattr(frontier, "_retry_history", lambda gh, core, now: [])
     for wip, backlog in [(8, 6), (14, 12)]:
         board = queue.Board([issue(7)], [], wip, backlog, {})
         summary = queue.QueueSummary(
@@ -273,6 +274,17 @@ def test_capture_passes_repository_capacity_to_shared_policy(
         assert len(result.offers) == 1
         assert result.offers[0].capacity["review_limit"] == backlog
     assert settings == [(8, 6), (14, 12)]
+
+    # No candidate becomes claimable if the gh list cap might hide work.
+    capped = queue.Board([issue(number) for number in range(1, 1001)], [], 8, 6, {})
+    capped_summary = queue.QueueSummary(
+        (queue.QueueEntry(7, "Issue 7", queue.Verdict("ready", ())),), capped
+    )
+    monkeypatch.setattr(queue, "summarize_queue", lambda gh, *, now, variables: capped_summary)
+    held = frontier.capture(cast(GitHub, SimpleNamespace(repo=REPO)), now=NOW)
+    assert not held.authoritative_claim_available
+    assert held.offers[0].status == "held"
+    assert "pagination cap" in held.authority_note
 
 
 def test_shared_policy_applies_nondefault_backpressure_to_candidates() -> None:
@@ -295,3 +307,77 @@ def test_shared_policy_applies_nondefault_backpressure_to_candidates() -> None:
     assert not any(item.kind == "issue" and item.number == 7 for item in default)
     assert any(item.kind == "issue" and item.number == 7 for item in configured)
     assert all(item.kind == "pr" for item in default)
+
+
+def test_unreadable_retry_history_holds_issue_intake_like_the_controller(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from rotisserie.factory_console import runtime
+    from rotisserie.factory_console.service import providers
+
+    recorded: dict[str, object] = {}
+    real = runtime.module("factory_work_policy")
+
+    class PolicyProxy:
+        def __getattr__(self, name: str) -> Any:
+            return getattr(real, name)
+
+        def build_candidates(self, issues: Any, prs: Any, **kwargs: Any) -> list[Any]:
+            recorded.update(kwargs)
+            return [candidate("issue", 7)]
+
+    monkeypatch.setattr(runtime, "completion_backlog", lambda rows: [])
+    monkeypatch.setattr(runtime, "pr_wip_count", lambda rows: 0)
+    monkeypatch.setattr(runtime, "module", lambda name: PolicyProxy())
+    monkeypatch.setattr(providers, "repository_variables", lambda gh: {})
+    monkeypatch.setattr(frontier, "_active_leases", lambda repo: ({}, ""))
+    board = queue.Board([issue(7)], [], 8, 6, {})
+    summary = queue.QueueSummary(
+        (queue.QueueEntry(7, "Issue 7", queue.Verdict("ready", ())),), board
+    )
+    monkeypatch.setattr(queue, "summarize_queue", lambda gh, *, now, variables: summary)
+
+    class NoHistory:
+        repo = REPO
+
+        def gh(self, *args: str, **kwargs: Any) -> str:
+            from rotisserie.factory_console.github import GitHubError
+
+            raise GitHubError("rate limited")
+
+    held = frontier.capture(cast(GitHub, NoHistory()), now=NOW)
+    assert recorded["no_diff_attempt_records"] is None
+    assert held.offers[0].status == "held"
+    assert frontier.RETRY_HISTORY_UNAVAILABLE in held.offers[0].hold_reasons
+
+
+def test_retry_history_uses_the_controllers_trusted_marker_parser() -> None:
+    import json as jsonlib
+
+    from rotisserie.factory_console import runtime
+
+    core = runtime.module("factory_work_policy")
+    epoch = int(NOW.timestamp()) - 60
+    marker = (
+        f"<!-- comic-pile-factory-claim-released-v3:issue-7:3:{epoch}:"
+        "no-persisted-change-handoff -->"
+    )
+    pages = [
+        [
+            {"id": 1, "body": marker, "author_association": "OWNER"},
+            {"id": 2, "body": marker, "author_association": "NONE"},
+        ]
+    ]
+    asked: list[str] = []
+
+    class History:
+        repo = REPO
+
+        def gh(self, *args: str, **kwargs: Any) -> str:
+            asked.append(args[-1])
+            return jsonlib.dumps(pages)
+
+    records = frontier._retry_history(cast(GitHub, History()), core, NOW)
+    assert records is not None
+    assert [(r.kind, r.number) for r in records] == [("issue", 7)]
+    assert asked[0].startswith(f"repos/{REPO}/issues/comments?since=")

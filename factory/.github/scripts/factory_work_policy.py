@@ -702,6 +702,7 @@ def build_candidates(
     include_backpressured_issues: bool = False,
     pr_wip_limit: int = FACTORY_PR_WIP_LIMIT,
     review_backlog_limit: int = FACTORY_REVIEW_BACKLOG_LIMIT,
+    external_wip: int = 0,
 ) -> list[Candidate]:
     """Build and rank executable issue and pull-request candidates.
 
@@ -733,7 +734,9 @@ def build_candidates(
     }
     if pr_wip_limit < 1 or review_backlog_limit < 1:
         raise ValueError('factory WIP and review backlog limits must be positive')
-    pr_wip_full = factory_pr_wip_count(prs) >= pr_wip_limit
+    if external_wip < 0:
+        raise ValueError('external WIP must be nonnegative')
+    pr_wip_full = factory_pr_wip_count(prs) + external_wip >= pr_wip_limit
     review_backlog_full = (
         factory_review_backlog_count(prs) >= review_backlog_limit
     )

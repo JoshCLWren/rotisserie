@@ -1,0 +1,140 @@
+# Installed into adopter by factory/install/install.py. Trusted GH -> shared Neon bridge.
+name: Rotisserie External Claim Controller
+run-name: External ${{ inputs.operation }} · ${{ github.actor }} / ${{ inputs.client }}
+on:
+  workflow_dispatch:
+    inputs:
+      operation:
+        type: choice
+        options: [reserve-next, renew, release, handoff]
+        required: true
+      client:
+        description: Stable non-secret ID, e.g. codebuff-phone
+        type: string
+        required: true
+      capabilities:
+        description: Comma-separated actions the agent can perform, blank means all
+        type: string
+        required: false
+      target:
+        description: Optional expected top offer (issue:N or pr:N)
+        type: string
+        required: false
+      claim_id:
+        description: Claim UUID for renew, release or handoff
+        type: string
+        required: false
+      evidence:
+        description: Same-repository GitHub evidence URL for handoff
+        type: string
+        required: false
+
+permissions:
+  contents: read
+  issues: write # only the trusted handoff projects verified implementation PRs
+  pull-requests: read
+  checks: read # exact-head check runs for the conflicted-without-CI exception
+  statuses: read
+  actions: read
+
+env:
+  FACTORY_REPO_VARS: >-
+    {"FACTORY_SLOTS_PER_PROVIDER": "${{ vars.FACTORY_SLOTS_PER_PROVIDER }}", "FACTORY_PR_WIP_LIMIT": "${{ vars.FACTORY_PR_WIP_LIMIT }}", "FACTORY_REVIEW_BACKLOG_LIMIT": "${{ vars.FACTORY_REVIEW_BACKLOG_LIMIT }}", "FACTORY_OMNIROUTE_FREE_ENTRY_CAP": "${{ vars.FACTORY_OMNIROUTE_FREE_ENTRY_CAP }}", "FACTORY_NO_DIFF_RETRY_LIMIT": "${{ vars.FACTORY_NO_DIFF_RETRY_LIMIT }}", "FACTORY_NO_DIFF_RETRY_RESET_SECONDS": "${{ vars.FACTORY_NO_DIFF_RETRY_RESET_SECONDS }}", "FACTORY_REVIEW_FAILURE_COOLDOWN_SECONDS": "${{ vars.FACTORY_REVIEW_FAILURE_COOLDOWN_SECONDS }}", "FACTORY_FIXED_LEASE_TTL_SECONDS": "${{ vars.FACTORY_FIXED_LEASE_TTL_SECONDS }}", "FACTORY_LOCAL_LEASE_TTL_SECONDS": "${{ vars.FACTORY_LOCAL_LEASE_TTL_SECONDS }}", "FACTORY_PRIORITY_ORDER": "${{ vars.FACTORY_PRIORITY_ORDER }}"}
+
+jobs:
+  claim:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - name: Refuse reruns or non-manual invocations
+        env:
+          TRIGGERING_ACTOR: ${{ github.triggering_actor }}
+        run: |
+          set -Eeuo pipefail
+          [[ "$GITHUB_EVENT_NAME" == workflow_dispatch ]]
+          [[ "$GITHUB_RUN_ATTEMPT" == 1 ]]
+          [[ "$TRIGGERING_ACTOR" == "$GITHUB_ACTOR" ]]
+
+      - name: Check out adopter
+        uses: actions/checkout@v7
+        with:
+          ref: main
+          persist-credentials: false
+
+      # Installer inserts the pinned Rotisserie checkout and overlay here.
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.14'
+      - uses: astral-sh/setup-uv@v7
+
+      - name: Configure shared restricted Neon authority
+        uses: ./.github/actions/factory-state-cache
+        with:
+          neon-api-key: ${{ secrets.NEON_API_KEY }}
+          neon-project-id: ${{ vars.NEON_PROJECT_ID }}
+
+      - name: Execute authorized external claim request
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          OP: ${{ inputs.operation }}
+          CLIENT: ${{ inputs.client }}
+          ABILITIES: ${{ inputs.capabilities }}
+          EXPECTED: ${{ inputs.target }}
+          CLAIM: ${{ inputs.claim_id }}
+          EVIDENCE: ${{ inputs.evidence }}
+        run: |
+          set -Eeuo pipefail
+          test -f .rotisserie/runtime/pyproject.toml
+          test -s "$FACTORY_STATE_DSN_FILE"
+          args=(factory "$OP" --repo "$GITHUB_REPOSITORY" --client "$CLIENT" --json)
+          case "$OP" in
+            reserve-next)
+              if [[ -n "$EXPECTED" ]]; then args+=(--target "$EXPECTED"); fi
+              if [[ -n "$ABILITIES" ]]; then
+                IFS=',' read -r -a capabilities <<< "$ABILITIES"
+                for capability in "${capabilities[@]}"; do args+=(--can "$capability"); done
+              fi ;;
+            renew|release)
+              [[ -n "$CLAIM" ]] || exit 2
+              args=(factory "$OP" "$CLAIM" --repo "$GITHUB_REPOSITORY" --client "$CLIENT" --json) ;;
+            handoff)
+              [[ -n "$CLAIM" && -n "$EVIDENCE" ]] || exit 2
+              args=(factory handoff "$CLAIM" --repo "$GITHUB_REPOSITORY" --client "$CLIENT" --evidence "$EVIDENCE" --json) ;;
+            *) exit 2 ;;
+          esac
+          set +e
+          uv tool run --with 'asyncpg>=0.30,<1' --from ./.rotisserie/runtime rotisserie \
+            "${args[@]}" > "$RUNNER_TEMP/external-claim.json"
+          code=$?
+          set -e
+          python3 - "$RUNNER_TEMP/external-claim.json" "$GITHUB_STEP_SUMMARY" <<'PY'
+          import json
+          import sys
+          from pathlib import Path
+          data = json.loads(Path(sys.argv[1]).read_text())
+          lines = ["# Rotisserie external claim", "",
+                   f"Status: **{data.get('status', 'unknown')}**",
+                   f"Reason: {data.get('reason', 'none')}",
+                   "", "Claim is not merge authorization. Existing CI/review gates apply."]
+          handoff = data.get("handoff")
+          if isinstance(handoff, dict):
+              lines.extend(["", f"Task: {handoff.get('target')}, {handoff.get('action')}",
+                            f"URL: {handoff.get('url')}",
+                            f"Claim: `{handoff.get('claim_id')}`",
+                            f"Expires: `{handoff.get('expires_at')}`",
+                            f"Evidence: {handoff.get('evidence_required')}",
+                            f"Renew: `{handoff.get('renew_github')}`",
+                            f"Hand off: `{handoff.get('handoff_github')}`"])
+          Path(sys.argv[2]).write_text("\n".join(lines) + "\n")
+          PY
+          exit "$code"
+
+      - name: Publish bounded result
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: rotisserie-external-claim-${{ github.run_id }}
+          path: ${{ runner.temp }}/external-claim.json
+          retention-days: 1
+          if-no-files-found: warn
