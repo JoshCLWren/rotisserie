@@ -133,6 +133,7 @@ const raw=(obj)=>'<pre class="raw">'+h(JSON.stringify(obj,null,2))+'</pre>';
 const state={page:"overview",providers:[],queue:null,status:null,report:null,doctor:null,catalogModels:[],mutating:false};
 const modelCache=new Map();
 let modelRequestSeq=0;
+let statusRequest=null;
 const titles={overview:["Control room","Start work and monitor the factory."],queue:["Work queue","Which issues are ready and why others are waiting."],workers:["Workers","Real runs and active lease ownership."],outcomes:["Run history","What work was attempted, delivered or failed."],models:["Models","Browse real, provider-discovered model IDs."],settings:["Settings","Factory limits and priorities."],health:["Diagnostics","Find problems before assigning more workers."]};
 function notice(message,error=false){const box=el("message");box.className="message visible"+(error?" error":"");box.textContent=message;}
 async function request(path,body){const opt={headers:{"X-Rotisserie-Token":TOKEN}};if(body){opt.method="POST";opt.headers["Content-Type"]="application/json";opt.body=JSON.stringify(body)}const res=await fetch(path,opt);let data;try{data=await res.json()}catch{throw Error("The console did not return JSON.")}if(!res.ok)throw Error(data.error||"Request rejected");return data}
@@ -171,7 +172,25 @@ function renderWorkers(items,large=false){
  const visible=large?rows:rows.slice(0,3);
  return visible.map(item=>'<div class="item"><div class="item-head"><div><div class="item-title">'+h(item.title||"Worker activity")+'</div><div class="meta">'+item.refs.map(gh).join(" · ")+'</div><div class="meta">'+h(item.provider||"Provider unknown")+' · '+h(item.model&&item.model!=="auto"?item.model:"Automatic model selection")+'</div></div>'+badge(item.coding_since?"Working":item.run_url?"Assigned":"Claim held",item.coding_since?"good":"")+'</div><div class="meta">Started '+h(fmtDate(item.coding_since||item.running_since))+'</div>'+(large?'<div class="item-actions">'+(item.run_url?link(item.run_url,"View run"):"")+' <button class="button small danger" data-cancel="'+h(item.ref)+'">Stop worker</button></div>':"")+'</div>').join("")+(rows.length>visible.length?'<div class="hint">'+h(rows.length-visible.length)+' more active runs. Open Workers to see all.</div>':"");
 }
-async function loadStatus(){try{const d=await get("status");if(d.exit_code!==0)throw Error(d.error||d.result);state.status=d;const owners=new Set((d.working||[]).map(x=>x.worker||x.ref));setText("k-workers",owners.size);el("overview-workers").innerHTML=renderWorkers((d.working||[]).slice(0,5));el("workers-content").innerHTML=renderWorkers(d.working||[],true)}catch(err){el("overview-workers").innerHTML=empty(err.message);el("workers-content").innerHTML=empty(err.message);setText("k-workers","?")}}
+function loadStatus(){
+ if(statusRequest)return statusRequest;
+ statusRequest=(async()=>{
+  try{
+   const d=await get("status");
+   if(d.exit_code!==0)throw Error(d.error||d.result);
+   state.status=d;
+   const owners=new Set((d.working||[]).map(x=>x.worker||x.ref));
+   setText("k-workers",owners.size);
+   el("overview-workers").innerHTML=renderWorkers(d.working||[]);
+   el("workers-content").innerHTML=renderWorkers(d.working||[],true);
+  }catch(err){
+   el("overview-workers").innerHTML=empty(err.message);
+   el("workers-content").innerHTML=empty(err.message);
+   setText("k-workers","?");
+  }finally{statusRequest=null}
+ })();
+ return statusRequest;
+}
 async function loadReport(){try{const d=await get("report",{since:"12h"});state.report=d;setText("k-merged",(d.merged||[]).length);el("overview-merged").innerHTML=(d.merged||[]).slice(0,3).map(x=>'<div class="item"><div class="item-title">'+link("https://github.com/"+REPO+"/pull/"+x.number,"#"+x.number)+" "+h(x.title)+"</div></div>").join("")||empty("No recent merges.")}catch(err){setText("k-merged","?");el("overview-merged").innerHTML=empty(err.message)}}
 function renderFindings(d){if(!Array.isArray(d.findings))return raw(d);return d.findings.map(f=>'<div class="item"><div class="item-head"><div><div class="item-title">'+h(f.check)+'</div><div class="meta">'+h(f.text||f.hint||"")+'</div></div>'+badge(f.status,f.status==="ok"?"good":f.status==="fail"?"bad":"")+'</div></div>').join("")||empty("No diagnostic findings.")}
 async function loadDoctor(){try{const d=await get("doctor");state.doctor=d;setText("k-health",(d.findings||[]).filter(x=>x.status!=="ok").length);el("overview-health").innerHTML=renderFindings({...d,findings:(d.findings||[]).filter(x=>x.status!=="ok").slice(0,5)});if(!(d.findings||[]).some(x=>x.status!=="ok"))el("overview-health").innerHTML=empty("All checked systems healthy.");el("health-content").innerHTML=renderFindings(d)}catch(err){setText("k-health","?");el("overview-health").innerHTML=empty(err.message);el("health-content").innerHTML=empty(err.message)}}
@@ -327,7 +346,7 @@ el("unstick").onclick=()=>act({operation:"unstick"},el("unstick"));
 el("doctor-fix").onclick=()=>act({operation:"doctor_fix"},el("doctor-fix"));
 el("release-expired").onclick=()=>act({operation:"release_expired"},el("release-expired"));
 el("queue-explain").onclick=()=>{const number=el("queue-explain-number").value;if(/^[1-9][0-9]*$/.test(number))explain(number);else notice("Enter an issue number to explain.",true)};
-setInterval(()=>{if(state.page==="overview"||state.page==="workers")loadStatus()},30000);
+setInterval(()=>{if(!document.hidden&&!state.mutating&&(state.page==="overview"||state.page==="workers"))loadStatus()},30000);
 loadProviders();refresh();preview();
 </script>
 </body></html>
