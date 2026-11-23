@@ -55,10 +55,10 @@ def _classify(message: str) -> GitHubError:
     if "rate limit" in lower or "abuse detection" in lower:
         secondary = "secondary rate limit" in lower or "abuse detection" in lower
         # `gh` may include the server's Retry-After response in the error text.
-        match = re.search(r"retry[- ]after\\s*[:=]?\\s*(\\d+)\\s*(?:seconds?|s)?", lower)
+        match = re.search(r"retry[- ]after\s*[:=]?\s*(\d+)\s*(?:seconds?|s)?", lower)
         retry = int(match.group(1)) if match else None
         if retry is None:
-            match = re.search(r"retry (?:the request )?after (\\d+) seconds?", lower)
+            match = re.search(r"retry (?:the request )?after (\d+) seconds?", lower)
             retry = int(match.group(1)) if match else None
         return GitHubRateLimitError(
             "GitHub is applying a secondary rate limit."
