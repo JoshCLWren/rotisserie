@@ -116,7 +116,9 @@ window.rotisserieHosted = (() => {
 </script>
 """
 
-PUBLIC_REQUEST = 'async function request(path,body){return window.rotisserieHosted.request(path,body)}'
+PUBLIC_REQUEST = (
+    "async function request(path,body){return window.rotisserieHosted.request(path,body)}"
+)
 PUBLIC_ACT = """async function act(body,source){
  if(state.mutating)return;
  state.mutating=true;
@@ -163,17 +165,29 @@ def sanitized_snapshot(source_html: str) -> dict[str, object]:
                 if isinstance(item, str) and re.fullmatch(r"(?:pr|issue):[1-9][0-9]*", item):
                     work_ref = item
                     break
-        workers.append({
-            key: raw.get(key) for key in (
-                "worker", "display_name", "runtime_source", "runtime_model",
-                "health", "activity", "updated", "merged_day", "merged_week",
-            )
-        } | {"run": hb.get("run", ""), "work_ref": work_ref})
+        workers.append(
+            {
+                key: raw.get(key)
+                for key in (
+                    "worker",
+                    "display_name",
+                    "runtime_source",
+                    "runtime_model",
+                    "health",
+                    "activity",
+                    "updated",
+                    "merged_day",
+                    "merged_week",
+                )
+            }
+            | {"run": hb.get("run", ""), "work_ref": work_ref}
+        )
     candidates = data.get("candidate_health")
     candidates = candidates.get("models", []) if isinstance(candidates, dict) else []
     models = [
         {key: item.get(key) for key in ("source", "model", "status")}
-        for item in candidates if isinstance(item, dict)
+        for item in candidates
+        if isinstance(item, dict)
     ]
     throughput = data.get("throughput")
     throughput = throughput if isinstance(throughput, dict) else {}
@@ -183,8 +197,11 @@ def sanitized_snapshot(source_html: str) -> dict[str, object]:
         "open_prs": data.get("open_prs"),
         "open_issues": data.get("open_issues"),
         "throughput": {
-            key: throughput.get(key) for key in (
-                "opened_day", "merged_day", "net_day",
+            key: throughput.get(key)
+            for key in (
+                "opened_day",
+                "merged_day",
+                "net_day",
             )
         },
         "cooling_slots": data.get("cooling_slots"),
@@ -197,10 +214,10 @@ def sanitized_snapshot(source_html: str) -> dict[str, object]:
 def render_page(source_html: str, template: str) -> tuple[str, str]:
     """Return hosted UI and its sanitized JSON; never alter the local UI."""
     public = sanitized_snapshot(source_html)
-    main_script = 'const TOKEN=__SESSION_TOKEN__, REPO=__REPOSITORY__;'
-    request_start = 'async function request(path,body){'
-    act_start = 'async function act(body,source){'
-    report_start = 'async function loadReport(){'
+    main_script = "const TOKEN=__SESSION_TOKEN__, REPO=__REPOSITORY__;"
+    request_start = "async function request(path,body){"
+    act_start = "async function act(body,source){"
+    report_start = "async function loadReport(){"
     if template.count(main_script) != 1:
         raise ValueError("Local UI bootstrap contract changed")
     if template.count(request_start) != 1 or template.count(act_start) != 1:
@@ -208,28 +225,34 @@ def render_page(source_html: str, template: str) -> tuple[str, str]:
     if template.count(report_start) != 1:
         raise ValueError("Local report interface changed")
     output = template.replace(
-        main_script, 'const TOKEN=null, REPO="JoshCLWren/comic-pile";', 1,
+        main_script,
+        'const TOKEN=null, REPO="JoshCLWren/comic-pile";',
+        1,
     )
     request_at = output.index(request_start)
-    get_at = output.index('async function get(', request_at)
+    get_at = output.index("async function get(", request_at)
     output = output[:request_at] + PUBLIC_REQUEST + "\n" + output[get_at:]
     act_at = output.index(act_start)
-    after_act = output.index('function fmtDate(', act_at)
+    after_act = output.index("function fmtDate(", act_at)
     output = output[:act_at] + PUBLIC_ACT + output[after_act:]
     report_at = output.index(report_start)
-    after_report = output.index('function renderFindings(', report_at)
+    after_report = output.index("function renderFindings(", report_at)
     output = output[:report_at] + PUBLIC_REPORT + output[after_report:]
     output = output.replace(
-        'Served locally · All mutations pass through existing factory commands',
-        'Hosted public snapshot · Admin operations run through authenticated GitHub Actions',
+        "Served locally · All mutations pass through existing factory commands",
+        "Hosted public snapshot · Admin operations run through authenticated GitHub Actions",
     )
     output = output.replace(
-        '<script>\nconst TOKEN=', PUBLIC_ADAPTER + '<script>\nconst TOKEN=', 1,
+        "<script>\nconst TOKEN=",
+        PUBLIC_ADAPTER + "<script>\nconst TOKEN=",
+        1,
     )
     # Preserve a route to historical fleet telemetry, which otherwise would
     # disappear when the shared control room becomes the public homepage.
     output = output.replace(
-        '<div class="footer">', '<div class="footer"><a href="?legacy=1">Full fleet telemetry</a> · ', 1,
+        '<div class="footer">',
+        '<div class="footer"><a href="?legacy=1">Full fleet telemetry</a> · ',
+        1,
     )
     return output, json.dumps(public, separators=(",", ":"), ensure_ascii=True)
 
