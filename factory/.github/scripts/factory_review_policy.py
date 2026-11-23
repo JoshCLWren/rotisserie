@@ -1055,3 +1055,89 @@ def owner_attested_head_identity(
         return None
     model = next(iter(models)) if models else HUMAN_AUTHOR_MODEL
     return normalize_model_family(model), interactive_agent_token(owner_login)
+
+
+# Review findings ------------------------------------------------------------
+
+AUTHORITATIVE_DIFF_EVIDENCE = "# comic-pile-factory-authoritative-diff-evidence"
+
+# Lines a review transcript carries that are not findings: the model
+# narrating its next step ("Let me check the PR", "I'll start by reading"),
+# empty tool results, and shell commands it ran (PR #5684 was returned to
+# repair on a verdict made only of these, leaving repair nothing to fix).
+NON_FINDING_LINE = re.compile(
+    r"(?i)^(?:"
+    r"(?:(?:now|first|next|then|ok(?:ay)?|great|good|alright)[,!.]?\s+)*"
+    r"(?:i'll|i will|i'm going to|i am going to|i need to|let me|let's)\b"
+    r"|\((?:no output|empty|no matches|none)\)$"
+    r"|(?:gh|git|cargo|pnpm|npm|npx|cd|ls|cat|rg|grep|sed|awk|python3?|uv|make|bash|sh"
+    r"|curl|jq|find|head|tail|wc|echo)\s"
+    r")"
+)
+
+
+def has_actionable_review_findings(excerpt: str) -> bool:
+    """Require a prose finding, not diff/source material or terminal boilerplate."""
+    semantic = excerpt.partition(AUTHORITATIVE_DIFF_EVIDENCE)[0]
+    semantic = re.split(r"(?m)^diff --git ", semantic, maxsplit=1)[0]
+    boilerplate = {
+        "semantic blockers remain",
+        "the pr is returning to repair",
+        "semantic blockers remain. the pr is returning to repair",
+        "repair required",
+        "factory_gate_blocked",
+        "factory_gate_not_ready",
+        "factory_gate_ready",
+        "factory_gate_reject",
+    }
+    in_code = False
+    for raw in semantic.splitlines():
+        line = raw.strip()
+        if line.startswith("```"):
+            in_code = not in_code
+            continue
+        if in_code or not line:
+            continue
+        # Indented tool output (git log bodies, commit trailers, file
+        # listings) is never the model's diagnosis; nested list items are.
+        if raw[:1] == "\t" or raw.startswith("    "):
+            if not re.match(r"^(?:[-*]|\d+[.)])\s", line):
+                continue
+        # One whitespace-free token (a path, a SHA, a URL) is not a finding,
+        # nor tabular CLI output or JSON (raw or as an escaped string).
+        if not re.search(r"\s", line) or "\t" in line or "\\n" in line:
+            continue
+        if line.startswith(("[", '"')):
+            continue
+        if NON_FINDING_LINE.match(line):
+            continue
+        if line.startswith(("diff --git ", "index ", "--- ", "+++ ", "@@ ", "#", "//", "/*", "{", "}")):
+            continue
+        # OpenCode streams tool activity together with the model's final
+        # explanation. A command transcript is evidence of inspection, not an
+        # actionable diagnosis, even when its text contains English words.
+        if line.startswith(("> ", "→ ", "$ ", "↳ ")):
+            continue
+        if re.match(r"^[0-9a-f]{7,40}\s", line):
+            continue
+        if re.match(r"^(?:commit |Author:|Date:|On branch |nothing to commit|working tree clean)", line, re.I):
+            continue
+        if re.match(r"^\S+\s+\|\s+\d+\s", line) or re.match(
+            r"^\d+ files? changed(?:,|$)", line
+        ):
+            continue
+        # Unified diff additions/deletions and standalone source expressions
+        # are not a model diagnosis, even when they contain English words.
+        if re.match(r"^[+-](?:[^ ]| {2,})", line):
+            continue
+        line = re.sub(r"^[-*]\s+", "", line).strip().strip("*` .")
+        if line.casefold() in boilerplate or not line:
+            continue
+        if re.match(
+            r"^(?:import|from|const|let|var|def|class|function|export|return|raise|assert|await|async|if|for|while)\b",
+            line,
+        ):
+            continue
+        if len(re.findall(r"[A-Za-z]{2,}", line)) >= 2:
+            return True
+    return False

@@ -27,6 +27,7 @@ from rotisserie.factory_console import runtime
 from rotisserie.factory_console.github import (
     GitHub,
     GitHubError,
+    Obj,
     integer,
     items,
     obj,
@@ -41,6 +42,8 @@ from rotisserie.factory_console.service import (
     providers,
     queue,
     reliability,
+    review,
+    stalls,
     unstick,
 )
 from rotisserie.factory_console.tracker import DISPATCH_WORKFLOW, Clock, Tracker, failure_reasons
@@ -274,6 +277,22 @@ def shared_failures(github: GitHub, now: datetime) -> Finding:
     return Finding("shared failures", "ok", "no backlog PR is red because of main")
 
 
+def review_deadlocks(github: GitHub, pulls: list[Obj] | None = None) -> Finding:
+    """PRs held by a deadlock the controller does not clear by itself."""
+    found = stalls.scan(github, pulls if pulls is not None else review.open_pulls(github))
+    if not found:
+        return Finding(
+            "review deadlocks", "ok", "no PR is stuck on an answered thread or an empty verdict"
+        )
+    names = ", ".join(sorted({f"#{stall.pr}" for stall in found}))
+    return Finding(
+        "review deadlocks",
+        "warn",
+        f"{len(found)} deadlock(s) on {names}: " + "; ".join(stall.text for stall in found[:3]),
+        hint="rotisserie factory review pr:N shows each one and what clears it",
+    )
+
+
 def run_checks(github: GitHub, *, now: datetime, clock: Clock | None = None) -> list[Finding]:
     """Every health check; a check that cannot read GitHub reports that instead of failing."""
     tracker = Tracker(github, clock)
@@ -293,6 +312,7 @@ def run_checks(github: GitHub, *, now: datetime, clock: Clock | None = None) -> 
         ("rotisserie intake", lambda: _intake(github, now)),
         ("worker rejections", rejections),
         ("shared failures", lambda: shared_failures(github, now)),
+        ("review deadlocks", lambda: review_deadlocks(github)),
     ]
     for name, check in checks:
         try:

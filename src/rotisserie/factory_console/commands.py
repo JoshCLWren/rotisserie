@@ -57,6 +57,7 @@ from rotisserie.factory_console.service import (
     queue,
     reliability,
     review,
+    stalls,
     unstick,
 )
 from rotisserie.factory_console.service import sync as branch_sync
@@ -2624,6 +2625,11 @@ def cmd_review(context: Context, arguments: argparse.Namespace) -> Outcome:
     if not targets:
         raise UsageError("Name pull requests (pr:N) or pass --blocked.")
     reports = [review.inspect(github, number, pull=pull) for number, pull in targets]
+    held: dict[int, list[stalls.Stall]] = {
+        number: stalls.inspect(github, number, pull=pull)
+        for number, pull in targets
+        if not arguments.blocked or pull is None
+    }
     for report in reports:
         mark = console.ok if report.eligible else console.fail
         mark(f"PR #{report.pr} ({report.stage or 'no stage'}): {report.status}")
@@ -2650,7 +2656,15 @@ def cmd_review(context: Context, arguments: argparse.Namespace) -> Outcome:
             console.line("  Blocked without a controller note; left alone.")
         for action in report.actions:
             console.line(f"  Next: {action}")
-    data: dict[str, object] = {"reports": [report.to_dict() for report in reports]}
+        for stall in held.get(report.pr, []):
+            console.warn(f"  Deadlock: {stall.text}")
+            console.line(f"    {stall.hint}")
+            if stall.url:
+                console.line(f"    {stall.url}")
+    data: dict[str, object] = {
+        "reports": [report.to_dict() for report in reports],
+        "deadlocks": [stall.to_dict() for found in held.values() for stall in found],
+    }
     if not arguments.requeue:
         return Outcome(Result.COMPLETED, EXIT_OK, data)
     candidates = [report for report in reports if report.blocked_by_review_gate]

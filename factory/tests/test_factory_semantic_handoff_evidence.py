@@ -155,3 +155,43 @@ def test_worker_falls_back_to_the_file_listing_when_the_diff_is_too_large() -> N
     assert block.index('gh pr diff "$NUMBER"') < block.index("/pulls/${NUMBER}/files")
     assert block.count('gh pr diff "$NUMBER"') == 1
     assert 'printf \'%s\\n\' "$diff_evidence"' in block
+
+
+def test_narration_and_tool_output_are_not_repair_findings() -> None:
+    """PR #5684 went to repair on a verdict holding only these lines."""
+    controller = load_controller()
+    transcript = (
+        "I'll start by reading the AGENTS.md file and understanding the PR context.\n"
+        "Now let me examine the PR #5684 to understand what changes are in this PR.\n"
+        "> build · poolside/laguna-xs-2.1\n"
+        "$ git log -3\n"
+        "(no output)\n"
+        "Let me check the PR #5684 on GitHub to understand what changes are in it.\n"
+        "commit 3fe2c38166de7e2b20a00d8642cddd99d06cd646\n"
+        "Author: opencode-free-model-factory-1236998703301[bot]\n"
+        "    factory: advance PR #5684 with nvidia · z-ai/glm-5.3-flash\n"
+        "    checkpoint(factory): worker 1236998703301 run 45066726022 pr #5684\n"
+        "    Model: z-ai/glm-5.3-flash\n"
+        "    Source-branch: factory/work-checkpoints/issue-5592/iceman/45050543683\n"
+        "native/roll-service/src/comicvine_v2.rs\n"
+        "native/roll-service/tests/comicvine_v2_http.rs\n"
+        "gh pr diff 5684\n"
+        "Rust-default API ingress (fragment-derived)\tpass\t17s\thttps://github.com/o/r/actions/runs/1\n"
+        '[{"bucket":"pass","completedAt":"2026-11-22T06:32:39Z","description":""}]\n'
+        ' lease was released for independent review.\\n\\nWorker: opencode-free\n'
+    )
+    assert not controller.has_actionable_review_findings(transcript)
+
+
+@pytest.mark.parametrize(
+    "finding",
+    [
+        "The new retry loop never resets its counter, so the second failure aborts the job.",
+        "  - The handler returns 200 before the write commits, losing the update on error.",
+        "    1. The migration drops the index the new query depends on.",
+    ],
+)
+def test_real_findings_survive_the_narration_filter(finding: str) -> None:
+    controller = load_controller()
+    transcript = "> build · model/free\n$ git diff --stat\n" + finding + "\nFACTORY_GATE_NOT_READY\n"
+    assert controller.has_actionable_review_findings(transcript)
