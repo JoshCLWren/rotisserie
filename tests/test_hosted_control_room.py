@@ -7,6 +7,7 @@ import re
 import shutil
 import subprocess
 from pathlib import Path
+from types import ModuleType
 
 import pytest
 
@@ -16,7 +17,7 @@ ADAPTER = ROOT / "factory" / "scripts" / "hosted_control_room.js"
 WORKFLOW = ROOT / "factory" / ".github" / "workflows" / "rotisserie-operator.yml"
 
 
-def builder():
+def builder() -> ModuleType:
     spec = importlib.util.spec_from_file_location("rotisserie_hosted_builder", BUILDER)
     assert spec is not None and spec.loader is not None
     module = importlib.util.module_from_spec(spec)
@@ -24,7 +25,7 @@ def builder():
     return module
 
 
-def test_hosted_page_reuses_canonical_local_ui_without_local_session():
+def test_hosted_page_reuses_canonical_local_ui_without_local_session() -> None:
     page = builder().render("JoshCLWren/comic-pile")
     assert "Rotisserie · Control room" in page
     assert 'data-view="queue"' in page
@@ -42,12 +43,12 @@ def test_hosted_page_reuses_canonical_local_ui_without_local_session():
 
 
 @pytest.mark.parametrize("name", ["../bad", "owner", "owner/repo/extra", "owner/<repo>"])
-def test_hosted_page_rejects_invalid_repo(name):
+def test_hosted_page_rejects_invalid_repo(name: str) -> None:
     with pytest.raises(ValueError):
         builder().render(name)
 
 
-def test_hosted_scripts_parse_without_dependencies(tmp_path):
+def test_hosted_scripts_parse_without_dependencies(tmp_path: Path) -> None:
     node = shutil.which("node")
     if node is None:
         pytest.skip("Node not installed")
@@ -60,7 +61,7 @@ def test_hosted_scripts_parse_without_dependencies(tmp_path):
         subprocess.run([node, "--check", str(path)], check=True, capture_output=True, text=True)
 
 
-def test_workflow_requires_verified_actor_before_executing_commands():
+def test_workflow_requires_verified_actor_before_executing_commands() -> None:
     content = WORKFLOW.read_text(encoding="utf-8")
     assert "github.actor_id" in content
     assert "ROTISSERIE_ADMIN_GITHUB_IDS" in content
@@ -72,7 +73,7 @@ def test_workflow_requires_verified_actor_before_executing_commands():
     assert "persist-credentials: false" in content
 
 
-def test_browser_uses_no_persisted_token_and_only_dispatches_to_actions():
+def test_browser_uses_no_persisted_token_and_only_dispatches_to_actions() -> None:
     content = ADAPTER.read_text(encoding="utf-8")
     assert "localStorage" not in content
     assert "sessionStorage" not in content
