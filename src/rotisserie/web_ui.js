@@ -18,27 +18,28 @@ async function request(path,body){const opt={headers:{"X-Rotisserie-Token":TOKEN
 const TTL={status:90,leases:90,incident:120,why:120,heal:600,doctor:600,report:900,recap:900,outcomes:900,stats:900,settings:1800,providers:1800,models:3600};
 const PANELS={status:()=>loadStatus(),leases:()=>loadLeases(),incident:()=>loadIncidents(),why:()=>loadQueue(),heal:()=>loadHeal(),doctor:()=>loadDoctor(),report:()=>loadReport(),recap:()=>loadRecap(),outcomes:()=>loadOutcomes(),stats:()=>loadStats(),settings:()=>loadSettings(),providers:()=>loadProviders()};
 const KEEP="rotisserie:v1:",KEEP_ENTRY=400000,KEEP_TOTAL=2000000,pending=new Set();
-let forceFresh=false;
+let forceFresh=false,epoch=0;
 const seen=new Set(),lazy={"overview-recap":()=>loadRecap(),"overview-heal":()=>loadHeal()};
-const viewer=()=>LOCAL?"local":(window.hostedViewer&&window.hostedViewer())||"public";
+const viewer=()=>LOCAL?"local":window.hostedViewer?window.hostedViewer():"public";
 const keyOf=(name,params)=>KEEP+REPO+":"+viewer()+":"+name+"?"+new URLSearchParams(Object.entries(params).sort());
 const keyName=k=>k.slice(k.lastIndexOf(":")+1).split("?")[0];
 function ours(){try{return Object.keys(localStorage).filter(k=>k.startsWith(KEEP+REPO+":"))}catch{return[]}}
 function kept(key){try{const v=JSON.parse(localStorage.getItem(key)||"null");return v&&typeof v.got==="number"&&typeof v.at==="number"&&v.data&&typeof v.data==="object"?v:null}catch{return null}}
 function keep(key,data){try{const blob=JSON.stringify({got:Date.now(),at:dataTime(data),data});if(blob.length>KEEP_ENTRY)return;const rows=ours().filter(k=>k!==key).map(k=>({k,got:(kept(k)||{got:0}).got,n:(localStorage.getItem(k)||"").length})).sort((a,b)=>a.got-b.got);let total=blob.length+rows.reduce((t,r)=>t+r.n,0);while(rows.length&&total>KEEP_TOTAL){const r=rows.shift();localStorage.removeItem(r.k);total-=r.n}localStorage.setItem(key,blob)}catch{}}
-function drop(names,who){for(const k of ours())if((!names||names.includes(keyName(k)))&&(!who||who(k.split(":")[3])))try{localStorage.removeItem(k)}catch{}}
+function drop(names,who){epoch++;for(const k of ours())if((!names||names.includes(keyName(k)))&&(!who||who(k.split(":")[3])))try{localStorage.removeItem(k)}catch{}}
 window.rotisserieForget=()=>drop(null,v=>v!=="public"&&v!=="local");
 function dataTime(d){const t=Date.parse(d.read_at||(d._source&&d._source.observed_at)||d.generated_at||d.published_at||"");return Number.isNaN(t)?Date.now():Math.min(t,Date.now())}
 const asOf=d=>d&&d._at?'<div class="hint asof" data-at="'+d._at+'">'+h(ago(d._at))+'</div>':"";
 function ago(at){const s=Math.max(0,Math.round((Date.now()-at)/1000)),n=s<60?[s,"second"]:s<7200?[Math.round(s/60),"minute"]:[Math.round(s/3600),"hour"];return "As of "+n[0]+" "+n[1]+(n[0]===1?"":"s")+" ago"}
+const loading=(id,text,name,params={})=>{if(forceFresh||!viewer()||!kept(keyOf(name,params)))el(id).innerHTML=empty(text)};
 const storable=d=>d&&!d.job&&!d.error&&typeof d.exit_code==="number"&&!/^(github_unavailable|invalid|timeout|unavailable|interrupted)$/.test(d.result||"");
 async function fetchRead(name,params,fresh){const qs=new URLSearchParams(fresh?{...params,fresh:"1"}:params);return request("/api/"+name+(qs.size?"?"+qs:""))}
 async function get(name,params={}){
- const fresh=forceFresh,stored=TTL[name]&&!("target" in params)&&!("background" in params),key=stored&&keyOf(name,params),hit=key&&!fresh&&kept(key);
+ const fresh=forceFresh,since=epoch,stored=TTL[name]&&viewer()&&!("target" in params)&&!("background" in params),key=stored&&keyOf(name,params),hit=key&&!fresh&&kept(key);
  if(hit&&Date.now()-hit.got<TTL[name]*1000)return {...hit.data,_at:hit.at};
- if(hit&&PANELS[name]&&!pending.has(key)){pending.add(key);fetchRead(name,params,false).then(d=>{if(storable(d)){keep(key,d);PANELS[name]()}}).catch(()=>{}).finally(()=>pending.delete(key));return {...hit.data,_at:hit.at}}
+ if(hit&&PANELS[name]&&!pending.has(key)){pending.add(key);fetchRead(name,params,false).then(d=>{if(storable(d)&&since===epoch){keep(key,d);PANELS[name]()}}).catch(()=>{}).finally(()=>pending.delete(key));return {...hit.data,_at:hit.at}}
  const d=await fetchRead(name,params,fresh);
- if(key&&storable(d))keep(key,d);
+ if(key&&storable(d)&&since===epoch)keep(key,d);
  return {...d,_at:dataTime(d)};
 }
 const SWITCHED=["providers","models","why","doctor"],AFFECTS={settings:["settings","why"],prioritize:["why","settings"],provider_switch:SWITCHED,model_switch:SWITCHED,backoffs_reset:SWITCHED,incident_start:["incident","why","status"],incident_stop:["incident","why","status"],estimate_neon:[],store_selftest:[],store_export:[]};
@@ -125,11 +126,11 @@ function renderRecap(d){const m=d.merged||{},w=d.went_wrong||{},p=d.providers||{
  +recapPart("Stuck",(d.stuck||[]).map(x=>recapRow(x.text,"",x.url)))
  +(d.database?recapPart("Database",[recapRow(d.database.text,d.database.status)]):"")
  +((d.unread||[]).length?'<div class="hint">Could not read: '+h(d.unread.join(", "))+'</div>':"")}
-async function loadHeal(){try{const d=await get("heal",{since:"24h"});const rows=(d.healed||[]).map(x=>recapRow(x.text,fmtDate(x.at),x.url));el("overview-heal").innerHTML=asOf(d)+(rows.length?rows.join(""):empty("The factory cleared no stall by itself in the last 24 hours."))}catch(err){el("overview-heal").innerHTML=empty(err.message)}}
-async function loadRecap(){try{const d=await get("recap",{since:"12h"});state.recap=d;el("overview-recap").innerHTML=renderRecap(d)}catch(err){el("overview-recap").innerHTML=empty(err.message)}}
+async function loadHeal(){loading("overview-heal","Reading what the factory fixed by itself…","heal",{since:"24h"});try{const d=await get("heal",{since:"24h"});const rows=(d.healed||[]).map(x=>recapRow(x.text,fmtDate(x.at),x.url));el("overview-heal").innerHTML=asOf(d)+(rows.length?rows.join(""):empty("The factory cleared no stall by itself in the last 24 hours."))}catch(err){el("overview-heal").innerHTML=empty(err.message)}}
+async function loadRecap(){loading("overview-recap","Reading what the factory did…","recap",{since:"12h"});try{const d=await get("recap",{since:"12h"});state.recap=d;el("overview-recap").innerHTML=renderRecap(d)}catch(err){el("overview-recap").innerHTML=empty(err.message)}}
 async function loadDoctor(){try{const d=await get("doctor");state.doctor=d;setText("k-health",(d.findings||[]).filter(x=>x.status!=="ok").length);el("overview-health").innerHTML=renderFindings({...d,findings:(d.findings||[]).filter(x=>x.status!=="ok").slice(0,5)});if(!(d.findings||[]).some(x=>x.status!=="ok"))el("overview-health").innerHTML=empty("All checked systems healthy.");el("overview-health").insertAdjacentHTML("afterbegin",asOf(d));el("health-content").innerHTML=asOf(d)+renderFindings(d)}catch(err){setText("k-health","?");el("overview-health").innerHTML=empty(err.message);el("health-content").innerHTML=empty(err.message)}}
 async function loadIncidents(){try{const d=await get("incident");const rows=d.incidents||[];el("incidents-content").innerHTML=asOf(d)+(rows.length?'<div class="table-wrap"><table class="table"><thead><tr><th>Issue</th><th>Attempts</th><th>State</th><th>Reason</th><th>Action</th></tr></thead><tbody>'+rows.map(i=>'<tr><td>#'+h(i.issue)+'</td><td>'+h(i.attempts)+'</td><td>'+badge(i.active?"active":"ended",i.active?"bad":"good")+'</td><td>'+h(i.reason||"")+'</td><td><button class="button small" data-incident-stop="'+h(i.issue)+'">Stop</button></td></tr>').join("")+'</tbody></table></div>':empty("No incident. Normal intake."))}catch(err){el("incidents-content").innerHTML=empty(err.message)}}
-async function loadQueue(){try{const d=await get("why");state.queue=d;setText("k-ready",(d.ready||[]).length);renderQueue()}catch(err){setText("k-ready","?");el("queue-content").innerHTML=empty(err.message)}}
+async function loadQueue(){loading("queue-content","Evaluating the current work graph…","why");try{const d=await get("why");state.queue=d;setText("k-ready",(d.ready||[]).length);renderQueue()}catch(err){setText("k-ready","?");el("queue-content").innerHTML=empty(err.message)}}
 function renderQueue(){
  const d=state.queue;if(!d)return;
  let issues=d.issues||[],filter=el("queue-filter").value.toLowerCase(),status=el("queue-state").value;
@@ -214,7 +215,7 @@ async function loadCatalog(){
   state.catalogModels=models;renderCatalog();
  }catch(err){if(el("catalog-provider").value===provider){el("catalog-summary").textContent="";el("model-catalog").innerHTML=empty("Could not discover models: "+err.message)}}
 }
-async function loadSettings(){try{const d=await get("settings");el("settings-content").innerHTML=sourceNote(d)+(d.settings||[]).map(s=>'<div class="item"><div class="item-head"><div><div class="item-title">'+h(s.title)+'</div><div class="meta">'+h(s.description)+'<br>'+h(s.name)+' · '+h(s.origin)+'</div></div><div class="item-actions"><input aria-label="'+h(s.title)+'" style="width:85px;padding:9px;background:#111a25;color:#fff;border:1px solid #3b4a5a;border-radius:8px" data-setting-name="'+h(s.name)+'" value="'+h(s.value)+'"><button class="button small" data-save-setting="'+h(s.name)+'">Save</button></div></div></div>').join("")||empty("No settings found.")}catch(err){el("settings-content").innerHTML=empty(err.message)}}
+async function loadSettings(){loading("settings-content","Loading repository settings…","settings");try{const d=await get("settings");el("settings-content").innerHTML=sourceNote(d)+(d.settings||[]).map(s=>'<div class="item"><div class="item-head"><div><div class="item-title">'+h(s.title)+'</div><div class="meta">'+h(s.description)+'<br>'+h(s.name)+' · '+h(s.origin)+'</div></div><div class="item-actions"><input aria-label="'+h(s.title)+'" style="width:85px;padding:9px;background:#111a25;color:#fff;border:1px solid #3b4a5a;border-radius:8px" data-setting-name="'+h(s.name)+'" value="'+h(s.value)+'"><button class="button small" data-save-setting="'+h(s.name)+'">Save</button></div></div></div>').join("")||empty("No settings found.")}catch(err){el("settings-content").innerHTML=empty(err.message)}}
 async function loadOutcomes(){try{const d=await get("outcomes");el("outcomes-content").innerHTML=asOf(d)+((d.requests||[]).slice(0,40).map(x=>'<div class="item"><div class="item-head"><div><div class="item-title">'+h(x.target||"Next eligible")+' · '+h(x.action||"advance")+'</div><div class="meta">'+h(x.model||"Auto model")+' · '+h(x.decision||"")+'</div></div>'+badge(x.goal||x.worker_result||"Recorded",x.goal==="met"?"good":"")+'</div></div>').join("")||empty("No targeted requests in the selected period."))}catch(err){el("outcomes-content").innerHTML=empty(err.message)}}
 async function loadStats(){try{const d=await get("stats",{window:el("stats-window").value});el("stats-content").innerHTML=asOf(d)+((d.models||[]).slice(0,30).map(x=>'<div class="item"><div class="item-head"><div class="item-title">'+h(x.model)+'</div>'+badge(x.health||"recorded",x.health==="paused"?"bad":"")+'</div><div class="meta">'+h(x.delivered)+' PRs delivered / '+h(x.runs)+' runs · '+h(x.failed)+' failed'+(x.top_failure?" · "+h(x.top_failure):"")+'</div></div>').join("")||empty("No model reliability data published."))}catch(err){el("stats-content").innerHTML=empty(err.message)}}
 async function inspectPr(which){const number=el("pr-number").value;if(!/^[1-9][0-9]*$/.test(number)){notice("Enter a valid PR number.",true);return}el("pr-inspector").innerHTML=empty("Inspecting PR #"+number+"…");try{const d=await get(which,{target:"pr:"+number});el("pr-inspector").innerHTML=sourceNote(d)+(which==="checks"?renderChecks(ok(d)):raw(d))}catch(err){el("pr-inspector").innerHTML=empty(err.message)}}

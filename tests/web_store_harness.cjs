@@ -83,7 +83,21 @@ const settle = () => new Promise(resolve => setImmediate(resolve));
   const blocked = await p.api.get("status");
   out.blockedStorage = {exit_code: blocked.exit_code, requests: p.requests.length};
 
+  p = page();
+  let release;
+  p.context.request = path => { p.requests.push(path); return new Promise(r => { release = () => r({exit_code: 0}); }); };
+  const slow = p.api.get("recap");
+  p.api.drop(["status"]);
+  release();
+  await slow;
+  out.readCrossingAWriteNotStored = p.api.ours().length;
+
   p = page({local: false, viewer: "alice"});
+  p.context.window.hostedViewer = () => "";
+  await p.api.get("status");
+  await p.api.get("status");
+  out.unknownViewer = {stored: p.api.ours().length, requests: p.requests.length};
+  p.context.window.hostedViewer = () => "alice";
   await p.api.get("status");
   out.hostedKey = p.api.ours()[0];
   p.context.window.hostedViewer = () => "public";

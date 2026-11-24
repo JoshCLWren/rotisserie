@@ -13,6 +13,7 @@ import argparse
 import json
 import os
 import sys
+import tempfile
 from collections.abc import Callable
 from datetime import UTC, datetime
 from pathlib import Path
@@ -95,6 +96,9 @@ def main(argv: list[str] | None = None, *, runner: Runner | None = None) -> int:
     arguments = parser.parse_args(argv)
     repository = os.environ.get("GITHUB_REPOSITORY", "")
     read = arguments.mode == "read"
+    if read and runner is None:
+        # One batch shares answers only with itself, never with a later batch on this runner.
+        os.environ["ROTISSERIE_CACHE_DIR"] = tempfile.mkdtemp(prefix="rotisserie-reads-")
     timeout = READ_TIMEOUT if read else WRITE_TIMEOUT
     envelope = execute(
         arguments.mode,

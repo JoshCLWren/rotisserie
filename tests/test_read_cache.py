@@ -264,6 +264,8 @@ def test_the_browser_store_serves_refreshes_drops_and_bounds_panel_reads() -> No
     assert out["failuresAndJobsNotStored"] == ["doctor?", "doctor?failing=1"]
     assert out["bounded"]["total"] <= 2_000_000 and out["bounded"]["newestKept"]
     assert out["blockedStorage"] == {"exit_code": 0, "requests": 1}
+    assert out["readCrossingAWriteNotStored"] == 0
+    assert out["unknownViewer"] == {"stored": 0, "requests": 2}
     assert out["hostedKey"] == "rotisserie:v1:acme/widgets:alice:status?"
-    assert out["hostedPublicIsSeparate"] == 2
+    assert out["hostedPublicIsSeparate"] == 4
     assert out["afterSignOut"] == ["rotisserie:v1:acme/widgets:public:status?"]

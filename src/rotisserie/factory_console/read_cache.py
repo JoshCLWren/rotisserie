@@ -29,6 +29,7 @@ except ImportError:  # pragma: no cover - Windows has no flock
     fcntl = None  # type: ignore[assignment]
 
 FINAL_TTL = 7 * 24 * 3600
+MUTABLE_KEEP = 3600
 MAX_ENTRY_BYTES = 4 * 1024 * 1024
 MAX_TOTAL_BYTES = 128 * 1024 * 1024
 LOCK_WAIT = 30.0
@@ -141,7 +142,8 @@ class ReadCache:
 
     def _load(self, key: str, *, final: bool, generation: str) -> str | None:
         try:
-            raw = json.loads(gzip.decompress(self._path(key, ".gz").read_bytes()))
+            path = self._path(key, ".final.gz" if final else ".gz")
+            raw = json.loads(gzip.decompress(path.read_bytes()))
         except OSError, ValueError, EOFError:
             return None
         if not isinstance(raw, dict) or raw.get("key") != key:
@@ -163,7 +165,7 @@ class ReadCache:
         blob = gzip.compress(json.dumps(record).encode("utf-8"), compresslevel=5)
         if len(blob) > MAX_ENTRY_BYTES:
             return
-        self._atomic(self._path(key, ".gz"), blob)
+        self._atomic(self._path(key, ".final.gz" if final else ".gz"), blob)
         self._prune()
 
     def _atomic(self, path: Path, blob: bytes) -> None:
@@ -177,14 +179,15 @@ class ReadCache:
                 os.unlink(temporary)
 
     def _prune(self) -> None:
-        entries: list[tuple[float, int, Path]] = []
         now = self.clock()
+        entries: list[tuple[float, int, Path]] = []
         try:
             for entry in os.scandir(self.directory):
                 if not entry.name.endswith((".gz", ".lock")):
                     continue
                 stat = entry.stat()
-                if now - stat.st_mtime > FINAL_TTL:
+                limit = FINAL_TTL if entry.name.endswith(".final.gz") else MUTABLE_KEEP
+                if now - stat.st_mtime > limit:
                     os.unlink(entry.path)
                 elif entry.name.endswith(".gz"):
                     entries.append((stat.st_mtime, stat.st_size, Path(entry.path)))

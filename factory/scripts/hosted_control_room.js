@@ -45,7 +45,8 @@ onSignedOut(() => {
   clearLive();
   if (window.rotisserieForget) window.rotisserieForget();
 });
-// The page keys stored live reads by this viewer, so one person never sees another's.
-window.hostedViewer = () => (signedIn() && identity) || "public";
+// The page keys stored reads by this viewer. While a session is still being checked the
+// viewer is unknown (""), and the page stores nothing, so live results never land as public.
+window.hostedViewer = () => (signedIn() ? identity || "" : "public");
 document.getElementById("github-connect").addEventListener("click", connect);
 bootstrapSession();
