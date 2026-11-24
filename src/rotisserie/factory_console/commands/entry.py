@@ -20,6 +20,7 @@ from rotisserie.factory_console.commands.claims import (
     cmd_runs,
 )
 from rotisserie.factory_console.commands.estimate import cmd_estimate
+from rotisserie.factory_console.commands.failures import cmd_failures
 from rotisserie.factory_console.commands.fleet import cmd_models, cmd_providers
 from rotisserie.factory_console.commands.health import (
     _show_rate_limits,
@@ -140,6 +141,7 @@ def _help_text() -> str:
             "  rotisserie factory run [PROVIDER [MODEL]] [--force] [--target issue:N]",
             "  rotisserie factory status        who is working on what",
             "  rotisserie factory report        what merged, failed and is stuck",
+            "  rotisserie factory failures      failed worker runs by job and step",
             "  rotisserie factory stats         reliable providers and models",
             "  rotisserie factory settings      limits, worker counts, priorities",
             "  rotisserie factory why [issue:N] why work is or is not being picked up",
@@ -199,6 +201,7 @@ HANDLERS = {
     "who": cmd_status,
     "cancel": cmd_cancel,
     "report": cmd_report,
+    "failures": cmd_failures,
     "stats": cmd_stats,
     "settings": cmd_settings,
     "prioritize": cmd_prioritize,

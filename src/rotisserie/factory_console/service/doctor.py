@@ -48,6 +48,7 @@ from rotisserie.factory_console.service import (
     stalls,
     unstick,
 )
+from rotisserie.factory_console.service.failures import WORKER_JOB, first_failed_step
 from rotisserie.factory_console.tracker import (
     DISPATCH_WORKFLOW,
     WORKER_WORKFLOW,
@@ -165,21 +166,10 @@ def _scheduler(github: GitHub, now: datetime) -> Finding:
 # or an author of the PR) and released its lease without working.
 MODEL_PICK_STEP = "Select execution candidate at dispatch time"
 SESSION_STEP = "Run continuous fixed-model factory session"
-WORKER_JOB = "run / factory"
 MODEL_PICK_WINDOW = timedelta(hours=1)
 # Workers may run up to two hours, so look for starts well before the window.
 MODEL_PICK_LOOKBACK = timedelta(hours=3)
 MODEL_PICK_SAMPLE = 15
-
-
-def _first_failed_step(jobs: list[Obj]) -> str:
-    """The first failing step of the worker job (else of any job), or ""."""
-    ordered = sorted(jobs, key=lambda job: job_name(job) != WORKER_JOB)
-    for job in ordered:
-        for step in items(job, "steps"):
-            if string(step, "conclusion") == "failure":
-                return string(step, "name")
-    return ""
 
 
 def model_availability(github: GitHub, now: datetime, tracker: Tracker) -> Finding:
@@ -228,7 +218,7 @@ def model_availability(github: GitHub, now: datetime, tracker: Tracker) -> Findi
             # recorded outcome, e.g. no change delivered).
             ran += 1
             continue
-        step = _first_failed_step(jobs)
+        step = first_failed_step(jobs)[1]
         if step == MODEL_PICK_STEP:
             no_model += 1
         elif step == SESSION_STEP:

@@ -1,6 +1,8 @@
 # GitHub ran the */15 schedule only 3 times in ~14 hours on one adopter, so the
 # reliability snapshot went stale for hours. The scheduler finishes every few
 # minutes: after it, publish only when the snapshot is actually stale.
+# Dispatcher runs started by GITHUB_TOKEN never fire workflow_run, so the
+# dispatcher's last step also sends a workflow_dispatch here when stale.
 # Separate groups: GitHub keeps one pending run per group, so frequent
 # scheduler-triggered refreshes would otherwise cancel a queued push run and
 # its Pages deployment.
