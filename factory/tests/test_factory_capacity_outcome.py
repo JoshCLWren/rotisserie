@@ -160,12 +160,14 @@ def _reviewer_guard_block() -> str:
         (
             1,
             "No reviewer model: 1 model(s) outside exclusions are eligible and all 1 authored "
-            "this PR (2 author model(s) recorded); the review waits for a non-author model",
+            "the current head (2 head author model(s) recorded); the review waits for a "
+            "non-author model",
         ),
         (
             17,
             "No reviewer model: at least 17 model(s) outside exclusions are eligible and all 17 "
-            "authored this PR (2 author model(s) recorded); the review waits for a non-author model",
+            "authored the current head (2 head author model(s) recorded); the review waits for "
+            "a non-author model",
         ),
     ],
 )

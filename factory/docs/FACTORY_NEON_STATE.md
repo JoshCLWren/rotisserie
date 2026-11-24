@@ -160,7 +160,7 @@ method (`key_endpoint`, `inference` or `none`).
   key-free catalog, and unreadable catalogs, stay eligible; the run job checks
   the authenticated catalog before a session.
 - A review PR whose lease ended before a session (for example because every
-  eligible model authored it) cools in `cooling_prs` from its second such abort
+  eligible model authored its current head) cools in `cooling_prs` from its second such abort
   in 24 hours. It waits `FACTORY_REVIEW_FAILURE_COOLDOWN_SECONDS` times
   (aborts - 1) after the latest abort, up to 6 hours.
 

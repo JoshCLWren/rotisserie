@@ -5,26 +5,42 @@ from __future__ import annotations
 import types
 
 import factory_external_review as fe
+import factory_review_exclusion as exclusion
 import factory_review_policy as policy
 import pytest
 
 HEAD = "b" * 40
+OLDER = "a" * 40
 ACTIONS = {"GITHUB_ACTIONS": "true"}
 
 
 class Ctrl(types.SimpleNamespace):
-    def __init__(self, trailers: list[str], author_markers: list[str] | None = None) -> None:
+    def __init__(
+        self,
+        trailers: list[str],
+        author_markers: list[str] | None = None,
+        earlier: list[str] | None = None,
+    ) -> None:
         super().__init__()
         self._review_policy = policy
+        self._review_exclusion = exclusion
         self.REPO = "acme/widgets"
         self.trailers = trailers
+        self.earlier = earlier or []
         self.author_markers = author_markers or []
         self.posted: list[str] = []
         self.labels: list[tuple[int, str, str]] = []
         self.repairs: list[dict[str, object]] = []
 
     def gh_json(self, args):
-        return [[{"commit": {"message": f"work\n\nModel: {m}"}} for m in self.trailers]]
+        models = [*self.earlier, *self.trailers]
+        return [[{"commit": {"message": f"work\n\nModel: {m}"}} for m in models]]
+
+    def repo_fetch(self, path):
+        if path != f"commits/{HEAD}":
+            return None
+        message = "work\n\n" + "\n".join(f"Model: {m}" for m in self.trailers)
+        return {"sha": HEAD, "parents": [{"sha": OLDER}], "commit": {"message": message}}
 
     def pr_json(self, number):
         return {
@@ -33,6 +49,7 @@ class Ctrl(types.SimpleNamespace):
             "isDraft": False,
             "labels": [],
             "headRefName": "x",
+            "baseRefName": "main",
         }
 
     def labels_of(self, pr):
@@ -59,25 +76,41 @@ def review(state: str = "APPROVED", model: str = "claude-opus-5-5", actor: str =
 
 @pytest.fixture
 def ctrl(monkeypatch: pytest.MonkeyPatch):
-    def make(*trailers: str, markers: list[str] | None = None) -> Ctrl:
-        fake = Ctrl(list(trailers), markers)
+    def make(
+        *trailers: str, markers: list[str] | None = None, earlier: list[str] | None = None
+    ) -> Ctrl:
+        fake = Ctrl(list(trailers), markers, earlier)
         monkeypatch.setattr(fe, "_controller", fake)
         return fake
 
     return make
 
 
-def test_review_by_a_model_that_wrote_a_commit_is_refused(ctrl) -> None:
-    ctrl("gpt-5.2", "claude-opus-5-5")
-    with pytest.raises(ValueError, match="authored this PR"):
+def test_review_by_the_head_commit_model_is_refused(ctrl) -> None:
+    ctrl("claude-opus-5-5")
+    with pytest.raises(ValueError, match="authored the current head"):
         fe.record(pr_number=4, head=HEAD, actor="alice", review=review(), environment=ACTIONS)
 
 
-def test_review_by_a_recorded_author_model_is_refused(ctrl) -> None:
+def test_review_by_the_recorded_head_author_is_refused(ctrl) -> None:
     marker = policy.agent_model_author_marker(pr=4, head=HEAD, model="claude-opus-5-5", agent="9")
     ctrl("gpt-5.2", markers=[marker])
-    with pytest.raises(ValueError, match="authored this PR"):
+    with pytest.raises(ValueError, match="authored the current head"):
         fe.record(pr_number=4, head=HEAD, actor="alice", review=review(), environment=ACTIONS)
+
+
+def test_an_earlier_head_author_may_review(ctrl) -> None:
+    older = policy.agent_model_author_marker(pr=4, head=OLDER, model="claude-opus-5-5", agent="9")
+    head = policy.agent_model_author_marker(pr=4, head=HEAD, model="gpt-5.2", agent="12")
+    fake = ctrl("gpt-5.2", markers=[older, head], earlier=["claude-opus-5-5"])
+    result = fe.record(
+        pr_number=4,
+        head=HEAD,
+        actor="alice",
+        review=review("CHANGES_REQUESTED"),
+        environment=ACTIONS,
+    )
+    assert result["verdict"] == "repair" and fake.repairs
 
 
 def test_independent_request_changes_routes_to_repair(ctrl) -> None:

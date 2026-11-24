@@ -146,6 +146,16 @@ such change must be called out here and in its release notes.
 
 ### Changed
 
+- Review independence excludes only the model that authored the current head
+  (owner decision, 2026-11-24). A model that authored an earlier head may review
+  once a later commit by someone else is the head; before, every model that
+  authored any head was excluded, and long-lived PRs ran out of reviewers. A
+  clean sync carries the author of the commit it merged into; a head with no
+  author record excludes no model; a worker push without a model record, an
+  unprovable merge or more than five syncs exclude every recorded author. The
+  merge gate resolves the head author the same way as reviewer selection. `factory_review_exclusion.for_pull` is the
+  shared resolver. `baste review` shows the head author, the excluded models
+  and the earlier-head authors that may now review.
 - Issues the factory never claims or closes come from `[issues] reserved` in
   `.rotisserie/config.toml` (default none) instead of a hard-coded list.
 - The hosted dashboard's sign-in service comes from `[dashboard] auth_url`

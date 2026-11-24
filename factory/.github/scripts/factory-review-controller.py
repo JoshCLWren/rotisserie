@@ -29,6 +29,7 @@ if not (_eligibility_dir / "factory_eligibility.py").is_file():
 sys.path.insert(0, str(_eligibility_dir))
 eligibility = importlib.import_module("factory_eligibility")
 _review_policy = importlib.import_module("factory_review_policy")
+_review_exclusion = importlib.import_module("factory_review_exclusion")
 approval_can_promote = _review_policy.approval_can_promote
 current_head_approvers = _review_policy.current_head_approvers
 current_head_contributors = _review_policy.current_head_contributors
@@ -612,64 +613,24 @@ def head_commit_evidence(head: str) -> tuple[str | None, str | None, str] | None
     return author_login, committer_login, message
 
 
-# GitHub's compare API lists at most 300 files; a merge at that size fails closed.
-MAX_BASE_MERGE_FILES = 300
-MAX_BASE_MERGE_CHAIN = 5
+MAX_BASE_MERGE_CHAIN = _review_exclusion.MAX_BASE_MERGE_CHAIN
 
 
-def _compare(base: str, head: str) -> dict[str, Any] | None:
-    return json_object(gh_json(["api", f"repos/{REPO}/compare/{base}...{head}"]))
+def repo_fetch(path: str) -> object:
+    """Read one repository-relative REST path, the reader the exclusion module takes."""
+    return gh_json(["api", f"repos/{REPO}/{path}"])
+
+
+def _safe_fetch(path: str) -> object:
+    try:
+        return repo_fetch(path)
+    except (RuntimeError, OSError, ValueError):
+        return None
 
 
 def clean_base_merge_parent(head: str, *, base_branch: str) -> str | None:
-    """The PR-side parent when ``head`` only merged the default branch in, else ``None``.
-
-    "Update branch" (or an operator or Rotisserie sync) adds a merge commit
-    authored by whoever ran it, so the head loses its attested author although
-    it contributes no code of its own. That is provable from GitHub with three
-    reads: the head commit (two parents), ``theirs...base`` (the second parent
-    is on the default branch), and ``theirs...head``. Because ``theirs`` is an
-    ancestor of ``head``, that last diff is exactly what the head adds on top of
-    the default branch; ``ours...head`` is what the merge brought in. A file in
-    both was changed by the merge relative to the default branch's version: a
-    conflict resolution or an extra edit. Any such overlap fails closed.
-    """
-    commit = json_object(gh_json(["api", f"repos/{REPO}/commits/{head}"]))
-    if commit is None or str(commit.get("sha") or "") != head:
-        return None
-    parents = [
-        str(parent.get("sha") or "")
-        for raw in (json_array(commit.get("parents")) or [])
-        if (parent := json_object(raw)) is not None
-    ]
-    if len(parents) != 2 or not all(HEAD_RE.fullmatch(sha) for sha in parents):
-        return None
-    ours, theirs = parents
-    if not base_branch:
-        return None
-    on_base = _compare(theirs, base_branch)
-    if on_base is None or on_base.get("status") not in ("ahead", "identical"):
-        return None
-
-    def changed(diff: dict[str, Any] | None) -> set[str] | None:
-        files = json_array(diff.get("files")) if diff is not None else None
-        if files is None or len(files) >= MAX_BASE_MERGE_FILES:
-            return None
-        paths: set[str] = set()
-        for raw in files:
-            row = json_object(raw)
-            if row is None or not row.get("filename"):
-                return None
-            paths.add(str(row["filename"]))
-            if row.get("previous_filename"):
-                paths.add(str(row["previous_filename"]))
-        return paths
-
-    brought_in = changed(_compare(ours, head))
-    beyond_base = changed(_compare(theirs, head))
-    if brought_in is None or beyond_base is None or brought_in & beyond_base:
-        return None
-    return ours
+    """The PR-side parent when ``head`` only merged the default branch in, else ``None``."""
+    return _review_exclusion.clean_base_merge_parent(repo_fetch, head, base_branch=base_branch)
 
 
 def inherited_base_merge_identity(
@@ -862,8 +823,7 @@ def reconcile_provenance(
         return {"pr": pr_number, "status": "already-attested", "head": head}
     identity = attest_exact_head_author(pr_number=pr_number, head=head, pr=pr)
     if identity is None:
-        # Missing attribution is a diagnostic, not a blocker: known authors from
-        # earlier heads still bind the review gate, and nothing is invented.
+        # Missing attribution is a diagnostic, not a blocker, and nothing is invented.
         replace_factory_labels(pr_number, "factory:unowned", "factory:review")
         return {
             "pr": pr_number,
@@ -872,8 +832,8 @@ def reconcile_provenance(
             "reason": (
                 "no trusted exact-head author identity (the pull-request author, "
                 "the head commit identity, or the Model trailer is untrusted); "
-                "released to review anyway: authors recorded on earlier heads "
-                "still may not approve it"
+                "released to review anyway: with no head author recorded, "
+                "no model is excluded for authorship"
             ),
         }
     model, agent = identity
@@ -958,10 +918,19 @@ def review_eligibility(
     """The owner's review rule for one exact head, from trusted controller records.
 
     Every promoter (review callback, CI reconciliation, merge authorization)
-    calls this one function, so they cannot disagree about self-review.
+    calls this one function, so they cannot disagree about self-review. The
+    excluded models come from the shared resolver, so a sync head carries its
+    author here exactly as at reviewer selection.
     """
     comments = model_comments if model_comments is not None else model_comment_bodies(pr_number)
-    return evaluate_review_eligibility(comments, pr=pr_number, head=head, approvers=approvers)
+    pull = json_object(_safe_fetch(f"pulls/{pr_number}")) or {}
+    base = str((json_object(pull.get("base")) or {}).get("ref") or "")
+    excluded = _review_exclusion.resolve(
+        repo_fetch, pr=pr_number, head=head, base_branch=base, comments=comments
+    ).excluded
+    return evaluate_review_eligibility(
+        comments, pr=pr_number, head=head, approvers=approvers, excluded=excluded
+    )
 
 
 def redact_review_text(text: str) -> str:
@@ -1416,7 +1385,7 @@ def reconcile_ci_pr(pr_number: int) -> dict[str, Any]:
             "reason": f"semantic authorization could not be determined: {exc}",
         }
     # CI reconciliation is also a ready-promoter, not just the review callback.
-    # Both enforce the same rule: a model known to have authored this PR cannot
+    # Both enforce the same rule: the current head's author model cannot
     # approve it. Anything short of an eligible approval returns to review for
     # another model; it never parks the PR in factory:blocked.
     review_gate = review_eligibility(
@@ -2367,8 +2336,8 @@ def handle_review(
             stage="factory:blocked",
         )
 
-    # A semantic approval alone cannot make this head mergeable: a model known
-    # to have authored this PR must not approve it. That is the only model rule.
+    # A semantic approval alone cannot make this head mergeable: the model that
+    # authored the current head must not approve it. That is the only model rule.
     # Missing attribution does not block, and a wrong reviewer never strands
     # the PR: it returns to review so a different model is selected.
     review_gate = review_eligibility(

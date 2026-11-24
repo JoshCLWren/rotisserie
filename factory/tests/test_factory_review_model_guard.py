@@ -1,4 +1,4 @@
-"""Owner review policy: a model known to have authored a PR must not approve it."""
+"""Owner review policy: the model that authored the current head must not approve it."""
 
 from __future__ import annotations
 
@@ -57,27 +57,18 @@ def _review(model: str, agent: str = "17", head: str = HEAD) -> str:
     return policy.reviewer_model_marker(pr=7, head=head, reviewer_model=model, reviewer_agent=agent)
 
 
-def test_author_from_an_earlier_head_still_cannot_approve_after_a_sync() -> None:
-    """A sync head with no author marker never launders the earlier author away."""
-    comments = [_author("opencode-go/hy4-flash-free", head=OLD_HEAD), _review("hy4-flash")]
-    verdict = policy.evaluate_review_eligibility(comments, pr=7, head=HEAD, approvers={"17"})
-    assert not verdict.eligible
-    assert verdict.status == "self-review"
-    assert "authored this PR" in verdict.reason
-
-
-def test_every_known_author_is_excluded_and_another_model_counts() -> None:
+def test_head_author_is_excluded_and_another_model_counts() -> None:
     comments = [
         _author("zai/glm-4.6", head=OLD_HEAD, agent="40"),
         _author("opencode-go/hy4-flash-free", agent="43"),
-        _review("zai/glm-4.6", agent="17"),
+        _review("zen/hy4-flash", agent="17"),
     ]
     assert policy.evaluate_review_eligibility(comments, pr=7, head=HEAD).status == "self-review"
-    comments.append(_review("mistral/devstral-2", agent="18"))
+    comments.append(_review("zai/glm-4.6", agent="18"))
     verdict = policy.evaluate_review_eligibility(comments, pr=7, head=HEAD)
     assert verdict.eligible
-    assert verdict.qualifying == ("mistral+devstral-2",)
-    assert verdict.self_reviews == ("zai+glm-4.6",)
+    assert verdict.qualifying == ("zai+glm-4.6",)
+    assert verdict.self_reviews == ("zen+hy4-flash",)
 
 
 def test_external_or_human_pr_may_be_reviewed_by_any_model() -> None:
@@ -105,18 +96,10 @@ def test_records_for_another_head_or_pr_do_not_count() -> None:
     assert policy.evaluate_review_eligibility([other], pr=7, head=HEAD).status == "no-approval"
 
 
-def test_untrusted_comment_streams_cannot_supply_records() -> None:
-    rows = [
-        {"user": {"login": "someone"}, "author_association": "OWNER", "body": _author("glm-4.6")},
-        {"user": {"login": "github-actions[bot]"}, "body": _author("hy4-flash")},
-    ]
-    assert guard.author_models_from_records([rows], pr=7) == ["hy4-flash"]
-
-
 def test_guard_check_exit_codes(capsys: pytest.CaptureFixture[str]) -> None:
     authors = json.dumps(["opencode-go+hy4-flash-free"])
     assert guard.main(["check", "--authors-json", authors, "--model", "zen/hy4-flash"]) == 0
-    assert "authored this PR" in capsys.readouterr().out
+    assert "authored the current head" in capsys.readouterr().out
     assert guard.main(["check", "--authors-json", authors, "--model", "zai/glm-4.6"]) == 1
     assert guard.main(["check", "--authors-json", "[]", "--model", "zai/glm-4.6"]) == 1
     assert guard.main(["check", "--authors-json", "{}", "--model", "x"]) == 2

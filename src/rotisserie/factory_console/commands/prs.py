@@ -259,13 +259,8 @@ def cmd_review(context: Context, arguments: argparse.Namespace) -> Outcome:
     for report in reports:
         mark = console.ok if report.eligible else console.fail
         mark(f"PR #{report.pr} ({report.stage or 'no stage'}): {report.status}")
-        authors = ", ".join(report.author_models) or "none recorded (any model may review)"
-        console.line(f"  Known author models: {authors}")
-        if not report.head_attributed:
-            console.line(
-                "  The current head has no author record of its own (a sync or hand push);"
-                " earlier heads' authors still count."
-            )
+        for line in review.authorship_lines(report):
+            console.line(f"  {line}")
         reviewers = ", ".join(report.reviewer_models) or "none recorded"
         console.line(
             f"  Approvals on this head: {len(report.approvers)}; reviewer models: {reviewers}"
