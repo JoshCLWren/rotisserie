@@ -32,6 +32,7 @@ READ_ONLY = frozenset(
     (
         "status",
         "recap",
+        "turning",
         "heal",
         "report",
         "failures",

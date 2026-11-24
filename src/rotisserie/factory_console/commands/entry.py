@@ -51,6 +51,7 @@ from rotisserie.factory_console.commands.run import cmd_run
 from rotisserie.factory_console.commands.settings import cmd_prioritize, cmd_settings
 from rotisserie.factory_console.commands.status import cmd_cancel, cmd_status
 from rotisserie.factory_console.commands.store import cmd_store
+from rotisserie.factory_console.commands.turning import cmd_turning
 from rotisserie.factory_console.commands.watch import cmd_watch
 from rotisserie.factory_console.commands.why import cmd_next, cmd_why
 from rotisserie.factory_console.context import Context, UsageError, find_repository
@@ -163,6 +164,7 @@ def _help_text() -> str:
             "",
             "  baste run [PROVIDER [MODEL]] [--force] [--target issue:N]",
             "  baste status        who is working on what",
+            "  baste turning       is work moving: Turning, Slowing or Burning (--follow alerts)",
             "  baste recap         morning summary: the answer first, plain words",
             "  baste report        what merged, failed and is stuck",
             "  baste failures      failed worker runs by job and step",
@@ -271,6 +273,7 @@ HANDLERS = {
     "recap": cmd_recap,
     "heal": cmd_heal,
     "store": cmd_store,
+    "turning": cmd_turning,
 }
 
 

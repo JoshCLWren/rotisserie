@@ -6,6 +6,7 @@ from dataclasses import asdict
 from datetime import datetime
 
 from rotisserie.factory_console import runtime
+from rotisserie.factory_console.commands import turning as turning_view
 from rotisserie.factory_console.commands._shared import EXIT_OK, TARGET, Outcome
 from rotisserie.factory_console.commands.status import parse_since
 from rotisserie.factory_console.context import Context, UsageError
@@ -15,6 +16,7 @@ from rotisserie.factory_console.service import (
     doctor,
     limits,
     outcomes,
+    turning,
     unstick,
     unstick_run,
 )
@@ -329,7 +331,8 @@ def cmd_doctor(context: Context, arguments: argparse.Namespace) -> Outcome:
     console.heading("Factory health")
     findings = doctor.run_checks(context.github, now=context.clock.now(), clock=context.clock)
     for item in findings:
-        line = f"{item.check}: {item.text}"
+        text = turning_view.decorate(item.text) if item.check == turning.CHECK else item.text
+        line = f"{item.check}: {text}"
         if item.status == "ok":
             console.ok(line)
         elif item.status == "warn":
@@ -337,7 +340,7 @@ def cmd_doctor(context: Context, arguments: argparse.Namespace) -> Outcome:
         else:
             console.fail(line)
         if item.hint and item.status != "ok":
-            console.line(f"    {item.hint}")
+            console.line(f"    {'👉 ' if item.check == turning.CHECK else ''}{item.hint}")
     data: dict[str, object] = {"findings": [i.to_dict() for i in findings]}
     blocker = next((i for i in findings if i.check == "GitHub API"), None)
     if blocker is not None:

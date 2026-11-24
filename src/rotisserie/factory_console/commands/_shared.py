@@ -10,6 +10,8 @@ shows the past items behind each figure. Human output is the default.
   4  something failed (the scheduler, the worker, or the model)
   5  GitHub could not be reached, or the login lacks access
   6  the outcome could not be confirmed
+  10  turning --follow: the factory is Burning (no worker starts while work waits)
+  11  turning --follow: the factory is Slowing (control workflow failures)
   130  you stopped watching (the factory keeps working)
 """
 
