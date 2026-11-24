@@ -4,6 +4,11 @@ import argparse
 
 from rotisserie.factory_console.commands import _shared
 from rotisserie.factory_console.commands._shared import ACTIONS
+from rotisserie.factory_console.commands.parser_insight import (
+    _common,
+    _via,
+    add_insight_parsers,
+)
 from rotisserie.factory_console.service import external
 
 
@@ -190,23 +195,7 @@ def add_parser(subcommands: argparse._SubParsersAction[argparse.ArgumentParser])
     finish_work.add_argument("--timeout", type=int, default=600, help="seconds to wait (600)")
     _common(finish_work)
 
-    controller_runs = commands.add_parser(
-        "runs", help="recent label-claim controller runs for an item, with their results"
-    )
-    controller_runs.add_argument("what", help="issue:N or pr:N")
-    controller_runs.add_argument("--limit", type=int, default=5, help="runs to show (5)")
-    _common(controller_runs)
-
-    timeline = commands.add_parser(
-        "history", help="label changes, close/reopen, factory markers and controller runs"
-    )
-    timeline.add_argument("what", help="issue:N or pr:N")
-    timeline.add_argument("--limit", type=int, default=40, help="timeline items (40)")
-    _common(timeline)
-
-    choose = commands.add_parser("use", help="show or save the default factory repository")
-    choose.add_argument("repository", nargs="?", help="owner/name to save as the default")
-    _common(choose)
+    add_insight_parsers(commands)
 
     track = commands.add_parser(
         "follow",
@@ -476,23 +465,3 @@ def add_parser(subcommands: argparse._SubParsersAction[argparse.ArgumentParser])
         if name == "models":
             fleet.add_argument("--billing", **_shared.BILLING_OPTION)
         _common(fleet)
-
-
-def _via(parser: argparse.ArgumentParser) -> None:
-    parser.add_argument(
-        "--via",
-        choices=("direct", "github"),
-        default="direct",
-        help=_shared.VIA_HELP,
-    )
-
-
-def _common(parser: argparse.ArgumentParser) -> None:
-    # Accept global flags after the subcommand too (e.g. 'run ... --json').
-    parser.add_argument("--repo", default=argparse.SUPPRESS, help=argparse.SUPPRESS)
-    parser.add_argument(
-        "--json", action="store_true", default=argparse.SUPPRESS, help=argparse.SUPPRESS
-    )
-    parser.add_argument(
-        "--verbose", action="store_true", default=argparse.SUPPRESS, help=argparse.SUPPRESS
-    )

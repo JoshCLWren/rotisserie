@@ -330,6 +330,32 @@ nothing done is marked "going in circles": another round on the same models
 is unlikely to help. `--limit N` reads more scheduler passes (default 40,
 newest first) for long windows.
 
+## How long will it take?
+
+`rotisserie factory estimate issue:N` (or `pr:N`) compares the item with recent
+finished factory work and prints three figures. Each figure has a median, the
+middle 80% (10th to 90th percentile) and the number of past items behind it:
+
+- attempts to merge: worker leases (controller-claim markers) on the issue and
+  its pull requests. The controller writes one lease on both a few seconds
+  apart, so one worker's claims less than a minute apart count once.
+- time to merge: for `issue:N`, from the first factory claim to the merge; for
+  `pr:N`, from the merged pull request's creation to the merge.
+- the chance it finishes without a human, with an 80% Wilson interval. A human
+  counts when a person merged it, the owner claimed it (`factory:claimed` or
+  `factory:local`), it was parked in `factory:blocked`, or the author marker
+  says a person wrote the change.
+
+The sample is the `--sample` (default 100, at most 300) most recently updated
+closed `factory` pull requests, grouped with their linked issue, kept only
+when a factory worker touched them. Similar means the same start (an issue or a
+standalone pull request) and the same work category, then the same intake
+labels (`bug`, `user-reported`, `code-debt`, `frontend`), then the same issue
+size. The command drops size first, then labels, and needs at least six
+similar finished items. With fewer it says so and gives no number. Items still
+open are not counted, so the chance is optimistic. It reads only GitHub and
+`factory-stats.json`, never Neon. The web UI runs it as the `estimate` read.
+
 ## Whose review counts?
 
 The owner's rule is narrow: **a model known to have authored a PR must not

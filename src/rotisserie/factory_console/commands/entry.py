@@ -19,6 +19,7 @@ from rotisserie.factory_console.commands.claims import (
     cmd_labels,
     cmd_runs,
 )
+from rotisserie.factory_console.commands.estimate import cmd_estimate
 from rotisserie.factory_console.commands.fleet import cmd_models, cmd_providers
 from rotisserie.factory_console.commands.health import (
     _show_rate_limits,
@@ -160,6 +161,7 @@ def _help_text() -> str:
             "  rotisserie factory claim pr:N    request work by label; finish pr:N ends it",
             "  rotisserie factory follow pr:N   each lifecycle change until done; runs pr:N",
             "  rotisserie factory limits        GitHub API quota and reset time",
+            "  rotisserie factory estimate issue:N  attempts, time and unattended chance",
             "  rotisserie factory close pr:N --reason TEXT   close work that should not be done",
             "  rotisserie factory cancel issue:N",
             "  rotisserie factory watch RUN",
@@ -222,6 +224,7 @@ HANDLERS = {
     "finish": cmd_finish,
     "runs": cmd_runs,
     "history": cmd_history,
+    "estimate": cmd_estimate,
     "use": cmd_use,
     "follow": cmd_follow,
     "label-event": cmd_label_event,
