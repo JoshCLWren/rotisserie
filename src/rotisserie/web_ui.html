@@ -115,7 +115,7 @@
    <div class="panel-body"><div class="page-controls"><input id="pr-number" type="number" min="1" step="1" placeholder="PR number" aria-label="Pull request number"><button class="button small" data-pr-inspect="checks">Checks</button><button class="button small" id="main-checks">Checks on main</button><button class="button small" data-pr-inspect="review">Review gate</button><button class="button small" data-pr-inspect="conflicts">Conflicts</button><button class="button small" id="pr-select">Select for launch</button><button class="button small danger" id="pr-sync">Sync with main</button></div><div id="pr-inspector" class="hint">Choose a PR and an inspection. Sync uses Rotisserie's existing claim protection.</div></div>
   </section>
   <section class="panel spaced"><div class="panel-header"><div><h2>Item tracker</h2><p class="section-desc">Follow one issue or PR, read its label claim runs and history, or claim it with <code>factory:claimed</code>.</p></div></div>
-   <div class="panel-body"><div class="page-controls"><select id="item-kind" aria-label="Item kind"><option value="issue">Issue</option><option value="pr">Pull request</option></select><input id="item-number" type="number" min="1" step="1" placeholder="Number" aria-label="Issue or PR number"><button class="button small" data-item-read="follow">Follow</button><button class="button small" data-item-read="runs">Claim runs</button><button class="button small" data-item-read="history">History</button><button class="button small" id="item-claim">Claim</button><button class="button small danger" id="item-finish">Finish claim</button></div><div id="item-content" class="hint">Claim and Finish claim change the label and return. The label claim controller answers on the item.</div></div>
+   <div class="panel-body"><div class="page-controls"><select id="item-kind" aria-label="Item kind"><option value="issue">Issue</option><option value="pr">Pull request</option></select><input id="item-number" type="number" min="1" step="1" placeholder="Number" aria-label="Issue or PR number"><button class="button small" data-item-read="follow">Follow</button><button class="button small" data-item-read="runs">Claim runs</button><button class="button small" data-item-read="history">History</button><button class="button small" data-item-read="estimate">Estimate</button><button class="button small" id="item-estimate-neon">Exact estimate (Neon)</button><button class="button small" id="item-claim">Claim</button><button class="button small danger" id="item-finish">Finish claim</button></div><div id="item-content" class="hint">Claim and Finish claim change the label and return. The label claim controller answers on the item. Estimate counts attempts from GitHub markers; Exact estimate starts a GitHub run that reads Neon history, then shows the result here.</div></div>
   </section></section>
  <section class="view" id="workers"><div class="panel"><div class="panel-header"><div><h2>Workers and claims</h2><p class="section-desc">A request, an assignment, and actual model activity are different stages.</p></div><button class="button small" id="workers-refresh">Refresh workers</button></div><div class="panel-body"><div id="workers-content" class="empty">Loading workers…</div></div></div><section class="panel spaced"><div class="panel-header"><h2>Lease ledger</h2></div><div class="panel-body"><div class="page-controls"><button class="button small" id="leases-refresh">Refresh leases</button><button class="button small danger" id="release-expired">Release expired only</button></div><div id="leases-content"></div></div></section></section>
  <section class="view" id="outcomes"><div class="panel"><div class="panel-header"><div><h2>Run results</h2><p class="section-desc">What workers attempted and whether the requested work was delivered.</p></div><button class="button small" id="outcomes-refresh">Refresh results</button></div><div class="panel-body" id="outcomes-content"></div></div><section class="panel spaced"><div class="panel-header"><h2>Reliability</h2><div class="page-controls"><select id="stats-window"><option value="7d">7 days</option><option value="24h">24 hours</option></select></div></div><div class="panel-body" id="stats-content"></div></section></section>
@@ -328,8 +328,36 @@ function renderHistory(d){
  for(const note of Array.isArray(d.notes)?d.notes:[])html+='<div class="info spaced">'+h(note)+'</div>';
  return html;
 }
+function renderEstimate(d){
+ if(!d.source||!d.similar)return raw(d);
+ const s=d.so_far||{},src=d.source,sim=d.similar,num=x=>Math.round(x*10)/10,hrs=x=>num(x)+" h";
+ const range=(r,f)=>r?"median "+f(r.median)+", middle 80% "+f(r.low)+" to "+f(r.high)+" (from "+r.n+" merged items)":"not enough similar merged items";
+ const rows=[["Attempts from",src.label],["So far",s.attempts+" attempt(s)"+(s.refusals!=null?", "+s.capacity_runs+" run(s) where no model worked, "+s.refusals+" catalog refusal(s)":"")],["Similar items",sim.count?sim.count+" ("+sim.tier+")":"too few for an estimate"]];
+ if(sim.count){rows.push(["Attempts to merge",range(d.attempts,num)],["Time to merge",range(d.hours,hrs)]);if(d.unattended)rows.push(["Without a human",Math.round(d.unattended.probability*100)+"% ("+d.unattended.unattended+" of "+d.unattended.n+")"])}
+ if(src.attempts==="neon")rows.push(["Neon history",src.rows_read+" events over "+src.window_days+" days; "+src.items_from_neon+" item(s) from Neon, "+src.items_from_github+" from GitHub"]);
+ let html='<div class="item"><div class="item-head"><div class="item-title">Estimate for '+gh(d.target)+'</div>'+badge(src.attempts==="neon"?"Neon":"GitHub",src.attempts==="neon"?"good":"")+'</div>'+rows.map(r=>'<div class="meta">'+h(r[0])+': '+h(r[1])+'</div>').join("")+(src.bridge&&src.bridge.url?'<div class="item-actions">'+link(src.bridge.url,"Neon history run")+'</div>':"")+'</div>';
+ for(const note of Array.isArray(d.notes)?d.notes:[])html+='<div class="info spaced">'+h(note)+'</div>';
+ return html;
+}
+async function estimateNeon(){
+ const t=itemTarget(),box=el("item-content");if(!t){notice("Enter an issue or PR number.",true);return}
+ box.innerHTML=empty("Starting the Neon history run for "+t+"…");
+ try{
+  const started=ok(await request("/api/command",{operation:"estimate_neon",target:t}));
+  const run=started.bridge&&started.bridge.run_id;
+  if(!run){box.innerHTML=empty("The run was requested. This page cannot read its result here; use the local control room or the CLI with --run.");return}
+  for(let i=0;i<60;i++){
+   box.innerHTML=empty("Waiting for the Neon history run")+(started.bridge.url?'<div class="hint">'+link(started.bridge.url,"Open the GitHub run")+'</div>':"");
+   await new Promise(r=>setTimeout(r,15000));
+   const d=await get("estimate",{target:t,run:String(run)});
+   if(d.result==="pending")continue;
+   box.innerHTML=renderEstimate(ok(d));return;
+  }
+  box.innerHTML=empty("The Neon history run did not finish in 15 minutes.");
+ }catch(err){box.innerHTML=empty(err.message)}
+}
 function itemTarget(){const number=el("item-number").value;return /^[1-9][0-9]*$/.test(number)?el("item-kind").value+":"+number:""}
-async function itemRead(which){const t=itemTarget();if(!t){notice("Enter an issue or PR number.",true);return}el("item-content").innerHTML=empty("Reading "+which+" for "+t+"…");try{const d=ok(await get(which,{target:t}));el("item-content").innerHTML=({follow:renderFollow,runs:renderRuns,history:renderHistory})[which](d)}catch(err){el("item-content").innerHTML=empty(err.message)}}
+async function itemRead(which){const t=itemTarget();if(!t){notice("Enter an issue or PR number.",true);return}el("item-content").innerHTML=empty("Reading "+which+" for "+t+"…");try{const d=ok(await get(which,{target:t}));el("item-content").innerHTML=({follow:renderFollow,runs:renderRuns,history:renderHistory,estimate:renderEstimate})[which](d)}catch(err){el("item-content").innerHTML=empty(err.message)}}
 function itemWrite(operation,question){const t=itemTarget();if(!t){notice("Enter an issue or PR number.",true);return}if(window.confirm(question+" "+t+"?"))act({operation,target:t},el(operation==="claim"?"item-claim":"item-finish"))}
 const switchText=(off,reason)=>off?"off"+(reason?": "+reason:""):"on";
 const switchAttrs=(provider,model)=>' data-provider="'+h(provider)+'"'+(model?' data-model="'+h(model)+'"':"");
@@ -413,6 +441,7 @@ el("main-checks").onclick=async()=>{el("pr-inspector").innerHTML=empty("Reading 
 el("incidents-refresh").onclick=loadIncidents;
 el("incident-start").onclick=()=>{const number=el("incident-number").value;if(!/^[1-9][0-9]*$/.test(number)){notice("Enter a valid issue number.",true);return}const body={operation:"incident_start",issue:"issue:"+number,reason:el("incident-reason").value.trim()};if(el("incident-attempts").value)body.attempts=el("incident-attempts").value;if(window.confirm("Start an incident on #"+number+"? Free workers go to it first and other new intake pauses."))act(body,el("incident-start"))};
 el("item-claim").onclick=()=>itemWrite("claim","Claim");
+el("item-estimate-neon").onclick=estimateNeon;
 el("item-finish").onclick=()=>itemWrite("finish","End your claim on");
 el("labels-dry-run").onclick=()=>act({operation:"labels",mode:"dry-run"},el("labels-dry-run"));
 el("labels-repair").onclick=()=>{if(window.confirm("Start a label repair run? It changes labels on the repository."))act({operation:"labels",mode:"repair"},el("labels-repair"))};

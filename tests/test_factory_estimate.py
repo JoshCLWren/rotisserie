@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import argparse
 import io
 import json
 import statistics
@@ -11,10 +12,16 @@ from typing import Any, cast
 import pytest
 
 from rotisserie import web
-from rotisserie.factory_console.commands.estimate import render
+from rotisserie.factory_console.commands.estimate import cmd_estimate, render
 from rotisserie.factory_console.context import Context
 from rotisserie.factory_console.github import GitHub, GitHubNotFoundError, GitHubRateLimitError
-from rotisserie.factory_console.service import estimate, estimate_history
+from rotisserie.factory_console.service import (
+    bridge,
+    estimate,
+    estimate_history,
+    estimate_neon,
+    estimate_source,
+)
 from rotisserie.factory_console.service import estimate_model as model
 from rotisserie.factory_console.tracker import Clock
 from rotisserie.factory_console.ui import Console, Prompt
@@ -329,3 +336,74 @@ def test_graphql_not_found_is_tolerated_but_other_errors_raise() -> None:
     assert estimate_history.threads(cast(GitHub, Partial("NOT_FOUND")), budget, [5]) == {}
     with pytest.raises(GitHubRateLimitError):
         estimate_history.threads(cast(GitHub, Partial("RATE_LIMITED")), budget, [6])
+
+
+def neon_history(numbers: dict[int, int], owner: int | None = None) -> estimate_source.History:
+    rows: list[dict[str, Any]] = []
+    for number, runs in numbers.items():
+        for run in range(runs):
+            rows.append(
+                {
+                    "event_type": "model_attempt",
+                    "created_at": NOW - timedelta(hours=run + 1),
+                    "run_id": f"{number}{run}",
+                    "selected_number": str(number),
+                    "outcome_class": "success",
+                    "duration_ms": "60000",
+                }
+            )
+    if owner is not None:
+        claim_row = {"event_type": "external_reserved", "created_at": NOW, "client": "label"}
+        rows.append({**claim_row, "subject_number": owner})
+    return estimate_source.parse(estimate_neon.summarize(rows, days=30, cap=1000, now=NOW))
+
+
+def test_neon_history_replaces_marker_attempts_and_adds_owner_claims() -> None:
+    github = history(8, ["bug", "factory"])
+    found = neon_history({n: 1 for n in range(10, 18)} | {100: 2}, owner=11)
+    data = estimate.estimate(cast(GitHub, github), "issue:100", now=NOW, history=found)
+    source = cast(dict[str, Any], data["source"])
+    assert source["attempts"] == "neon" and source["items_from_neon"] == 8
+    assert source["items_from_github"] == 0 and source["target_from_neon"] is True
+    assert cast(dict[str, Any], data["attempts"])["median"] == 1
+    assert cast(dict[str, Any], data["so_far"])["attempts"] == 2
+    signals = cast(dict[str, Any], data["unattended"])["human_signals"]
+    assert signals == {"merged_by_person": 2, "owner_claim": 1}
+
+
+@pytest.mark.parametrize("start", [NOW, NOW - timedelta(days=30)])
+def test_items_without_a_neon_run_keep_their_marker_count(start: datetime) -> None:
+    github = history(8, ["bug", "factory"])
+    found = estimate_source.History(start, 30, 0, False, {}, {})
+    data = estimate.estimate(cast(GitHub, github), "issue:100", now=NOW, history=found)
+    assert cast(dict[str, Any], data["source"])["items_from_github"] == 8
+    assert cast(dict[str, Any], data["attempts"])["median"] == 4.5
+    assert "have no Neon run in the history window" in str(data["notes"])
+
+
+@pytest.mark.parametrize(
+    "error",
+    [
+        bridge.BridgeError("mode estimate-history is not an option"),
+        GitHubNotFoundError("workflow not found, so not an option"),
+    ],
+)
+def test_a_failed_bridge_run_falls_back_to_github_and_says_why(
+    monkeypatch: pytest.MonkeyPatch, error: Exception
+) -> None:
+    def refused(*args: Any, **kwargs: Any) -> dict[str, object]:
+        raise error
+
+    monkeypatch.setattr(estimate_source, "fetch", refused)
+    github = history(8, ["bug", "factory"])
+    stream = io.StringIO()
+    console = Console(stream, env={})
+    context = Context(cast(GitHub, github), console, Prompt(console), Clock(), False)
+    arguments = argparse.Namespace(
+        what="issue:100", sample=100, via="github", no_wait=False, run=None
+    )
+    data = cast(dict[str, Any], cmd_estimate(context, arguments).data)
+    assert data["source"]["attempts"] == "github"
+    assert "not an option" in data["source"]["fallback"]
+    assert "Attempts from: GitHub labels and factory marker comments" in stream.getvalue()
+    assert cast(dict[str, Any], data["attempts"])["median"] == 4.5

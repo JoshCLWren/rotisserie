@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 
 from rotisserie.factory_console.commands import _shared
+from rotisserie.factory_console.service import estimate_neon as neon
 from rotisserie.factory_console.service.estimate import DEFAULT_SAMPLE, SAMPLE_RANGE
 
 
@@ -38,6 +39,19 @@ def add_insight_parsers(commands: argparse._SubParsersAction[argparse.ArgumentPa
         help=f"recent closed factory PRs to read ({SAMPLE_RANGE[0]} to {SAMPLE_RANGE[1]}, "
         f"default {DEFAULT_SAMPLE})",
     )
+    guess.add_argument(
+        "--via",
+        choices=("direct", "github"),
+        default="direct",
+        help="direct: count attempts from GitHub markers (default); github: run the label "
+        "claim workflow to read exact attempts from Neon history, falling back to GitHub",
+    )
+    guess.add_argument(
+        "--no-wait", action="store_true", help="with --via github, start the run and return"
+    )
+    guess.add_argument(
+        "--run", type=int, help="use the Neon history an earlier --via github run published"
+    )
     _common(guess)
 
     failed = commands.add_parser(
@@ -49,6 +63,20 @@ def add_insight_parsers(commands: argparse._SubParsersAction[argparse.ArgumentPa
     )
     failed.add_argument("--limit", type=int, default=60, help="newest failed runs to read (60)")
     _common(failed)
+
+    trusted = commands.add_parser(
+        "estimate-history",
+        help="publish bounded per-item Neon history for estimates (trusted Actions only)",
+    )
+    low, high = neon.DAYS_RANGE
+    trusted.add_argument(
+        "--days", type=int, default=neon.DEFAULT_DAYS, help=f"days to read ({low} to {high})"
+    )
+    low, high = neon.ROWS_RANGE
+    trusted.add_argument(
+        "--rows", type=int, default=neon.DEFAULT_ROWS, help=f"row cap ({low} to {high})"
+    )
+    _common(trusted)
 
     choose = commands.add_parser("use", help="show or save the default factory repository")
     choose.add_argument("repository", nargs="?", help="owner/name to save as the default")

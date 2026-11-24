@@ -111,6 +111,8 @@ jobs:
                     [[ "$item" =~ ^(issue|pr):[1-9][0-9]*$ ]] || exit 2
                   done
                   args=(factory leases "${wanted[@]}") ;;
+                # One bounded read-only Neon query; publishes per-item counts only.
+                estimate-history) args=(factory estimate-history) ;;
                 *) args=(factory labels) ;;
               esac ;;
             *)

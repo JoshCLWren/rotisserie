@@ -12,9 +12,9 @@ on:
   workflow_dispatch:
     inputs:
       mode:
-        description: Label doctor mode, or leases to read Neon holders
+        description: Label doctor mode, leases or backoffs to read Neon, or estimate-history
         type: choice
-        options: [dry-run, repair, delete-legacy, leases, backoffs]
+        options: [dry-run, repair, delete-legacy, leases, backoffs, estimate-history]
         default: dry-run
       targets:
         description: For leases, space-separated issue:N / pr:N (blank means every lease)
