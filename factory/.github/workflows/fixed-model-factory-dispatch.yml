@@ -74,6 +74,7 @@ on:
       - '.github/scripts/stale_pr_decay.py'
       - '.github/scripts/factory-review-controller.py'
       - '.github/scripts/factory_work_policy.py'
+      - '.github/scripts/factory_work_policy_*.py'
       - '.github/scripts/factory_jev_shadow.py'
       - '.github/scripts/factory_rotisserie_adopter.py'
       - '.github/factory-rotisserie-control.json'
