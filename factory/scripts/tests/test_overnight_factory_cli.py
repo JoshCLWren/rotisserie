@@ -8,7 +8,7 @@ from pathlib import Path
 
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
-SCRIPT = REPO_ROOT / "scripts" / "comic-pile-opencode-factory-overnight.sh"
+SCRIPT = REPO_ROOT / "scripts" / "opencode-factory-overnight.sh"
 
 
 class OvernightFactoryCliTest(unittest.TestCase):
@@ -26,19 +26,19 @@ class OvernightFactoryCliTest(unittest.TestCase):
 
         self.assertIn(
             "Additional factory options are passed to "
-            "comic-pile-opencode-factory.sh after the selected command.",
+            "opencode-factory.sh after the selected command.",
             result.stdout,
         )
         self.assertIn(
-            "comic-pile-opencode-factory-overnight.sh start --idle-seconds 30",
+            "opencode-factory-overnight.sh start --idle-seconds 30",
             result.stdout,
         )
         self.assertIn(
-            "comic-pile-opencode-factory-overnight.sh run --idle-seconds 30",
+            "opencode-factory-overnight.sh run --idle-seconds 30",
             result.stdout,
         )
         self.assertNotIn("after --watch", result.stdout)
-        self.assertNotIn("comic-pile-opencode-factory-overnight.sh --watch", result.stdout)
+        self.assertNotIn("opencode-factory-overnight.sh --watch", result.stdout)
 
     def test_watch_without_command_is_rejected_with_command_usage(self) -> None:
         """The former ambiguous invocation should fail and show valid commands."""

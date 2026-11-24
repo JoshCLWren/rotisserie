@@ -25,8 +25,8 @@ class ModelToolTests(unittest.TestCase):
         self.scripts = self.root / "scripts"
         self.scripts.mkdir()
         for name in (
-            "comic-pile-opencode-factory.sh",
-            "comic-pile-opencode-factory-heartbeat.sh",
+            "opencode-factory.sh",
+            "opencode-factory-heartbeat.sh",
             "opencode-model-manifest.sh",
             "opencode-model-scout.sh",
         ):
@@ -81,7 +81,7 @@ class ModelToolTests(unittest.TestCase):
         subprocess.run([helper, "set", "model/one", "confirmed", "yes", state], check=True)
         subprocess.run([helper, "set", "model/two", "confirmed", "yes", state], check=True)
 
-        heartbeat = self.scripts / "comic-pile-opencode-factory-heartbeat.sh"
+        heartbeat = self.scripts / "opencode-factory-heartbeat.sh"
         heartbeat.write_text(
             textwrap.dedent(
                 """\
@@ -113,10 +113,10 @@ class ModelToolTests(unittest.TestCase):
         heartbeat.chmod(0o755)
 
         result = self.run_command(
-            str(self.scripts / "comic-pile-opencode-factory.sh"),
+            str(self.scripts / "opencode-factory.sh"),
             "--state-dir",
             str(state),
-            env={"COMIC_PILE_FACTORY_AUTO_SCOUT": "0"},
+            env={"FACTORY_AUTO_SCOUT": "0"},
             timeout=10,
         )
 
@@ -130,7 +130,7 @@ class ModelToolTests(unittest.TestCase):
         subprocess.run([helper, "set", "model/one", "confirmed", "yes", state], check=True)
         subprocess.run([helper, "set", "model/two", "confirmed", "yes", state], check=True)
 
-        heartbeat = self.scripts / "comic-pile-opencode-factory-heartbeat.sh"
+        heartbeat = self.scripts / "opencode-factory-heartbeat.sh"
         heartbeat.write_text(
             textwrap.dedent(
                 """\
@@ -155,13 +155,13 @@ class ModelToolTests(unittest.TestCase):
         heartbeat.chmod(0o755)
 
         result = self.run_command(
-            str(self.scripts / "comic-pile-opencode-factory.sh"),
+            str(self.scripts / "opencode-factory.sh"),
             "--state-dir",
             str(state),
             env={
                 "FACTORY_FAILURE_BACKOFF_SECONDS": "30",
                 "FACTORY_FAILURE_THRESHOLD": "1",
-                "COMIC_PILE_FACTORY_AUTO_SCOUT": "0",
+                "FACTORY_AUTO_SCOUT": "0",
             },
             timeout=10,
         )
@@ -177,7 +177,7 @@ class ModelToolTests(unittest.TestCase):
         subprocess.run([helper, "set", "model/one", "confirmed", "yes", state], check=True)
         subprocess.run([helper, "set", "model/two", "confirmed", "yes", state], check=True)
 
-        heartbeat = self.scripts / "comic-pile-opencode-factory-heartbeat.sh"
+        heartbeat = self.scripts / "opencode-factory-heartbeat.sh"
         heartbeat.write_text(
             textwrap.dedent(
                 """\
@@ -205,10 +205,10 @@ class ModelToolTests(unittest.TestCase):
         heartbeat.chmod(0o755)
 
         result = self.run_command(
-            str(self.scripts / "comic-pile-opencode-factory.sh"),
+            str(self.scripts / "opencode-factory.sh"),
             "--state-dir",
             str(state),
-            env={"FACTORY_FAILURE_BACKOFF_SECONDS": "30", "FACTORY_MAX_FAILURES": "1", "COMIC_PILE_FACTORY_AUTO_SCOUT": "0"},
+            env={"FACTORY_FAILURE_BACKOFF_SECONDS": "30", "FACTORY_MAX_FAILURES": "1", "FACTORY_AUTO_SCOUT": "0"},
             timeout=3,
         )
 
@@ -383,7 +383,7 @@ class ModelToolTests(unittest.TestCase):
         state = self.root / "state"
         state.mkdir()
 
-        heartbeat = self.scripts / "comic-pile-opencode-factory-heartbeat.sh"
+        heartbeat = self.scripts / "opencode-factory-heartbeat.sh"
         heartbeat.write_text(
             textwrap.dedent(
                 """\
@@ -407,10 +407,10 @@ class ModelToolTests(unittest.TestCase):
         heartbeat.chmod(0o755)
 
         result = self.run_command(
-            str(self.scripts / "comic-pile-opencode-factory.sh"),
+            str(self.scripts / "opencode-factory.sh"),
             "--state-dir",
             str(state),
-            env={"COMIC_PILE_FACTORY_AUTO_SCOUT": "0"},
+            env={"FACTORY_AUTO_SCOUT": "0"},
             timeout=10,
         )
 
@@ -420,7 +420,7 @@ class ModelToolTests(unittest.TestCase):
     def test_heartbeat_rejects_zero_heartbeat_timeout(self) -> None:
         """Reject a zero FACTORY_HEARTBEAT_TIMEOUT before starting any heartbeat."""
         state = self.root / "state"
-        heartbeat = self.scripts / "comic-pile-opencode-factory-heartbeat.sh"
+        heartbeat = self.scripts / "opencode-factory-heartbeat.sh"
 
         result = self.run_command(
             str(heartbeat),
@@ -492,7 +492,7 @@ class ModelToolTests(unittest.TestCase):
         # Keep the real heartbeat bootstrap (including the worktree refresh) but
         # stub out the agent execution after the prompt is built. The marker is
         # consumed by the split, so re-add it and close the here-doc.
-        heartbeat = self.scripts / "comic-pile-opencode-factory-heartbeat.sh"
+        heartbeat = self.scripts / "opencode-factory-heartbeat.sh"
         real = heartbeat.read_text()
         marker = 'FACTORY_PROMPT="$(cat <<'
         head, _tail = real.split(marker, 1)
@@ -520,7 +520,7 @@ class ModelToolTests(unittest.TestCase):
             "some/model",
             env={
                 "PATH": f"{bin_dir}:{os.environ['PATH']}",
-                "COMIC_PILE_FACTORY_AUTO_SCOUT": "0",
+                "FACTORY_AUTO_SCOUT": "0",
             },
             timeout=15,
         )
@@ -533,7 +533,7 @@ class ModelToolTests(unittest.TestCase):
     def test_heartbeat_rejects_nonnumeric_heartbeat_timeout(self) -> None:
         """Reject a nonnumeric FACTORY_HEARTBEAT_TIMEOUT before starting any heartbeat."""
         state = self.root / "state"
-        heartbeat = self.scripts / "comic-pile-opencode-factory-heartbeat.sh"
+        heartbeat = self.scripts / "opencode-factory-heartbeat.sh"
 
         result = self.run_command(
             str(heartbeat),

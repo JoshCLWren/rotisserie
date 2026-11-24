@@ -29,7 +29,7 @@ class ProviderRotationTests(unittest.TestCase):
             state.mkdir()
 
             for name in (
-                "comic-pile-opencode-factory.sh",
+                "opencode-factory.sh",
                 "opencode-model-manifest.sh",
             ):
                 target = scripts / name
@@ -61,7 +61,7 @@ class ProviderRotationTests(unittest.TestCase):
             )
             scout.chmod(0o755)
 
-            heartbeat = scripts / "comic-pile-opencode-factory-heartbeat.sh"
+            heartbeat = scripts / "opencode-factory-heartbeat.sh"
             heartbeat.write_text(
                 textwrap.dedent(
                     """\
@@ -116,14 +116,14 @@ class ProviderRotationTests(unittest.TestCase):
             env.update(
                 {
                     "PATH": f"{bin_dir}:{env['PATH']}",
-                    "COMIC_PILE_FACTORY_STATE_DIR": str(state),
-                    "COMIC_PILE_DEFAULT_MODEL": "cerebras/gemma",
+                    "FACTORY_STATE_DIR": str(state),
+                    "FACTORY_DEFAULT_MODEL": "cerebras/gemma",
                     "FACTORY_MAX_FAILURES": "1",
                     "SCOUT_PARALLEL": "1",
                 }
             )
             result = subprocess.run(
-                [scripts / "comic-pile-opencode-factory.sh"],
+                [scripts / "opencode-factory.sh"],
                 cwd=root,
                 env=env,
                 text=True,

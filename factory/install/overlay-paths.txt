@@ -134,14 +134,14 @@ docs/FACTORY_RESOURCE_MEASUREMENTS.md
 docs/LOCAL_FACTORY_REVIEW.md
 docs/ROTISSERIE_ADOPTER.md
 docs/WORKER_APP_PROVISIONING.md
-scripts/comic-pile-opencode-factory-heartbeat.sh
-scripts/comic-pile-opencode-factory-overnight.sh
-scripts/comic-pile-opencode-factory.sh
 scripts/factory-status.py
 scripts/factory_eligibility.py
 scripts/issue-sweep-loop.sh
 scripts/local-factory-acp-review.mjs
 scripts/next_task.py
+scripts/opencode-factory-heartbeat.sh
+scripts/opencode-factory-overnight.sh
+scripts/opencode-factory.sh
 scripts/opencode-model-catalog.sh
 scripts/opencode-model-manifest.sh
 scripts/opencode-model-scout.sh

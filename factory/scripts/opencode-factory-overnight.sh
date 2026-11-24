@@ -2,10 +2,10 @@
 set -Eeuo pipefail
 
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
-SOURCE_REPO="${COMIC_PILE_REPO:-$(cd -- "$SCRIPT_DIR/.." && pwd)}"
-RUNNER="$SCRIPT_DIR/comic-pile-opencode-factory.sh"
+SOURCE_REPO="${FACTORY_SOURCE_REPO:-$(cd -- "$SCRIPT_DIR/.." && pwd)}"
+RUNNER="$SCRIPT_DIR/opencode-factory.sh"
 SCOUT="$SCRIPT_DIR/opencode-model-scout.sh"
-STATE_DIR="${COMIC_PILE_FACTORY_STATE_DIR:-${SOURCE_REPO%/}-factory-state}"
+STATE_DIR="${FACTORY_STATE_DIR:-${SOURCE_REPO%/}-factory-state}"
 PID_FILE="$STATE_DIR/overnight.pid"
 SCOUT_PID_FILE="$STATE_DIR/overnight-scout.pid"
 SUPERVISOR_LOG="$STATE_DIR/overnight.log"
@@ -14,7 +14,7 @@ SCOUT_PARALLEL="${SCOUT_PARALLEL:-4}"
 
 usage() {
   cat <<'USAGE'
-Usage: bash scripts/comic-pile-opencode-factory-overnight.sh <start|stop|status|run> [factory options]
+Usage: bash scripts/opencode-factory-overnight.sh <start|stop|status|run> [factory options]
 
 Commands:
   start    Launch the continuous OpenCode factory in the background.
@@ -29,13 +29,13 @@ Environment defaults:
   FACTORY_FAILURE_BACKOFF_SECONDS=0
   FACTORY_MAX_FAILURES=2
 
-Additional factory options are passed to comic-pile-opencode-factory.sh after the selected command.
+Additional factory options are passed to opencode-factory.sh after the selected command.
 Examples:
-  bash scripts/comic-pile-opencode-factory-overnight.sh start
-  bash scripts/comic-pile-opencode-factory-overnight.sh start --idle-seconds 30
-  bash scripts/comic-pile-opencode-factory-overnight.sh run --idle-seconds 30
-  bash scripts/comic-pile-opencode-factory-overnight.sh status
-  bash scripts/comic-pile-opencode-factory-overnight.sh stop
+  bash scripts/opencode-factory-overnight.sh start
+  bash scripts/opencode-factory-overnight.sh start --idle-seconds 30
+  bash scripts/opencode-factory-overnight.sh run --idle-seconds 30
+  bash scripts/opencode-factory-overnight.sh status
+  bash scripts/opencode-factory-overnight.sh stop
 USAGE
 }
 
@@ -66,13 +66,13 @@ cleanup_stale_pid() {
 
 run_factory() {
   # Preserve an explicit OPENCODE_MODEL override; otherwise let the runner rotate
-  # among confirmed models, falling back to COMIC_PILE_DEFAULT_MODEL.
+  # among confirmed models, falling back to FACTORY_DEFAULT_MODEL.
   if [[ -n "${OPENCODE_MODEL:-}" ]]; then
     export OPENCODE_MODEL
   else
     unset OPENCODE_MODEL 2>/dev/null || true
   fi
-  export COMIC_PILE_DEFAULT_MODEL="${COMIC_PILE_DEFAULT_MODEL:-$DEFAULT_MODEL}"
+  export FACTORY_DEFAULT_MODEL="${FACTORY_DEFAULT_MODEL:-$DEFAULT_MODEL}"
   export FACTORY_IDLE_SECONDS="${FACTORY_IDLE_SECONDS:-60}"
   export FACTORY_HEARTBEAT_TIMEOUT="${FACTORY_HEARTBEAT_TIMEOUT:-60}"
   export FACTORY_FAILURE_BACKOFF_SECONDS="${FACTORY_FAILURE_BACKOFF_SECONDS:-0}"
@@ -110,7 +110,7 @@ start_scout() {
   printf 'Starting model scout (parallel=%s, heartbeat timeout=%ss). Scout log: %s\n' \
     "$SCOUT_PARALLEL" "${FACTORY_HEARTBEAT_TIMEOUT:-60}" "$SUPERVISOR_LOG"
   nohup setsid env \
-    COMIC_PILE_FACTORY_STATE_DIR="$STATE_DIR" \
+    FACTORY_STATE_DIR="$STATE_DIR" \
     "$SCOUT" --watch --state-dir "$STATE_DIR" \
     --parallel "$SCOUT_PARALLEL" \
     --timeout "${FACTORY_HEARTBEAT_TIMEOUT:-60}" \
@@ -157,21 +157,21 @@ cleanup_stale_scout_pid
 case "$command" in
   start)
     if is_running; then
-      printf 'ComicPile overnight factory is already running (process group %s).\n' "$(read_pid)"
+      printf 'Overnight factory is already running (process group %s).\n' "$(read_pid)"
       exit 0
     fi
 
     start_scout
-    printf 'Starting ComicPile overnight factory with model %s. Supervisor log: %s\n' "${OPENCODE_MODEL:-$DEFAULT_MODEL}" "$SUPERVISOR_LOG"
+    printf 'Starting Overnight factory with model %s. Supervisor log: %s\n' "${OPENCODE_MODEL:-$DEFAULT_MODEL}" "$SUPERVISOR_LOG"
     nohup setsid env \
       ${OPENCODE_MODEL:+OPENCODE_MODEL="$OPENCODE_MODEL"} \
-      COMIC_PILE_DEFAULT_MODEL="${COMIC_PILE_DEFAULT_MODEL:-$DEFAULT_MODEL}" \
+      FACTORY_DEFAULT_MODEL="${FACTORY_DEFAULT_MODEL:-$DEFAULT_MODEL}" \
       FACTORY_IDLE_SECONDS="${FACTORY_IDLE_SECONDS:-60}" \
       FACTORY_FAILURE_BACKOFF_SECONDS="${FACTORY_FAILURE_BACKOFF_SECONDS:-0}" \
       FACTORY_MAX_FAILURES="${FACTORY_MAX_FAILURES:-1}" \
-      COMIC_PILE_FACTORY_WAIT_FOR_SCOUT=1 \
-      COMIC_PILE_FACTORY_SCOUT_READY_FILE="$STATE_DIR/scout-initial-pass.done" \
-      COMIC_PILE_FACTORY_SCOUT_PID_FILE="$SCOUT_PID_FILE" \
+      FACTORY_WAIT_FOR_SCOUT=1 \
+      FACTORY_SCOUT_READY_FILE="$STATE_DIR/scout-initial-pass.done" \
+      FACTORY_SCOUT_PID_FILE="$SCOUT_PID_FILE" \
       "$RUNNER" --watch "$@" >>"$SUPERVISOR_LOG" 2>&1 &
     pid=$!
     printf '%s\n' "$pid" >"$PID_FILE"
@@ -182,25 +182,25 @@ case "$command" in
       die "factory exited during startup; inspect $SUPERVISOR_LOG"
     fi
 
-    printf 'ComicPile overnight factory started (process group %s).\n' "$pid"
+    printf 'Overnight factory started (process group %s).\n' "$pid"
     ;;
 
   stop)
     stop_scout
     if ! is_running; then
       cleanup_stale_pid
-      printf 'ComicPile overnight factory is not running.\n'
+      printf 'Overnight factory is not running.\n'
       exit 0
     fi
 
     pid="$(read_pid)"
-    printf 'Stopping ComicPile overnight factory process group %s...\n' "$pid"
+    printf 'Stopping Overnight factory process group %s...\n' "$pid"
     kill -TERM -- "-$pid"
 
     for _ in {1..20}; do
       if ! kill -0 -- "-$pid" 2>/dev/null; then
         rm -f "$PID_FILE"
-        printf 'ComicPile overnight factory stopped.\n'
+        printf 'Overnight factory stopped.\n'
         exit 0
       fi
       sleep 1
@@ -213,7 +213,7 @@ case "$command" in
 
   status)
     if is_running; then
-      printf 'ComicPile overnight factory is running (process group %s).\n' "$(read_pid)"
+      printf 'Overnight factory is running (process group %s).\n' "$(read_pid)"
       printf 'Supervisor log: %s\n' "$SUPERVISOR_LOG"
       if is_scout_running; then
         printf 'Model scout is running (process group %s).\n' "$(read_scout_pid)"
@@ -226,16 +226,16 @@ case "$command" in
     fi
 
     cleanup_stale_pid
-    printf 'ComicPile overnight factory is not running.\n'
+    printf 'Overnight factory is not running.\n'
     exit 1
     ;;
 
   run)
     start_scout
     trap 'stop_scout' EXIT
-    export COMIC_PILE_FACTORY_WAIT_FOR_SCOUT=1
-    export COMIC_PILE_FACTORY_SCOUT_READY_FILE="$STATE_DIR/scout-initial-pass.done"
-    export COMIC_PILE_FACTORY_SCOUT_PID_FILE="$SCOUT_PID_FILE"
+    export FACTORY_WAIT_FOR_SCOUT=1
+    export FACTORY_SCOUT_READY_FILE="$STATE_DIR/scout-initial-pass.done"
+    export FACTORY_SCOUT_PID_FILE="$SCOUT_PID_FILE"
     run_factory "$@"
     ;;
 

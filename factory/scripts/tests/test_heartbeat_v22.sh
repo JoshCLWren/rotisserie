@@ -2,14 +2,14 @@
 set -Eeuo pipefail
 
 # ===========================================================================
-# Test suite for comic-pile-opencode-factory-heartbeat.sh V22
+# Test suite for opencode-factory-heartbeat.sh V22
 #
 # Extracts function definitions from the heartbeat script and tests them
 # in isolation using a temporary git repo + bare remote.
 # ===========================================================================
 
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
-HEARTBEAT="$SCRIPT_DIR/../comic-pile-opencode-factory-heartbeat.sh"
+HEARTBEAT="$SCRIPT_DIR/../opencode-factory-heartbeat.sh"
 PASS=0
 FAIL=0
 TEST_TMPDIR=""
@@ -520,8 +520,8 @@ printf 'Running heartbeat V22 test suite...\n'
 printf 'Script: %s\n\n' "$HEARTBEAT"
 
 # Source the functions we need — set required env first
-export SOURCE_REPO="${COMIC_PILE_REPO:-/mnt/extra/josh/code/comic-pile}"
-export STATE_DIR="${COMIC_PILE_FACTORY_STATE_DIR:-${SOURCE_REPO%/}-factory-state}"
+export SOURCE_REPO="${FACTORY_SOURCE_REPO:-$(cd -- "$SCRIPT_DIR/../.." && pwd)}"
+export STATE_DIR="${FACTORY_STATE_DIR:-${SOURCE_REPO%/}-factory-state}"
 export MAX_SAME_ISSUE_ATTEMPTS="${FACTORY_MAX_SAME_ISSUE_ATTEMPTS:-2}"
 extract_functions
 

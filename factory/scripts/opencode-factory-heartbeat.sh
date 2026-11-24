@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
 set -Eeuo pipefail
 
-SOURCE_REPO="${COMIC_PILE_REPO:-/mnt/extra/josh/code/comic-pile}"
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
-WORKTREE="${COMIC_PILE_FACTORY_WORKTREE:-}"
-STATE_DIR="${COMIC_PILE_FACTORY_STATE_DIR:-${SOURCE_REPO%/}-factory-state}"
+SOURCE_REPO="${FACTORY_SOURCE_REPO:-$(cd -- "$SCRIPT_DIR/.." && pwd)}"
+WORKTREE="${FACTORY_WORKTREE:-}"
+STATE_DIR="${FACTORY_STATE_DIR:-${SOURCE_REPO%/}-factory-state}"
 MANIFEST_HELPER="$SCRIPT_DIR/opencode-model-manifest.sh"
-DEFAULT_MODEL="${COMIC_PILE_DEFAULT_MODEL:-deepseek/deepseek-v4-flash}"
+DEFAULT_MODEL="${FACTORY_DEFAULT_MODEL:-deepseek/deepseek-v4-flash}"
 MODEL=""
 AGENT="${OPENCODE_AGENT:-}"
 USE_AUTO="${OPENCODE_AUTO:-1}"
@@ -15,9 +15,9 @@ IDLE_SECONDS="${FACTORY_IDLE_SECONDS:-10}"
 FAILURE_BACKOFF_SECONDS="${FACTORY_FAILURE_BACKOFF_SECONDS:-0}"
 MAX_FAILURES="${FACTORY_MAX_FAILURES:-2}"
 MAX_SAME_ISSUE_ATTEMPTS="${FACTORY_MAX_SAME_ISSUE_ATTEMPTS:-2}"
-WAIT_FOR_SCOUT="${COMIC_PILE_FACTORY_WAIT_FOR_SCOUT:-0}"
-SCOUT_READY_FILE="${COMIC_PILE_FACTORY_SCOUT_READY_FILE:-$STATE_DIR/scout-initial-pass.done}"
-SCOUT_PID_FILE="${COMIC_PILE_FACTORY_SCOUT_PID_FILE:-}"
+WAIT_FOR_SCOUT="${FACTORY_WAIT_FOR_SCOUT:-0}"
+SCOUT_READY_FILE="${FACTORY_SCOUT_READY_FILE:-$STATE_DIR/scout-initial-pass.done}"
+SCOUT_PID_FILE="${FACTORY_SCOUT_PID_FILE:-}"
 WORKER_ID="${OPENCODE_FACTORY_WORKER_ID:-local-opencode-${HOSTNAME:-host}}"
 WORKER_ID="${WORKER_ID//[^a-zA-Z0-9._-]/-}"
 MODE="drain"
@@ -25,12 +25,12 @@ RUN_ONCE=0
 
 usage() {
   cat <<'USAGE'
-Usage: comic-pile-opencode-factory.sh [options]
+Usage: opencode-factory.sh [options]
 
 Options:
   --watch             Stay alive and poll while idle or waiting on CI.
   --once              Run exactly one factory heartbeat.
-  --repo PATH         Source comic-pile repository.
+  --repo PATH         Source adopter repository.
   --worktree PATH     Dedicated factory worktree.
   --state-dir PATH    Factory state directory (manifest, heartbeats, scout).
   --model ID          OpenCode model id (default: rotate confirmed models).
@@ -72,6 +72,9 @@ while (($#)); do
 done
 
 [[ -n "$WORKTREE" ]] || WORKTREE="${SOURCE_REPO%/}-factory"
+adopter() { (cd "$SOURCE_REPO" && python3 "$SCRIPT_DIR/../.github/scripts/factory_adopter.py" "$1"); }
+REPOSITORY="${GITHUB_REPOSITORY:-$(adopter repository)}"
+FACTORY_MARKER_PREFIX="${FACTORY_MARKER_PREFIX:-$(adopter marker-prefix)}"
 is_nonnegative_integer "$IDLE_SECONDS" || die "FACTORY_IDLE_SECONDS must be an integer"
 is_nonnegative_integer "$FAILURE_BACKOFF_SECONDS" || die "FACTORY_FAILURE_BACKOFF_SECONDS must be an integer"
 is_nonnegative_integer "$MAX_FAILURES" || die "FACTORY_MAX_FAILURES must be an integer"
@@ -656,7 +659,7 @@ printf 'Factory worktree is now at %s (%s).\n' \
 # FACTORY PROMPT
 # ===========================================================================
 FACTORY_PROMPT="$(cat <<'PROMPT'
-Act as one high-ownership local factory heartbeat for JoshCLWren/comic-pile.
+Act as one high-ownership local factory heartbeat for __REPOSITORY__.
 Durable worker ID: `__WORKER_ID__`.
 
 Read current-main AGENTS.md, docs/ISSUE_EXECUTION_PROTOCOL.md, and
@@ -820,25 +823,16 @@ CI-log access, and merge access. Print:
 Never claim a command ran unless it ran.
 
 LEASE MARKERS
-Issue claim:
-`<!-- comic-pile-factory-implement-claim-v3:issue-<n>:<worker-id>:<epoch>:attempt-<n> -->`
-Issue progress:
-`<!-- comic-pile-factory-implement-progress-v3:issue-<n>:<worker-id>:<epoch> -->`
-Review claim:
-`<!-- comic-pile-factory-review-claim-v2:<sha>:<worker-id>:<epoch> -->`
-Verdicts:
-`<!-- comic-pile-factory-review-v2:<sha>:pass -->`
-`<!-- comic-pile-factory-review-v2:<sha>:changes-required -->`
-Fix claim:
-`<!-- comic-pile-factory-fix-claim-v3:<sha>:<worker-id>:<epoch>:attempt-<n> -->`
-Fix progress:
-`<!-- comic-pile-factory-fix-progress-v3:<sha>:<worker-id>:<epoch> -->`
-Ready:
-`<!-- comic-pile-factory-ready-v2:<sha> -->`
-Needs human:
-`<!-- comic-pile-factory-needs-human-v2:<sha-or-issue> -->`
-Released:
-`<!-- comic-pile-factory-claim-released-v3:<target>:<worker-id>:<epoch>:<reason> -->`
+Issue claim: `<!-- __MARKER_PREFIX__-factory-implement-claim-v3:issue-<n>:<worker-id>:<epoch>:attempt-<n> -->`
+Issue progress: `<!-- __MARKER_PREFIX__-factory-implement-progress-v3:issue-<n>:<worker-id>:<epoch> -->`
+Review claim: `<!-- __MARKER_PREFIX__-factory-review-claim-v2:<sha>:<worker-id>:<epoch> -->`
+Verdicts: `<!-- __MARKER_PREFIX__-factory-review-v2:<sha>:pass -->` or
+`<!-- __MARKER_PREFIX__-factory-review-v2:<sha>:changes-required -->`
+Fix claim: `<!-- __MARKER_PREFIX__-factory-fix-claim-v3:<sha>:<worker-id>:<epoch>:attempt-<n> -->`
+Fix progress: `<!-- __MARKER_PREFIX__-factory-fix-progress-v3:<sha>:<worker-id>:<epoch> -->`
+Ready: `<!-- __MARKER_PREFIX__-factory-ready-v2:<sha> -->`
+Needs human: `<!-- __MARKER_PREFIX__-factory-needs-human-v2:<sha-or-issue> -->`
+Released: `<!-- __MARKER_PREFIX__-factory-claim-released-v3:<target>:<worker-id>:<epoch>:<reason> -->`
 
 MODEL SIGNING
 The model running this heartbeat is `__MODEL_ID__`. Sign PR bodies you open or update with:
@@ -859,8 +853,10 @@ PROMPT
 
 FACTORY_PROMPT="${FACTORY_PROMPT//__WORKER_ID__/$WORKER_ID}"
 FACTORY_PROMPT="${FACTORY_PROMPT//__MODEL_ID__/$MODEL}"
+FACTORY_PROMPT="${FACTORY_PROMPT//__REPOSITORY__/$REPOSITORY}"
+FACTORY_PROMPT="${FACTORY_PROMPT//__MARKER_PREFIX__/$FACTORY_MARKER_PREFIX}"
 
-printf 'ComicPile local factory v22 (delivery-ledger)\n'
+printf 'Local factory v22 (delivery-ledger) for %s\n' "$REPOSITORY"
 printf '  Source repo: %s\n' "$SOURCE_REPO"
 printf '  Worktree:    %s\n' "$WORKTREE"
 printf '  Ledger:      %s\n' "$LEDGER"
@@ -872,9 +868,9 @@ printf '  Worker ID:   %s\n' "$WORKER_ID"
 
 report_counts() {
   local open_prs open_issues pending_campaign active_claims
-  open_prs="$(gh pr list --repo JoshCLWren/comic-pile --state open --limit 1000 --json number --jq 'length' 2>/dev/null || printf '?')"
-  open_issues="$(gh issue list --repo JoshCLWren/comic-pile --state open --limit 1000 --json number --jq 'length' 2>/dev/null || printf '?')"
-  pending_campaign="$(gh issue list --repo JoshCLWren/comic-pile --state open --limit 1000 --label ralph-task --label ralph-status:pending --json number --jq 'length' 2>/dev/null || printf '?')"
+  open_prs="$(gh pr list --repo "$REPOSITORY" --state open --limit 1000 --json number --jq 'length' 2>/dev/null || printf '?')"
+  open_issues="$(gh issue list --repo "$REPOSITORY" --state open --limit 1000 --json number --jq 'length' 2>/dev/null || printf '?')"
+  pending_campaign="$(gh issue list --repo "$REPOSITORY" --state open --limit 1000 --label ralph-task --label ralph-status:pending --json number --jq 'length' 2>/dev/null || printf '?')"
   active_claims="$(awk -F'\t' 'NR>1 && $8!="released" && $8!="merged"' "$LEDGER" 2>/dev/null | wc -l)"
   printf '  GitHub queue: %s open PR(s), %s open issue(s), %s pending, %s ledger claim(s)\n' \
     "$open_prs" "$open_issues" "$pending_campaign" "$active_claims"
@@ -890,7 +886,7 @@ while true; do
   log_file="$WORKTREE/.opencode_logs/factory_${timestamp}_heartbeat_${heartbeat}.log"
   printf '\n[%s] Starting heartbeat %d (model %s)\n' "$(date --iso-8601=seconds)" "$heartbeat" "$MODEL"
 
-  opencode_args=(run -m "$MODEL" --title "ComicPile factory heartbeat ${timestamp}")
+  opencode_args=(run -m "$MODEL" --title "Factory heartbeat ${timestamp}")
   [[ -n "$AGENT" ]] && opencode_args+=(--agent "$AGENT")
   [[ "$USE_AUTO" == "1" ]] && opencode_args+=(--auto)
 

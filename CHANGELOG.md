@@ -65,6 +65,8 @@ such change must be called out here and in its release notes.
   inventory (`MIGRATION_INVENTORY.md`), the inventory test and the 2026-10
   drift note. Git history keeps them; `MIGRATION.md` names the last commit
   that has them.
+- `factory/docs/migration/comic-pile-*`: copy-time migration evidence that
+  nothing reads. Git history keeps it.
 
 ### Changed
 
@@ -73,6 +75,15 @@ such change must be called out here and in its release notes.
   the shell workers) instead of a hard-coded product prefix. `comic-pile`
   still produces its existing markers. `FACTORY_MARKER_PREFIX` overrides the
   prefix. `rotisserie factory` derives it from `--repo`.
+- The local OpenCode factory scripts are `scripts/opencode-factory.sh`,
+  `opencode-factory-heartbeat.sh` and `opencode-factory-overnight.sh` (were
+  `comic-pile-opencode-factory*.sh`). Their `COMIC_PILE_*` variables are now
+  `FACTORY_SOURCE_REPO`, `FACTORY_WORKTREE`, `FACTORY_STATE_DIR`,
+  `FACTORY_DEFAULT_MODEL`, `FACTORY_AUTO_SCOUT`, `FACTORY_WAIT_FOR_SCOUT`,
+  `FACTORY_SCOUT_READY_FILE`, `FACTORY_SCOUT_PID_FILE`,
+  `FACTORY_ALLOWED_PROVIDERS` and `FACTORY_GOOGLE_FREE_MODELS`. The source
+  repository defaults to the checkout that holds the scripts. The heartbeat
+  takes its repository and marker prefix from `factory_adopter.py`.
 
 ### Fixed
 
