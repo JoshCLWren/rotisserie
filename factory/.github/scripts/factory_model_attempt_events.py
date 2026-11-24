@@ -29,7 +29,7 @@ EXIT = re.compile(r"^agent exit status (?P<code>-?\d+) for (?:pr|issue) #\d+\b")
 FAILOVER = re.compile(
     r"^FACTORY_TRUSTED_FAILOVER: source=(?P<source>\S+)"
     r" model=(?P<model>\S+) outcome=(?P<outcome>[a-z_]+)"
-    r"(?: scope=(?P<scope>account|model))?\s*$"
+    r"(?: scope=(?P<scope>account|model|pool))?\s*$"
 )
 NO_CHANGE = re.compile(r"^FACTORY_NO_CHANGE_FAILOVER\b")
 MAX_ATTEMPTS_PER_RUN = 2000

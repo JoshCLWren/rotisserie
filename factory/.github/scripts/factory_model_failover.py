@@ -144,13 +144,26 @@ def select_next_fleet(
     *,
     rotation: int = 0,
     proven: set[tuple[str, str]] | None = None,
+    exhausted_credit_pools: frozenset[str] = frozenset(),
 ) -> dict[str, Any]:
     """Select the next provider/model from canonical catalogs, not one source.
 
     A provider/account breaker skips every model at that source; model-only
-    failures exclude precisely one canonical pair. The eligible_sources set
-    is the trusted controller's admission projection, not a model roster.
+    failures exclude precisely one canonical pair. An exhausted credit pool
+    excludes only the source's catalog models with a published positive price.
+    The eligible_sources set is the trusted controller's admission projection,
+    not a model roster.
     """
+    from factory_billing_pool import credit_pool_members
+
+    def pool_excluded(source: str, catalog: object) -> set[tuple[str, str]]:
+        if source not in exhausted_credit_pools:
+            return set()
+        return {(source, model) for model in credit_pool_members(catalog)}
+
+    attempted = set(attempted).union(*(
+        pool_excluded(source, catalog) for source, catalog in catalogs.items()
+    ))
     sources = sorted(eligible_sources & set(catalogs) - blocked_providers)
     if original_source in sources:
         sources.remove(original_source)
@@ -262,6 +275,7 @@ def main() -> int:
     parser.add_argument("--fleet-catalog-cache", type=Path)
     parser.add_argument("--attempted-pair", action="append", default=[])
     parser.add_argument("--blocked-provider", action="append", default=[])
+    parser.add_argument("--exhausted-credit-pool", action="append", default=[])
     parser.add_argument("--worker", required=True)
     parser.add_argument("--exclusions-file", type=Path, required=True)
     parser.add_argument("--catalog-file", type=Path)
@@ -329,6 +343,7 @@ def main() -> int:
             selected = select_next_fleet(
                 args.worker, args.source, pairs, set(args.blocked_provider),
                 exclusions, catalogs, set(sources), rotation=args.rotation,
+                exhausted_credit_pools=frozenset(args.exhausted_credit_pool),
             )
     except ExhaustedCandidatesError as exc:
         print(f"factory failover exhausted: {exc}", file=sys.stderr)

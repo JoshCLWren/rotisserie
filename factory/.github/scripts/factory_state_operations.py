@@ -186,7 +186,6 @@ def worker_backoff_reason(record: Any, source: str, model: str, now: datetime) -
     return "legacy timeout cooling in Neon" if record["expires_at"] > now else None
 
 
-
 MODEL_RETRY_CLASSES = frozenset({
     "agent_timeout", "provider_failure", "provider_throttle", "provider_quota",
     "model_unavailable", "model_policy_violation",
@@ -218,11 +217,12 @@ def validate_intermediate_model_failures(
                 or not isinstance(model, str)
                 or not re.fullmatch(r"[\w./:-]{1,180}", model)
                 or classification not in accepted
-                or scope not in {"account", "model"}
-                or (scope == "account" and classification not in {"provider_quota", "provider_failure"})):
+                or scope not in {"account", "model", "pool"}
+                or (scope == "account" and classification not in {"provider_quota", "provider_failure"})
+                or (scope == "pool" and classification != "provider_quota")):
             raise ValueError("invalid trusted intermediate model failure identity")
         # Old account-labelled credit refusals must not suppress healthy peers.
-        seen[(failure_source, model)] = (classification, "model")
+        seen[(failure_source, model)] = (classification, "pool" if scope == "pool" else "model")
     return [
         (s, model, *seen[(s, model)]) for s, model in sorted(seen)
     ]
@@ -393,7 +393,7 @@ async def project_runtime(conn: Any, repo: str, run_id: int, outcome: dict[str, 
                 repo, source, model, status, classification, until, observed if proven else None, run_id)
         # Record every failed candidate independently even if another model
         # eventually completed the same leased task. No provider-wide breaker.
-        for failed_source, failed_model, failed_outcome, _scope in model_failures:
+        for failed_source, failed_model, failed_outcome, failed_scope in model_failures:
             failed_status = (
                 "retired" if failed_outcome == "model_retired_410"
                 else "unavailable" if failed_outcome in MODEL_COOLDOWNS
@@ -448,7 +448,7 @@ async def project_runtime(conn: Any, repo: str, run_id: int, outcome: dict[str, 
                          expires_at=EXCLUDED.expires_at,updated_at=EXCLUDED.updated_at""",
                     failed_key, json.dumps([{
                         "source": failed_source, "model": failed_model,
-                        "outcome": failed_outcome, "streak": streak,
+                        "outcome": failed_outcome, "scope": failed_scope, "streak": streak,
                         "run_id": run_id, "suspended": suspended,
                         "next_retry_at": retry_at,
                     }]),

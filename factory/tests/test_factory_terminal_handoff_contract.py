@@ -4,11 +4,12 @@ from pathlib import Path
 
 
 WORKER = Path('.github/scripts/free-model-factory-worker.sh')
+OUTCOME = Path('.github/scripts/factory-worker-outcome.sh')
 
 
 def _worker_text() -> str:
-    """Return the trusted fixed-model worker source."""
-    return WORKER.read_text(encoding='utf-8')
+    """Return the trusted fixed-model worker source and its sourced outcome module."""
+    return WORKER.read_text(encoding='utf-8') + OUTCOME.read_text(encoding='utf-8')
 
 
 def _function_body(name: str) -> str:

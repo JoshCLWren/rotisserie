@@ -2,13 +2,14 @@ from __future__ import annotations
 
 import argparse
 from collections import Counter
+from pathlib import Path
 
 from rotisserie.factory_console import runtime
 from rotisserie.factory_console.commands._shared import EXIT_OK, Outcome, discover_models
 from rotisserie.factory_console.commands.report import _count, _load_stats, _provider_rows, _window
 from rotisserie.factory_console.context import Context, UsageError
 from rotisserie.factory_console.github import items, string
-from rotisserie.factory_console.service import fleet, providers
+from rotisserie.factory_console.service import billing, fleet, providers
 from rotisserie.factory_console.tracker import Result
 from rotisserie.factory_console.work import current_work
 
@@ -150,6 +151,9 @@ def cmd_models(context: Context, arguments: argparse.Namespace) -> Outcome:
         return _report(context, change, f"Model {change.model}")
     if len(arguments.words) != 1:
         raise UsageError(f"Usage: rotisserie factory models PROVIDER, or {usage}")
+    if arguments.billing is not None:
+        catalog = Path(arguments.billing) if arguments.billing else None
+        return _models_billing(context, runtime.resolve_provider(arguments.words[0]), catalog)
     return _list_models(context, arguments.words[0])
 
 
@@ -217,3 +221,23 @@ def _list_models(context: Context, provider_name: str) -> Outcome:
             ],
         },
     )
+
+
+def _models_billing(context: Context, provider: runtime.Provider, catalog: Path | None) -> Outcome:
+    console = context.console
+    try:
+        found = billing.pool_membership(provider, catalog)
+    except billing.CatalogUnavailableError as exc:
+        raise UsageError(str(exc)) from None
+    console.heading(f"{provider.name} billing ({found.origin})")
+    groups = (("paid credits", found.paid), ("free", found.free), ("unknown price", found.unknown))
+    console.table(
+        ["Billing", "Models", "Examples"],
+        [[label, str(len(models)), ", ".join(models[:3])] for label, models in groups],
+    )
+    console.line()
+    console.note(
+        "When the provider says the account is out of credits, a worker stops trying "
+        "the paid models for the rest of that run. Free and unknown-price models stay eligible."
+    )
+    return Outcome(Result.COMPLETED, EXIT_OK, found.to_dict())

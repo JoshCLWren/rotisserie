@@ -78,6 +78,7 @@ unclean_git_state_json() {
 source <(sed '/^ensure_owner_label$/,$d' .github/scripts/free-model-factory-worker-primitives.sh)
 source .github/scripts/factory-semantic-verdict.sh
 source .github/scripts/factory-fork-worker.sh
+source .github/scripts/factory-worker-outcome.sh
 
 TERMINAL_OUTCOME_FILE="${RUNNER_TEMP:-/tmp}/factory-discovery-outcome"
 
@@ -103,57 +104,6 @@ if [[ "${FACTORY_SOURCE}" == 'omniroute-free' ]]; then
       ;;
   esac
 fi
-
-record_terminal_outcome() {
-  local outcome="$1" detail="$2"
-  case "$outcome" in
-    success|no_work|work_failure|agent_timeout|provider_failure|provider_throttle|provider_quota|model_unavailable|model_retired_410|model_policy_violation|environment_failure|control_plane_failure|unknown_failure) ;;
-    *)
-      echo "unsupported terminal factory outcome: ${outcome}" >&2
-      return 2
-      ;;
-  esac
-  detail="${detail//$'\n'/ }"
-  detail="${detail//$'\t'/ }"
-  printf '%s\t%s\n' "$outcome" "$detail" > "$TERMINAL_OUTCOME_FILE"
-}
-
-record_agent_failure_outcome() {
-  local status="$1" log_file="/tmp/opencode-factory-${WORKER}.log"
-  # Preserve trusted infrastructure failures through the final handoff.
-  if [[ -f "$TERMINAL_OUTCOME_FILE" ]] &&       grep -Eq '^control_plane_failure[[:space:]]' "$TERMINAL_OUTCOME_FILE"; then
-    return 0
-  fi
-  # GNU timeout returns 124 when this worker's own deadline expires.
-  # Reading source/docs mentioning quotas must not poison provider health.
-  if (( status == 124 )); then
-    record_terminal_outcome agent_timeout "trusted local execution deadline expired (agent exit 124)"
-    return
-  fi
-  if [[ -f "$log_file" ]] && grep -Eqi 'budget[ _]exhausted|api key budget (limit )?exceeded|payment required|HTTP[^0-9]*402|(monthly|daily|weekly|free) usage limit|reached your [a-z ]*usage limit|insufficient[ _](credits|balance|quota)|exceeded your current quota|quota[ _](exceeded|exhausted)|free-models-per-day|rate limit exceeded: free-models-per-day|add usage credits or subscribe|account (credits|balance) (depleted|exhausted)|(does|do)(n.t| not) have enough credits' "$log_file"; then
-    record_terminal_outcome provider_quota "pinned provider/model account quota or budget is exhausted (agent exit ${status})"
-  elif [[ -f "$log_file" ]] && grep -Eqi '(^|[^0-9A-Za-z_])(429|413)([^0-9]|$)|too many requests|request too large|rate.?limit|\bquota\b|throttl|capacity[^\n]*(exceeded|exhausted|unavailable)|(exceeded|exhausted|unavailable)[^\n]*capacity|tokens per minute|\btpm\b' "$log_file"; then
-    record_terminal_outcome provider_throttle "pinned provider/model session was throttled (agent exit ${status})"
-  elif [[ -f "$log_file" ]] && grep -Eqi 'HTTP[^0-9]*410|410 Gone' "$log_file"; then
-    if [[ "$SOURCE" == nvidia ]]; then
-      printf 'NVIDIA permanently retired model: %s\n' "$MODEL"
-    fi
-    record_terminal_outcome model_retired_410 "pinned model has been permanently retired by the provider (agent exit ${status})"
-  elif [[ -f "$log_file" ]] && grep -Eqi 'model[^[:alnum:]]+(not found|unavailable|does not exist)|unknown model|invalid model|free tier users do not have access to this model|HTTP[^0-9]*404|404 Not Found|function id [^ ]+ version [^ ]+: specified function [^\n]*not found' "$log_file"; then
-    record_terminal_outcome model_unavailable "pinned model became unavailable during execution (agent exit ${status})"
-  elif [[ -f "$log_file" ]] && grep -Eqi 'model[^\n]*(policy|guard)[^\n]*(blocked|rejected|denied)|model[^\n]*(blocked|rejected|denied)[^\n]*(policy|guard)' "$log_file"; then
-    record_terminal_outcome model_policy_violation "pinned model was rejected by provider/model policy (agent exit ${status})"
-  elif [[ -f "$log_file" ]] && grep -Eqi 'checkout failed|dependency install failed|disk full|no space left|docker daemon|runner environment|tool installation failed' "$log_file"; then
-    record_terminal_outcome environment_failure "worker environment failed during assigned execution (agent exit ${status})"
-  elif (( status == 137 || status == 143 )); then
-    record_terminal_outcome provider_failure "pinned provider/model session timed out or was interrupted after smoke succeeded (agent exit ${status})"
-  elif [[ -f "$log_file" ]] && grep -Eqi 'provider[^\n]*(error|unavailable|failed)|service unavailable|bad gateway|gateway timeout|stream[^\n]*(timeout|readiness)|STREAM_READINESS_TIMEOUT|HTTP[^0-9]*(502|503|504)|ECONNRESET|ETIMEDOUT|connection reset|upstream[^\n]*(error|failed)' "$log_file"; then
-    record_terminal_outcome provider_failure "pinned provider/model execution failed after smoke succeeded (agent exit ${status})"
-  else
-    record_terminal_outcome unknown_failure "agent exited ${status} without enough evidence for a narrower failure class"
-  fi
-}
-
 
 # A PR branch may predate the Kilo integration entirely. Stage the backend
 # runner from trusted main before any checkout so cross-worker takeover never
@@ -565,7 +515,8 @@ fi
 ORIGINAL_SOURCE="$SOURCE"
 attempted_pairs=()
 blocked_providers=()
-ACCOUNT_REFUSAL_RE='insufficient balance or no resource package|please recharge|add usage credits or subscribe|api key budget (limit )?exceeded|account (credits|balance) (depleted|exhausted)|billing_api_budget_exhausted|payment required|no resource package|(does|do)(n.t| not) have enough credits'
+exhausted_pools=()
+ACCOUNT_REFUSAL_RE='out of credits|insufficient balance or no resource package|please recharge|add usage credits or subscribe|api key budget (limit )?exceeded|account (credits|balance) (depleted|exhausted)|billing_api_budget_exhausted|payment required|no resource package|(does|do)(n.t| not) have enough credits'
 account_wide_failure() {
   grep -Eqi "$ACCOUNT_REFUSAL_RE" "/tmp/opencode-factory-$WORKER.log"
 }
@@ -599,6 +550,7 @@ select_next_eligible_model() {
     --fleet-catalog-cache "$RUNNER_TEMP/factory-fleet-catalogs.json")
   for pair in "${attempted_pairs[@]}"; do select_args+=(--attempted-pair "$pair"); done
   for provider in "${blocked_providers[@]}"; do select_args+=(--blocked-provider "$provider"); done
+  for provider in "${exhausted_pools[@]}"; do select_args+=(--exhausted-credit-pool "$provider"); done
   while :; do
     (( $(remaining) > 540 )) || return 1
     if [[ -n "${OPENCODE_GO_CLIENT_ID:-}" ]]; then
@@ -753,8 +705,11 @@ while :; do
       provider_quota|provider_throttle|provider_failure|model_unavailable|model_retired_410|model_policy_violation)
         if [[ -z "$(git status --porcelain)" ]] && (( $(remaining) > 540 )); then
           attempted_pairs+=("$(jq -nc --arg source "$SOURCE" --arg model "$MODEL" '[$source,$model]')")
-          # A paid-model credit refusal backs off only the attempted model.
           failure_scope=model
+          if [[ "$failure_class" == provider_quota ]] \
+            && trip_exhausted_credit_pool "$SOURCE" "$MODEL" "$attempt_elapsed"; then
+            failure_scope=pool
+          fi
           if ! record_model_failover_failure "$SOURCE" "$MODEL" "$failure_class" "$failure_scope"; then
             record_terminal_outcome control_plane_failure "failed to persist exact attempt before failover"
             break
@@ -766,6 +721,7 @@ while :; do
             (( agent_timeout >= 300 )) || break
             continue
           fi
+          record_exhausted_capacity
         fi
         break
         ;;

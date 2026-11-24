@@ -55,7 +55,7 @@ def test_nvidia_410_evidence_comes_from_actual_assigned_work() -> None:
     runner = FACTORY_RUN.read_text(encoding="utf-8")
     assert "factory-model-retired-410:v1" not in runner
     assert "issues/1093" not in runner
-    worker = (ROOT / ".github/scripts/free-model-factory-worker.sh").read_text(encoding="utf-8")
+    worker = (ROOT / ".github/scripts/factory-worker-outcome.sh").read_text(encoding="utf-8")
     assert "printf 'NVIDIA permanently retired model: %s\\n' \"$MODEL\"" in worker
     sys.path.insert(0, str(ROOT / ".github" / "scripts"))
     from factory_state_ledger import refine_trusted_smoke_timeout

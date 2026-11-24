@@ -15,6 +15,7 @@ def test_worker_clears_stale_logs_before_recording_outcomes() -> None:
 
     clear_log = ': > "$worker_log"'
     assert clear_log in text
-    assert text.index(clear_log) < text.index("record_terminal_outcome()")
+    assert text.index("source .github/scripts/factory-worker-outcome.sh") < text.index(clear_log)
+    assert text.index(clear_log) < text.index("record_terminal_outcome ")
     assert '"/tmp/opencode-factory-${WORKER}.sanitized.log"' in text
     assert '"/tmp/opencode-factory-${WORKER}-verdict-recovery.log"' in text

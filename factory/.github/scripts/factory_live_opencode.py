@@ -97,7 +97,7 @@ def record_smoke_failure(log_content: str, runtime_model: str, outcome_file: Pat
     if re.search(
         r"budget[ _]exhausted|billing_api_budget_exhausted|payment required|HTTP[^0-9]*402|"
         r"(monthly|daily|weekly|free) usage limit|reached your [a-z ]*usage limit|"
-        r"insufficient[ _](credits|balance|quota)|exceeded your current quota|"
+        r"insufficient[ _](credits|balance|quota)|exceeded your current quota|out of credits|"
         r"quota[ _](exceeded|exhausted)|free-models-per-day|"
         r"rate limit exceeded: free-models-per-day",
         log_content,
