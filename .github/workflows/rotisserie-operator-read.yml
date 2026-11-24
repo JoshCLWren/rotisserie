@@ -1,0 +1,101 @@
+# Installed by factory/install/install.py in an adopter repository.
+# Read-only live evaluations for the hosted control room. It never mutates:
+# its token is read-only and the shared contract allows only read commands.
+name: Rotisserie Operator Read
+on:
+  workflow_call:
+    inputs:
+      request:
+        type: string
+        required: true
+    secrets:
+      NEON_API_KEY:
+        required: false
+
+env:
+  FACTORY_REPO_VARS: >-
+    {"FACTORY_SLOTS_PER_PROVIDER": "${{ vars.FACTORY_SLOTS_PER_PROVIDER }}", "FACTORY_PR_WIP_LIMIT": "${{ vars.FACTORY_PR_WIP_LIMIT }}", "FACTORY_REVIEW_BACKLOG_LIMIT": "${{ vars.FACTORY_REVIEW_BACKLOG_LIMIT }}", "FACTORY_OMNIROUTE_FREE_ENTRY_CAP": "${{ vars.FACTORY_OMNIROUTE_FREE_ENTRY_CAP }}", "FACTORY_NO_DIFF_RETRY_LIMIT": "${{ vars.FACTORY_NO_DIFF_RETRY_LIMIT }}", "FACTORY_NO_DIFF_RETRY_RESET_SECONDS": "${{ vars.FACTORY_NO_DIFF_RETRY_RESET_SECONDS }}", "FACTORY_REVIEW_FAILURE_COOLDOWN_SECONDS": "${{ vars.FACTORY_REVIEW_FAILURE_COOLDOWN_SECONDS }}", "FACTORY_FIXED_LEASE_TTL_SECONDS": "${{ vars.FACTORY_FIXED_LEASE_TTL_SECONDS }}", "FACTORY_LOCAL_LEASE_TTL_SECONDS": "${{ vars.FACTORY_LOCAL_LEASE_TTL_SECONDS }}", "FACTORY_PRIORITY_ORDER": "${{ vars.FACTORY_PRIORITY_ORDER }}", "FACTORY_DISABLED_PROVIDERS": "${{ vars.FACTORY_DISABLED_PROVIDERS }}", "FACTORY_DISABLED_MODELS": "${{ vars.FACTORY_DISABLED_MODELS }}", "FACTORY_INCIDENTS": "${{ vars.FACTORY_INCIDENTS }}"}
+
+permissions:
+  contents: read
+  issues: read
+  pull-requests: read
+  actions: read
+
+jobs:
+  read:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Set up factory Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: '3.14'
+      - name: Authorize GitHub actor before checking out executable code
+        env:
+          ACTOR_ID: ${{ github.actor_id }}
+          ACTOR: ${{ github.actor }}
+          REQUESTED_REF: ${{ github.ref }}
+          ALLOWED_ADMIN_IDS: ${{ vars.ROTISSERIE_ADMIN_GITHUB_IDS }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ "$REQUESTED_REF" != "refs/heads/main" ]]; then
+            echo "::error::Factory administration is restricted to main"
+            exit 1
+          fi
+          # Immutable numeric IDs, not mutable GitHub logins.
+          allowed="${ALLOWED_ADMIN_IDS:-4014199}"
+          if [[ ! "$allowed" =~ ^[0-9]+(,[0-9]+)*$ ]]; then
+            echo "::error::ROTISSERIE_ADMIN_GITHUB_IDS is malformed"
+            exit 1
+          fi
+          if [[ ",${allowed}," != *,"${ACTOR_ID}",* ]]; then
+            echo "::error::GitHub actor ${ACTOR} is not a Rotisserie administrator"
+            exit 1
+          fi
+          echo "Authorized GitHub user ${ACTOR} (id ${ACTOR_ID})"
+
+      - name: Check out adopter main
+        uses: actions/checkout@v7
+        with:
+          ref: main
+          persist-credentials: false
+      - name: Check out Rotisserie factory runtime
+        uses: actions/checkout@v7
+        with:
+          repository: ${{ job.workflow_repository }}
+          ref: ${{ job.workflow_sha }}
+          path: .rotisserie/runtime
+          persist-credentials: false
+      - name: Overlay Rotisserie factory runtime
+        run: bash .rotisserie/runtime/factory/install/overlay.sh .
+      - uses: astral-sh/setup-uv@v7
+
+      - name: Configure shared Neon observation
+        uses: ./.github/actions/factory-state-cache
+        with:
+          neon-api-key: ${{ secrets.NEON_API_KEY }}
+          neon-project-id: ${{ vars.NEON_PROJECT_ID }}
+
+      - name: Run the validated read commands
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ROTISSERIE_REQUEST: ${{ inputs.request }}
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          test -f .rotisserie/runtime/pyproject.toml
+          uv run --no-project --with ./.rotisserie/runtime --with 'asyncpg>=0.30,<1' \
+            python -m rotisserie.hosted_operator read --output "$RUNNER_TEMP/rotisserie-result.json"
+
+      # Public repositories expose artifacts to any signed-in GitHub user; the
+      # CLI's JSON never holds credentials, and the result expires in a day.
+      - name: Publish the read result
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: rotisserie-operator-${{ github.run_id }}
+          path: ${{ runner.temp }}/rotisserie-result.json
+          retention-days: 1
+          if-no-files-found: ignore

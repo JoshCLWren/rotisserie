@@ -72,32 +72,16 @@ jobs:
           ROTISSERIE_REQUEST: ${{ inputs.request }}
           PYTHONPATH: .rotisserie/runtime/src
         shell: bash
-        run: |
-          set -euo pipefail
-          python3 - <<'PY'
-          import json
-          import os
-          import subprocess
-          import sys
+        # The shared contract validates the request; the CLI runs without a shell.
+        run: python3 -m rotisserie.hosted_operator write --output "$RUNNER_TEMP/rotisserie-result.json"
 
-          from rotisserie.web import InvalidRequest, write_command
-
-          request = os.environ["ROTISSERIE_REQUEST"]
-          if len(request.encode("utf-8")) > 4096:
-              raise SystemExit("Factory request exceeds 4096 bytes")
-          try:
-              body = json.loads(request)
-              if not isinstance(body, dict):
-                  raise InvalidRequest("Expected one JSON object")
-              arguments = write_command(body)
-          except (ValueError, InvalidRequest) as exc:
-              raise SystemExit(f"Rejected factory command: {exc}") from exc
-
-          command = [
-              sys.executable, "-m", "rotisserie", "factory",
-              "--repo", os.environ["GITHUB_REPOSITORY"], "--json", *arguments,
-          ]
-          print("Operation:", arguments[0], "(authorized GitHub actor, factory policy still enforced)")
-          result = subprocess.run(command, check=False, timeout=600)
-          raise SystemExit(result.returncode)
-          PY
+      # The hosted control room reads this through the adopter sign-in service,
+      # so a rejected or failed command still reports its real outcome.
+      - name: Publish the command result
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: rotisserie-operator-${{ github.run_id }}
+          path: ${{ runner.temp }}/rotisserie-result.json
+          retention-days: 1
+          if-no-files-found: ignore
