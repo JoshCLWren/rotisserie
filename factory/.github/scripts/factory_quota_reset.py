@@ -239,6 +239,9 @@ def scope(source: str, kind: str) -> str:
     """account, model or pool: what this refusal blocks."""
     if kind == NEEDS_CREDITS:
         return "pool"
+    if kind == THROTTLE:
+        # Owner rule: a rate-limited model never cools its siblings.
+        return "model"
     return policy(source).scope
 
 
