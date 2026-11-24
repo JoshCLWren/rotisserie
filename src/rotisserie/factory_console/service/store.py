@@ -5,12 +5,15 @@ this machine never connects to it. ``selftest`` starts the adopter's
 ``factory-turso-selftest.yml``, which runs the coordination test matrix against
 the hosted database in a throwaway namespace and publishes a JSON summary.
 ``export`` starts ``factory-state-export.yml``, which copies the store into a
-plain SQLite file and publishes it with a JSON summary; ``download`` saves the
-file here.
+SQLite file, encrypts it with the adopter's ``FACTORY_EXPORT_KEY`` secret and
+publishes it with a JSON summary; ``download`` saves the file here and decrypts
+it with the same key from this machine's ``FACTORY_EXPORT_KEY``.
 """
 
 from __future__ import annotations
 
+import os
+import subprocess
 import tempfile
 from pathlib import Path
 
@@ -24,6 +27,9 @@ SUMMARIES = {
     "export": "factory-state-export-summary-{run_id}",
 }
 EXPORT_FILE = "factory-state-export-{run_id}"
+KEY_VARIABLE = "FACTORY_EXPORT_KEY"
+# Must match the encrypt step in .github/workflows/factory-state-export.yml.
+CIPHER = ("-aes-256-cbc", "-pbkdf2", "-iter", "600000", "-md", "sha256")
 TIMEOUT = 1800.0
 
 
@@ -76,10 +82,42 @@ def earlier(github: GitHub, mode: str, run_id: int) -> dict[str, object]:
     return {**data, "mode": mode, "bridge": row}
 
 
-def download(github: GitHub, run_id: int, destination: Path) -> Path:
-    """Save an export run's SQLite file; refuses to overwrite an existing file."""
+def decrypt(encrypted: Path, destination: Path, key: str) -> None:
+    """Decrypt an export with the adopter's key; the file is readable only by this user."""
+    descriptor = os.open(destination, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+    try:
+        with os.fdopen(descriptor, "wb") as target:
+            result = subprocess.run(
+                [
+                    "openssl",
+                    "enc",
+                    "-d",
+                    *CIPHER,
+                    "-pass",
+                    f"env:{KEY_VARIABLE}",
+                    "-in",
+                    str(encrypted),
+                ],
+                env={**os.environ, KEY_VARIABLE: key},
+                stdout=target,
+                stderr=subprocess.PIPE,
+                check=False,
+            )
+    except OSError as exc:
+        destination.unlink(missing_ok=True)
+        raise bridge.BridgeError(f"openssl could not run: {exc}") from exc
+    if result.returncode != 0:
+        destination.unlink(missing_ok=True)
+        raise bridge.BridgeError("the export could not be decrypted: check FACTORY_EXPORT_KEY")
+
+
+def download(github: GitHub, run_id: int, destination: Path, *, key: str | None = None) -> Path:
+    """Save and decrypt an export run's SQLite file; refuses to overwrite an existing file."""
     if destination.exists():
         raise FileExistsError(f"{destination} already exists")
+    key = key if key is not None else os.environ.get(KEY_VARIABLE, "")
+    if not key:
+        raise bridge.BridgeError(f"set {KEY_VARIABLE} to the export key to decrypt the file")
     with tempfile.TemporaryDirectory(prefix="rotisserie-store-") as folder:
         try:
             github.gh(
@@ -95,8 +133,8 @@ def download(github: GitHub, run_id: int, destination: Path) -> Path:
             )
         except GitHubError as exc:
             raise bridge.BridgeError(f"the export file could not be downloaded: {exc}") from exc
-        found = sorted(Path(folder).rglob("*.sqlite"))
+        found = sorted(Path(folder).rglob("*.sqlite.enc"))
         if len(found) != 1:
-            raise bridge.BridgeError("the export artifact holds no single SQLite file")
-        destination.write_bytes(found[0].read_bytes())
+            raise bridge.BridgeError("the export artifact holds no single encrypted SQLite file")
+        decrypt(found[0], destination, key)
     return destination

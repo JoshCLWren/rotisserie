@@ -20,8 +20,10 @@ Check and back up the factory's libSQL (Turso) store through trusted workflows.
 
 selftest runs the same race, lease, retry and backup tests used locally
 against the hosted database, in a throwaway namespace that it deletes. export
-copies the whole store into a plain SQLite file. Both run in the repository's
-Actions with its secrets; this machine never connects to the store.
+copies the whole store into a SQLite file and uploads it encrypted with the
+FACTORY_EXPORT_KEY secret; --out decrypts it here with FACTORY_EXPORT_KEY set
+to the same key. Both run in the repository's Actions with its secrets; this
+machine never connects to the store.
 """
 
 

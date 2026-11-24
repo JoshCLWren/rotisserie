@@ -11,6 +11,11 @@ such change must be called out here and in its release notes.
 
 ### Added
 
+- The factory state export is encrypted (AES-256, PBKDF2) with the adopter's
+  `FACTORY_EXPORT_KEY` secret before upload, because public repositories expose
+  Actions artifacts. The workflow refuses to run without the key.
+  `baste store export --out FILE` decrypts it locally with `FACTORY_EXPORT_KEY`
+  set to the same key. Adopters re-run the installer to pass the secret.
 - `baste` is the short name for the factory console: `baste status` runs
   `rotisserie factory status`, and `baste web` opens the local control room.
   Help and hints now name `baste`. `rotisserie factory ...` keeps working, and

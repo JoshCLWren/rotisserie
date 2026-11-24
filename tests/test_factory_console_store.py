@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import io
 import json
+import os
+import subprocess
 from pathlib import Path
 from typing import Any
 
@@ -88,3 +90,45 @@ def test_store_download_refuses_to_overwrite(tmp_path: Path) -> None:
     existing.write_text("keep")
     with pytest.raises(FileExistsError):
         store.download(GitHub("acme/widgets"), 1, existing)
+
+
+def _encrypt(plain: bytes, folder: Path, key: str) -> Path:
+    source = folder / "plain.sqlite"
+    source.write_bytes(plain)
+    encrypted = folder / "factory-state.sqlite.enc"
+    subprocess.run(
+        ["openssl", "enc", *store.CIPHER, "-salt", "-pass", "env:FACTORY_EXPORT_KEY"]
+        + ["-in", str(source), "-out", str(encrypted)],
+        env={**os.environ, "FACTORY_EXPORT_KEY": key},
+        check=True,
+    )
+    return encrypted
+
+
+def test_decrypt_restores_the_export_readable_only_by_its_owner(tmp_path: Path) -> None:
+    encrypted = _encrypt(b"SQLite format 3\x00rows", tmp_path, "s3cret")
+    out = tmp_path / "backup.sqlite"
+    store.decrypt(encrypted, out, "s3cret")
+    assert out.read_bytes() == b"SQLite format 3\x00rows"
+    assert out.stat().st_mode & 0o777 == 0o600
+
+
+def test_decrypt_with_the_wrong_key_leaves_no_file(tmp_path: Path) -> None:
+    encrypted = _encrypt(b"SQLite format 3\x00rows", tmp_path, "s3cret")
+    out = tmp_path / "backup.sqlite"
+    with pytest.raises(bridge.BridgeError, match="FACTORY_EXPORT_KEY"):
+        store.decrypt(encrypted, out, "wrong")
+    assert not out.exists()
+
+
+def test_download_needs_the_export_key(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    monkeypatch.delenv("FACTORY_EXPORT_KEY", raising=False)
+    with pytest.raises(bridge.BridgeError, match="FACTORY_EXPORT_KEY"):
+        store.download(GitHub("acme/widgets"), 1, tmp_path / "backup.sqlite")
+
+
+def test_export_workflow_uploads_only_the_encrypted_file() -> None:
+    workflow = Path(".github/workflows/factory-state-export.yml").read_text()
+    assert "path: ${{ runner.temp }}/export/factory-state.sqlite.enc" in workflow
+    assert 'rm -f "$RUNNER_TEMP/export/factory-state.sqlite"' in workflow
+    assert " ".join(store.CIPHER) in workflow
