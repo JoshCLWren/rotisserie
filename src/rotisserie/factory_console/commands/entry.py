@@ -20,7 +20,7 @@ from rotisserie.factory_console.commands.claims import (
     cmd_labels,
     cmd_runs,
 )
-from rotisserie.factory_console.commands.estimate import cmd_estimate
+from rotisserie.factory_console.commands.estimate import cmd_estimate, cmd_estimate_history
 from rotisserie.factory_console.commands.failures import cmd_failures
 from rotisserie.factory_console.commands.fleet import cmd_models, cmd_providers
 from rotisserie.factory_console.commands.health import (
@@ -232,6 +232,7 @@ HANDLERS = {
     "runs": cmd_runs,
     "history": cmd_history,
     "estimate": cmd_estimate,
+    "estimate-history": cmd_estimate_history,
     "use": cmd_use,
     "follow": cmd_follow,
     "label-event": cmd_label_event,

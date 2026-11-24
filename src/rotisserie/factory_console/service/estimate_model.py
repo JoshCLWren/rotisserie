@@ -35,6 +35,7 @@ HUMAN_SIGNALS = {
     "owner_claim": "the owner claimed it (factory:claimed or factory:local)",
     "blocked": "it was parked in factory:blocked",
     "person_wrote": "a person wrote the change (author marker says model-human)",
+    "operator_revoked": "an operator revoked a claim on it (Neon history only)",
 }
 
 
@@ -123,6 +124,7 @@ class Item:
     signals: tuple[str, ...]
     providers: tuple[str, ...] = field(default=())
     labels_incomplete: bool = False
+    created_at: datetime | None = None
 
     @property
     def unattended(self) -> bool:
@@ -180,6 +182,7 @@ def build_item(
         signals=tuple(signals),
         providers=tuple(providers),
         labels_incomplete=any(thread.labels_incomplete for thread in every),
+        created_at=min((t.created for t in every if t.created), default=source.created),
     )
 
 

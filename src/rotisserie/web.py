@@ -33,6 +33,7 @@ SETTING = re.compile(r"^[A-Z][A-Z0-9_]{1,100}$")
 INTEGER = re.compile(r"^[0-9]{1,7}$")
 REASON = re.compile(r"^[A-Za-z0-9 _.,:;()'/+#-]{0,180}$")
 CHECKS = re.compile(r"^(?:pr:[1-9][0-9]*|main)$")
+RUN_ID = re.compile(r"^[1-9][0-9]{0,19}$")
 ACTIONS = frozenset(
     ("advance", "implement", "review", "review-findings", "ci-repair", "merge-conflict")
 )
@@ -102,7 +103,7 @@ def read_command(name: str, query: Mapping[str, str]) -> list[str]:
         "conflicts": {"target"},
         "runs": {"target"},
         "history": {"target"},
-        "estimate": {"target", "sample"},
+        "estimate": {"target", "sample", "run"},
         "follow": {"target"},
         "report": {"since"},
         "failures": {"since"},
@@ -128,6 +129,9 @@ def read_command(name: str, query: Mapping[str, str]) -> list[str]:
         sample = _string(query, "sample")
         if sample:
             args.extend(("--sample", _match(sample, re.compile(r"^[0-9]{2,3}$"), "sample")))
+        run = _string(query, "run")
+        if run:
+            args.extend(("--run", _match(run, RUN_ID, "run")))
     elif name == "follow":
         args.extend((_match(_string(query, "target", required=True), TARGET, "target"), "--once"))
     elif name in ("report", "failures"):
@@ -219,6 +223,9 @@ def write_command(data: Mapping[str, Any]) -> list[str]:
         return ["doctor", "--fix"]
     if name == "release_expired":
         return ["leases", "--release-expired"]
+    if name == "estimate_neon":
+        target = _match(_string(data, "target", required=True), TARGET, "target")
+        return ["estimate", target, "--via", "github", "--no-wait"]
     if name in ("claim", "finish"):
         return [name, _match(_string(data, "target", required=True), TARGET, "target"), "--no-wait"]
     if name == "labels":

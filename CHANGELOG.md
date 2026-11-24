@@ -11,6 +11,16 @@ such change must be called out here and in its release notes.
 
 ### Added
 
+- `rotisserie factory estimate issue:N --via github` counts attempts from exact
+  Neon history (#238). The label claim workflow's new `estimate-history` mode
+  runs one bounded, read-only query over `public.factory_state_events` and
+  publishes per-item counts. An attempt is a worker run that reached a model;
+  catalog refusals and runs without a working model are reported separately.
+  One table maps outcome classes, and unknown classes count as attempts. The
+  estimate falls back to GitHub markers when the run fails and names its
+  source. `--no-wait` and `--run ID` split the wait. The web UI Item tracker
+  gets Estimate and Exact estimate (Neon) buttons. Adopters re-run the
+  installer to add the mode to their label claim caller.
 - Incident mode: `rotisserie factory incident start issue:N [--attempts K]
   [--reason TEXT]`, `incident stop issue:N` and `incident` (list). The state
   lives in `FACTORY_INCIDENTS`, delivered in `FACTORY_REPO_VARS`, and the issue

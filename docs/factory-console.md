@@ -353,8 +353,46 @@ standalone pull request) and the same work category, then the same intake
 labels (`bug`, `user-reported`, `code-debt`, `frontend`), then the same issue
 size. The command drops size first, then labels, and needs at least six
 similar finished items. With fewer it says so and gives no number. Items still
-open are not counted, so the chance is optimistic. It reads only GitHub and
-`factory-stats.json`, never Neon. The web UI runs it as the `estimate` read.
+open are not counted, so the chance is optimistic. By default it reads only
+GitHub and `factory-stats.json`, never Neon. The web UI runs it as the
+`estimate` read (the Estimate button in the Item tracker).
+
+GitHub shows only the first and last 100 label changes of an item, so the
+default can miss an owner claim, and marker comments are only a stand-in for
+worker runs. `estimate issue:N --via github` reads exact history instead:
+
+- It starts the adopter's `rotisserie-label-claim.yml` in `estimate-history`
+  mode. That job runs one read-only query (a read-only transaction with a
+  30-second statement timeout) over `public.factory_state_events`, limited to
+  this repository, the last 45 days and 40,000 rows. Model rows that never
+  ran (no exit code and no duration) collapse to one counted row per run and
+  outcome class before the row cap, so a refusal burst of hundreds of rows
+  does not use up the cap. It publishes per-item counts only: no claim UUIDs,
+  logins, prompts or failure log tails. This machine never connects to Neon.
+- An attempt is one worker run that reached a model: a model row that ran
+  with an attempt class, or a delivered run. A catalog refusal (a model row
+  that never ran) or a capacity answer is counted as a refusal and is never
+  an attempt. A run with no model row is decided by its terminal class. Runs
+  where no model worked are counted separately.
+- `src/rotisserie/factory_console/service/estimate_outcomes.py` maps each
+  outcome class to attempt, capacity or idle in one table. A class it does
+  not know counts as an attempt, and the output names it. An owner claim
+  through `factory:claimed` (client `label`) and an operator revocation count
+  as a person; an outside agent's claim does not.
+- Neon replaces only the attempt counts and person signals. Similar items,
+  merge facts and `factory:blocked` still come from GitHub. The window covers
+  an item when its first factory claim (or its pull request) falls inside it,
+  whatever the issue's age. An item with no Neon run in the window (it
+  started earlier, or no run was recorded) keeps its marker count, and the
+  output says how many did. A recorded owner claim counts either way.
+- If the run cannot start, fails, or returns no usable history (for example,
+  an adopter whose installed caller does not list the mode yet), the estimate
+  falls back to GitHub and says why. The output always names its source.
+- `--no-wait` starts the run and prints its ID; `--run ID` uses that run's
+  history later. The web UI's Exact estimate (Neon) button does both and shows
+  the result in the Item tracker. The hosted control room can start the run
+  through the operator workflow but cannot show the result until it has a
+  signed-in read path.
 
 ## Whose review counts?
 
