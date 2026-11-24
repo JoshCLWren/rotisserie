@@ -9,6 +9,10 @@ from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[1]
+WORK_POLICY_SIBLINGS = tuple(
+    f"factory_work_policy_{part}.py"
+    for part in ("assignment", "backlog", "base", "candidates", "priority")
+)
 
 
 def test_staged_worker_policy_imports_only_pinned_eligibility(tmp_path: Path) -> None:
@@ -18,7 +22,7 @@ def test_staged_worker_policy_imports_only_pinned_eligibility(tmp_path: Path) ->
 
     staged = tmp_path / "trusted"
     staged.mkdir()
-    for name in ("factory_work_policy.py", "factory_review_policy.py"):
+    for name in ("factory_work_policy.py", "factory_review_policy.py", *WORK_POLICY_SIBLINGS):
         shutil.copy2(ROOT / ".github/scripts" / name, staged / name)
     shutil.copy2(ROOT / "scripts/factory_eligibility.py", staged / "factory_eligibility.py")
 
@@ -76,6 +80,20 @@ def test_closure_sibling_modules_are_staged_by_every_worker() -> None:
             assert f".github/scripts/{sibling} " in staging, (name, sibling)
 
 
+def test_work_policy_sibling_modules_are_staged_with_the_work_policy() -> None:
+    """The staged work policy imports its sibling modules from the same directory."""
+    for name in (
+        "free-model-factory-worker.sh",
+        "nvidia-factory-worker.sh",
+        "omniroute-factory-worker.sh",
+    ):
+        content = (ROOT / ".github/scripts" / name).read_text()
+        staging = content.split("stage_trusted_review_controller() {", 1)[1].split("\n}", 1)[0]
+        assert "cp .github/scripts/factory_work_policy.py " in staging, name
+        for sibling in WORK_POLICY_SIBLINGS:
+            assert f".github/scripts/{sibling} " in staging, (name, sibling)
+
+
 def test_staged_review_controller_starts_without_source_checkout(tmp_path: Path) -> None:
     """The staged review controller must load its implementation-delivery helper.
 
@@ -100,6 +118,7 @@ def test_staged_review_controller_starts_without_source_checkout(tmp_path: Path)
         ".github/scripts/factory_worker_slots.py",
         ".github/scripts/factory_provider_registry.py",
         ".github/scripts/factory_work_policy.py",
+        *(f".github/scripts/{sibling}" for sibling in WORK_POLICY_SIBLINGS),
         ".github/scripts/factory_fork_control.py",
         "scripts/factory_eligibility.py",
     )

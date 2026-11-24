@@ -92,7 +92,12 @@
 .github/scripts/factory_state_metrics.py
 .github/scripts/factory_state_operations.py
 .github/scripts/factory_work_policy.py
+.github/scripts/factory_work_policy_assignment.py
+.github/scripts/factory_work_policy_backlog.py
+.github/scripts/factory_work_policy_base.py
+.github/scripts/factory_work_policy_candidates.py
 .github/scripts/factory_work_policy_latticery_ref.py
+.github/scripts/factory_work_policy_priority.py
 .github/scripts/factory_worker_github_app.py
 .github/scripts/factory_worker_slots.py
 .github/scripts/fixed-model-guard.py

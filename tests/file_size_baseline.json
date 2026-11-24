@@ -16,7 +16,6 @@
   "factory/.github/scripts/factory_review_policy.py": 1148,
   "factory/.github/scripts/factory_rotisserie_adopter.py": 627,
   "factory/.github/scripts/factory_state_operations.py": 1414,
-  "factory/.github/scripts/factory_work_policy.py": 1174,
   "factory/.github/scripts/free-model-factory-worker-primitives.sh": 1273,
   "factory/.github/scripts/free-model-factory-worker.sh": 1166,
   "factory/.github/scripts/generate_factory_status_dashboard.py": 921,

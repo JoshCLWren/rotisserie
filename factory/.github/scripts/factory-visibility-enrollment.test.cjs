@@ -240,8 +240,8 @@ test('enroll skips when live GET omits a readable body string', async () => {
   assert.deepEqual(writes, []);
 });
 
-test('enrollment BLOCKED_LABELS matches factory_work_policy.py', () => {
-  const source = fs.readFileSync(path.join(__dirname, 'factory_work_policy.py'), 'utf8');
+test('enrollment BLOCKED_LABELS matches factory_work_policy_base.py', () => {
+  const source = fs.readFileSync(path.join(__dirname, 'factory_work_policy_base.py'), 'utf8');
   const match = source.match(/^BLOCKED_LABELS = \{([^}]+)\}/m);
   assert.ok(match, 'factory_work_policy.BLOCKED_LABELS must remain parseable');
   const fromPolicy = [...match[1].matchAll(/'([^']+)'/g)].map(item => item[1]).sort();

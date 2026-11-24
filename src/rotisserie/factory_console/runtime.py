@@ -37,10 +37,15 @@ RUNTIME_MODULES = (
 )
 
 # Every file the wheel must carry, keyed by module name, with its checkout path.
-# The last three are not loaded by name; the modules above import them.
+# The entries after the comprehension are not loaded by name; the modules above import them.
 RUNTIME_SOURCES = {
     **{name: f"factory/.github/scripts/{name}.py" for name in RUNTIME_MODULES},
     "factory_adopter": "factory/.github/scripts/factory_adopter.py",
+    "factory_work_policy_assignment": "factory/.github/scripts/factory_work_policy_assignment.py",
+    "factory_work_policy_backlog": "factory/.github/scripts/factory_work_policy_backlog.py",
+    "factory_work_policy_base": "factory/.github/scripts/factory_work_policy_base.py",
+    "factory_work_policy_candidates": "factory/.github/scripts/factory_work_policy_candidates.py",
+    "factory_work_policy_priority": "factory/.github/scripts/factory_work_policy_priority.py",
     "factory_eligibility": "factory/scripts/factory_eligibility.py",
 }
 
