@@ -145,6 +145,29 @@ worker shell and never from the model. It prints only parsed numbers. A 401 or
 OpenCode sets per session (`opencode-free`, `kilo-auto`, `omniroute-free`) are
 never probed: they use the policy default.
 
+### Dispatch eligibility
+
+- A catalog slot (no pinned model) is admitted only when its source's live
+  published catalog lists a model outside the exported exclusions and any
+  credit-pool cooldown (`factory_state_operations_slots.py`). Sources without a
+  key-free catalog, and unreadable catalogs, stay eligible; the run job checks
+  the authenticated catalog before a session.
+- A review PR whose lease ended before a session twice inside
+  `FACTORY_REVIEW_FAILURE_COOLDOWN_SECONDS` (for example because every eligible
+  model authored it) waits out that window in `cooling_prs`.
+
+### Operator commands
+
+- `rotisserie factory backoffs --via github` lists per provider: capacity
+  cooldowns with their reset source, Fibonacci backoffs (old quota-caused
+  streaks are marked), and model health cooldowns, with next retry in local
+  time. It runs `export-backoffs` in the trusted label claim workflow.
+- `rotisserie factory backoffs reset --quota-only --via github` deletes the
+  Fibonacci rows and cooling health rows that quota and throttle refusals wrote,
+  caps every other Fibonacci row at one day after its last update, keeps real
+  streaks, and does not write the full-reset marker. It runs
+  `reset-model-health --quota-only` in the Factory Model Health Reset workflow.
+
 ## Slot leases (several holders on one target)
 
 A normal lease lets one worker hold an issue or PR. Incident racing (#239)
