@@ -101,6 +101,10 @@ def test_page_has_a_control_for_each_new_operation() -> None:
         "data-switch-off",
         "data-switch-on",
         "window.confirm(",
+        'id="incident-start"',
+        'operation:"incident_start"',
+        'operation:"incident_stop"',
+        'get("incident")',
     ):
         assert marker in page, marker
 

@@ -28,6 +28,7 @@ RUNTIME_MODULES = (
     "factory_settings",
     "factory_dispatch_credential_filter",
     "factory_fleet_switch",
+    "factory_incident",
     "factory_published_model_catalog",
     "factory_work_policy",
     "factory_rotisserie_adopter",
@@ -362,6 +363,7 @@ class Explanation:
     bypasses_saturated_review_backlog: bool
     intake: str  # legacy-unrestricted | authorized | not-authorized
     open_blocker: bool | None
+    incident_pause: bool = False
 
 
 def explain_issue(
@@ -374,6 +376,7 @@ def explain_issue(
     open_blocker: bool | None,
     pr_wip_limit: int,
     review_backlog_limit: int,
+    incidents: Mapping[int, int] | None = None,
 ) -> Explanation:
     report = module("factory_work_policy").explain_issue_report(
         number,
@@ -385,6 +388,7 @@ def explain_issue(
         open_blocker=open_blocker,
         pr_wip_limit=pr_wip_limit,
         review_backlog_limit=review_backlog_limit,
+        incidents=incidents,
     )
     gates = report["dynamic_gates"]
     blocker = gates.get("open_dependency_blocker")
@@ -402,6 +406,7 @@ def explain_issue(
         bypasses_saturated_review_backlog=bool(gates["bypasses_saturated_review_backlog"]),
         intake=str(gates["rotisserie_intake"]),
         open_blocker=None if blocker is None else bool(blocker),
+        incident_pause=bool(gates.get("incident_intake_pause")),
     )
 
 

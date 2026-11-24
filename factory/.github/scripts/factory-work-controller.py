@@ -1502,7 +1502,7 @@ def assign_from_pool(worker: str, kinds: tuple[str, ...] | None = None,
             candidates = [
                 candidate
                 for candidate in candidates
-                if candidate.kind != "issue" or candidate.number in authorized_issues
+                if candidate.kind != "issue" or candidate.incident or candidate.number in authorized_issues
             ]
     if kinds is not None:
         candidates = [candidate for candidate in candidates if candidate.kind in kinds]

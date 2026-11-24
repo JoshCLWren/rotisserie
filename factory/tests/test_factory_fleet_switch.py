@@ -42,7 +42,7 @@ def controller(monkeypatch: pytest.MonkeyPatch):
 
 
 def test_switch_variables_are_delivered_to_every_workflow():
-    assert settings.SWITCHES == (switch.PROVIDERS_VAR, switch.MODELS_VAR)
+    assert settings.SWITCHES[:2] == (switch.PROVIDERS_VAR, switch.MODELS_VAR)
     assert switch.REASONS_VAR not in settings.workflow_env_value()
     for name in settings.SWITCHES:
         assert f'"{name}": "${{{{ vars.{name} }}}}"' in settings.workflow_env_value()

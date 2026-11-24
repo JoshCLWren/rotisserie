@@ -797,3 +797,51 @@ A new provider is a Rotisserie code change, not a switch. The former
 
 Worker identities derive from the registry, so the new provider gets worker
 slots on the next tick after the adopter runs the new Rotisserie ref.
+
+## Incidents: send free workers to one issue
+
+```sh
+rotisserie factory incident start issue:239 --reason "checkout is down"
+rotisserie factory incident                      # list incidents and their state
+rotisserie factory incident stop issue:239
+```
+
+An incident is an issue that must be fixed before anything else. The console
+writes two repository variables and labels the issue `factory:incident`:
+
+- `FACTORY_INCIDENTS`: a comma list of `ISSUE:ATTEMPTS` entries, for example
+  `239:3`. Every factory workflow receives it in `FACTORY_REPO_VARS`, so the
+  next dispatcher tick obeys a change without a deploy. A malformed entry is
+  ignored, so a bad value cannot pause the factory.
+- `FACTORY_INCIDENT_NOTES`: JSON with each reason and start time. Only the
+  console reads it.
+
+An incident is active while its issue is open and still carries the
+`factory:incident` label. Removing the label ends it, so a reopened issue does
+not restart an ended incident. While it is active:
+
+- the issue and every PR linked to it rank ahead of all other work, owner picks
+  (`factory:override`) and main-breakage included, for every worker;
+- the issue skips the WIP, review backlog and Rotisserie intake limits;
+- new intake of other issues pauses. Work that is already running continues,
+  and other PRs still get review, CI repair and conflict work after the
+  incident's work;
+- an operator-forced run (`run --force`) and an explicit owner claim still
+  work as usual. The fleet switch and the independent-review rule still apply.
+
+When the issue closes (normally because its PR merged), intake resumes on the
+next tick. The dispatcher then closes the incident's leftover attempt PRs
+(`factory/<worker>-<N>-...` branches) as superseded and removes the label. It
+never closes a PR under an owner claim (`factory:claimed`, `factory:override`)
+or a PR a worker holds; while one exists the label stays, and a later tick
+closes the PR once it is free. `incident stop` closes the free attempt PRs at
+once, removes the label and clears the variable. On an issue that is still
+open, `stop` ends the incident but keeps its PR. Until `stop` clears the
+variable, the dispatcher reads an ended incident's issue once per tick.
+
+`--attempts K` (1 to 6, default 3) is stored for racing: several providers
+building separate fix attempts at once. Racing needs per-attempt leases and is
+not live yet. Until it is, an incident gets one attempt.
+
+The web UI has `incident_start` and `incident_stop` writes and an `incident`
+read.

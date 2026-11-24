@@ -32,10 +32,12 @@ class Candidate:
     head_contributors: frozenset[str] = frozenset()
     is_fork: bool = False
     override: bool = False
+    incident: bool = False
 
-    def sort_key(self) -> tuple[int, int, int, float, int]:
-        """Return the deterministic queue ordering key: owner picks, then oldest work first."""
-        return (0 if self.override else 1, configured_lane_rank(self.lane), -self.priority,
+    def sort_key(self) -> tuple[int, int, int, int, float, int]:
+        """Return the deterministic queue ordering key: incidents, owner picks, then oldest work."""
+        return (0 if self.incident else 1, 0 if self.override else 1,
+                configured_lane_rank(self.lane), -self.priority,
                 parse_time(self.created_at), self.number)
 
 

@@ -11,6 +11,15 @@ such change must be called out here and in its release notes.
 
 ### Added
 
+- Incident mode: `rotisserie factory incident start issue:N [--attempts K]
+  [--reason TEXT]`, `incident stop issue:N` and `incident` (list). The state
+  lives in `FACTORY_INCIDENTS`, delivered in `FACTORY_REPO_VARS`, and the issue
+  carries `factory:incident`. While the issue is open, its issue and PRs rank
+  ahead of every other item for every worker, the issue skips intake limits,
+  and new intake of other issues pauses. Running work is not cancelled. When the
+  issue closes, intake resumes and the dispatcher closes leftover incident PRs
+  as superseded. The web UI can start, stop and list incidents. Racing separate
+  attempts is not live yet (#239).
 - Fleet switch: `rotisserie factory providers disable|enable NAME` and
   `rotisserie factory models disable|enable PROVIDER MODEL`, each with
   `--reason`. The switch stores `FACTORY_DISABLED_PROVIDERS` and

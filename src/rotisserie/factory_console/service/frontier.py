@@ -369,6 +369,7 @@ def capture(github: GitHub, *, now: datetime) -> Frontier:
         pr_wip_limit=board.pr_wip_limit,
         review_backlog_limit=board.review_backlog_limit,
         external_wip=external_wip,
+        incidents=core.declared_incidents(variables),
     )
     by_issue = {entry.issue: entry.verdict for entry in summary.entries}
     rows_for_counts: list[Mapping[str, object]] = list(board.prs)

@@ -254,6 +254,9 @@ def test_capture_passes_repository_capacity_to_shared_policy(
         def parse_declared_dependencies(self, body: str) -> set[int]:
             return set()
 
+        def declared_incidents(self, variables: object) -> dict[int, int]:
+            return {}
+
     policy = PolicyProxy()
     monkeypatch.setattr(runtime, "completion_backlog", lambda rows: [])
     monkeypatch.setattr(runtime, "pr_wip_count", lambda rows: 0)

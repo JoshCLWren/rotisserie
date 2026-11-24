@@ -146,7 +146,7 @@ stage_trusted_review_controller() {
   # Bind model provenance to a trusted main checkout snapshot, not PR data.
   cp .github/scripts/factory_worker_slots.py "$trusted_dir/factory_worker_slots.py"
   cp .github/scripts/factory_provider_registry.py "$trusted_dir/factory_provider_registry.py"
-  cp .github/scripts/factory_work_policy.py .github/scripts/factory_work_policy_assignment.py .github/scripts/factory_work_policy_backlog.py .github/scripts/factory_work_policy_base.py .github/scripts/factory_work_policy_candidates.py .github/scripts/factory_work_policy_priority.py "$trusted_dir/"
+  cp .github/scripts/factory_work_policy.py .github/scripts/factory_work_policy_assignment.py .github/scripts/factory_work_policy_backlog.py .github/scripts/factory_work_policy_base.py .github/scripts/factory_work_policy_candidates.py .github/scripts/factory_work_policy_priority.py .github/scripts/factory_incident.py "$trusted_dir/"
   cp .github/scripts/factory_settings.py "$trusted_dir/factory_settings.py"
   cp .github/scripts/factory_fork_control.py "$trusted_dir/factory_fork_control.py"
   # factory-fork-worker.sh reads this from the environment.

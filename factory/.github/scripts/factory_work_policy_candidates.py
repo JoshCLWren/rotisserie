@@ -29,6 +29,7 @@ from factory_work_policy_base import (
     producer_worker_from_pr,
     stage_of,
 )
+from factory_incident import active as active_incidents
 from factory_work_policy_priority import (
     OVERRIDE_LABEL,
     Candidate,
@@ -209,6 +210,7 @@ def build_candidates(
     pr_wip_limit: int = FACTORY_PR_WIP_LIMIT,
     review_backlog_limit: int = FACTORY_REVIEW_BACKLOG_LIMIT,
     external_wip: int = 0,
+    incidents: Mapping[int, int] | None = None,
 ) -> list[Candidate]:
     """Build and rank executable issue and pull-request candidates.
 
@@ -223,6 +225,9 @@ def build_candidates(
             only held back by the PR WIP or review-backlog gate. This is for
             queue visibility and ranking, never for bypassing backpressure:
             lease assignment still uses the default filtered form.
+        incidents: Declared incidents (issue -> attempts); None reads
+            ``FACTORY_INCIDENTS``. While one is open its work ranks first, its
+            issue bypasses intake limits, and other new issue intake pauses.
     """
     issue_map = {int(issue['number']): issue for issue in issues}
     retry_counts = no_diff_attempts_by_issue or {}
@@ -246,9 +251,11 @@ def build_candidates(
     review_backlog_full = (
         factory_review_backlog_count(prs) >= review_backlog_limit
     )
+    incident_issues = set(active_incidents(issues, incidents))
     candidates: list[Candidate] = []
     for issue in issues:
         number = int(issue['number'])
+        in_incident = number in incident_issues
         if not issue_is_static_candidate(
             issue,
             suppressing_pr_issues,
@@ -258,7 +265,9 @@ def build_candidates(
         body = str(issue.get('body') or '')
         if body_depends_on_unresolved(body, open_numbers - {number}):
             continue
-        if not include_backpressured_issues:
+        if not include_backpressured_issues and not in_incident:
+            if incident_issues:
+                continue
             if pr_wip_full and not issue_bypasses_wip_limit(issue):
                 continue
             if review_backlog_full and not issue_bypasses_wip_limit(
@@ -280,6 +289,7 @@ def build_candidates(
                 created_at=str(issue.get('createdAt') or ''),
                 stage=stage_of(labels),
                 override=OVERRIDE_LABEL in labels,
+                incident=in_incident,
             )
         )
     for pr in prs:
@@ -324,6 +334,7 @@ def build_candidates(
                 head_contributors=head_contributors_from_pr(pr),
                 is_fork=pr.get('isCrossRepository') is True,
                 override=OVERRIDE_LABEL in labels,
+                incident=linked in incident_issues,
             )
         )
     return sorted(candidates, key=Candidate.sort_key)
@@ -341,6 +352,7 @@ def explain_issue_report(
     pr_wip_limit: int = FACTORY_PR_WIP_LIMIT,
     review_backlog_limit: int = FACTORY_REVIEW_BACKLOG_LIMIT,
     no_diff_limit: int = FACTORY_NO_DIFF_RETRY_LIMIT,
+    incidents: Mapping[int, int] | None = None,
 ) -> dict[str, Any]:
     """Explain one issue's queue eligibility from already-read factory state.
 
@@ -359,6 +371,7 @@ def explain_issue_report(
         pr_wip_limit: Effective ``FACTORY_PR_WIP_LIMIT``.
         review_backlog_limit: Effective ``FACTORY_REVIEW_BACKLOG_LIMIT``.
         no_diff_limit: Effective ``FACTORY_NO_DIFF_RETRY_LIMIT``.
+        incidents: Declared incidents; None reads ``FACTORY_INCIDENTS``.
 
     Returns:
         A JSON-serializable report with the verdict, its reasons, the canonical
@@ -372,9 +385,10 @@ def explain_issue_report(
         and pr_suppresses_issue_candidate(pr, issue_map)
     }
     non_executable = set(NON_EXECUTABLE_ISSUES)
+    incident_issues = sorted(active_incidents([*issues, payload], incidents))
     unauthorized: set[int] = set()
     if intake is not None:
-        unauthorized = set(issue_map) - intake
+        unauthorized = set(issue_map) - intake - set(incident_issues)
         non_executable |= unauthorized
     verdict = eligibility.explain_issue_eligibility(
         number=number,
@@ -393,13 +407,16 @@ def explain_issue_report(
         if linked_issue_from_pr(pr) == number and pr_suppresses_issue_candidate(pr, issue_map)
     )
     review_backlog = factory_review_backlog_count(prs)
+    in_incident = number in incident_issues
     gates: dict[str, Any] = {
+        'active_incidents': incident_issues,
+        'incident_intake_pause': bool(incident_issues) and not in_incident,
         'factory_pr_wip': factory_pr_wip_count(prs),
         'factory_pr_wip_limit': pr_wip_limit,
         'review_backlog': review_backlog,
         'review_backlog_limit': review_backlog_limit,
-        'bypasses_wip_limit': issue_bypasses_wip_limit(payload),
-        'bypasses_saturated_review_backlog': issue_bypasses_wip_limit(
+        'bypasses_wip_limit': in_incident or issue_bypasses_wip_limit(payload),
+        'bypasses_saturated_review_backlog': in_incident or issue_bypasses_wip_limit(
             payload, review_backlog_saturated=True
         ),
         'rotisserie_intake': (

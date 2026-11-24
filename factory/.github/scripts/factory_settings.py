@@ -109,8 +109,9 @@ SETTINGS: tuple[Setting, ...] = (
     ),
 )
 BY_NAME: Mapping[str, Setting] = {setting.name: setting for setting in SETTINGS}
-# Fleet switch lists (factory_fleet_switch): delivered with the settings, never validated as numbers.
-SWITCHES = ("FACTORY_DISABLED_PROVIDERS", "FACTORY_DISABLED_MODELS")
+# Fleet switch lists (factory_fleet_switch) and incidents (factory_incident): delivered with
+# the settings, never validated as numbers.
+SWITCHES = ("FACTORY_DISABLED_PROVIDERS", "FACTORY_DISABLED_MODELS", "FACTORY_INCIDENTS")
 
 
 def _warn(message: str) -> None:

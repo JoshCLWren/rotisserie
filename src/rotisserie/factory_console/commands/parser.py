@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import argparse
 
-from rotisserie.factory_console.commands import _shared
+from rotisserie.factory_console.commands import _shared, incident
 from rotisserie.factory_console.commands._shared import ACTIONS
 from rotisserie.factory_console.commands.parser_insight import (
     _common,
@@ -465,3 +465,4 @@ def add_parser(subcommands: argparse._SubParsersAction[argparse.ArgumentParser])
         if name == "models":
             fleet.add_argument("--billing", **_shared.BILLING_OPTION)
         _common(fleet)
+    incident.add_parser(commands)
