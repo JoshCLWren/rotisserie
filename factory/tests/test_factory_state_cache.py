@@ -1,4 +1,4 @@
-"""Regression tests for the shared Neon discovery cache (no network)."""
+"""Regression tests for the factory state connection and its cleanup (no network)."""
 from __future__ import annotations
 
 import importlib.util
@@ -17,13 +17,6 @@ cache = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(cache)
 
 
-def test_cache_is_transparent_without_trusted_neon_connection(monkeypatch):
-    monkeypatch.delenv("FACTORY_STATE_DSN_FILE", raising=False)
-    calls = []
-    assert cache.cached_json("open-prs", lambda prior: calls.append(prior) or [{"number": 1}]) == [{"number": 1}]
-    assert calls == [[]]
-
-
 def test_neon_dsn_preserves_tls_and_removes_unsupported_channel_binding(monkeypatch, tmp_path):
     dsn = tmp_path / "dsn"
     dsn.write_text("postgresql://factory_state_rw:example@ep.example.neon.tech/factory_state?sslmode=require&channel_binding=require")
@@ -32,83 +25,6 @@ def test_neon_dsn_preserves_tls_and_removes_unsupported_channel_binding(monkeypa
     assert "sslmode=require" in parsed
     assert "channel_binding" not in parsed
     assert "/factory_state?" in parsed
-
-
-def test_cache_hit_does_not_call_github_or_refresh(monkeypatch, tmp_path):
-    monkeypatch.setenv("FACTORY_STATE_DSN_FILE", str(tmp_path / "connection"))
-    monkeypatch.setattr(cache, "_read", lambda _: ([{"number": 43}], True))
-    monkeypatch.setattr(cache, "_claim", lambda *_: pytest.fail("fresh snapshots must not acquire refresh locks"))
-    assert cache.cached_json("open-prs", lambda _: pytest.fail("fresh snapshots must not read GitHub")) == [{"number": 43}]
-
-
-def test_cold_cache_fetches_once_and_publishes(monkeypatch, tmp_path):
-    monkeypatch.setenv("FACTORY_STATE_DSN_FILE", str(tmp_path / "connection"))
-    monkeypatch.setattr(cache, "_read", lambda _: (None, False))
-    monkeypatch.setattr(cache, "_claim", lambda *_: True)
-    published = []
-    monkeypatch.setattr(cache, "_publish", lambda *args: published.append(args))
-    result = cache.cached_json("issues", lambda last: [{"number": len(last) + 1}], ttl_seconds=45)
-    assert result == [{"number": 1}]
-    assert len(published) == 1
-    assert published[0][0] == "issues"
-    assert published[0][2] == result
-    assert published[0][3] == 45
-
-
-def test_contended_refresh_observes_winners_snapshot_without_calling_github(monkeypatch, tmp_path):
-    monkeypatch.setenv("FACTORY_STATE_DSN_FILE", str(tmp_path / "connection"))
-    hits = iter([([{"number": 3}], False), ([{"number": 4}], True)])
-    monkeypatch.setattr(cache, "_read", lambda _: next(hits))
-    monkeypatch.setattr(cache, "_claim", lambda *_: False)
-    monkeypatch.setattr(cache.time, "sleep", lambda _: None)
-    assert cache.cached_json("issues", lambda _: pytest.fail("fresh winner must prevent duplicate calls")) == [{"number": 4}]
-
-
-
-
-def test_contended_refresh_serves_only_bounded_recent_shared_snapshot(monkeypatch, tmp_path):
-    monkeypatch.setenv("FACTORY_STATE_DSN_FILE", str(tmp_path / "connection"))
-    monkeypatch.setattr(cache, "_read", lambda _: ([{"number": 43}], False))
-    monkeypatch.setattr(cache, "_claim", lambda *_: False)
-    calls = []
-    monkeypatch.setattr(cache, "_recent_contended", lambda key, grace: calls.append((key, grace)) or [{"number": 43}])
-    monkeypatch.setattr(cache.time, "sleep", lambda _: pytest.fail("stale shared discovery should not wait"))
-    result = cache.cached_json("issues", lambda _: pytest.fail("contended refresh must not stampede GitHub"), ttl_seconds=45)
-    assert result == [{"number": 43}]
-    assert calls == [("issues", 45)]
-
-
-def test_contended_cache_does_not_trust_stale_record_without_refresh_owner(monkeypatch, tmp_path):
-    monkeypatch.setenv("FACTORY_STATE_DSN_FILE", str(tmp_path / "connection"))
-    reads = iter([([{"number": 43}], False), ([{"number": 44}], True)])
-    monkeypatch.setattr(cache, "_read", lambda _: next(reads))
-    monkeypatch.setattr(cache, "_claim", lambda *_: False)
-    monkeypatch.setattr(cache, "_recent_contended", lambda *_: None)
-    monkeypatch.setattr(cache.time, "sleep", lambda _: None)
-    assert cache.cached_json("issues", lambda _: pytest.fail("winner's fresh data should be used")) == [{"number": 44}]
-
-def test_database_unavailable_uses_original_github_loader(monkeypatch, tmp_path):
-    monkeypatch.setenv("FACTORY_STATE_DSN_FILE", str(tmp_path / "connection"))
-    def unavailable(_):
-        raise OSError("database offline")
-    monkeypatch.setattr(cache, "_read", unavailable)
-    assert cache.cached_json("issues", lambda _: [{"number": 1}]) == [{"number": 1}]
-
-
-def test_github_failure_releases_refresh_claim_and_propagates(monkeypatch, tmp_path):
-    monkeypatch.setenv("FACTORY_STATE_DSN_FILE", str(tmp_path / "connection"))
-    monkeypatch.setattr(cache, "_read", lambda _: (None, False))
-    monkeypatch.setattr(cache, "_claim", lambda *_: True)
-    releases = []
-    monkeypatch.setattr(cache, "_release", lambda *args: releases.append(args))
-    with pytest.raises(RuntimeError, match="GitHub API unavailable"):
-        cache.cached_json("issues", lambda _: (_ for _ in ()).throw(RuntimeError("GitHub API unavailable")))
-    assert len(releases) == 1
-
-
-def test_invalid_cache_ttl_fails_fast():
-    with pytest.raises(ValueError, match="TTL"):
-        cache.cached_json("issues", lambda _: [], ttl_seconds=0)
 
 
 def test_workflows_inject_database_only_into_trusted_jobs():
@@ -196,46 +112,6 @@ def test_recovery_watchdog_uses_trusted_bounded_neon_runtime_view() -> None:
     fresh = workflow.index("An active factory heartbeat is fresh; no dispatcher recovery needed.")
     dispatch = workflow.index("gh workflow run fixed-model-factory-dispatch.yml")
     assert health_first < fresh < dispatch
-
-
-def test_unchanged_snapshot_extends_ttl_without_rewriting_payload(monkeypatch, tmp_path):
-    monkeypatch.setenv("FACTORY_STATE_DSN_FILE", str(tmp_path / "connection"))
-    data = [{"number": 3, "body": "large stable response" * 1000}]
-    monkeypatch.setattr(cache, "_read", lambda _: (data, False))
-    monkeypatch.setattr(cache, "_claim", lambda *_: True)
-    monkeypatch.setattr(cache, "_publish", lambda *_: pytest.fail("unchanged payload must not be rewritten"))
-    extended = []
-    monkeypatch.setattr(cache, "_refresh_without_rewrite", lambda *args: extended.append(args))
-    assert cache.cached_json("cache-key", lambda _: data, ttl_seconds=450) == data
-    assert len(extended) == 1
-    assert extended[0][0] == "cache-key"
-    assert extended[0][2:] == (450, 1)
-
-
-def test_changed_snapshot_still_persists_new_content(monkeypatch, tmp_path):
-    monkeypatch.setenv("FACTORY_STATE_DSN_FILE", str(tmp_path / "connection"))
-    monkeypatch.setattr(cache, "_read", lambda _: ([{"number": 3}], False))
-    monkeypatch.setattr(cache, "_claim", lambda *_: True)
-    monkeypatch.setattr(cache, "_refresh_without_rewrite", lambda *_: pytest.fail("changed payload must be saved"))
-    published = []
-    monkeypatch.setattr(cache, "_publish", lambda *args: published.append(args))
-    assert cache.cached_json("cache-key", lambda _: [{"number": 4}], ttl_seconds=450) == [{"number": 4}]
-    assert published[0][2] == [{"number": 4}]
-
-
-def test_registry_refresh_updates_only_its_owner_row_without_audit_spam(monkeypatch):
-    operations = []
-    def fake_run(statement, *args, one=False):
-        operations.append((statement, args))
-    monkeypatch.setattr(cache, "_run", fake_run)
-    cache._publish("registry", "owner-1", [{"id": 4}], 900)
-    cache._refresh_without_rewrite("registry", "owner-1", 900, 1)
-    assert len(operations) == 2
-    assert all("UPDATE public.factory_state_kv" in query for query, _ in operations)
-    assert all("WHERE cache_key=$1 AND refresh_owner=$2" in query for query, _ in operations)
-    assert all("factory_state_events" not in query for query, _ in operations)
-    assert operations[0][1] == ("registry", "owner-1", '[{"id": 4}]', 900)
-    assert operations[1][1] == ("registry", "owner-1", 900)
 
 
 def test_event_pruning_retains_recent_worker_lifecycle_and_coordination(monkeypatch):
@@ -377,8 +253,6 @@ def test_regular_status_job_prunes_only_in_trusted_controller():
     # Cleanup no longer depends on a large scheduled PR-history recovery sweep.
     reconciliation = adopter_view("factory-issue-pr-state-reconciler.yml")
     assert "factory_state_cache.py prune-obsolete" not in reconciliation
-
-
 
 
 def test_factory_dashboard_reuses_one_run_local_inventory():

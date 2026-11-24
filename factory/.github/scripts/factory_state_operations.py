@@ -34,16 +34,12 @@ from factory_state_operations_backoff import (  # noqa: F401
     worker_backoff_reason,
 )
 from factory_state_operations_capacity import (  # noqa: F401
-    _checkpoint,
-    _claim_wakeup,
     _cooling_prs,
     _daily_usage,
     _eligibility,
     _ingest_check,
     _rank_workers,
-    _seed_daily,
     _stats,
-    _sync_catalog,
     release_capacity,
     reserve_capacity,
 )
@@ -100,11 +96,6 @@ def daily_usage(repo: str, sources: list[str]) -> dict[str,int] | None:
     return _run(_daily_usage,repo,sources)
 
 
-def seed_daily(repo: str, counts: dict[str,int]) -> None:
-    if enabled():
-        _run(_seed_daily,repo,counts)
-
-
 def cooling_prs(repo: str, heads: dict[int,tuple[str,str]]) -> set[int]:
     return _run(_cooling_prs,repo,heads) if enabled() and heads else set()
 
@@ -115,21 +106,8 @@ def ingest_check(repo: str, event: dict[str, Any]) -> int:
     return _run(_ingest_check, repo, event)
 
 
-def checkpoint(repo: str, scope: str, cursor: str, changes: int=0) -> None:
-    if enabled():
-        _run(_checkpoint,repo,scope,cursor,changes)
-
-
-def sync_catalog(repo:str,report:dict[str,Any])->int:
-    return _run(_sync_catalog,repo,report) if enabled() else 0
-
-
 def rank_workers(repo:str,workers:list[str])->list[str]:
     return _run(_rank_workers,repo,workers) if enabled() else workers
-
-
-def claim_wakeup(repo: str, scope: str, interval_seconds: int=120) -> bool:
-    return _run(_claim_wakeup,repo,scope,interval_seconds) if enabled() else False
 
 
 def export_dashboard_retry(repo: str) -> dict[str, Any]:
@@ -169,13 +147,12 @@ def export_model_exclusions(
 
 def main() -> int:
     parser=argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("command",choices=("bootstrap","filter","rank","stats","ingest-check","checkpoint","sync-catalog","export-model-exclusions","export-candidate-health","export-fleet-failover-sources","reset-model-health","export-reliability","export-backoffs"))
+    parser.add_argument("command",choices=("bootstrap","filter","rank","stats","ingest-check","export-model-exclusions","export-candidate-health","export-fleet-failover-sources","reset-model-health","export-reliability","export-backoffs"))
     parser.add_argument("--repo",default=None)
     parser.add_argument("--file",type=Path)
     parser.add_argument("--scope")
     parser.add_argument("--worker",default="")
     parser.add_argument("--requested-model",default="auto")
-    parser.add_argument("--cursor",default="")
     parser.add_argument("--include-retired",action="store_true")
     parser.add_argument("--quota-only",action="store_true",
                         help="clear only quota/throttle backoffs; cap real-failure streaks")
@@ -215,10 +192,6 @@ def main() -> int:
     elif args.command=="rank":
         print(json.dumps(rank_workers(args.repo,[str(w) for w in json.load(sys.stdin)]),
                          separators=(",",":")))
-    elif args.command=="sync-catalog":
-        if args.file is None:
-            parser.error("--file required")
-        print(json.dumps({"missing_models":sync_catalog(args.repo,json.loads(args.file.read_text()))}))
     elif args.command=="stats":
         print(json.dumps(_run(_stats,args.repo),default=str))
     elif args.command=="ingest-check":
@@ -226,10 +199,6 @@ def main() -> int:
             parser.error("--file required")
         recorded=ingest_check(args.repo,json.loads(args.file.read_text()))
         print(json.dumps({"recorded_review_failures":recorded}))
-    elif args.command=="checkpoint":
-        if not args.scope:
-            parser.error("--scope required")
-        checkpoint(args.repo,args.scope,args.cursor)
     return 0
 
 

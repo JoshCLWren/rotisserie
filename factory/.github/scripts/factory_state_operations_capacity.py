@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Dispatch eligibility, provider capacity, PR retry cooldowns and catalog projections."""
+"""Dispatch eligibility, provider capacity, PR retry cooldowns and worker ranking."""
 from __future__ import annotations
 
 import json
@@ -157,18 +157,6 @@ async def _daily_usage(conn: Any, repo: str, sources: list[str]) -> dict[str,int
     return counts
 
 
-async def _seed_daily(conn: Any, repo: str, counts: dict[str,int]) -> None:
-    for source,count in counts.items():
-        if count<0:
-            raise ValueError("negative usage")
-        await conn.execute(
-            """INSERT INTO public.factory_provider_budget(repo,source,usage_day,daily_used)
-               VALUES($1,$2,(now() AT TIME ZONE 'UTC')::date,$3)
-               ON CONFLICT(repo,source) DO UPDATE SET
-                 usage_day=EXCLUDED.usage_day,daily_used=EXCLUDED.daily_used,updated_at=now()
-               WHERE factory_provider_budget.usage_day <> EXCLUDED.usage_day""",repo,source,count)
-
-
 REVIEW_ABORT_LIMIT = 2
 REVIEW_ABORT_LOOKBACK_SECONDS = 24 * 3600
 REVIEW_ABORT_MAX_COOLDOWN_SECONDS = 6 * 3600
@@ -263,16 +251,6 @@ async def _ingest_check(conn: Any, repo: str, event: dict[str, Any]) -> int:
     return recorded
 
 
-async def _checkpoint(conn: Any, repo: str, scope: str, cursor: str, changes: int) -> None:
-    await conn.execute(
-        """INSERT INTO public.factory_reconciliation_cursor
-             (repo,scope,checkpoint,changed_count)
-           VALUES($1,$2,$3,$4)
-           ON CONFLICT(repo,scope) DO UPDATE SET checkpoint=EXCLUDED.checkpoint,
-             changed_count=EXCLUDED.changed_count,checked_at=now()""",
-        repo,scope,cursor,changes)
-
-
 async def _stats(conn:Any,repo:str)->dict[str,Any]:
     rows=await conn.fetch(
         """SELECT worker,source,model,attempts,productive,completed,failures
@@ -281,44 +259,6 @@ async def _stats(conn:Any,repo:str)->dict[str,Any]:
             "cooling": [dict(r) for r in await conn.fetch(
                 """SELECT source,model,status,cooldown_until FROM public.factory_model_health
                    WHERE repo=$1 AND cooldown_until>now() ORDER BY cooldown_until""",repo)]}
-
-
-async def _sync_catalog(conn:Any,repo:str,report:dict[str,Any])->int:
-    """Record trusted catalog absence without editing the checked-in roster."""
-    count=0
-    for item in report.get("retirements") or []:
-        if not isinstance(item,dict):
-            continue
-        source,model=str(item.get("source") or ""),str(item.get("model") or "")
-        if not source or not model:
-            continue
-        reason=str(item.get("reason") or "")
-        retired="410" in reason or "permanently retired" in reason
-        await conn.execute(
-            """INSERT INTO public.factory_model_health
-                (repo,source,model,status,last_outcome,cooldown_until)
-               VALUES($1,$2,$3,$4,$5,$6)
-               ON CONFLICT(repo,source,model) DO UPDATE SET
-                 status=EXCLUDED.status,last_outcome=EXCLUDED.last_outcome,
-                 cooldown_until=EXCLUDED.cooldown_until,updated_at=now()
-               WHERE factory_model_health.status!='retired'""",
-            repo,source,model,"retired" if retired else "unavailable",
-            "model_retired_410" if retired else "model_unavailable",
-            None if retired else datetime.now(timezone.utc)+timedelta(hours=6))
-        count+=1
-    # A later successful catalog read proves availability, not invocation.
-    # Clear an expired absence without claiming the model executed correctly.
-    for item in report.get("kept") or []:
-        if not isinstance(item,dict):
-            continue
-        source,model=str(item.get("source") or ""),str(item.get("model") or "")
-        if source and model:
-            await conn.execute(
-                """UPDATE public.factory_model_health SET status='unknown',
-                   cooldown_until=NULL,updated_at=now()
-                   WHERE repo=$1 AND source=$2 AND model=$3 AND status='unavailable'
-                     AND last_outcome='model_unavailable'""",repo,source,model)
-    return count
 
 
 async def _rank_workers(conn:Any,repo:str,workers:list[str])->list[str]:
@@ -340,16 +280,3 @@ async def _rank_workers(conn:Any,repo:str,workers:list[str])->list[str]:
         for (position,_),replacement in zip(entries,sorted_workers,strict=True):
             workers[position]=replacement
     return workers
-
-
-async def _claim_wakeup(conn: Any, repo: str, scope: str, interval_seconds: int) -> bool:
-    # Every event worker races on one row, no additional GitHub-wide polling.
-    row=await conn.fetchval(
-        """INSERT INTO public.factory_reconciliation_cursor(repo,scope,checkpoint)
-           VALUES($1,$2,'event-wakeup')
-           ON CONFLICT(repo,scope) DO UPDATE SET
-             checked_at=now(),checkpoint=EXCLUDED.checkpoint
-           WHERE factory_reconciliation_cursor.checked_at
-               < now()-$3::int * interval '1 second'
-           RETURNING scope""",repo,scope,interval_seconds)
-    return row is not None

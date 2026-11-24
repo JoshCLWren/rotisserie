@@ -71,7 +71,7 @@ API calls and all individual targets/checks/reviews/mutations remain live.
 | `factory_worker_metrics` | Bounded source/model delivery ranking counters | Retained operational dependency; execution failure remains distinct from persisted code delivery |
 | `factory_runtime_event_keys` | Idempotence across independent terminal collectors | Retained coordination; duplicate completion must not double-count/reset breakers |
 | `factory_check_projection` | Advisory CI/review observations | Production writer retired; CI/review completions directly wake exact-head PR scheduling, legacy table requires one-time cleanup |
-| `factory_reconciliation_cursor` | Backfill and coalesced wakeups | Existing consumers remain; remove obsolete scopes after consumers migrate |
+| `factory_reconciliation_cursor` | Backfill and coalesced wakeups | Dead: no caller wrote a checkpoint or wakeup, the table held 0 rows (Nov 24), and the registry-observation bootstrap that read it is removed. Not carried to SQLite |
 | `factory_state_events` | Lifecycle/retry history plus old discovery observations | Runtime history still has consumers; lifecycle events expire after 30 days, raw model attempts after 120 days into daily counts (see below) |
 
 Leases and provider reservations must survive independent workflows because
@@ -282,3 +282,14 @@ redundant lifecycle observations, final bounded-retention policy/cleanup,
 complete live worker/continuation evidence and actual before/after per-cycle
 measurements remain. A green merge or a simulated handoff does not establish
 those acceptance criteria.
+
+## SQLite and libSQL schema
+
+`factory-state.sqlite.sql` is the schema for the Turso (libSQL) move (#253).
+It keeps the coordination tables above with typed, indexed columns for the
+properties that queries filter on, a unique `event_id`, epoch-second times
+compared against the database clock, a `repo` column on every table and a
+`_schema_version` table (Turso Cloud cannot set `PRAGMA user_version`). Leases
+and backoffs leave the generic key-value table for `factory_lease` and
+`factory_backoff`. The discovery cache, the reconciliation cursor and the
+check projection are not carried over.
