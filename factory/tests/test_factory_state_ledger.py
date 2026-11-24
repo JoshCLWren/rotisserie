@@ -43,7 +43,7 @@ def test_invalid_lease_requests_rejected(worker, numbers, ttl):
 
 def test_claim_conflict_propagates_without_github_fallback(monkeypatch, tmp_path):
     monkeypatch.setenv("FACTORY_STATE_DSN_FILE", str(tmp_path / "dsn"))
-    monkeypatch.setattr(ledger, "_acquire", lambda *args: "unused")
+    monkeypatch.setattr("factory_state_ledger_workers._acquire", lambda *args: "unused")
     monkeypatch.setattr(ledger.asyncio, "run", lambda coroutine: None)
     assert ledger.acquire_lease("owner/repo", "42", [5001]) is None
 
