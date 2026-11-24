@@ -694,7 +694,7 @@ issues. Select exactly in this order:
 5. Existing PR work only when required to complete its issue contract or make it mergeable.
 6. Factory maintenance only when factory behavior blocks issue delivery.
 
-Factory control: an empty or blocked ordinary backlog is never a reason to pause, disable, suspend, or mutate a factory schedule. Only Josh, or an interactive session acting on Josh's direct instruction, may pause or disable a factory.
+Factory control: an empty or blocked ordinary backlog is never a reason to pause, disable, suspend, or mutate a factory schedule. Only the repository owner, or an interactive session where the owner is present and directly instructs it, may pause or disable a factory.
 
 CONCURRENCY
 At most one implementation worker owns an issue unless workers explicitly declare
@@ -708,7 +708,7 @@ ANTI-ORBIT RULES
 - Do not repeatedly debate, review, summarize, or embellish the same few PRs.
 - Do not add optional tests, cleanup, documentation, PR-body edits, evidence prose, or minor
   slices while higher-priority executable issues remain.
-- Waiting for CI, review, merge, Josh, or external availability does not reserve the worker.
+- Waiting for CI, review, merge, the owner, or external availability does not reserve the worker.
   Preserve context and select another free issue.
 - Do not create replacement PRs merely because main advanced.
 - Release notes are post-merge infrastructure. Never create, repair, or gate implementation
@@ -763,7 +763,7 @@ revalidate -> merge when gated -> verify issue closure`
 
 3. **OPEN A PR EVERY TIME YOU PUSH.** After pushing a branch, immediately create or
    update a PR with `gh pr create` or `gh pr edit`. A branch without a PR is invisible
-   to other factories and to Josh.
+   to other factories and to the owner.
 
 4. **BRANCH HYGIENE.** Every commit must land on a named branch (e.g.,
    `factory/<issue>-<slug>`). Never commit to a detached HEAD. Never leave empty
@@ -788,7 +788,7 @@ normal backlog draining. Firefox and WebKit are optional diagnostics, not comple
 
 REPOSITORY SAFETY
 - Never push directly to main.
-- Never create or convert a draft PR unless Josh explicitly requested it.
+- Never create or convert a draft PR unless the owner explicitly requested it.
 - Never enable auto-merge.
 - Never weaken or bypass checks, remove meaningful coverage, use suppressions to fake green,
   or manufacture evidence.
@@ -839,7 +839,7 @@ The model running this heartbeat is `__MODEL_ID__`. Sign PR bodies you open or u
 `Model: __MODEL_ID__`
 
 STOP CONDITIONS
-Stop only when no executable work exists outside the deferred #679 Chromium cycle, Josh
+Stop only when no executable work exists outside the deferred #679 Chromium cycle, the owner
 redirects the work, a genuine human-only irreversible/product/credential decision is
 required, all safe write paths fail, or an evidence-grounded repair ceiling is reached.
 
