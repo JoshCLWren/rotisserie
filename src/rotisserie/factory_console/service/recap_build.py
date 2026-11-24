@@ -16,7 +16,11 @@ from rotisserie.factory_console import runtime
 from rotisserie.factory_console.github import Obj, integer, items, label_names, obj, string
 from rotisserie.factory_console.service import db_usage, reliability
 from rotisserie.factory_console.service.doctor import Finding
-from rotisserie.factory_console.service.failures import FAILED_CONCLUSIONS, WorkerFailure
+from rotisserie.factory_console.service.failures import (
+    FAILED_CONCLUSIONS,
+    WorkerFailure,
+    real_cause,
+)
 from rotisserie.factory_console.service.fleet import FleetState
 from rotisserie.factory_console.service.report import OUTCOME_WORDS, provider_rows
 from rotisserie.factory_console.service.review import BLOCKED
@@ -158,21 +162,6 @@ def needs_you(sources: Sources) -> list[dict[str, object]]:
 
 def _out_of_quota(row: WorkerFailure) -> bool:
     return row.outcome_class == "provider_quota"
-
-
-def real_cause(row: WorkerFailure) -> str:
-    """The recorded class, or ``no_capacity`` when the factory's capacity rule matches.
-
-    Runs recorded before the ``no_capacity`` class existed carry an older class
-    for the same exit, so the error is checked with the factory's own rule.
-    """
-    if row.outcome_class == "no_capacity" or not row.error:
-        return row.outcome_class
-    try:
-        rule = runtime.module("factory_dynamic_outcome").capacity_reason
-    except runtime.RuntimeUnavailableError:
-        return row.outcome_class
-    return "no_capacity" if rule(row.error) else row.outcome_class
 
 
 def went_wrong(sources: Sources) -> dict[str, object]:

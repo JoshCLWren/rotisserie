@@ -138,7 +138,12 @@ def stats(*rows: tuple[str, str, int, int]) -> dict[str, str]:
         }
         for source, model, runs, delivered in rows
     ]
-    payload = {"generated_at": "2026-11-23T21:00:00Z", "models": entries, "providers": []}
+    payload = {
+        "generated_at": "2026-11-23T21:00:00Z",
+        "models": entries,
+        "providers": [],
+        "model_exclusions": {"generated_at": "2026-11-23T21:50:00Z", "sources": {}},
+    }
     return {"content": base64.b64encode(json.dumps(payload).encode()).decode()}
 
 
@@ -156,11 +161,11 @@ def test_unstick_never_picks_a_disabled_provider_or_model(
         "FACTORY_DISABLED_MODELS": "opencode-free=opencode-go/hy4-flash-free",
     }
     github = Variables(values, snapshot)
-    _, ranked, _ = model_choice.choose_models(github, values, NOW, None, None)
+    _, ranked, *_ = model_choice.choose_models(github, values, NOW, None, None)
     assert [model for _, model, _ in ranked] == ["opencode-go/nemotron-free"]
-    _, named, _ = model_choice.choose_models(github, values, NOW, "nvidia", None)
+    _, named, *_ = model_choice.choose_models(github, values, NOW, "nvidia", None)
     assert [model for _, model, _ in named] == ["nvidia/meta/llama-9"]
-    _, unswitched, _ = model_choice.choose_models(github, {}, NOW, None, None)
+    _, unswitched, *_ = model_choice.choose_models(github, {}, NOW, None, None)
     assert len(unswitched) == 3
 
 

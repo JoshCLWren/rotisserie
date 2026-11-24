@@ -132,6 +132,11 @@ def _show_plan(console: Console, found: unstick.Plan) -> None:
         for pending in found.syncs:
             console.line(f"  {console.dot} PR #{pending.pr}: {pending.why}")
         console.line("  No worker: merging main into the branch is the repair.")
+    if found.no_model:
+        console.line()
+        console.heading(f"Not started, and why ({len(found.no_model)})")
+        for reason in found.no_model:
+            console.line(f"  {console.dot} {reason.text}")
     if not found.assignments:
         return
     first = found.assignments[0]
@@ -158,8 +163,10 @@ def _show_plan(console: Console, found: unstick.Plan) -> None:
     ]
     console.table(["Item", "Work", "Model", "Title"], rows)
     for item in found.assignments:
-        if "missed" in item.why:
+        if any(word in item.why for word in ("missed", "authored", "picks the model")):
             console.line(f"  {item.task.target}: {item.why.split('; ', 1)[-1]}")
+    for line in found.skipped_models:
+        console.line(f"  Skipped {line}")
     if found.left_out:
         console.line(f"  {found.left_out} more could be started (raise --max)")
     console.line()

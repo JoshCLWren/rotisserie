@@ -49,6 +49,7 @@ CAPACITY_LINES = [
     "2026-11-24T11:42:41Z ##[error]Every available model authored this PR; the review stays queued for another model",
     "2026-11-24T11:42:41Z ##[error]No reviewer model: 1 model(s) outside exclusions are eligible and all 1 "
     "authored this PR (2 author model(s) recorded); the review waits for a non-author model",
+    "2026-11-24T11:42:41Z ##[error]Exact requested model could not be selected; no provider fallback",
 ]
 
 
@@ -73,6 +74,25 @@ def test_reviewer_exit_after_go_lane_fallback_is_no_capacity() -> None:
         )
     )
     assert dynamic.classify(log)["outcome_class"] == "no_capacity"
+
+
+def test_a_pinned_model_the_exclusions_refuse_is_no_capacity_not_a_setup_failure() -> None:
+    # The shape of comic-pile run 45464372523 (2026-11-24): `baste unstick` pinned
+    # nvidia/meta/muse-glimmer-30b while the worker's exclusions listed it.
+    log = (
+        "2026-11-24T18:54:32.6426860Z Factory 1236998703303 assigned dynamic provider slot: "
+        "source=nvidia configured=true\n"
+        '2026-11-24T18:54:47.2364296Z \x1b[36;1m    echo "::error::Exact requested model could '
+        'not be selected; no provider fallback"\x1b[0m\n'
+        "2026-11-24T18:54:47.2380685Z \x1b[36;1m    || fleet_fallback 'Exact requested model is "
+        "unavailable in trusted provider catalog'\x1b[0m\n"
+        "2026-11-24T18:54:47.5489726Z ##[error]Exact requested model could not be selected; "
+        "no provider fallback\n"
+        "2026-11-24T18:54:47.5498680Z ##[error]Process completed with exit code 1.\n"
+    )
+    result = dynamic.classify(log)
+    assert result["outcome_class"] == "no_capacity"
+    assert result["detail"] == "Exact requested model could not be selected; no provider fallback"
 
 
 def test_capacity_wins_over_a_cooling_lane_catalog() -> None:
