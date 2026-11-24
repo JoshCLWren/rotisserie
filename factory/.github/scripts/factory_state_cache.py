@@ -20,6 +20,7 @@ from typing import Any
 from factory_state_metrics import connect as measured_connect
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 from factory_adopter import repository
+from factory_state_ledger_core import prefix_pattern
 
 
 def _dsn() -> str:
@@ -122,14 +123,15 @@ def _prune_obsolete_discovery(repo: str, batch_size: int = 200) -> int:
     row = _run(
         """WITH retired AS (
              SELECT cache_key FROM public.factory_state_kv
-             WHERE (left(cache_key, length($1))=$1 OR left(cache_key, length($2))=$2 OR cache_key=ANY($3::text[]))
+             WHERE (cache_key LIKE $1 OR cache_key LIKE $2 OR cache_key=ANY($3::text[]))
                AND (refresh_until IS NULL OR refresh_until<now())
              LIMIT $4
            ), removed AS (
              DELETE FROM public.factory_state_kv AS cache USING retired
              WHERE cache.cache_key=retired.cache_key RETURNING cache.cache_key
            ) SELECT count(*) AS deleted FROM removed""",
-        f'factory-github-get-v1:{repo}:', f'factory-projection-v1:{repo}:',
+        prefix_pattern(f'factory-github-get-v1:{repo}:'),
+        prefix_pattern(f'factory-projection-v1:{repo}:'),
         [f'{repo}:open-issues', f'{repo}:open-prs'], batch_size, one=True,
     )
     return int(row['deleted'])

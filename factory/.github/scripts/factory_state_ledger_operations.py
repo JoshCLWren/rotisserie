@@ -11,7 +11,7 @@ from typing import Any
 from factory_state_metrics import connect as measured_connect
 
 from factory_state_cache import _dsn
-from factory_state_ledger_core import LEASE_PREFIX, WORKER_RE, _target_key, enabled
+from factory_state_ledger_core import LEASE_PREFIX, WORKER_RE, _target_key, enabled, prefix_pattern
 
 
 OPERATION_HOLDER_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,79}$")
@@ -172,9 +172,9 @@ def list_leases(repo: str) -> list[dict[str, Any]]:
         try:
             rows = await conn.fetch(
                 """SELECT cache_key, payload, expires_at, expires_at > now() AS active
-                   FROM public.factory_state_kv WHERE starts_with(cache_key, $1)
+                   FROM public.factory_state_kv WHERE cache_key LIKE $1
                    ORDER BY cache_key""",
-                f"{LEASE_PREFIX}{repo}:",
+                prefix_pattern(f"{LEASE_PREFIX}{repo}:"),
             )
             return [
                 _lease_row(row["cache_key"], row["payload"], row["expires_at"], row["active"])
@@ -206,12 +206,12 @@ def release_expired_leases(repo: str) -> int:
                 count = await conn.fetchval(
                     """WITH gone AS (
                          DELETE FROM public.factory_state_kv
-                         WHERE starts_with(cache_key, $1)
+                         WHERE cache_key LIKE $1
                            AND expires_at <= now() - interval '1 hour'
                            AND COALESCE(payload->0->>'external', 'false') != 'true'
                          RETURNING 1)
                        SELECT count(*) FROM gone""",
-                    f"{LEASE_PREFIX}{repo}:",
+                    prefix_pattern(f"{LEASE_PREFIX}{repo}:"),
                 )
             return int(count or 0)
         finally:

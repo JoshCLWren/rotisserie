@@ -243,7 +243,7 @@ def test_terminal_event_idempotency_spans_classification_outcomes() -> None:
     import inspect
 
     source = inspect.getsource(ledger._events)
-    assert "detail->>'event_id'=$1 LIMIT 1" in source
+    assert "AND detail->>'event_id'=$4)" in source
     assert "AND event_type=$1" not in source
 
 

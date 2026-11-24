@@ -10,7 +10,7 @@ from factory_state_metrics import connect as measured_connect
 
 from factory_state_cache import _dsn
 from factory_work_policy import FIXED_LEASE_TTL_SECONDS
-from factory_state_ledger_core import LEASE_PREFIX, WORKER_RE, _keys, enabled
+from factory_state_ledger_core import LEASE_PREFIX, WORKER_RE, _keys, enabled, prefix_pattern
 
 
 async def _acquire(
@@ -38,8 +38,8 @@ async def _acquire(
                 # back off rather than start work past the shared WIP limit.
                 current = await conn.fetchval(
                     """SELECT count(*) FROM public.factory_state_kv
-                       WHERE starts_with(cache_key, $1) AND payload->0->>'wip' = 'true'""",
-                    f"{LEASE_PREFIX}{repo}:external:",
+                       WHERE cache_key LIKE $1 AND payload->0->>'wip' = 'true'""",
+                    prefix_pattern(f"{LEASE_PREFIX}{repo}:external:"),
                 )
                 if int(current or 0) > external_wip_seen:
                     return None
@@ -120,9 +120,9 @@ async def _release(repo: str, worker: str, token: str, reason: str) -> bool:
             keys = _keys(repo, worker, numbers)
             await conn.execute(
                 """DELETE FROM public.factory_state_kv
-                   WHERE (cache_key=ANY($1::text[]) OR starts_with(cache_key, $3))
+                   WHERE (cache_key=ANY($1::text[]) OR cache_key LIKE $3)
                      AND payload->0->>'claim_id'=$2""",
-                keys, token, f"{LEASE_PREFIX}{repo}:slot:",
+                keys, token, prefix_pattern(f"{LEASE_PREFIX}{repo}:slot:"),
             )
             from factory_state_operations import release_capacity
             await release_capacity(conn, token)

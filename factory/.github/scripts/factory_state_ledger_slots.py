@@ -28,7 +28,7 @@ from collections.abc import Sequence
 from typing import Any
 
 from factory_state_cache import _dsn
-from factory_state_ledger_core import LEASE_PREFIX, WORKER_RE, _keys, enabled
+from factory_state_ledger_core import LEASE_PREFIX, WORKER_RE, _keys, enabled, prefix_pattern
 from factory_state_metrics import connect as measured_connect
 from factory_work_policy import FIXED_LEASE_TTL_SECONDS
 
@@ -93,8 +93,8 @@ async def _acquire_slot(
                 return {"status": "conflict", "reason": "worker_busy"}
             rows = await conn.fetch(
                 """SELECT cache_key, payload FROM public.factory_state_kv
-                   WHERE starts_with(cache_key, $1) AND expires_at > now()""",
-                slot_prefix(repo, number),
+                   WHERE cache_key LIKE $1 AND expires_at > now()""",
+                prefix_pattern(slot_prefix(repo, number)),
             )
             taken = {str(row["cache_key"]).removeprefix(slot_prefix(repo, number)) for row in rows}
             sources = {str(_first(row["payload"]).get("source") or "") for row in rows}
@@ -186,9 +186,9 @@ def slot_holders(repo: str, number: int) -> list[dict[str, Any]]:
         try:
             rows = await conn.fetch(
                 """SELECT cache_key, payload, expires_at > now() AS active
-                   FROM public.factory_state_kv WHERE starts_with(cache_key, $1)
+                   FROM public.factory_state_kv WHERE cache_key LIKE $1
                    ORDER BY cache_key""",
-                slot_prefix(repo, number),
+                prefix_pattern(slot_prefix(repo, number)),
             )
         finally:
             await conn.close()

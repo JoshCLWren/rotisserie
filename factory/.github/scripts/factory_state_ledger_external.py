@@ -12,7 +12,7 @@ from typing import Any
 from factory_state_metrics import connect as measured_connect
 
 from factory_state_cache import _dsn
-from factory_state_ledger_core import LEASE_PREFIX, _target_key, enabled
+from factory_state_ledger_core import LEASE_PREFIX, _target_key, enabled, prefix_pattern
 
 
 # External agents share the same repository advisory lock and target keys as
@@ -80,9 +80,9 @@ async def _reserve_external(
                 }
             count = await conn.fetchval(
                 """SELECT count(*) FROM public.factory_state_kv
-                   WHERE starts_with(cache_key, $1)
+                   WHERE cache_key LIKE $1
                      AND payload->0->>'wip' = 'true'""",
-                f"{LEASE_PREFIX}{repo}:external:",
+                prefix_pattern(f"{LEASE_PREFIX}{repo}:external:"),
             )
             # Factory workers that claimed anything since shortly before the
             # offer snapshot may hold a slot the snapshot could not see yet
@@ -90,9 +90,9 @@ async def _reserve_external(
             # Counting them can only make outside intake stricter.
             newer = await conn.fetchval(
                 """SELECT count(*) FROM public.factory_state_kv
-                   WHERE starts_with(cache_key, $1) AND expires_at > now()
+                   WHERE cache_key LIKE $1 AND expires_at > now()
                      AND fetched_at > $2::timestamptz - interval '5 minutes'""",
-                f"{LEASE_PREFIX}{repo}:worker:", datetime.fromisoformat(offer_at),
+                prefix_pattern(f"{LEASE_PREFIX}{repo}:worker:"), datetime.fromisoformat(offer_at),
             )
             if (action == "implement" and not wip_exempt
                     and observed_wip + int(count or 0) + int(newer or 0) >= wip_limit):
@@ -325,9 +325,9 @@ def external_wip_count(repo: str) -> int:
         try:
             result = await conn.fetchval(
                 """SELECT count(*) FROM public.factory_state_kv
-                   WHERE starts_with(cache_key, $1)
+                   WHERE cache_key LIKE $1
                      AND payload->0->>'wip'='true'""",
-                f"{LEASE_PREFIX}{repo}:external:",
+                prefix_pattern(f"{LEASE_PREFIX}{repo}:external:"),
             )
             return int(result or 0)
         finally:

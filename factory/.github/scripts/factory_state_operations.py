@@ -196,8 +196,8 @@ def main() -> int:
     elif args.command=="bootstrap":
         if not enabled():
             raise SystemExit("Neon is required for factory operations")
-        _run(lambda conn: conn.fetchval("SELECT 1"))
-        print("[factory-operations] schema ready")
+        from factory_state_indexes import ensure_upgrades
+        print(f"[factory-operations] schema ready {json.dumps(_run(ensure_upgrades), sort_keys=True)}")
     elif args.command=="export-fleet-failover-sources":
         print(json.dumps(export_fleet_failover_sources(args.repo,args.worker),separators=(",",":")))
     elif args.command=="export-model-exclusions":

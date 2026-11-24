@@ -322,14 +322,15 @@ def test_prune_is_bounded_to_retired_discovery_without_coordination(monkeypatch)
     monkeypatch.setattr(cache, "_run", fake_run)
     assert cache._prune_obsolete_discovery("acme/widgets", 200) == 4
     query, args, one = executed[0]
-    assert args == ("factory-github-get-v1:acme/widgets:",
-                    "factory-projection-v1:acme/widgets:",
+    assert args == ("factory-github-get-v1:acme/widgets:%",
+                    "factory-projection-v1:acme/widgets:%",
                     ["acme/widgets:open-issues", "acme/widgets:open-prs"], 200)
     assert one is True
     assert "DELETE FROM public.factory_state_kv" in query
-    assert "left(cache_key, length($1))=$1" in query
-    assert "left(cache_key, length($2))=$2" in query
-    assert "LIKE" not in query
+    assert "cache_key LIKE $1 OR cache_key LIKE $2" in query
+    cache._prune_obsolete_discovery("acme/repo_name", 200)
+    # An unescaped underscore would also match another repository's keys.
+    assert executed[1][1][0] == "factory-github-get-v1:acme/repo\\_name:%"
     assert "LIMIT $4" in query
     assert "refresh_until IS NULL OR" in query
     with pytest.raises(ValueError, match="batch"):

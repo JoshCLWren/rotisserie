@@ -72,7 +72,7 @@ API calls and all individual targets/checks/reviews/mutations remain live.
 | `factory_runtime_event_keys` | Idempotence across independent terminal collectors | Retained coordination; duplicate completion must not double-count/reset breakers |
 | `factory_check_projection` | Advisory CI/review observations | Production writer retired; CI/review completions directly wake exact-head PR scheduling, legacy table requires one-time cleanup |
 | `factory_reconciliation_cursor` | Backfill and coalesced wakeups | Existing consumers remain; remove obsolete scopes after consumers migrate |
-| `factory_state_events` | Lifecycle/retry history plus old discovery observations | Runtime history still has consumers; duplicated/obsolete observations and bounded retention cleanup remain outstanding |
+| `factory_state_events` | Lifecycle/retry history plus old discovery observations | Runtime history still has consumers; lifecycle events expire after 30 days; `model_attempt` events have no retention yet |
 
 Leases and provider reservations must survive independent workflows because
 Actions artifacts, outputs and concurrency groups cannot atomically reserve a
@@ -217,6 +217,29 @@ The old `factory_check_projection` relation is no longer created by fresh
 schema initialization or consumed by factory readers. Its historical rows
 remain physically present until the separately verified retention migration
 removes them.
+
+## Access paths and indexes (#254)
+
+The original tables existed before these lookups grew hot, and
+`ensure_schema` stops at its first table check. The dispatcher's trusted
+`bootstrap` step therefore runs `factory_state_indexes.ensure_upgrades`. It
+checks each object with `to_regclass` and creates a missing one under a
+non-blocking advisory lock with a 5-second lock timeout. A failure (for
+example a role that does not own the table) is printed in the step output and
+does not stop the factory. A fresh database gets the same statements from
+`factory-state-schema.sql`.
+
+| Object | Serves |
+| --- | --- |
+| `idx_factory_state_events_event_id` | Event dedup (`detail->>'event_id'`), `recorded_runtime_runs` |
+| `idx_factory_state_events_run_id` | `run_workers` run-to-worker lookup |
+| `idx_factory_state_events_worker_recent` | Reliability export, runtime view, failure streak (lifecycle and terminal events only) |
+| `idx_factory_state_events_retired` | Retired `cache_refresh`/`target_reconciled` arms of the prune (empty once cleaned) |
+| `idx_factory_state_kv_key_prefix` | Key-prefix reads (`text_pattern_ops`); prefixes are escaped `LIKE` patterns |
+
+The lifecycle dedup is one `INSERT ... SELECT ... WHERE NOT EXISTS` under the
+repository lock, not a read followed by a write. The dedup index is not
+unique, because existing rows were never checked for duplicates.
 
 ## Measurements and scope status
 
