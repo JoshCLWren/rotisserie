@@ -1,8 +1,8 @@
 # Installed by factory/install/install.py in an adopter repository.
-# Copies the factory store into a plain SQLite file with the read-only token
-# and publishes it as a short-lived artifact, with a JSON row-count summary.
-# The file holds claim identities: anyone who can read this repository's
-# Actions artifacts can read it for one day.
+# Copies the factory store into a SQLite file with the read-only token,
+# encrypts it with the FACTORY_EXPORT_KEY secret, and publishes only the
+# encrypted file as a short-lived artifact, with a JSON row-count summary.
+# Public repositories expose artifacts, so the plain file never leaves the runner.
 name: Factory State Export
 on:
   workflow_call:
@@ -10,6 +10,8 @@ on:
       FACTORY_TURSO_URL:
         required: false
       FACTORY_TURSO_READ_TOKEN:
+        required: false
+      FACTORY_EXPORT_KEY:
         required: false
 
 env:
@@ -42,10 +44,11 @@ jobs:
         env:
           TURSO_URL: ${{ secrets.FACTORY_TURSO_URL }}
           TURSO_TOKEN: ${{ secrets.FACTORY_TURSO_READ_TOKEN }}
+          FACTORY_EXPORT_KEY: ${{ secrets.FACTORY_EXPORT_KEY }}
         run: |
           set -Eeuo pipefail
-          if [[ -z "$TURSO_URL" || -z "$TURSO_TOKEN" ]]; then
-            echo "::error::The FACTORY_TURSO_URL and FACTORY_TURSO_READ_TOKEN secrets are required"
+          if [[ -z "$TURSO_URL" || -z "$TURSO_TOKEN" || -z "$FACTORY_EXPORT_KEY" ]]; then
+            echo "::error::The FACTORY_TURSO_URL, FACTORY_TURSO_READ_TOKEN and FACTORY_EXPORT_KEY secrets are required"
             exit 1
           fi
           echo "::add-mask::$TURSO_URL"
@@ -60,6 +63,14 @@ jobs:
             --file "$RUNNER_TEMP/export/factory-state.sqlite" \
             > "$RUNNER_TEMP/factory-state-export.json" || status=$?
           rm -f "$token_file"
+          if [[ "$status" == 0 ]]; then
+            # Must match CIPHER in src/rotisserie/factory_console/service/store.py.
+            openssl enc -aes-256-cbc -pbkdf2 -iter 600000 -md sha256 -salt \
+              -pass env:FACTORY_EXPORT_KEY \
+              -in "$RUNNER_TEMP/export/factory-state.sqlite" \
+              -out "$RUNNER_TEMP/export/factory-state.sqlite.enc" || status=$?
+          fi
+          rm -f "$RUNNER_TEMP/export/factory-state.sqlite"
           if [[ "$status" != 0 ]]; then
             printf '{"mode":"export","schema":1,"status":"failed"}' \
               > "$RUNNER_TEMP/factory-state-export.json"
@@ -70,7 +81,7 @@ jobs:
         uses: actions/upload-artifact@v7
         with:
           name: factory-state-export-${{ github.run_id }}
-          path: ${{ runner.temp }}/export/factory-state.sqlite
+          path: ${{ runner.temp }}/export/factory-state.sqlite.enc
           retention-days: 1
           if-no-files-found: error
       - name: Publish the export summary
