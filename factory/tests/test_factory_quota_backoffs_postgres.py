@@ -53,6 +53,11 @@ async def _seed(conn) -> None:
             ),
         )
     await conn.execute(
+        """INSERT INTO public.factory_state_kv(cache_key,payload,fetched_at,expires_at,updated_at)
+           VALUES($1,'[{"outcome":"provider_quota"}]'::jsonb,now(),now()+interval '20 days',now())""",
+        f"factory-credit-pool-v1:{REPO}:source:groq-free",
+    )
+    await conn.execute(
         """INSERT INTO public.factory_model_health(repo,source,model,status,last_outcome,cooldown_until)
            VALUES($1,'groq-free','m','cooling','provider_quota',now()+interval '3 days')""",
         REPO,
@@ -62,7 +67,12 @@ async def _seed(conn) -> None:
 def test_quota_only_reset_keeps_real_streaks_and_caps_them(neon):  # noqa: F811
     _with_conn(_seed)
     result = _with_conn(backoffs._reset_quota_backoffs, REPO)
-    assert result == {"quota_backoff_rows": 1, "quota_health_rows": 1, "capped_fibonacci_rows": 1}
+    assert result == {
+        "quota_backoff_rows": 1,
+        "quota_health_rows": 1,
+        "capacity_cooldowns": 1,
+        "capped_fibonacci_rows": 1,
+    }
     rows = _sql(
         "SELECT cache_key, payload FROM public.factory_state_kv "
         "WHERE starts_with(cache_key,'factory-model-backoff-v1:')"

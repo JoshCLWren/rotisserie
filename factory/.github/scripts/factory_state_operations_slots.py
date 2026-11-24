@@ -25,13 +25,13 @@ def exhausted_sources(
 ) -> set[str]:
     """Sources whose catalog lists no model outside exclusions and credit pools."""
     from factory_billing_pool import credit_pool_members
-    from factory_published_model_catalog import catalog_model_ids
+    from factory_model_failover import _catalog_ids
 
     exhausted = set()
     for source, catalog in catalogs.items():
         try:
-            models = set(catalog_model_ids(source, catalog))
-        except ValueError, RuntimeError:
+            models = set(_catalog_ids(source, None, catalog)[0])
+        except Exception:  # noqa: BLE001 - an unreadable catalog never blocks dispatch
             continue
         models -= set(exclusions.get(source, ()))
         if source in exclusions.get("@credit_pool", ()):

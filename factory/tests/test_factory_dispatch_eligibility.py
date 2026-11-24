@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import sys
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -60,14 +61,45 @@ class Events:
         if "factory_pr_stage_retry" in sql:
             return []
         assert "worker_released" in sql and "pre-session-abort" in sql
-        return [{"targets": targets} for targets in self.released]
+        return [{"targets": targets, "created_at": at} for targets, at in self.released]
 
 
-def test_review_pr_cools_after_repeated_pre_session_aborts():
+def test_review_pr_cooldown_starts_at_the_latest_abort_and_grows():
+    now = datetime.now(UTC)
+
+    def ago(minutes):
+        return now - timedelta(minutes=minutes)
+
     heads = {
         5688: ("a" * 40, "factory:review"),
         5700: ("b" * 40, "factory:review"),
         5701: ("c" * 40, "factory:ci"),
+        5702: ("d" * 40, "factory:review"),
+        5703: ("e" * 40, "factory:review"),
     }
-    conn = Events([[5688], [5688], [5700], [5701], [5701]])
-    assert asyncio.run(operations._cooling_prs(conn, REPO, heads)) == {5688}
+    conn = Events([
+        ([5688], ago(10)), ([5688], ago(5)),
+        ([5700], ago(1)),
+        ([5701], ago(2)), ([5701], ago(1)),
+        ([5702], ago(50)), ([5702], ago(40)),
+        ([5703], ago(90)), ([5703], ago(60)), (["5703"], ago(40)),
+    ])
+    assert asyncio.run(operations._cooling_prs(conn, REPO, heads)) == {5688, 5703}
+
+
+def test_filter_keeps_workers_when_the_slot_check_fails(monkeypatch):
+    monkeypatch.setattr(operations, "enabled", lambda: True)
+    monkeypatch.setattr(operations, "_run", lambda fn, repo, workers: (list(workers), []))
+
+    def broken(*_args, **_kwargs):
+        raise RuntimeError("neon down")
+
+    monkeypatch.setattr(operations, "export_model_exclusions", broken)
+    kept, rejected = operations.filter_workers(REPO, ["1", "2"])
+    assert kept == ["1", "2"]
+    assert rejected == ["catalog slot check skipped (RuntimeError)"]
+    monkeypatch.setattr(operations, "export_model_exclusions", lambda repo: {})
+    monkeypatch.setattr(
+        slots, "drop_exhausted_slots", lambda repo, workers, excluded: (workers[:1], ["2: empty"])
+    )
+    assert operations.filter_workers(REPO, ["1", "2"]) == (["1"], ["2: empty"])

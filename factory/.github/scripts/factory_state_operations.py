@@ -86,8 +86,11 @@ def filter_workers(repo: str, workers: list[str]) -> tuple[list[str],list[str]]:
     kept, rejected = _run(_eligibility,repo,workers)
     if kept:
         from factory_state_operations_slots import drop_exhausted_slots
-        kept, empty = drop_exhausted_slots(repo, kept, export_model_exclusions(repo))
-        rejected += empty
+        try:
+            kept, empty = drop_exhausted_slots(repo, kept, export_model_exclusions(repo))
+            rejected += empty
+        except Exception as exc:  # noqa: BLE001 - the slot check is advisory; fail open
+            rejected.append(f"catalog slot check skipped ({type(exc).__name__})")
     return kept, rejected
 
 

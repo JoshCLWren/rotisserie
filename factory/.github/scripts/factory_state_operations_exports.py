@@ -268,11 +268,12 @@ async def _reset_model_health(conn: Any, repo: str, include_retired: bool = Fals
         backoffs = await conn.fetchval(
             """WITH deleted AS (DELETE FROM public.factory_state_kv
                  WHERE starts_with(cache_key,$1) OR starts_with(cache_key,$2)
-                    OR starts_with(cache_key,$3) RETURNING 1)
+                    OR starts_with(cache_key,$3) OR starts_with(cache_key,$4) RETURNING 1)
                SELECT count(*) FROM deleted""",
             f"factory-model-backoff-v1:{repo}:",
             f"factory-worker-backoff-v1:{repo}:",
-            f"factory-provider-backoff-v1:{repo}:")
+            f"factory-provider-backoff-v1:{repo}:",
+            f"factory-credit-pool-v1:{repo}:")
         providers = await conn.fetchval(
             """WITH cleared AS (UPDATE public.factory_provider_budget
                  SET cooldown_until=NULL,quota_reset_at=NULL,updated_at=now()

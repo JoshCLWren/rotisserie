@@ -5,8 +5,8 @@
 source from running: model health cooldowns, Fibonacci backoffs of real
 failures, and quota/throttle/credit cooldowns with the source of their reset
 time. ``reset-model-health --quota-only`` clears what quota and throttle
-refusals wrote before they stopped growing streaks, and caps the remaining
-Fibonacci rows at one day. It keeps real-failure streaks and never writes the
+refusals wrote (old streak rows, pair cooldowns, account and credit-pool
+cooldowns), and caps the remaining Fibonacci rows at one day. It keeps real-failure streaks and never writes the
 full-reset marker, so those streaks are not forgotten.
 """
 
@@ -16,10 +16,14 @@ import json
 from datetime import UTC, datetime
 from typing import Any
 
-from factory_quota_reset import CAPACITY_OUTCOMES
+from factory_quota_reset import CAPACITY_OUTCOMES, policy
 from factory_state_operations_backoff import MAX_FIBONACCI_DELAY_SECONDS, effective_retry_at
 from factory_state_operations_core import REPO_RE
-from factory_state_operations_quota import active_capacity_cooldowns
+from factory_state_operations_quota import (
+    POOL_PREFIX,
+    PROVIDER_PREFIX,
+    active_capacity_cooldowns,
+)
 
 BACKOFF_PREFIXES = ("factory-model-backoff-v1", "factory-worker-backoff-v1")
 
@@ -37,12 +41,14 @@ def _state(payload: Any) -> dict[str, Any]:
 
 async def _export_backoffs(conn: Any, repo: str) -> dict[str, Any]:
     now = datetime.now(UTC)
-    providers: dict[str, dict[str, list[dict[str, Any]]]] = {}
+    providers: dict[str, dict[str, Any]] = {}
 
-    def bucket(source: str) -> dict[str, list[dict[str, Any]]]:
-        return providers.setdefault(
-            source or "unknown", {"health": [], "fibonacci": [], "capacity": []}
-        )
+    def bucket(source: str) -> dict[str, Any]:
+        rule = policy(source)
+        return providers.setdefault(source or "unknown", {
+            "health": [], "fibonacci": [], "capacity": [],
+            "reset_policy": f"{rule.period} {rule.scope}", "probe": rule.probe,
+        })
 
     for row in await conn.fetch(
         """SELECT source,model,status,last_outcome,cooldown_until
@@ -121,6 +127,13 @@ async def _reset_quota_backoffs(conn: Any, repo: str) -> dict[str, int]:
             repo,
             outcomes,
         )
+        capacity = await conn.fetchval(
+            """WITH deleted AS (DELETE FROM public.factory_state_kv
+                 WHERE starts_with(cache_key,$1) OR starts_with(cache_key,$2) RETURNING 1)
+               SELECT count(*) FROM deleted""",
+            f"{PROVIDER_PREFIX}:{repo}:",
+            f"{POOL_PREFIX}:{repo}:",
+        )
         capped = await conn.fetchval(
             """WITH capped AS (UPDATE public.factory_state_kv SET
                  payload=jsonb_set(payload,'{0,next_retry_at}',
@@ -138,6 +151,7 @@ async def _reset_quota_backoffs(conn: Any, repo: str) -> dict[str, int]:
     return {
         "quota_backoff_rows": int(removed or 0),
         "quota_health_rows": int(health or 0),
+        "capacity_cooldowns": int(capacity or 0),
         "capped_fibonacci_rows": int(capped or 0),
     }
 

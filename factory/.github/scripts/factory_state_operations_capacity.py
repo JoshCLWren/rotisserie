@@ -170,6 +170,8 @@ async def _seed_daily(conn: Any, repo: str, counts: dict[str,int]) -> None:
 
 
 REVIEW_ABORT_LIMIT = 2
+REVIEW_ABORT_LOOKBACK_SECONDS = 24 * 3600
+REVIEW_ABORT_MAX_COOLDOWN_SECONDS = 6 * 3600
 
 
 async def _cooling_prs(conn: Any, repo: str, heads: dict[int,tuple[str,str]]) -> set[int]:
@@ -186,8 +188,9 @@ async def _review_churn(conn: Any, repo: str, heads: dict[int, tuple[str, str]])
 
     A review whose every eligible model authored the PR aborts before the
     session and releases the lease, so the PR was re-dispatched every few
-    minutes (#5688: 37 times overnight). After REVIEW_ABORT_LIMIT such aborts
-    inside FACTORY_REVIEW_FAILURE_COOLDOWN_SECONDS the PR waits out that window.
+    minutes (#5688: 37 times overnight). From the REVIEW_ABORT_LIMIT-th abort
+    in the lookback, the PR waits FACTORY_REVIEW_FAILURE_COOLDOWN_SECONDS times
+    (aborts - 1) after its latest abort, up to six hours.
     """
     review = {number for number, (_, stage) in heads.items() if stage == "factory:review"}
     if not review:
@@ -196,20 +199,28 @@ async def _review_churn(conn: Any, repo: str, heads: dict[int, tuple[str, str]])
 
     window = integer("FACTORY_REVIEW_FAILURE_COOLDOWN_SECONDS", 1800)
     counts: dict[int, int] = {}
+    latest: dict[int, datetime] = {}
     for row in await conn.fetch(
-        """SELECT detail->'targets' AS targets FROM public.factory_state_events
+        """SELECT detail->'targets' AS targets, created_at FROM public.factory_state_events
            WHERE event_type='worker_released' AND detail->>'repo'=$1
              AND starts_with(detail->>'reason','pre-session-abort')
              AND created_at > now() - $2::int * interval '1 second'""",
-        repo, window,
+        repo, REVIEW_ABORT_LOOKBACK_SECONDS,
     ):
         targets = row["targets"]
         if isinstance(targets, str):
             targets = json.loads(targets)
-        for number in targets if isinstance(targets, list) else []:
-            if isinstance(number, int) and number in review:
+        for item in targets if isinstance(targets, list) else []:
+            number = int(item) if str(item).isdecimal() else None
+            if number in review:
                 counts[number] = counts.get(number, 0) + 1
-    return {number for number, count in counts.items() if count >= REVIEW_ABORT_LIMIT}
+                latest[number] = max(latest.get(number, row["created_at"]), row["created_at"])
+    now = datetime.now(timezone.utc)
+    return {
+        number for number, count in counts.items()
+        if count >= REVIEW_ABORT_LIMIT and now < latest[number] + timedelta(
+            seconds=min(window * (count - 1), REVIEW_ABORT_MAX_COOLDOWN_SECONDS))
+    }
 
 
 async def _ingest_check(conn: Any, repo: str, event: dict[str, Any]) -> int:

@@ -14,7 +14,7 @@ ends when the capacity returns:
 
 A hint from the provider (refusal text, a Retry-After or X-RateLimit-Reset
 header, or the OpenRouter key endpoint) wins over the policy default, clamped
-to [now, now + MAX_RESET_SECONDS]. An oversized request (input larger than a
+to [now, now + a per-kind ceiling]. An oversized request (input larger than a
 per-minute token limit) is not a quota and sets no cooldown.
 """
 
@@ -128,9 +128,46 @@ def policy_reset(source: str, kind: str, observed: datetime) -> datetime:
     return next_daily_reset(observed, rule.timezone)
 
 
+CEILINGS = {THROTTLE: THROTTLE_MAX_SECONDS, DAILY: 2 * 24 * 3600, NEEDS_CREDITS: 7 * 24 * 3600}
+
+
 def clamp(observed: datetime, reset: datetime, kind: str) -> datetime:
-    ceiling = THROTTLE_MAX_SECONDS if kind == THROTTLE else MAX_RESET_SECONDS
+    ceiling = CEILINGS.get(kind, MAX_RESET_SECONDS)
     return min(max(reset, observed), observed + timedelta(seconds=ceiling))
+
+
+EVIDENCE_RE = re.compile(
+    r"HTTP[^0-9\n]{0,8}4\d\d|rate[ _-]?limit|too many requests|try again in|"
+    r"requests per (?:day|minute)|per minute \(|" + CREDITS_RE.pattern,
+    re.I,
+)
+ERROR_LINE_RE = re.compile(
+    r"^(?:\S+\s+)?(?:error\b|\w*Error:|! retrying|provider request failed)|HTTP[ /]?\d{3}\b",
+    re.I,
+)
+
+
+def refusal_evidence(log: str) -> str:
+    """Provider refusal lines only: never agent prose or tool output."""
+    import json
+
+    kept: list[str] = []
+    for line in log.splitlines():
+        payload = re.sub(r"^\d{4}-\d{2}-\d{2}T\S+Z\s+", "", line).strip()
+        if payload.startswith("{"):
+            try:
+                event = json.loads(payload)
+            except ValueError:
+                continue
+            if not isinstance(event, dict) or event.get("type") != "error":
+                continue
+            detail = event.get("error") or event.get("message") or ""
+            payload = str(detail.get("message") if isinstance(detail, dict) else detail)
+        elif not ERROR_LINE_RE.search(payload):
+            continue
+        if len(payload) <= 600 and EVIDENCE_RE.search(payload):
+            kept.append(payload)
+    return "\n".join(kept[-20:])
 
 
 def wait_seconds(text: str) -> float | None:
@@ -237,7 +274,7 @@ def main() -> int:
             text = handle.read().decode("utf-8", "replace")
     except OSError:
         text = ""
-    reset = from_text(args.source, args.outcome, text, observed)
+    reset = from_text(args.source, args.outcome, refusal_evidence(text), observed)
     if args.probe and reset.reset_source == "policy" and reset.kind != NEEDS_CREDITS:
         from factory_quota_probe import probe_reset
 

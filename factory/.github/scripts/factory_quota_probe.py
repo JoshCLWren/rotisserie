@@ -28,6 +28,9 @@ from typing import Any
 from factory_quota_reset import DAILY, THROTTLE, Reset, clamp, next_daily_reset, policy
 
 OPENROUTER_KEY_URL = "https://openrouter.ai/api/v1/key"
+# OpenCode adds these to NVIDIA requests (packages/core/src/plugin/provider/nvidia.ts).
+# Its per-session x-opencode-* headers carry no credential and are not replicated.
+OPENCODE_HEADERS = {"nvidia": {"HTTP-Referer": "https://opencode.ai/", "X-Title": "opencode"}}
 USER_AGENT = "rotisserie-factory-quota-probe/1"
 TIMEOUT = 15.0
 
@@ -119,6 +122,7 @@ def _inference(
         "Content-Type": "application/json",
         "User-Agent": USER_AGENT,
         **dict(spec.headers),
+        **OPENCODE_HEADERS.get(source, {}),
     }
     request = urllib.request.Request(
         endpoint.rstrip("/") + "/chat/completions",

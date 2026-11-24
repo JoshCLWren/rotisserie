@@ -92,10 +92,11 @@ async def record_capacity_cooldown(
         "run_id": run_id,
         "next_retry_at": reset.until.isoformat(),
     }
+    # The refused pair also cools: a same-run success on this source clears the
+    # account key, which proves the account works but not this model.
     if where == "account":
         await _extend_key(conn, f"{PROVIDER_PREFIX}:{repo}:source:{source}", reset.until, state)
-        return reset
-    if where == "pool":
+    elif where == "pool":
         await _extend_key(conn, f"{POOL_PREFIX}:{repo}:source:{source}", reset.until, state)
     await conn.execute(
         """INSERT INTO public.factory_model_health
