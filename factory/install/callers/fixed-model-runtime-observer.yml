@@ -15,6 +15,7 @@ permissions:
   pull-requests: read
 jobs:
   rotisserie:
+    cache-mode: read
     uses: JoshCLWren/rotisserie/.github/workflows/fixed-model-runtime-observer.yml@main
     secrets:
       NEON_API_KEY: ${{ secrets.NEON_API_KEY }}

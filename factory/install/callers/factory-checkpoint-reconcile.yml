@@ -21,6 +21,7 @@ concurrency:
   cancel-in-progress: false
 jobs:
   rotisserie:
+    cache-mode: read
     uses: JoshCLWren/rotisserie/.github/workflows/factory-checkpoint-reconcile.yml@main
     with:
       run_id: ${{ inputs.run_id }}

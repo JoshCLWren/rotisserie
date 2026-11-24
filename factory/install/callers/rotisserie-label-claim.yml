@@ -32,6 +32,7 @@ concurrency:
   cancel-in-progress: false
 jobs:
   rotisserie:
+    cache-mode: read
     uses: JoshCLWren/rotisserie/.github/workflows/rotisserie-label-claim.yml@main
     with:
       mode: ${{ inputs.mode }}

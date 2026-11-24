@@ -46,6 +46,15 @@ def _triggers(workflow: dict) -> dict:
 
 CALLERS = sorted((FACTORY / "install" / "callers").glob("*.yml"))
 LEVEL = {"none": 0, "read": 1, "write": 2}
+# A called workflow may request cache writes these triggers would not grant.
+LOW_TRUST = {
+    "workflow_run",
+    "issues",
+    "issue_comment",
+    "pull_request_target",
+    "pull_request_review",
+    "pull_request_review_comment",
+}
 
 
 def _job_permissions(reusable: dict) -> list[dict]:
@@ -72,14 +81,18 @@ def test_caller_is_thin_and_matches_its_reusable_workflow(caller: Path) -> None:
     assert set(workflow) - {"name", "run-name", True, "permissions", "concurrency", "jobs"} == set()
     assert list(workflow["jobs"]) == ["rotisserie"]
     job = workflow["jobs"]["rotisserie"]
-    assert set(job) <= {"uses", "with", "secrets"}
+    assert set(job) <= {"cache-mode", "uses", "with", "secrets"}
+    if set(_triggers(workflow)) & LOW_TRUST:
+        assert job["cache-mode"] == "read"
     assert job["uses"] == f"JoshCLWren/rotisserie/.github/workflows/{caller.name}@main"
     reusable = _load(REUSABLE / caller.name)
     assert list(_triggers(reusable)) == ["workflow_call"]
     call = _triggers(reusable)["workflow_call"] or {}
     dispatch = _triggers(workflow).get("workflow_dispatch") or {}
-    assert set(job.get("with") or {}) == set(call.get("inputs") or {}) == set(
-        dispatch.get("inputs") or {}
+    assert (
+        set(job.get("with") or {})
+        == set(call.get("inputs") or {})
+        == set(dispatch.get("inputs") or {})
     )
     for name, value in (job.get("with") or {}).items():
         kind = dispatch["inputs"][name].get("type", "string")
@@ -145,10 +158,13 @@ def test_render_points_the_caller_at_the_source_and_ref() -> None:
     assert f"uses: example/rotisserie/.github/workflows/factory-ready-merge-drain.yml@{REF}" in (
         rendered
     )
-    assert rendered.replace(
-        f"example/rotisserie/.github/workflows/factory-ready-merge-drain.yml@{REF}",
-        "JoshCLWren/rotisserie/.github/workflows/factory-ready-merge-drain.yml@main",
-    ) == caller
+    assert (
+        rendered.replace(
+            f"example/rotisserie/.github/workflows/factory-ready-merge-drain.yml@{REF}",
+            "JoshCLWren/rotisserie/.github/workflows/factory-ready-merge-drain.yml@main",
+        )
+        == caller
+    )
 
 
 def test_ref_tracks_a_branch_or_pins_an_exact_commit() -> None:

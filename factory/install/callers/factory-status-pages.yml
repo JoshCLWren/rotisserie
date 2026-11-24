@@ -22,6 +22,7 @@ concurrency:
   cancel-in-progress: false
 jobs:
   rotisserie:
+    cache-mode: read
     uses: JoshCLWren/rotisserie/.github/workflows/factory-status-pages.yml@main
     secrets:
       NEON_API_KEY: ${{ secrets.NEON_API_KEY }}

@@ -11,6 +11,7 @@ concurrency:
   cancel-in-progress: false
 jobs:
   rotisserie:
+    cache-mode: read
     uses: JoshCLWren/rotisserie/.github/workflows/publish-factory-api-budgets.yml@main
     secrets:
       FACTORY_OBSERVABILITY_APP_ID: ${{ secrets.FACTORY_OBSERVABILITY_APP_ID }}

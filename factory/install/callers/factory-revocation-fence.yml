@@ -8,4 +8,5 @@ permissions:
   pull-requests: write
 jobs:
   rotisserie:
+    cache-mode: read
     uses: JoshCLWren/rotisserie/.github/workflows/factory-revocation-fence.yml@main

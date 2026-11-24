@@ -21,6 +21,7 @@ concurrency:
   cancel-in-progress: false
 jobs:
   rotisserie:
+    cache-mode: read
     uses: JoshCLWren/rotisserie/.github/workflows/factory-fork-persistence.yml@main
     with:
       run: ${{ inputs.run }}
