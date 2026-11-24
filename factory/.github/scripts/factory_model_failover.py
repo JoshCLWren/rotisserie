@@ -100,6 +100,9 @@ def select_next(
     """
     excluded = set(exclusions.get(source, ())) | attempted
     ids, catalog_json = _catalog_ids(source, catalog_text, catalog_json)
+    if source in exclusions.get("@credit_pool", ()):
+        from factory_billing_pool import credit_pool_members
+        excluded |= credit_pool_members(catalog_json)
     available = ids - excluded
     if not available:
         raise ExhaustedCandidatesError(f"no eligible unattempted {source} models")
@@ -343,7 +346,8 @@ def main() -> int:
             selected = select_next_fleet(
                 args.worker, args.source, pairs, set(args.blocked_provider),
                 exclusions, catalogs, set(sources), rotation=args.rotation,
-                exhausted_credit_pools=frozenset(args.exhausted_credit_pool),
+                exhausted_credit_pools=frozenset(args.exhausted_credit_pool)
+                | frozenset(exclusions.get("@credit_pool", ())),
             )
     except ExhaustedCandidatesError as exc:
         print(f"factory failover exhausted: {exc}", file=sys.stderr)

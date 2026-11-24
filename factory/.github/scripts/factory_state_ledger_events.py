@@ -178,6 +178,21 @@ def refine_trusted_dynamic_models(outcome: dict[str, Any], job_log: str) -> dict
         refined["model"] = successful
     return refined
 
+def quota_reset_hints(clean_log: str, worker: str) -> list[dict[str, object]]:
+    """Trusted FACTORY_QUOTA_RESET markers from this worker, last one per pair."""
+    from factory_quota_reset import parse_marker
+
+    found: dict[tuple[object, object], dict[str, object]] = {}
+    for line in re.finditer(
+        r"(?m)^\d{4}-\d{2}-\d{2}T\S+Z \[factory:(\d+)\]\[source:([^\]\n]+)\]"
+        r"\[model:[^\]\n]+\] (FACTORY_QUOTA_RESET: [^\n]*)$", clean_log,
+    ):
+        hint = parse_marker(line.group(3))
+        if hint and line.group(1) == worker and hint["source"] == line.group(2):
+            found[(hint["source"], hint["model"])] = hint
+    return list(found.values())
+
+
 def refine_trusted_failover_models(outcome: dict[str, Any], job_log: str) -> dict[str, Any]:
     """Attest exact failed pairs, account scope and final provider transitions.
 
@@ -239,6 +254,9 @@ def refine_trusted_failover_models(outcome: dict[str, Any], job_log: str) -> dic
     result = dict(outcome)
     if failures:
         result["model_failures"] = failures
+    hints = quota_reset_hints(clean, worker)
+    if hints:
+        result["quota_hints"] = hints
     if trusted_switch:
         result["trusted_source_switch"] = True
     return result

@@ -230,7 +230,7 @@ def test_monthly_quota_uses_next_utc_month(provider: str, observed: str, reset: 
     timestamp = int(datetime.fromisoformat(observed.replace('Z', '+00:00')).timestamp())
     expected = int(datetime.fromisoformat(reset.replace('Z', '+00:00')).timestamp())
     assert qp.quota_reset_epoch(provider, timestamp) == expected
-    assert qp.quota_reset_epoch('z-ai', timestamp) == timestamp + 1800
+    assert qp.quota_reset_epoch('z-ai', timestamp) == (timestamp // 86400 + 1) * 86400
 
 
 @pytest.mark.parametrize('observed,reset', [

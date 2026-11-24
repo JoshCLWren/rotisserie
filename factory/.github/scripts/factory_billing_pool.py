@@ -97,10 +97,10 @@ def exhausted_pool(model: str, catalog: object, refusal: str) -> str | None:
 
 
 def earliest_retry_at(observed: datetime) -> datetime:
-    """Lower bound of the canonical Neon Fibonacci retry for a new failure."""
-    from factory_state_operations import fibonacci_worker_delay
+    """When an empty credit pool is rechecked (factory_quota_reset)."""
+    from factory_quota_reset import NEEDS_CREDITS_SECONDS
 
-    return observed + timedelta(seconds=fibonacci_worker_delay(1))
+    return observed + timedelta(seconds=NEEDS_CREDITS_SECONDS)
 
 
 def source_catalog(source: str, fleet_cache: Path) -> object:

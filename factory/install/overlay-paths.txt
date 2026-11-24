@@ -76,6 +76,8 @@
 .github/scripts/factory_provider_registry.py
 .github/scripts/factory_published_model_catalog.py
 .github/scripts/factory_quota_pause.py
+.github/scripts/factory_quota_probe.py
+.github/scripts/factory_quota_reset.py
 .github/scripts/factory_review_model_guard.py
 .github/scripts/factory_review_policy.py
 .github/scripts/factory_rotisserie_adopter.py
@@ -99,6 +101,7 @@
 .github/scripts/factory_state_operations_capacity.py
 .github/scripts/factory_state_operations_core.py
 .github/scripts/factory_state_operations_exports.py
+.github/scripts/factory_state_operations_quota.py
 .github/scripts/factory_state_operations_reliability.py
 .github/scripts/factory_state_operations_runtime.py
 .github/scripts/factory_work_policy.py

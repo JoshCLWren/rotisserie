@@ -88,6 +88,9 @@ def select(
     """Rank published candidates without a checked-in model inventory."""
     result = discover(source, json.dumps(catalog))
     excluded = set((exclusions or {}).get(source, []))
+    if source in (exclusions or {}).get("@credit_pool", []):
+        from factory_billing_pool import credit_pool_members
+        excluded |= credit_pool_members(catalog)
     candidates = [
         candidate for candidate in result.candidates
         if candidate.model not in excluded

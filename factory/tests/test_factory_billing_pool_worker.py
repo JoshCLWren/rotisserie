@@ -176,7 +176,7 @@ def test_exhausted_capacity_reports_canonical_retry_lower_bound(tmp_path: Path) 
     assert "FACTORY_CAPACITY_EXHAUSTED: pools=orcarouter earliest_retry_at=20" in result.stdout
     recorded = outcome.read_text()
     assert recorded.startswith("provider_quota\tpaid credit balance exhausted at orcarouter;")
-    assert "earliest canonical Fibonacci retry 20" in recorded
+    assert "paid models rechecked at 20" in recorded
 
     outcome.write_text("control_plane_failure\tcatalog unreadable\n")
     subprocess.run(["bash", "-c", script], capture_output=True, text=True, check=True)
@@ -259,12 +259,11 @@ def test_pool_scope_survives_the_trusted_persistence_round_trip(monkeypatch) -> 
 
     conn = harness.RuntimeConn()
     assert asyncio.run(operations.project_runtime(conn, "acme/widgets", 4001, refined)) is True
-    key = "factory-model-backoff-v1:acme/widgets:source:orcarouter:model:synthetic/paid"
-    record = conn.kv[key][0]
-    assert record["scope"] == "pool"
-    assert record["streak"] == 1
+    record = conn.kv["factory-credit-pool-v1:acme/widgets:source:orcarouter"][0]
+    assert record["scope"] == "pool" and "streak" not in record
     assert record["next_retry_at"] is not None
-    assert not any(k.startswith("factory-provider-backoff-v1:") for k in conn.kv)
+    assert not any(k.startswith("factory-model-backoff-v1:") for k in conn.kv)
+    assert "factory-provider-backoff-v1:acme/widgets:source:orcarouter" not in conn.kv
     assert not any(
         k.endswith("synthetic/zero") or k.endswith("synthetic/unpriced") for k in conn.kv
     )

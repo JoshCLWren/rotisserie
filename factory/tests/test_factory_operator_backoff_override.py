@@ -92,7 +92,7 @@ def test_operator_can_retry_one_live_free_go_model_after_failed_coding_work():
 @pytest.mark.parametrize("status,outcome,backoff_outcome,suspended,quota", [
     ("retired", "model_retired_410", "work_failure", False, False),
     ("cooling", "provider_failure", "work_failure", False, False),
-    ("healthy", "work_failure", "provider_quota", False, False),
+    ("healthy", "work_failure", "agent_timeout", False, False),
     ("healthy", "work_failure", "work_failure", True, False),
     ("healthy", "provider_failure", "work_failure", False, False),
     ("healthy", "work_failure", "work_failure", False, True),
