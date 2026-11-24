@@ -54,6 +54,7 @@ READ_ONLY = frozenset(
         "limits",
         "backoffs",
         "db-usage",
+        "store",
     )
 )
 # Served on GitHub Pages from the published snapshot without sign-in.
@@ -80,6 +81,8 @@ WRITE_OPERATIONS = frozenset(
         "estimate_neon",
         "close",
         "backoffs_reset",
+        "store_selftest",
+        "store_export",
     )
 )
 MAX_BODY = 4096
@@ -98,6 +101,7 @@ _READ_PARAMETERS = {
     "recap": {"since"},
     "failures": {"since"},
     "stats": {"window"},
+    "store": {"mode", "run"},
 }
 
 
@@ -160,6 +164,11 @@ def read_command(name: str, query: Mapping[str, str], *, trusted: bool = False) 
             args.extend(("--run", _match(run, RUN_ID, "run")))
     elif name == "follow":
         args.extend((_match(_string(query, "target", required=True), TARGET, "target"), "--once"))
+    elif name == "store":
+        mode = _string(query, "mode", required=True)
+        if mode not in ("selftest", "export"):
+            raise InvalidRequest("Invalid store mode")
+        args.extend((mode, "--run", _match(_string(query, "run", required=True), RUN_ID, "run")))
     elif name in ("report", "failures", "recap"):
         since = _string(query, "since") or ("10h" if name == "failures" else "12h")
         args.extend(("--since", _match(since, re.compile(r"^[0-9]{1,3}[hd]$"), "since")))
@@ -303,6 +312,8 @@ def write_command(data: Mapping[str, Any]) -> list[str]:
         return _close(data)
     if name == "backoffs_reset":
         return ["backoffs", "reset", "--quota-only", "--yes", "--via", "github"]
+    if name in ("store_selftest", "store_export"):
+        return ["store", name.removeprefix("store_"), "--no-wait"]
     return _labels(data)
 
 

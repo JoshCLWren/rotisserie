@@ -113,6 +113,7 @@ def _measure(db: Any, job: Any) -> dict[str, int]:
 
 def main() -> None:
     os.environ["FACTORY_TURSO_URL"] = support.SERVER_URL
+    os.environ["FACTORY_TURSO_TOKEN_FILE"] = support.TOKEN_FILE
     core.use_store(None)
     db = core.store()
     repo = support.repo_name()

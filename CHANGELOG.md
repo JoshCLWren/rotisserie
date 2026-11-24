@@ -24,6 +24,17 @@ such change must be called out here and in its release notes.
   lets the Turso persistence code pause new claims at critical or on
   `BLOCKED`. Adopters re-run the installer to pass the `FACTORY_TURSO_API_TOKEN`
   and `FACTORY_TURSO_URL` secrets and add the `db-usage` label claim mode.
+- libSQL (Turso) factory persistence, not yet in use (#256). `factory_libsql.py`
+  talks to a libSQL server over the Hrana HTTP API, or to a SQLite file, with
+  the standard library only. The `factory_turso_*` modules carry every ledger
+  and operations function with the Neon names. Each write is one batch in one
+  transaction, with its authorizing checks inside the statement; no
+  transaction spans a GitHub call. `baste store selftest` runs the
+  coordination test matrix against the hosted database through the new
+  `factory-turso-selftest.yml` workflow, and `baste store export --out FILE` saves a
+  portable SQLite backup through `factory-state-export.yml`. Both have
+  controls on the Diagnostics page. Adopters re-run the installer to add the
+  two callers. The cutover is #257.
 - `rotisserie factory estimate issue:N --via github` counts attempts from exact
   Neon history (#238). The label claim workflow's new `estimate-history` mode
   runs one bounded, read-only query over `public.factory_state_events` and

@@ -47,6 +47,7 @@ from rotisserie.factory_console.commands.report import cmd_report, cmd_stats
 from rotisserie.factory_console.commands.run import cmd_run
 from rotisserie.factory_console.commands.settings import cmd_prioritize, cmd_settings
 from rotisserie.factory_console.commands.status import cmd_cancel, cmd_status
+from rotisserie.factory_console.commands.store import cmd_store
 from rotisserie.factory_console.commands.watch import cmd_watch
 from rotisserie.factory_console.commands.why import cmd_next, cmd_why
 from rotisserie.factory_console.context import Context, UsageError, find_repository
@@ -166,6 +167,7 @@ def _help_text() -> str:
             "  baste leases        who holds which item",
             "  baste backoffs      what keeps each provider waiting, and until when",
             "  baste db-usage      Turso rows, storage and quota this month",
+            "  baste store selftest  test the factory store; store export backs it up",
             "  baste doctor        is the factory itself healthy",
             "  baste claim pr:N    request work by label; finish pr:N ends it",
             "  baste follow pr:N   each lifecycle change until done; runs pr:N",
@@ -247,6 +249,7 @@ HANDLERS = {
     "backoffs": cmd_backoffs,
     "db-usage": cmd_db_usage,
     "recap": cmd_recap,
+    "store": cmd_store,
 }
 
 

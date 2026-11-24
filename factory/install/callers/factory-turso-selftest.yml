@@ -1,0 +1,22 @@
+name: Factory Turso Self-Test
+on:
+  workflow_dispatch:
+    inputs:
+      measure:
+        description: Also measure rows read and written per factory job (adds and then deletes about 22k rows)
+        type: boolean
+        default: false
+        required: false
+permissions:
+  contents: read
+concurrency:
+  group: factory-turso-selftest
+  cancel-in-progress: false
+jobs:
+  rotisserie:
+    uses: JoshCLWren/rotisserie/.github/workflows/factory-turso-selftest.yml@main
+    with:
+      measure: ${{ inputs.measure == true }}
+    secrets:
+      FACTORY_TURSO_URL: ${{ secrets.FACTORY_TURSO_URL }}
+      FACTORY_TURSO_TOKEN: ${{ secrets.FACTORY_TURSO_TOKEN }}

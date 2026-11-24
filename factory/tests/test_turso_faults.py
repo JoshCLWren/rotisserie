@@ -228,3 +228,35 @@ def test_claims_survive_a_server_restart(tmp_path: Path, monkeypatch: pytest.Mon
                 time.sleep(0.2)
         assert claim == (token, [TARGET])
         assert leases.acquire_lease(repo, other, [TARGET]) is None
+
+
+@needs_local_server
+def test_every_request_is_self_contained_so_no_transaction_outlives_it(
+    proxied, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _, repo, _ = proxied
+    bodies: list[dict] = []
+    original = urllib.request.urlopen
+
+    def recording(request, *args, **kwargs):  # type: ignore[no-untyped-def]
+        bodies.append(json.loads(request.data))
+        return original(request, *args, **kwargs)
+
+    monkeypatch.setattr(urllib.request, "urlopen", recording)
+    worker = support.uncapped_workers(1)[0]
+    token = leases.acquire_lease(repo, worker, [TARGET])
+    leases.renew_verified_workers(repo, [worker])
+    leases.release_lease(repo, worker, token, "done")
+    assert bodies
+    for body in bodies:
+        assert body["baton"] is None
+        assert body["requests"][-1] == {"type": "close"}
+        for item in body["requests"]:
+            if item["type"] == "batch":
+                steps = [step["stmt"]["sql"] for step in item["batch"]["steps"]]
+                assert steps[0] == "BEGIN IMMEDIATE"
+                assert steps[-2:] == ["COMMIT", "ROLLBACK"]
+            else:
+                assert item["type"] in ("execute", "close")
+                sql = item.get("stmt", {}).get("sql", "").lstrip().upper()
+                assert not sql.startswith(("BEGIN", "INSERT", "UPDATE", "DELETE"))

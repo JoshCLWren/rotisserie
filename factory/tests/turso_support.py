@@ -79,6 +79,7 @@ def bound(kind: str, path: Path, monkeypatch: Any) -> Iterator[tuple[Any, str]]:
         yield db, repo
     finally:
         cleanup(db, repo)
+        record_usage(db)
         core.use_store(None)
 
 

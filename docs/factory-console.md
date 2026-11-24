@@ -147,7 +147,9 @@ asks for a reason and a confirmation. The Diagnostics page reads the GitHub API
 limits and the backoffs, and resets quota backoffs after a confirmation. Both
 backoff controls go through the trusted workflows (`--via github`) locally; the
 hosted read workflow reads backoffs from Neon directly. Run history lists the
-failed worker runs of the last 10 hours. `tests/test_control_parity.py` checks that every `baste`
+failed worker runs of the last 10 hours. Test factory store and Back up factory
+store start `baste store selftest` and `baste store export` with
+`--no-wait`; Read store run shows the result of a run by its ID. `tests/test_control_parity.py` checks that every `baste`
 command has a control in both control rooms, or a reason in
 `src/rotisserie/control_parity.py` why it has none. The Diagnostics page starts a
 label doctor dry run or repair on GitHub and links the run. The Models page

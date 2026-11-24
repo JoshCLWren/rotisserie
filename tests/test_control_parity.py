@@ -34,6 +34,7 @@ READ_SAMPLES: dict[str, dict[str, str]] = {
     "history": {"target": "issue:4"},
     "estimate": {"target": "issue:4", "run": "123"},
     "follow": {"target": "issue:4"},
+    "store": {"mode": "selftest", "run": "123"},
 }
 WRITE_SAMPLES: dict[str, dict[str, Any]] = {
     "run": {"provider": "opencode-go"},

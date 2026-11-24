@@ -8,6 +8,7 @@ from rotisserie.factory_console.commands import (
     db_usage,
     incident,
     recap,
+    store,
 )
 from rotisserie.factory_console.commands._shared import ACTIONS
 from rotisserie.factory_console.commands.parser_insight import (
@@ -482,3 +483,4 @@ def add_parser(
     backoffs.add_parser(commands)
     db_usage.add_parser(commands)
     recap.add_parser(commands)
+    store.add_parser(commands)
