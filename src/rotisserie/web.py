@@ -20,228 +20,28 @@ from pathlib import Path
 from typing import Any, cast
 from urllib.parse import parse_qs, urlsplit
 
+from rotisserie.control_contract import (
+    MAX_BODY,
+    READ_ONLY,
+    InvalidRequest,
+    read_command,
+    write_command,
+)
 from rotisserie.factory_console.context import UsageError, find_repository
 
 REPO = re.compile(r"^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$")
-TARGET = re.compile(r"^(?:issue|pr):[1-9][0-9]*$")
-PR = re.compile(r"^pr:[1-9][0-9]*$")
-ISSUE = re.compile(r"^issue:[1-9][0-9]*$")
-ATTEMPTS = re.compile(r"^[1-6]$")
-PROVIDER = re.compile(r"^[a-zA-Z0-9][a-zA-Z0-9_.-]{0,79}$")
-MODEL = re.compile(r"^[a-zA-Z0-9_./:+-]{1,180}$")
-SETTING = re.compile(r"^[A-Z][A-Z0-9_]{1,100}$")
-INTEGER = re.compile(r"^[0-9]{1,7}$")
-REASON = re.compile(r"^[A-Za-z0-9 _.,:;()'/+#-]{0,180}$")
-CHECKS = re.compile(r"^(?:pr:[1-9][0-9]*|main)$")
-RUN_ID = re.compile(r"^[1-9][0-9]{0,19}$")
-ACTIONS = frozenset(
-    ("advance", "implement", "review", "review-findings", "ci-repair", "merge-conflict")
-)
-LEVELS = frozenset(("critical", "high", "medium", "low", "none"))
-READ_ONLY = frozenset(
-    (
-        "status",
-        "report",
-        "failures",
-        "stats",
-        "settings",
-        "providers",
-        "models",
-        "why",
-        "outcomes",
-        "doctor",
-        "leases",
-        "checks",
-        "review",
-        "conflicts",
-        "unstick",
-        "runs",
-        "follow",
-        "history",
-        "estimate",
-        "incident",
-    )
-)
-MAX_BODY = 4096
+__all__ = [
+    "READ_ONLY",
+    "InvalidRequest",
+    "invoke",
+    "make_handler",
+    "read_command",
+    "serve",
+    "write_command",
+]
 
 
-class InvalidRequest(ValueError):
-    """The browser submitted a command outside the supported UI contract."""
-
-
-def _string(data: Mapping[str, Any], name: str, *, required: bool = False) -> str:
-    value = data.get(name, "")
-    if not isinstance(value, str) or len(value) > 180:
-        raise InvalidRequest(f"Invalid {name}")
-    if required and not value:
-        raise InvalidRequest(f"Missing {name}")
-    return value
-
-
-def _match(value: str, pattern: re.Pattern[str], name: str) -> str:
-    if not pattern.fullmatch(value):
-        raise InvalidRequest(f"Invalid {name}")
-    return value
-
-
-def _flag(data: Mapping[str, Any], name: str) -> bool:
-    value = data.get(name, False)
-    if not isinstance(value, bool):
-        raise InvalidRequest(f"Invalid {name}")
-    return value
-
-
-def read_command(name: str, query: Mapping[str, str]) -> list[str]:
-    """Build only allowlisted, non-mutating factory commands."""
-    if name not in READ_ONLY:
-        raise InvalidRequest("Unknown read operation")
-    allowed_parameters = {
-        "models": {"provider"},
-        "why": {"target"},
-        "checks": {"target"},
-        "review": {"target"},
-        "conflicts": {"target"},
-        "runs": {"target"},
-        "history": {"target"},
-        "estimate": {"target", "sample", "run"},
-        "follow": {"target"},
-        "report": {"since"},
-        "failures": {"since"},
-        "stats": {"window"},
-    }
-    if set(query) - allowed_parameters.get(name, set()):
-        raise InvalidRequest("Unsupported query parameter")
-    args = [name]
-    if name == "models":
-        args.append(_match(_string(query, "provider", required=True), PROVIDER, "provider"))
-    elif name == "why":
-        target = _string(query, "target")
-        if target:
-            args.append(_match(target, re.compile(r"^issue:[1-9][0-9]*$"), "target"))
-    elif name == "checks":
-        args.append(_match(_string(query, "target", required=True), CHECKS, "target"))
-    elif name in ("review", "conflicts"):
-        args.append(_match(_string(query, "target", required=True), PR, "target"))
-    elif name in ("runs", "history"):
-        args.append(_match(_string(query, "target", required=True), TARGET, "target"))
-    elif name == "estimate":
-        args.append(_match(_string(query, "target", required=True), TARGET, "target"))
-        sample = _string(query, "sample")
-        if sample:
-            args.extend(("--sample", _match(sample, re.compile(r"^[0-9]{2,3}$"), "sample")))
-        run = _string(query, "run")
-        if run:
-            args.extend(("--run", _match(run, RUN_ID, "run")))
-    elif name == "follow":
-        args.extend((_match(_string(query, "target", required=True), TARGET, "target"), "--once"))
-    elif name in ("report", "failures"):
-        since = _string(query, "since") or ("12h" if name == "report" else "10h")
-        args.extend(("--since", _match(since, re.compile(r"^[0-9]{1,3}[hd]$"), "since")))
-    elif name == "outcomes":
-        args.extend(("--since", "2h", "--limit", "40"))
-    elif name == "stats":
-        window = _string(query, "window") or "7d"
-        if window not in ("24h", "7d"):
-            raise InvalidRequest("Invalid window")
-        args.extend(("--window", window))
-    elif name == "unstick":
-        args.append("--dry-run")
-    return args
-
-
-def write_command(data: Mapping[str, Any]) -> list[str]:
-    """Explicit operations map to CLI guards. No arbitrary arguments accepted."""
-    name = _string(data, "operation", required=True)
-    if name == "run":
-        provider = _match(_string(data, "provider", required=True), PROVIDER, "provider")
-        model = _match(_string(data, "model") or "auto", MODEL, "model")
-        args = ["run", provider, model, "--no-wait", "--yes"]
-        target = _string(data, "target")
-        action = _string(data, "action") or "advance"
-        if action not in ACTIONS:
-            raise InvalidRequest("Invalid action")
-        if target:
-            args.extend(("--target", _match(target, TARGET, "target")))
-        if action != "advance":
-            if not target or not target.startswith("pr:"):
-                raise InvalidRequest("A specific pull request is required for this action")
-            args.extend(("--action", action))
-        if _flag(data, "force"):
-            args.append("--force")
-        if _flag(data, "take_over"):
-            if not target:
-                raise InvalidRequest("Takeover requires an issue or pull request")
-            args.append("--take-over")
-        slot = data.get("slot")
-        if slot not in (None, ""):
-            if isinstance(slot, bool) or not isinstance(slot, int) or not 1 <= slot <= 1000:
-                raise InvalidRequest("Invalid worker slot")
-            args.extend(("--slot", str(slot)))
-        return args
-    if name == "cancel":
-        target = _match(_string(data, "target", required=True), TARGET, "target")
-        return ["cancel", target, "--no-wait"]
-    if name == "prioritize":
-        target = _match(_string(data, "target", required=True), TARGET, "target")
-        level = _string(data, "level") or "critical"
-        if level not in LEVELS:
-            raise InvalidRequest("Invalid priority")
-        return ["prioritize", target, "--level", level]
-    if name == "sync":
-        return ["sync", _match(_string(data, "target", required=True), PR, "target"), "--yes"]
-    if name == "unstick":
-        return ["unstick", "--yes"]
-    if name == "settings":
-        name = _match(_string(data, "name", required=True), SETTING, "setting")
-        value = _match(_string(data, "value", required=True), INTEGER, "value")
-        return ["settings", name, value]
-    if name in ("provider_switch", "model_switch"):
-        words = ["enable" if _flag(data, "enabled") else "disable"]
-        words.append(_match(_string(data, "provider", required=True), PROVIDER, "provider"))
-        if name == "model_switch":
-            words.append(_match(_string(data, "model", required=True), MODEL, "model"))
-        reason = _match(_string(data, "reason"), REASON, "reason")
-        if words[0] == "disable" and not reason.strip():
-            raise InvalidRequest("Turning off needs a reason")
-        command = "providers" if name == "provider_switch" else "models"
-        return [command, *words, f"--reason={reason}"]
-    if name in ("incident_start", "incident_stop"):
-        issue = _match(_string(data, "issue", required=True), ISSUE, "issue")
-        if name == "incident_stop":
-            return ["incident", "stop", issue]
-        args = [
-            "incident",
-            "start",
-            issue,
-            f"--reason={_match(_string(data, 'reason'), REASON, 'reason')}",
-        ]
-        attempts = _string(data, "attempts")
-        if attempts:
-            args.append(f"--attempts={_match(attempts, ATTEMPTS, 'attempts')}")
-        return args
-    if name == "doctor_fix":
-        return ["doctor", "--fix"]
-    if name == "release_expired":
-        return ["leases", "--release-expired"]
-    if name == "estimate_neon":
-        target = _match(_string(data, "target", required=True), TARGET, "target")
-        return ["estimate", target, "--via", "github", "--no-wait"]
-    if name in ("claim", "finish"):
-        return [name, _match(_string(data, "target", required=True), TARGET, "target"), "--no-wait"]
-    if name == "labels":
-        mode = _string(data, "mode") or "dry-run"
-        flags = {
-            "dry-run": [],
-            "repair": ["--repair"],
-            "delete-legacy": ["--repair", "--delete-legacy"],
-        }
-        if mode not in flags:
-            raise InvalidRequest("Invalid label doctor mode")
-        return ["labels", *flags[mode], "--via", "github", "--no-wait"]
-    raise InvalidRequest("Unknown write operation")
-
-
-def invoke(repository: str, args: list[str]) -> dict[str, Any]:
+def invoke(repository: str, args: list[str], *, timeout: int = 90) -> dict[str, Any]:
     """Call the shipped CLI, which enforces all dispatcher and lease checks."""
     command = [
         sys.executable,
@@ -254,7 +54,9 @@ def invoke(repository: str, args: list[str]) -> dict[str, Any]:
         *args,
     ]
     try:
-        result = subprocess.run(command, capture_output=True, text=True, check=False, timeout=90)
+        result = subprocess.run(
+            command, capture_output=True, text=True, check=False, timeout=timeout
+        )
     except subprocess.TimeoutExpired:
         return {"result": "timeout", "error": "The factory command timed out.", "exit_code": 4}
     except OSError:

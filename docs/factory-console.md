@@ -46,6 +46,26 @@ Additional administrators require a trusted configuration update to
 The GitHub workflow separately restricts the identity of the service account
 that dispatches it.
 
+#### Operator workflows and their results
+
+Two installed callers run hosted requests. Both check the dispatching GitHub
+user ID against `ROTISSERIE_ADMIN_GITHUB_IDS` before they check out code, and
+both validate the request with `src/rotisserie/control_contract.py`, the same
+module that `rotisserie web` uses.
+
+| Workflow | Accepts | Token |
+| --- | --- | --- |
+| `rotisserie-operator.yml` | one write operation (`run`, `claim`, `settings`, ...) | issues, pull requests and actions write |
+| `rotisserie-operator-read.yml` | `{"operation": "read", "reads": [...]}`, up to 8 read commands | read-only, plus the Neon lease store |
+
+Each run writes one JSON result and uploads it as the artifact
+`rotisserie-operator-<run id>` (kept one day), also when the command is
+rejected or fails. A write result holds `request_id`, `operation`, `command`,
+`exit_code` and `result` (the CLI's own `--json` output). A read result holds
+`request_id`, `exit_code` and `reads`, one entry per read with `name`,
+`query`, `command` and `result`. In a public repository any signed-in GitHub
+user can download artifacts. The CLI JSON holds no credentials.
+
 #### One-time GitHub OAuth App provisioning
 
 The OAuth client must exist before publishing the hosted sign-in UI.

@@ -71,8 +71,7 @@ def test_workflow_requires_verified_actor_before_executing_commands() -> None:
     assert "ROTISSERIE_ADMIN_GITHUB_IDS" in content
     assert "refs/heads/main" in content
     assert content.index("Authorize GitHub actor") < content.index("Check out Rotisserie")
-    assert "write_command(body)" in content
-    assert "subprocess.run(command" in content
+    assert "python3 -m rotisserie.hosted_operator write --output" in content
     assert "shell=True" not in content
     assert "persist-credentials: false" in content
 
