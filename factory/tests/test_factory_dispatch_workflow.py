@@ -659,7 +659,7 @@ def test_merge_drain_meters_its_github_calls() -> None:
     names = [step.get("name") for step in steps]
     meter = names.index("Meter GitHub CLI requests")
     assert meter > names.index("Ensure GitHub CLI supports JSON PR checks")
-    assert names[-1] == "Report GitHub CLI request usage"
+    assert names[-2:] == ["Report GitHub CLI request usage", "Remove the factory store token"]
     assert "factory-gh-meter.sh" in steps[meter]["run"]
 
 
@@ -736,13 +736,13 @@ def test_rescue_job_rejects_an_out_of_range_delay(tmp_path: Path) -> None:
     assert calls == ""
 
 
-def test_adopters_without_neon_or_push_token_can_run() -> None:
+def test_adopters_without_a_store_or_push_token_can_run() -> None:
     import yaml
-
-    dispatch = yaml.safe_load(adopter_view(WORKFLOW.name))["jobs"]["dispatch"]
-    assert dispatch["env"]["FACTORY_NEON_LEASE_REQUIRED"] == "${{ secrets.NEON_API_KEY != '' }}"
-    init = next(s for s in own_steps(dispatch) if s.get("name") == "Initialize Neon operational state")
-    assert init["run"].index("skipping operational state bootstrap") < init["run"].index("bootstrap --repo")
+    workflow = yaml.safe_load(adopter_view(WORKFLOW.name))
+    dispatch = workflow["jobs"]["dispatch"]
+    assert "secrets.FACTORY_TURSO_URL != ''" in workflow["env"]["FACTORY_STATE_REQUIRED"]
+    init = next(s for s in own_steps(dispatch) if s.get("name") == "Initialize the factory store")
+    assert init["run"].index("skipping its bootstrap") < init["run"].index("bootstrap --repo")
     run = WORKFLOW.with_name("free-model-factory-run.yml").read_text(encoding="utf-8")
     assert "PR_REBASE_TOKEN: ${{ secrets.PR_REBASE_TOKEN || github.token }}" in run
     assert "token: ${{ secrets.PR_REBASE_TOKEN || github.token }}" in run

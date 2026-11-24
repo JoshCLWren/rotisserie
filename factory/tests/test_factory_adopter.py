@@ -74,7 +74,7 @@ def test_runtime_never_names_the_first_adopter() -> None:
     assert [str(path.relative_to(factory)) for path in runtime if pattern.search(path.read_text(encoding="utf-8"))] == []
 
 
-def test_worker_exports_are_empty_without_neon_unless_required(monkeypatch) -> None:
+def test_worker_exports_are_empty_without_the_store_unless_required(monkeypatch) -> None:
     import importlib
     import sys
     from pathlib import Path
@@ -83,12 +83,13 @@ def test_worker_exports_are_empty_without_neon_unless_required(monkeypatch) -> N
 
     sys.path.insert(0, str(Path(__file__).resolve().parents[1] / ".github" / "scripts"))
     ops = importlib.import_module("factory_state_operations")
-    monkeypatch.setattr(ops, "enabled", lambda: False)
-    monkeypatch.delenv("FACTORY_NEON_LEASE_REQUIRED", raising=False)
+    monkeypatch.delenv("FACTORY_TURSO_URL", raising=False)
+    monkeypatch.delenv("FACTORY_STATE_SQLITE", raising=False)
+    monkeypatch.delenv("FACTORY_STATE_REQUIRED", raising=False)
     assert ops.export_model_exclusions("o/r", "1") == {}
     assert ops.export_candidate_health("o/r") == {"models": []}
     assert ops.export_fleet_failover_sources("o/r", "1") == []
-    monkeypatch.setenv("FACTORY_NEON_LEASE_REQUIRED", "true")
+    monkeypatch.setenv("FACTORY_STATE_REQUIRED", "true")
     with pytest.raises(RuntimeError):
         ops.export_model_exclusions("o/r", "1")
 

@@ -1,4 +1,4 @@
-"""Trusted-only Neon lifecycle and transactional lease regressions (no network)."""
+"""Trusted-only store lifecycle and transactional lease regressions (no network)."""
 from __future__ import annotations
 
 import importlib.util
@@ -16,6 +16,25 @@ SPEC = importlib.util.spec_from_file_location("factory_state_ledger_test", SCRIP
 assert SPEC is not None and SPEC.loader is not None
 ledger = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(ledger)
+core = importlib.import_module("factory_turso_core")
+
+
+@pytest.fixture
+def no_store(monkeypatch):
+    for name in ("FACTORY_TURSO_URL", "FACTORY_STATE_SQLITE", "FACTORY_STATE_REQUIRED"):
+        monkeypatch.delenv(name, raising=False)
+    core.use_store(None)
+    yield
+    core.use_store(None)
+
+
+def capture_events(monkeypatch):
+    found = []
+    monkeypatch.setattr(
+        "factory_turso_events.record_events",
+        lambda repo, entries: found.extend(entries) or len(entries),
+    )
+    return found
 
 
 def test_keys_cover_worker_and_entire_target_group():
@@ -26,8 +45,7 @@ def test_keys_cover_worker_and_entire_target_group():
     ]
 
 
-def test_unconfigured_controller_retains_legacy_github_claim_behavior(monkeypatch):
-    monkeypatch.delenv("FACTORY_STATE_DSN_FILE", raising=False)
+def test_unconfigured_controller_retains_legacy_github_claim_behavior(no_store):
     assert ledger.acquire_lease("owner/repo", "42", [5001]) == ""
     assert ledger.release_lease("owner/repo", "42", "", "rollback") is False
 
@@ -43,38 +61,19 @@ def test_invalid_lease_requests_rejected(worker, numbers, ttl):
         ledger.acquire_lease("owner/repo", worker, numbers, ttl)
 
 
-def test_claim_conflict_propagates_without_github_fallback(monkeypatch, tmp_path):
-    monkeypatch.setenv("FACTORY_STATE_DSN_FILE", str(tmp_path / "dsn"))
-    monkeypatch.setattr("factory_state_ledger_workers._acquire", lambda *args: "unused")
-    monkeypatch.setattr(ledger.asyncio, "run", lambda coroutine: None)
-    assert ledger.acquire_lease("owner/repo", "42", [5001]) is None
-
-
-def test_db_error_is_not_silenced_after_configured_claim(monkeypatch, tmp_path):
-    monkeypatch.setenv("FACTORY_STATE_DSN_FILE", str(tmp_path / "dsn"))
-    def fail(coroutine):
-        coroutine.close()
-        raise ConnectionError("Neon down")
-    monkeypatch.setattr(ledger.asyncio, "run", fail)
-    with pytest.raises(ConnectionError):
-        ledger.acquire_lease("owner/repo", "42", [5001])
-
-
 def test_trusted_lifecycle_start_is_recorded_once_per_run(monkeypatch):
-    found = []
-    monkeypatch.setattr(ledger, "record_events", lambda repo, entries: found.extend(entries) or len(entries))
+    found = capture_events(monkeypatch)
     assert ledger.record_lifecycle("owner/repo", "43123", "42", "started") == 1
     assert found[0]["event_type"] == "worker_started"
     assert found[0]["worker"] == "42"
     assert found[0]["run_id"] == "43123"
-    # Idempotency is per run/status in _events, never per comment edit.
+    # Idempotency is per run/status (event_id UNIQUE), never per comment edit.
     assert found[0]["event_id"] == "lifecycle:43123:started"
     assert not hasattr(ledger, "record_heartbeat_comments")
 
 
 def test_terminal_classification_is_idempotency_keyed_by_run(monkeypatch):
-    records = []
-    monkeypatch.setattr(ledger, "record_events", lambda _, events: records.extend(events) or len(events))
+    records = capture_events(monkeypatch)
     assert ledger.record_runtime_outcome("owner/repo", "12345", {
         "worker": "42", "outcome_class": "provider_failure",
         "persisted_work": False,
@@ -91,8 +90,7 @@ def test_terminal_classification_is_idempotency_keyed_by_run(monkeypatch):
 
 
 def test_idle_is_not_a_successful_delivery_or_failed_worker(monkeypatch):
-    records = []
-    monkeypatch.setattr(ledger, "record_events", lambda _, events: records.extend(events) or len(events))
+    records = capture_events(monkeypatch)
     ledger.record_runtime_outcome("owner/repo", "12347", {
         "worker": "42", "outcome_class": "no_work",
         "persisted_work": False, "delivery_outcome": "none",
@@ -104,8 +102,7 @@ def test_idle_is_not_a_successful_delivery_or_failed_worker(monkeypatch):
 
 def test_timed_out_agent_with_verified_delivery_is_completed(monkeypatch):
     """Worker 82: a real code handoff is not erased by its agent timeout."""
-    records = []
-    monkeypatch.setattr(ledger, "record_events", lambda _, events: records.extend(events) or len(events))
+    records = capture_events(monkeypatch)
     ledger.record_runtime_outcome("owner/repo", "43639844249", {
         "worker": "82", "outcome_class": "agent_timeout",
         "persisted_work": True, "delivery_outcome": "persisted",
@@ -119,8 +116,7 @@ def test_timed_out_agent_with_verified_delivery_is_completed(monkeypatch):
 
 def test_timed_out_agent_without_delivery_stays_failed(monkeypatch):
     """Worker 105: lease cleanup alone is not a successful code delivery."""
-    records = []
-    monkeypatch.setattr(ledger, "record_events", lambda _, events: records.extend(events) or len(events))
+    records = capture_events(monkeypatch)
     ledger.record_runtime_outcome("owner/repo", "43640000000", {
         "worker": "105", "outcome_class": "agent_timeout",
         "persisted_work": False, "delivery_outcome": "none",
@@ -157,7 +153,7 @@ def test_trusted_collector_verifies_code_handoff_before_persistence():
     # The verdict is Neon plus job summary; no #1093 marker is patched.
     assert "ATTEMPT_COMMENT_ID" not in entry
     assert "issues/comments" not in entry
-    assert "Neon terminal classification" in entry
+    assert "Store terminal classification" in entry
     observer = adopter_view("fixed-model-runtime-observer.yml")
     assert 'gh api "repos/$GITHUB_REPOSITORY/pulls/$delivery_pr"' in observer
     assert "pull-requests: read" in observer
@@ -172,7 +168,7 @@ def test_only_trusted_collectors_and_observer_use_ledger():
     observer = adopter_view("fixed-model-runtime-observer.yml")
     untrusted = adopter_view("free-model-factory-run.yml")
     entry = adopter_view("free-model-factory-entry.yml")
-    assert "acquire_lease(REPO, worker, numbers, FIXED_LEASE_TTL_SECONDS)" in controller
+    assert "acquire_lease(REPO, worker, numbers, FIXED_LEASE_TTL_SECONDS, explicit=True)" in controller
     assert "release_lease(REPO, worker, claim_token, 'claim-rollback')" in controller
     # Registry heartbeat scraping was replaced by durable runtime projections
     # (#5238); the completion collector no longer writes the ledger itself.
@@ -180,26 +176,27 @@ def test_only_trusted_collectors_and_observer_use_ledger():
     # Issue #1093 read-back was retired; trusted run jobs write lifecycle.
     assert not (root / ".github/scripts/factory_registry_ingest.py").exists()
     assert "factory_state_ledger.py lifecycle" in untrusted
-    assert "Persist classified worker completion in Neon" in observer
+    assert "Persist classified worker completion in the factory store" in observer
     trusted_cleanup = yaml.safe_load(untrusted)["jobs"]["release_pre_session_lease"]
     model_job = yaml.safe_load(untrusted)["jobs"]["factory"]
-    assert "factory-state-cache" not in str(model_job)
+    assert "factory-store" not in str(model_job)
     assert "NEON_API_KEY" not in str(model_job)
-    assert any(step.get("uses") == "./.github/actions/factory-state-cache"
+    assert any(step.get("uses") == "./.github/actions/factory-store"
                for step in own_steps(trusted_cleanup))
     assert "validate_assignment:" in adopter_view("free-model-factory-run.yml")
-    assert "factory-state-cache" in entry.split("  persist_outcome:", 1)[1]
+    assert "factory-store" in entry.split("  persist_outcome:", 1)[1]
 
 
 def test_trusted_heartbeat_events_extend_current_nonexpired_lease() -> None:
     import inspect
 
-    source = inspect.getsource(ledger._events)
+    import factory_turso_events
+    import factory_turso_leases
+
+    source = inspect.getsource(factory_turso_events.record_events)
     assert 'entry["event_type"] == "worker_started"' in source
-    assert "def renew_verified_workers(" in inspect.getsource(ledger.renew_verified_workers)
-    assert "expires_at>now()" in inspect.getsource(ledger._renew_verified)
-    assert "AND expires_at>now()" in source
-    assert "payload->0->>'claim_id'=$2" in source
+    renewal = inspect.getsource(factory_turso_leases.renewal_statements)
+    assert "expires_at > unixepoch()" in renewal
 
 
 def test_completion_dispatch_persists_real_worker_outcomes() -> None:
@@ -214,12 +211,12 @@ def test_completion_dispatch_persists_real_worker_outcomes() -> None:
     assert "gh workflow run factory-completion-drain.yml" in entry
     assert "persist_outcome:" not in drain
     assert "source_run_id" in drain
-    assert "factory-state-cache" not in drain
+    assert "factory-store" not in drain
     # Model execution is confined to the reusable runner, which has no Neon
     # secret. The separate post-run collector receives the restricted DSN.
     assert "validate_assignment:" in adopter_view("free-model-factory-run.yml")
     reusable = yaml.safe_load(adopter_view("free-model-factory-run.yml"))
-    assert "factory-state-cache" not in str(reusable["jobs"]["factory"])
+    assert "factory-store" not in str(reusable["jobs"]["factory"])
     assert "NEON_API_KEY" not in str(reusable["jobs"]["factory"])
 
 
@@ -237,15 +234,6 @@ def test_verified_lease_renewal_is_only_called_after_actions_liveness() -> None:
         "failure": "worker_outcome_signal",
     }
     assert "record_events" in inspect.getsource(ledger.record_lifecycle)
-
-def test_terminal_event_idempotency_spans_classification_outcomes() -> None:
-    """A single source run cannot be counted as both success and failure."""
-    import inspect
-
-    source = inspect.getsource(ledger._events)
-    assert "AND detail->>'event_id'=$4)" in source
-    assert "AND event_type=$1" not in source
-
 
 def test_terminal_identity_fallback_uses_attested_run_title() -> None:
     """Actions run GET omits workflow_dispatch inputs for older Entry runs."""
@@ -278,7 +266,7 @@ def test_completion_persistence_is_not_queued_behind_dispatch() -> None:
     assert "  signal_completion:" in entry
     collector = entry.split("  persist_outcome:", 1)[1]
     assert "concurrency:" not in collector
-    assert "factory-state-cache" in collector
+    assert "factory-store" in collector
     assert 'if: ${{ always() }}' in collector
     assert "  persist_outcome:" not in drain
     assert "group: factory-completion-drain-ingress" in drain
@@ -452,21 +440,18 @@ def test_trusted_terminal_collector_retries_scoped_reads_and_idempotent_writes()
     assert 'retry_gh_api "$RUNNER_TEMP/factory-entry.log"' in entry
     assert 'retry_gh_api "$RUNNER_TEMP/factory-delivery-pr.json"' in entry
     assert "if python3 .github/scripts/factory_state_ledger.py runtime-outcome" in entry
-    assert 'Unable to persist Neon terminal outcome after 4 attempts' in entry
+    assert 'Unable to persist the store terminal outcome after 4 attempts' in entry
     # Markdown backticks must be quoted so shell does not execute agent_timeout.
-    assert "printf 'Neon terminal classification: `%s`\\n'" in entry
-    assert 'echo "Neon terminal classification: `' not in entry
-    operations = (root / ".github/scripts/factory_state_operations_runtime.py").read_text()
-    assert "INSERT INTO public.factory_runtime_event_keys(repo,run_id)" in operations
-    assert "ON CONFLICT DO NOTHING RETURNING run_id" in operations
+    assert "printf 'Store terminal classification: `%s`\\n'" in entry
+    assert 'echo "Store terminal classification: `' not in entry
+    operations = (root / ".github/scripts/factory_turso_runtime.py").read_text()
+    assert "INSERT OR IGNORE INTO factory_runtime_event_keys" in operations
 
 
-def test_operation_lease_is_noop_without_neon_and_fatal_when_required(monkeypatch):
-    monkeypatch.delenv("FACTORY_STATE_DSN_FILE", raising=False)
-    monkeypatch.delenv("FACTORY_NEON_LEASE_REQUIRED", raising=False)
+def test_operation_lease_is_noop_without_store_and_fatal_when_required(monkeypatch, no_store):
     assert ledger.acquire_operation_lease("owner/repo", "sync-1", 5001) == ""
     assert ledger.release_operation_lease("owner/repo", 5001, "", "done") is False
-    monkeypatch.setenv("FACTORY_NEON_LEASE_REQUIRED", "true")
+    monkeypatch.setenv("FACTORY_STATE_REQUIRED", "true")
     with pytest.raises(RuntimeError):
         ledger.acquire_operation_lease("owner/repo", "sync-1", 5001)
 
@@ -481,29 +466,3 @@ def test_operation_lease_is_noop_without_neon_and_fatal_when_required(monkeypatc
 def test_invalid_operation_lease_requests_rejected(holder, number, ttl):
     with pytest.raises(ValueError):
         ledger.acquire_operation_lease("owner/repo", holder, number, ttl)
-
-
-def test_operation_lease_uses_the_worker_target_key(monkeypatch, tmp_path):
-    # Same key a worker claim checks, so a held sync blocks worker assignment.
-    assert ledger._target_key("owner/repo", 5001) == ledger._keys("owner/repo", "1", [5001])[1]
-    monkeypatch.setenv("FACTORY_STATE_DSN_FILE", str(tmp_path / "dsn"))
-    seen = {}
-
-    def run(coroutine):
-        seen["name"] = coroutine.cr_code.co_name
-        coroutine.close()
-        return None
-
-    monkeypatch.setattr(ledger.asyncio, "run", run)
-    assert ledger.acquire_operation_lease("owner/repo", "sync-1", 5001) is None
-    assert seen["name"] == "_acquire_operation"
-
-
-def test_lease_rows_describe_workers_and_operations():
-    row = ledger._lease_row(
-        "factory-lease-v1:o/r:target:9",
-        '[{"claim_id": "c", "operation": "sync-1", "targets": [9]}]',
-        "2026-11-22T12:00:00+00:00",
-        True,
-    )
-    assert row["operation"] == "sync-1" and row["targets"] == [9] and row["worker"] == ""

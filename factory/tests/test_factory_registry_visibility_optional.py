@@ -36,8 +36,8 @@ RECOVERY_WORKFLOW = WORKFLOWS / "fixed-model-factory-dispatch-recovery.yml"
 WORKER_SCRIPT = SCRIPTS / "free-model-factory-worker.sh"
 PRIMITIVES = SCRIPTS / "free-model-factory-worker-primitives.sh"
 SESSION_STEP = "Run continuous fixed-model factory session"
-LIFECYCLE_START = "Record trusted worker start in Neon"
-LIFECYCLE_EXIT = "Record trusted worker exit in Neon"
+LIFECYCLE_START = "Record trusted worker start in the factory store"
+LIFECYCLE_EXIT = "Record trusted worker exit in the factory store"
 
 sys.path.insert(0, str(SCRIPTS))
 
@@ -209,9 +209,9 @@ def test_lifecycle_heartbeat_moved_from_registry_read_back_to_trusted_neon() -> 
     assert start["env"]["FACTORY_WORKER"] == "${{ inputs.worker }}"
     # The DSN-bearing job is the trusted preparation job, not the model job.
     uses = [step.get("uses") for step in data["jobs"]["validate_assignment"]["steps"]]
-    assert "./.github/actions/factory-state-cache" in uses
+    assert "./.github/actions/factory-store" in uses
     factory_uses = [step.get("uses") for step in data["jobs"]["factory"]["steps"]]
-    assert "./.github/actions/factory-state-cache" not in factory_uses
+    assert "./.github/actions/factory-store" not in factory_uses
     for job in ("release_pre_session_lease", "release_post_session_lease"):
         step = _step(RUN_WORKFLOW, job, LIFECYCLE_EXIT)
         assert step["if"] == "always()"
@@ -234,7 +234,7 @@ def test_trusted_lifecycle_events_feed_the_runtime_view(
 
     recorded: list[dict[str, object]] = []
     monkeypatch.setattr(
-        ledger, "record_events",
+        "factory_turso_events.record_events",
         lambda _repo, entries: recorded.extend(entries) or len(entries),
     )
     worker, run_id = _worker_id(), str(random.randint(10**10, 10**11))
@@ -265,7 +265,7 @@ def test_runtime_observer_persists_to_neon_without_comments() -> None:
     steps = data["jobs"]["publish-runtime-outcome"]["steps"]
     for step in steps:
         assert "comments" not in str(step.get("run") or ""), step.get("name")
-    persist = next(s for s in steps if s.get("name") == "Persist classified worker completion in Neon")
+    persist = next(s for s in steps if s.get("name") == "Persist classified worker completion in the factory store")
     assert str(persist["if"]).startswith("always()")
     assert data["permissions"]["issues"] == "read"
 

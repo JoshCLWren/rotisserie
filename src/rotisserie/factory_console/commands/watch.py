@@ -158,7 +158,7 @@ def _report_dispatch(
 
 def _reason(text: str) -> str:
     replacements = {
-        "Neon lease": "claim",
+        "store lease": "claim",
         "lease": "claim",
         "slot": "worker",
     }

@@ -1290,20 +1290,20 @@ def persist_repair_handoff(
 def outside_claim(pr_number: int, pr: Mapping[str, Any]) -> str | None:
     """Describe an outside agent's shared claim on this PR or its linked issue.
 
-    Outside agents hold Neon target leases but set no GitHub owner label, so
+    Outside agents hold store target leases but set no GitHub owner label, so
     label-based gates cannot see them. Promotion and merge must wait until the
     claim is released, handed off or revoked. Unreadable claims hold closed.
     """
     try:
         ledger = importlib.import_module("factory_state_ledger")
         if not ledger.enabled():
-            configured = os.environ.get("FACTORY_NEON_CONFIGURED")
-            if configured == "true":
-                return "outside-agent claims could not be read (Neon configured, not connected)"
-            if configured is None and os.environ.get("GITHUB_ACTIONS") == "true":
-                # A workflow step that never says whether Neon is configured
+            required = os.environ.get("FACTORY_STATE_REQUIRED")
+            if required == "true":
+                return "outside-agent claims could not be read (factory store required, not connected)"
+            if required is None and os.environ.get("GITHUB_ACTIONS") == "true":
+                # A workflow step that never says whether the store is required
                 # cannot tell "no claim store" from "store unreachable".
-                return "outside-agent claims could not be read (FACTORY_NEON_CONFIGURED unset)"
+                return "outside-agent claims could not be read (FACTORY_STATE_REQUIRED unset)"
             return None
         numbers = [pr_number]
         linked = linked_issue_for_pr(pr_number, str(pr.get("headRefName") or ""))

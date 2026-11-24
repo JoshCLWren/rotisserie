@@ -1,6 +1,6 @@
 """Label doctor: audit and repair ready-for-work and lifecycle labels (issue #191).
 
-Neon and the controller frontier decide; labels are projections. The doctor
+The factory store and the controller frontier decide; labels are projections. The doctor
 reads each open factory item once, plans its exact changes with the pure
 factory label policy, and writes only per-label additions and removals after
 re-reading the item, so a label someone adds meanwhile is never overwritten.
@@ -146,7 +146,7 @@ def audit(
         github.repo,
         instant.isoformat(),
         "dry-run",
-        "Neon and controller frontier" if neon_known else (problem or snap.authority_note),
+        "Factory store and controller frontier" if neon_known else (problem or snap.authority_note),
     )
     plans: list[tuple[dict[str, Any], Any]] = []
     core = runtime.module("factory_work_policy")

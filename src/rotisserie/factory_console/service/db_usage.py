@@ -126,7 +126,7 @@ def health(stats: Obj | None, now: datetime) -> tuple[str, str, str]:
     report = from_stats(stats)
     state = str(report.get("status"))
     if state == "unpublished":
-        return "ok", "no Turso usage published yet (not in use yet)", ""
+        return "ok", "no Turso usage published yet", ""
     checked = timestamp(report, "checked_at")
     status = DOCTOR_STATUS.get(state, "warn")
     hint = "baste db-usage --via github reads it fresh"

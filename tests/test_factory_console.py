@@ -568,7 +568,7 @@ def test_follow_reports_delivered_pr_with_checks_not_as_finished(fake: FakeGitHu
                 job_id=22,
             ),
             job(
-                "Persist trusted worker outcome in Neon",
+                "Persist trusted worker outcome in the store",
                 [step("Classify and persist this completed worker")],
                 job_id=23,
             ),
@@ -835,7 +835,7 @@ def test_take_over_without_neon_explains_and_continues(
     from rotisserie.factory_console.service import external
 
     def unavailable(github: object, number: int) -> None:
-        raise external.ClaimStoreUnavailable("FACTORY_STATE_DSN_FILE is not set")
+        raise external.ClaimStoreUnavailable("FACTORY_TURSO_URL is not set")
 
     monkeypatch.setattr(external, "holder", unavailable)
     scheduler_routes(fake, log=dispatched_log())
@@ -1447,7 +1447,7 @@ def test_outcomes_flags_an_idle_worker_that_left_conflicts(fake: FakeGitHub) -> 
     }
     fake.routes["actions/runs/950$"] = {"id": 950, "status": "completed"}
     fake.routes["actions/runs/950/jobs"] = {
-        "jobs": [job("Persist trusted worker outcome in Neon", [step("Classify")], job_id=31)]
+        "jobs": [job("Persist trusted worker outcome in the store", [step("Classify")], job_id=31)]
     }
     fake.texts["actions/jobs/31/logs"] = "[factory-outcome] idle: The model found nothing to do\n"
     fake.routes["pulls/3953$"] = {"mergeable": False, "mergeable_state": "dirty", "state": "open"}
@@ -1601,7 +1601,7 @@ def test_outcomes_counts_a_closed_pr_as_overtaken_not_missed(fake: FakeGitHub) -
     }
     fake.routes["actions/runs/950$"] = {"id": 950, "status": "completed"}
     fake.routes["actions/runs/950/jobs"] = {
-        "jobs": [job("Persist trusted worker outcome in Neon", [step("Classify")], job_id=31)]
+        "jobs": [job("Persist trusted worker outcome in the store", [step("Classify")], job_id=31)]
     }
     fake.texts["actions/jobs/31/logs"] = (
         "[factory-outcome] failed: Assignment target is no longer owned\n"
@@ -1732,7 +1732,7 @@ def test_a_ci_repair_goal_is_green_checks_not_a_stage_label(fake: FakeGitHub) ->
     }
     fake.routes["actions/runs/950$"] = {"id": 950, "status": "completed"}
     fake.routes["actions/runs/950/jobs"] = {
-        "jobs": [job("Persist trusted worker outcome in Neon", [step("Classify")], job_id=31)]
+        "jobs": [job("Persist trusted worker outcome in the store", [step("Classify")], job_id=31)]
     }
     fake.texts["actions/jobs/31/logs"] = "[factory-outcome] work_completed: Repaired\n"
     fake.routes["pulls/3953$"] = {
@@ -2217,7 +2217,7 @@ def test_sync_leaves_a_pr_a_worker_took_since_the_plan(fake: FakeGitHub) -> None
     }
     result = unstick.sync(GitHub(REPO), unstick.Sync(301, "a" * 40, "t", "w"))
     assert not result.ok and f"factory:{WORKER} holds it" in result.text
-    assert "Neon leases were not consulted" in result.text
+    assert "store leases were not consulted" in result.text
     assert not any("update-branch" in " ".join(call) for call in fake.calls)
 
 
@@ -2350,7 +2350,7 @@ def test_sync_now_never_touches_a_pr_a_worker_holds(fake: FakeGitHub) -> None:
     fake.routes["pr-list"] = sync_rows((305, f"factory:{WORKER}"))
     code, out = invoke(["sync", "pr:305", "--now", "--yes"])
     assert f"owner label factory:{WORKER} holds it" in out
-    assert "Neon was not consulted" in out
+    assert "The store was not consulted" in out
     assert not any("update-branch" in " ".join(call) for call in fake.calls)
 
 

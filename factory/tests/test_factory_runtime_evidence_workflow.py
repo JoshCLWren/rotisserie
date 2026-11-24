@@ -35,10 +35,10 @@ def test_worker_status_is_captured_after_attempt_code_exits() -> None:
     assert "Exit 2 and 3 are reserved for controller invariant/read failures" in worker
 
 
-def test_newer_attempt_evidence_is_ordered_by_run_in_neon() -> None:
-    """Run ordering moved from comment bodies to Neon's run-keyed projections."""
-    operations = (ROOT / ".github/scripts/factory_state_operations_runtime.py").read_text()
-    assert "last_run_id <= EXCLUDED.last_run_id" in operations
+def test_newer_attempt_evidence_is_ordered_by_run_in_the_store() -> None:
+    """Run ordering moved from comment bodies to the store's run-keyed projections."""
+    operations = (ROOT / ".github/scripts/factory_turso_runtime.py").read_text()
+    assert "last_run_id <= excluded.last_run_id" in operations
     assert "existing_run > GITHUB_RUN_ID" not in WORKFLOW.read_text(encoding="utf-8")
 
 

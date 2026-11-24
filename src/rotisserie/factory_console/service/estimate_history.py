@@ -1,7 +1,7 @@
 """Read finished factory pull requests and their linked issues from GitHub for estimates.
 
 Everything comes from GitHub data the console already reads: labels, label
-events, merge facts and the factory's marker comments. Nothing here reads Neon.
+events, merge facts and the factory's marker comments. Nothing here reads the factory store.
 """
 
 from __future__ import annotations

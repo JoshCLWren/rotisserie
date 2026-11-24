@@ -33,76 +33,39 @@ def attempt(run: str, number: int, minutes: int, outcome: str, **extra: Any) -> 
     return event("model_attempt", minutes, **{**row, **extra})
 
 
-def test_the_query_is_one_bounded_read_of_named_fields() -> None:
-    sql, args = neon.history_query("acme/widgets", 30, 500)
-    words = sql.upper().split()
-    assert words[0] == "WITH" and words.count("SELECT") == 3
-    assert not {"INSERT", "UPDATE", "DELETE", "DROP", "ALTER", "TRUNCATE", "GRANT"} & set(words)
-    assert "public.factory_state_events" in sql and sql.endswith("LIMIT $4")
-    assert "make_interval(days => $2)" in sql and "detail->>'repo' = $1" in sql
-    for secret in ("failure_log_tail", "claim_id", "'actor'", "evidence", "SELECT *"):
-        assert secret not in sql
-    assert args == ("acme/widgets", 30, list(neon.EVENT_TYPES), 501)
+def test_bounds_refuse_out_of_range_windows() -> None:
+    assert neon.bounds(30, 500) == (30, 500)
     for days, rows in ((0, 500), (121, 500), (30, 99), (30, 100001)):
         with pytest.raises(ValueError):
-            neon.history_query("acme/widgets", days, rows)
-
-
-class FakeConnection:
-    def __init__(self, rows: list[dict[str, Any]]) -> None:
-        self.rows = rows
-        self.calls: list[tuple[str, tuple[object, ...]]] = []
-        self.transactions: list[dict[str, object]] = []
-        self.closed = False
-
-    def transaction(self, **options: object) -> FakeConnection:
-        self.transactions.append(options)
-        return self
-
-    async def __aenter__(self) -> None:
-        return None
-
-    async def __aexit__(self, *args: object) -> None:
-        return None
-
-    async def execute(self, sql: str, *args: object) -> None:
-        self.calls.append((sql, args))
-
-    async def fetch(self, sql: str, *args: object) -> list[dict[str, Any]]:
-        self.calls.append((sql, args))
-        return self.rows
-
-    async def close(self) -> None:
-        self.closed = True
+            neon.bounds(days, rows)
 
 
 class FakeLedger:
     def __init__(self, rows: list[dict[str, Any]]) -> None:
-        self.connection = FakeConnection(rows)
+        self.rows = rows
+        self.calls: list[tuple[object, ...]] = []
 
-    def _dsn(self) -> str:
-        return "postgresql://reader@localhost/factory"
+    def history_rows(
+        self, repo: str, days: int, cap: int, event_types: tuple[str, ...]
+    ) -> list[dict[str, Any]]:
+        self.calls.append((repo, days, cap, event_types))
+        return self.rows
 
-    async def measured_connect(self, **options: object) -> FakeConnection:
-        return self.connection
 
-
-def test_the_read_runs_in_a_read_only_transaction_with_a_timeout() -> None:
+def test_the_read_asks_the_store_for_one_row_past_the_cap() -> None:
     ledger = FakeLedger([attempt("1", 5, 10, "success", duration_ms="900")])
     data = neon.read_history("acme/widgets", days=10, cap=200, now=NOW, ledger=ledger)
     assert data["status"] == "ok" and data["rows_read"] == 1
-    conn = ledger.connection
-    assert conn.transactions == [{"readonly": True, "isolation": "repeatable_read"}]
-    assert conn.calls[0][0] == f"SET LOCAL statement_timeout = {neon.STATEMENT_TIMEOUT_MS}"
-    assert conn.calls[1][0] == neon.QUERY and conn.closed
+    assert ledger.calls == [("acme/widgets", 10, 201, neon.EVENT_TYPES)]
 
 
 def test_without_a_neon_secret_the_mode_still_publishes_valid_json(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.delenv("FACTORY_STATE_DSN_FILE", raising=False)
+    monkeypatch.delenv("FACTORY_TURSO_URL", raising=False)
+    monkeypatch.delenv("FACTORY_STATE_SQLITE", raising=False)
     data = neon.read_history("acme/widgets", now=NOW)
-    assert data["status"] == "unavailable" and "FACTORY_STATE_DSN_FILE" in str(data["reason"])
+    assert data["status"] == "unavailable" and "FACTORY_TURSO_URL" in str(data["reason"])
     json.dumps(data)
     with pytest.raises(ValueError, match="unavailable"):
         estimate_source.parse(data)

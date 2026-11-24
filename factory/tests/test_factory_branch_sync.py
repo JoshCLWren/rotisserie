@@ -136,7 +136,7 @@ def test_label_fallback_says_neon_was_not_consulted_and_respects_owner_labels():
     hub = FakeHub()
     result = sync.sync_pull(hub, sync.LabelLeases(hub, pulls), sync.Request(7), snapshot=pulls)
     assert result.status == sync.HELD and "owner label factory:43" in result.text
-    assert "Neon leases were not consulted" in result.text and result.neon is False
+    assert "store leases were not consulted" in result.text and result.neon is False
     assert not any(call[0] == "update" for call in hub.calls)
 
 
@@ -186,8 +186,8 @@ def test_queued_tick_costs_one_list_plus_one_compare_and_update_per_pr(monkeypat
             return {"status": "behind"} if path.startswith("compare/") else {}
 
     monkeypatch.setattr(sync, "GhHub", Hub)
-    monkeypatch.delenv("FACTORY_STATE_DSN_FILE", raising=False)
-    monkeypatch.delenv("FACTORY_NEON_LEASE_REQUIRED", raising=False)
+    monkeypatch.delenv("FACTORY_TURSO_TOKEN_FILE", raising=False)
+    monkeypatch.delenv("FACTORY_STATE_REQUIRED", raising=False)
     assert sync.main(["--repo", "o/r", "--queued"]) == 0
     assert calls == [
         "list",
@@ -207,8 +207,8 @@ def test_trusted_runtime_refuses_label_fallback_when_neon_is_required(monkeypatc
             )
 
     monkeypatch.setattr(sync, "GhHub", Hub)
-    monkeypatch.delenv("FACTORY_STATE_DSN_FILE", raising=False)
-    monkeypatch.setenv("FACTORY_NEON_LEASE_REQUIRED", "true")
+    monkeypatch.delenv("FACTORY_TURSO_TOKEN_FILE", raising=False)
+    monkeypatch.setenv("FACTORY_STATE_REQUIRED", "true")
     assert sync.main(["--repo", "o/r", "--queued"]) == 1
 
 
@@ -223,7 +223,7 @@ def test_neon_leases_name_the_holder_and_never_accept_an_unconfigured_ledger():
         def release_operation_lease(self, repo, number, token, reason):
             return True
 
-    leases = sync.NeonLeases("o/r", "scheduler-1", Ledger())
+    leases = sync.StoreLeases("o/r", "scheduler-1", Ledger())
     assert leases.holder(1) == "worker 43" and leases.holder(2) is None
     with pytest.raises(RuntimeError):
         leases.acquire(2)
@@ -233,13 +233,13 @@ def test_dispatcher_runs_the_bounded_leased_sync_pass():
     workflow = (Path(__file__).resolve().parents[2] / ".github/workflows/fixed-model-factory-dispatch.yml")
     jobs = yaml.safe_load(workflow.read_text(encoding="utf-8"))["jobs"]
     steps = {step.get("name"): step for step in jobs["dispatch"]["steps"]}
-    step = steps["Sync queued factory PRs with main under Neon leases"]
+    step = steps["Sync queued factory PRs with main under store leases"]
     assert "steps.api_budget.outputs.allow == 'true'" in step["if"]
     assert "!(inputs.target || inputs.provider)" in step["if"]
     assert "steps.main_health.outputs.state != 'red'" in step["if"]
     assert "factory_branch_sync.py --queued --max 5" in step["run"]
     assert "--force" not in step["run"] and "git push" not in step["run"]
     names = list(steps)
-    assert names.index("Configure shared Neon factory discovery cache") < names.index(
-        "Sync queued factory PRs with main under Neon leases"
+    assert names.index("Configure the factory store") < names.index(
+        "Sync queued factory PRs with main under store leases"
     )

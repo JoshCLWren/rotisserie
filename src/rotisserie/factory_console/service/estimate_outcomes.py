@@ -1,4 +1,4 @@
-"""What each Neon outcome class and claim event means to an estimate, in one table.
+"""What each store outcome class and claim event means to an estimate, in one table.
 
 An estimate counts an attempt only when a model worked on the item. A class
 not listed here counts as an attempt and is named in the output: an estimate
@@ -70,7 +70,7 @@ def claim_signal(event_type: str, client: str | None) -> str:
 
 
 def mapping() -> dict[str, object]:
-    """The table itself, published with every Neon estimate so readers can check it."""
+    """The table itself, published with every store estimate so readers can check it."""
     return {
         "roles": ROLES,
         "outcome_classes": OUTCOME_CLASSES,

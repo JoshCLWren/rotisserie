@@ -6,6 +6,7 @@ import importlib
 import importlib.util
 import re
 import sys
+from collections.abc import Iterator
 from pathlib import Path
 from types import ModuleType
 from typing import Any
@@ -15,6 +16,7 @@ import pytest
 SCRIPTS = Path(__file__).resolve().parents[1] / ".github" / "scripts"
 sys.path.insert(0, str(SCRIPTS))
 ledger = importlib.import_module("factory_state_ledger")
+from tests import turso_support as support  # noqa: E402
 
 HEAD = "a" * 40
 
@@ -29,15 +31,21 @@ def load_controller() -> ModuleType:
 
 
 @pytest.fixture
-def controller(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> ModuleType:
+def controller(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Iterator[ModuleType]:
     module = load_controller()
-    dsn = tmp_path / "dsn"
-    dsn.write_text("postgresql://role@host/factory_state")
-    monkeypatch.setenv("FACTORY_STATE_DSN_FILE", str(dsn))
-    monkeypatch.delenv("FACTORY_NEON_CONFIGURED", raising=False)
+    monkeypatch.setenv("FACTORY_STATE_SQLITE", str(tmp_path / "state.sqlite"))
+    monkeypatch.delenv("FACTORY_TURSO_URL", raising=False)
     monkeypatch.delenv("GITHUB_ACTIONS", raising=False)
     monkeypatch.setattr(module, "linked_issue_for_pr", lambda number, branch: 7)
-    return module
+    support.core.use_store(None)
+    yield module
+    support.core.use_store(None)
+
+
+def without_store(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv("FACTORY_STATE_SQLITE", raising=False)
+    monkeypatch.delenv("FACTORY_TURSO_URL", raising=False)
+    monkeypatch.delenv("FACTORY_STATE_REQUIRED", raising=False)
 
 
 def pr(stage: str) -> dict[str, Any]:
@@ -50,14 +58,20 @@ def pr(stage: str) -> dict[str, Any]:
     }
 
 
-def holder_on(number: int) -> Any:
-    def holder(repo: str, target: int) -> dict[str, object] | None:
-        if target != number:
-            return None
-        return {"claim_id": "11111111-1111-4111-8111-111111111111",
-                "client": "codebuff-phone", "actor": "alice"}  # fmt: skip
-
-    return holder
+def hold(controller: ModuleType, number: int) -> None:
+    claim = ledger.reserve_external(
+        controller.REPO,
+        "alice",
+        "codebuff-phone",
+        [number],
+        target=f"pr:{number}",
+        action="review-findings",
+        head=HEAD,
+        observed_wip=0,
+        wip_limit=8,
+        offer_at="2026-11-22T00:00:00+00:00",
+    )
+    assert claim["status"] == "reserved"
 
 
 @pytest.mark.parametrize("held", [44, 7])
@@ -65,7 +79,7 @@ def test_ci_reconcile_leaves_a_pr_an_outside_agent_holds(
     controller: ModuleType, monkeypatch: pytest.MonkeyPatch, held: int
 ) -> None:
     monkeypatch.setattr(controller, "pr_json", lambda number: pr("factory:ci"))
-    monkeypatch.setattr(ledger, "external_holder", holder_on(held))
+    hold(controller, held)
     monkeypatch.setattr(
         controller, "required_checks_gate", lambda number: pytest.fail("must not promote")
     )
@@ -78,7 +92,7 @@ def test_merge_authorization_waits_for_the_outside_claim(
     controller: ModuleType, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     monkeypatch.setattr(controller, "pr_json", lambda number: pr("factory:ready"))
-    monkeypatch.setattr(ledger, "external_holder", holder_on(44))
+    hold(controller, 44)
     monkeypatch.setattr(
         controller, "replace_factory_labels", lambda *a, **k: pytest.fail("no demotion")
     )
@@ -91,56 +105,59 @@ def test_unreadable_claims_hold_closed(
     controller: ModuleType, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     def broken(repo: str, number: int) -> None:
-        raise ConnectionError("neon down")
+        raise ConnectionError("store down")
 
     monkeypatch.setattr(ledger, "external_holder", broken)
     reason = controller.outside_claim(44, pr("factory:ready"))
     assert reason == "outside-agent claims could not be read (ConnectionError)"
 
 
-def test_without_neon_configured_nothing_changes(
+def test_without_the_store_configured_nothing_changes(
     controller: ModuleType, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    monkeypatch.delenv("FACTORY_STATE_DSN_FILE")
+    without_store(monkeypatch)
+    monkeypatch.setenv("FACTORY_STATE_REQUIRED", "false")
     monkeypatch.setattr(
         ledger, "external_holder", lambda *a: pytest.fail("no claim store to read")
     )
     assert controller.outside_claim(44, pr("factory:ready")) is None
 
 
-def test_configured_but_unconnected_store_holds_merges(
+def test_required_but_unconnected_store_holds_merges(
     controller: ModuleType, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    monkeypatch.delenv("FACTORY_STATE_DSN_FILE")
-    monkeypatch.setenv("FACTORY_NEON_CONFIGURED", "true")
+    without_store(monkeypatch)
+    monkeypatch.setenv("FACTORY_STATE_REQUIRED", "true")
     reason = controller.outside_claim(44, pr("factory:ready"))
-    assert reason == "outside-agent claims could not be read (Neon configured, not connected)"
+    assert reason == (
+        "outside-agent claims could not be read (factory store required, not connected)"
+    )
 
 
 def test_merge_drain_reads_claims_with_the_python_it_runs() -> None:
     text = (SCRIPTS.parents[2] / ".github" / "workflows" / "factory-ready-merge-drain.yml").read_text()
-    neon = text.index("uses: ./.github/actions/factory-state-cache")
+    store = text.index("uses: ./.github/actions/factory-store")
     parsers = text.index("uses: ./.github/actions/factory-syntax")
-    reader = text.index("python3 -m pip install --quiet --disable-pip-version-check 'asyncpg")
     drain = text.index("name: Drain exact-head ready factory PRs")
-    assert neon < parsers < reader < drain
-    assert "FACTORY_NEON_CONFIGURED: ${{ vars.NEON_PROJECT_ID != '' }}" in text[drain:]
+    assert store < parsers < drain
+    assert "asyncpg" not in text
+    assert "FACTORY_STATE_REQUIRED: ${{ secrets.FACTORY_TURSO_URL != ''" in text
 
 
 @pytest.mark.parametrize(("configured", "held"), [(None, True), ("false", False)])
-def test_a_workflow_step_must_say_whether_neon_is_configured(
+def test_a_workflow_step_must_say_whether_the_store_is_required(
     controller: ModuleType,
     monkeypatch: pytest.MonkeyPatch,
     configured: str | None,
     held: bool,
 ) -> None:
-    monkeypatch.delenv("FACTORY_STATE_DSN_FILE")
+    without_store(monkeypatch)
     monkeypatch.setenv("GITHUB_ACTIONS", "true")
     if configured is not None:
-        monkeypatch.setenv("FACTORY_NEON_CONFIGURED", configured)
+        monkeypatch.setenv("FACTORY_STATE_REQUIRED", configured)
     reason = controller.outside_claim(44, pr("factory:ci"))
     if held:
-        assert reason == "outside-agent claims could not be read (FACTORY_NEON_CONFIGURED unset)"
+        assert reason == "outside-agent claims could not be read (FACTORY_STATE_REQUIRED unset)"
     else:
         assert reason is None
 
@@ -160,10 +177,9 @@ def test_every_claim_gated_controller_step_reads_outside_claims() -> None:
             if "factory-review-controller" not in step or not gated.search(step):
                 continue
             found += 1
-            assert "FACTORY_NEON_CONFIGURED: ${{ vars.NEON_PROJECT_ID != '' }}" in step, (
+            assert "FACTORY_STATE_REQUIRED: ${{ secrets.FACTORY_TURSO_URL != ''" in text, (
                 workflow.name
             )
             earlier = "".join(steps[:index])
-            assert "uses: ./.github/actions/factory-state-cache" in earlier, workflow.name
-            assert "asyncpg" in earlier + step, workflow.name
+            assert "uses: ./.github/actions/factory-store" in earlier, workflow.name
     assert found == 4

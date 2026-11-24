@@ -1,7 +1,7 @@
 """Backoff rows on the libSQL store: Fibonacci streaks and reset-timed capacity cooldowns.
 
 A streak grows inside its own UPSERT (``streak = streak + 1``), so two runs
-projected at once both count; the Neon path needed a per-key advisory lock
+projected at once both count; the retired Neon path needed a per-key advisory lock
 for that. The delay for the new streak comes from a fixed JSON table.
 """
 
@@ -31,7 +31,7 @@ def _when(epoch: Any) -> datetime | None:
 
 
 def state(row: Mapping[str, Any]) -> dict[str, Any]:
-    """The JSON state the Neon payload held, rebuilt from typed columns."""
+    """The JSON state the retired Neon payload held, rebuilt from typed columns."""
     found = json.loads(row.get("detail") or "{}")
     found.update(
         {
@@ -48,7 +48,7 @@ def state(row: Mapping[str, Any]) -> dict[str, Any]:
 
 
 def record(row: Mapping[str, Any]) -> dict[str, Any]:
-    """A Neon-shaped record, so the shared backoff policy functions read it unchanged."""
+    """A record in the retired Neon shape, so the shared backoff policy functions read it unchanged."""
     return {
         "payload": [state(row)],
         "expires_at": _when(row["expires_at"]),

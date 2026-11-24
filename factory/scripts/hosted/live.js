@@ -127,7 +127,7 @@ function liveRead(name, query) {
       void flushReads();
     } else if (!batchTimer) batchTimer = setTimeout(flushReads, BATCH_DELAY_MS);
   }).then(answer => {
-    // A pending answer (an estimate waiting for its Neon run) must be asked again.
+    // A pending answer (an estimate waiting for its store run) must be asked again.
     if (answer && answer.result === "pending" && liveCache.get(key)?.value === value) {
       liveCache.delete(key);
     }

@@ -1,4 +1,4 @@
-# Installed into adopter by factory/install/install.py. Trusted GH -> shared Neon bridge.
+# Installed into adopter by factory/install/install.py. Trusted GH -> shared factory store bridge.
 name: Rotisserie External Claim Controller
 on:
   workflow_call:
@@ -22,6 +22,12 @@ on:
         type: string
         required: false
     secrets:
+      FACTORY_TURSO_URL:
+        required: false
+      FACTORY_TURSO_TOKEN:
+        required: false
+      # Kept until every adopter re-runs the installer: a caller that still
+      # passes it keeps the store required, so the job fails closed.
       NEON_API_KEY:
         required: false
 
@@ -37,6 +43,9 @@ permissions:
   actions: read
 
 env:
+  # The store is required wherever the adopter configured one; missing
+  # credentials then fail the job instead of running without coordination.
+  FACTORY_STATE_REQUIRED: ${{ secrets.FACTORY_TURSO_URL != '' || secrets.NEON_API_KEY != '' }}
   FACTORY_REPO_VARS: >-
     {"FACTORY_SLOTS_PER_PROVIDER": "${{ vars.FACTORY_SLOTS_PER_PROVIDER }}", "FACTORY_PR_WIP_LIMIT": "${{ vars.FACTORY_PR_WIP_LIMIT }}", "FACTORY_REVIEW_BACKLOG_LIMIT": "${{ vars.FACTORY_REVIEW_BACKLOG_LIMIT }}", "FACTORY_OMNIROUTE_FREE_ENTRY_CAP": "${{ vars.FACTORY_OMNIROUTE_FREE_ENTRY_CAP }}", "FACTORY_NO_DIFF_RETRY_LIMIT": "${{ vars.FACTORY_NO_DIFF_RETRY_LIMIT }}", "FACTORY_NO_DIFF_RETRY_RESET_SECONDS": "${{ vars.FACTORY_NO_DIFF_RETRY_RESET_SECONDS }}", "FACTORY_REVIEW_FAILURE_COOLDOWN_SECONDS": "${{ vars.FACTORY_REVIEW_FAILURE_COOLDOWN_SECONDS }}", "FACTORY_FIXED_LEASE_TTL_SECONDS": "${{ vars.FACTORY_FIXED_LEASE_TTL_SECONDS }}", "FACTORY_LOCAL_LEASE_TTL_SECONDS": "${{ vars.FACTORY_LOCAL_LEASE_TTL_SECONDS }}", "FACTORY_PRIORITY_ORDER": "${{ vars.FACTORY_PRIORITY_ORDER }}", "FACTORY_DISABLED_PROVIDERS": "${{ vars.FACTORY_DISABLED_PROVIDERS }}", "FACTORY_DISABLED_MODELS": "${{ vars.FACTORY_DISABLED_MODELS }}", "FACTORY_INCIDENTS": "${{ vars.FACTORY_INCIDENTS }}"}
 
@@ -74,11 +83,11 @@ jobs:
           python-version: '3.14'
       - uses: astral-sh/setup-uv@v7
 
-      - name: Configure shared restricted Neon authority
-        uses: ./.github/actions/factory-state-cache
+      - name: Configure the shared factory store
+        uses: ./.github/actions/factory-store
         with:
-          neon-api-key: ${{ secrets.NEON_API_KEY }}
-          neon-project-id: ${{ vars.NEON_PROJECT_ID }}
+          url: ${{ secrets.FACTORY_TURSO_URL }}
+          token: ${{ secrets.FACTORY_TURSO_TOKEN }}
 
       - name: Execute authorized external claim request
         shell: bash
@@ -93,7 +102,7 @@ jobs:
         run: |
           set -Eeuo pipefail
           test -f .rotisserie/runtime/pyproject.toml
-          test -s "$FACTORY_STATE_DSN_FILE"
+          test -s "$FACTORY_TURSO_TOKEN_FILE"
           args=(factory "$OP" --repo "$GITHUB_REPOSITORY" --client "$CLIENT" --json)
           case "$OP" in
             reserve-next)
@@ -111,7 +120,7 @@ jobs:
             *) exit 2 ;;
           esac
           set +e
-          uv tool run --with 'asyncpg>=0.30,<1' --from ./.rotisserie/runtime rotisserie \
+          uv tool run --from ./.rotisserie/runtime rotisserie \
             "${args[@]}" > "$RUNNER_TEMP/external-claim.json"
           code=$?
           set -e
@@ -145,3 +154,6 @@ jobs:
           path: ${{ runner.temp }}/external-claim.json
           retention-days: 1
           if-no-files-found: warn
+      - name: Remove the factory store token
+        if: always()
+        run: rm -f "$RUNNER_TEMP/factory-store-token"

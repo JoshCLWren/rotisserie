@@ -120,7 +120,7 @@ def _live_offer(
     if latest is None:
         latest = frontier.capture(github, now=datetime.now(UTC))
     if not latest.authoritative_claim_available:
-        return False, "Neon ownership became unavailable"
+        return False, "store ownership became unavailable"
     found = next((o for o in latest.offers if o.target == previous.target), None)
     if found is None:
         return False, "offer disappeared from current controller ranking"

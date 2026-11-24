@@ -183,7 +183,7 @@ def select_model(
             not isinstance(values, list) or not all(isinstance(v, str) for v in values)
             for values in snapshot.values()
         ):
-            raise ValueError("invalid trusted Neon model exclusions")
+            raise ValueError("invalid trusted store model exclusions")
         excluded.update(snapshot.get(provider, []))
     available_models = [model for model in models if model not in excluded and model not in (attempted or set())]
     if not available_models:

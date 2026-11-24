@@ -132,10 +132,10 @@ def main(argv: list[str] | None = None) -> int:
         if args.exclusions_file and args.exclusions_file.is_file():
             raw = json.loads(args.exclusions_file.read_text(encoding="utf-8"))
             if not isinstance(raw, dict):
-                raise PublishedCatalogUnavailableError("Neon model exclusions are invalid")
+                raise PublishedCatalogUnavailableError("store model exclusions are invalid")
             models = raw.get(args.source, [])
             if not isinstance(models, list) or not all(isinstance(x, str) for x in models):
-                raise PublishedCatalogUnavailableError("Neon model exclusions are invalid")
+                raise PublishedCatalogUnavailableError("store model exclusions are invalid")
             excluded = set(models)
         model = choose_model(args.source, args.worker, catalog, excluded, args.rotation)
     except (PublishedCatalogUnavailableError, ValueError, OSError, json.JSONDecodeError) as exc:

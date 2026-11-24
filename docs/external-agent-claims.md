@@ -1,14 +1,15 @@
 # External next-work claims (issue #177)
 
 Rotisserie owns ranking, GitHub owns PR/review/CI/merge facts, and the existing
-Neon factory-state ledger owns work leases. **A frontier candidate is not a
+The factory store (libSQL) ledger owns work leases. **A frontier candidate is not a
 reservation.** No external coding agent needs to join the provider/model roster.
 
-## Agents with a trusted local Neon controller connection
+## Agents with a trusted local factory store connection
 
 Run from a checkout with the current installed Rotisserie runtime, GitHub CLI
-authenticated as the actual agent principal, and a restricted
-`FACTORY_STATE_DSN_FILE` provisioned by the existing trusted controller:
+authenticated as the actual agent principal, and the factory store
+configured as for the trusted controller (`FACTORY_TURSO_URL` and a token file in
+`FACTORY_TURSO_TOKEN_FILE`):
 
 ```bash
 baste next --repo acme/widgets --json
@@ -32,7 +33,7 @@ gh workflow run rotisserie-external-claim.yml --repo acme/widgets --ref main \
   -f evidence=https://github.com/acme/widgets/pull/123
 ```
 
-Handoff records evidence in Neon and releases the claim. It **does not**
+Handoff records evidence in the factory store and releases the claim. It **does not**
 approve a review, bypass required checks, merge a PR, close the issue, or
 authorize deployment. Use ordinary controller gates after recording evidence.
 
@@ -103,7 +104,7 @@ refused and the claim stays held; hand off the new head.
 
 The GitHub account alone is never treated as a model identity.
 
-Do not put Neon credentials into a model session, its prompt, tool output,
+Do not put store credentials into a model session, its prompt, tool output,
 artifact, commit, or issue comment. The local direct CLI is only available to
 an appropriately trusted controller environment. An ordinary agent without
 that access must use the GitHub bridge.
@@ -132,7 +133,7 @@ gh workflow run rotisserie-external-claim.yml --repo acme/widgets \
 The Rotisserie CLI does all of this for you with `--via github`: it starts the
 workflow, waits for its run, downloads the result and shows it exactly as a
 direct call would (a refusal inside the workflow exits 4, as it does locally).
-No Neon connection is needed on the agent's machine:
+No store connection is needed on the agent's machine:
 
 ```bash
 baste next --repo acme/widgets --via github
@@ -164,14 +165,14 @@ The manual workflow is a trusted **controller**, not a coding-worker workflow.
 Its token can write issues and pull requests only for a verified handoff
 (review-stage labels and the trusted author-model comment); it runs no PR code.
 It requires the GitHub initiating actor to retain write permission, refuses
-reruns and non-manual events, obtains only the existing restricted Neon role,
-and exports no DSN. A read-only GitHub token or a missing Neon connection does
+reruns and non-manual events, receives the store token only in a 0600 file
+that a final step removes. A read-only GitHub token or a missing store connection does
 not grant permission to reserve. GitHub labels are advisory projections.
 
 ## Label claims (issue #191)
 
 Any agent with write access can find and claim work with ordinary GitHub
-search and labels. No Rotisserie CLI, workflow dispatch or Neon access is
+search and labels. No Rotisserie CLI, workflow dispatch or store access is
 needed. The installed `rotisserie-label-claim.yml` workflow answers.
 
 1. **Pick work.** Any open issue or PR you were told to work on can be
@@ -180,7 +181,7 @@ needed. The installed `rotisserie-label-claim.yml` workflow answers.
    yourself, search `is:open label:factory:available`: the label doctor sets
    that label on items the factory would hand out next.
 2. **Request a claim.** Add `factory:claimed`. The controller checks your write
-   access and the Neon fenced lease, then answers on the item:
+   access and the store fenced lease, then answers on the item:
    - accepted: `factory:claimed` stays and `factory:available` goes;
    - refused: `factory:claimed` goes and `factory:claim-rejected` is added.
 
@@ -219,8 +220,8 @@ the exact label changes, with reasons, without writing anything.
 label definitions it lists. The label claim workflow runs the repair every hour
 and after each claim event. The doctor:
 
-- adds or removes `factory:available` from the frontier and Neon;
-- removes `factory:claimed` that no Neon claim backs, after a 10-minute grace
+- adds or removes `factory:available` from the frontier and the factory store;
+- removes `factory:claimed` that no store claim backs, after a 10-minute grace
   period, and restores it when a label claim exists;
 - clears `factory:claim-rejected` after an hour;
 - collapses several stage labels to the one the work policy already reads,
@@ -234,7 +235,7 @@ and after each claim event. The doctor:
 - withholds `factory:available` from a PR whose required checks are still
   running, because a claim on it would be refused.
 
-When Neon cannot be read, the doctor removes `factory:available` everywhere and
+When the factory store cannot be read, the doctor removes `factory:available` everywhere and
 touches no claim. It holds an item with several active owners without changing
 the owners. It writes each item only if its labels are unchanged since it read
 them, so a second run changes nothing.
@@ -292,13 +293,13 @@ claim on it first:
 baste run PROVIDER auto --target pr:123 --take-over
 ```
 
-Both need the factory's Neon connection (`FACTORY_STATE_DSN_FILE`) and write
+Both need the factory store connection (`FACTORY_TURSO_URL` and its token file) and write
 access to the repository. Removal is fenced by the claim UUID, so a newer claim
 on the same item is never touched, and the event log records who removed whose
 claim and why. Nothing removes an outside agent's claim automatically.
 
 Outside claims set no GitHub owner label, so the factory's label-based gates
-read Neon instead: while an outside claim holds a PR or its linked issue, CI
+read the factory store instead: while an outside claim holds a PR or its linked issue, CI
 reconciliation leaves the PR alone and merge authorization waits (the PR keeps
 `factory:ready` and merges after release, handoff or revoke). An unreadable
 claim store holds closed.

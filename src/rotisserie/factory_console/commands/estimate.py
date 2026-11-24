@@ -109,12 +109,12 @@ def render(context: Context, data: dict[str, Any]) -> None:
         )
     if source["attempts"] == "neon":
         console.note(
-            f"Neon history: {source['rows_read']:,} event(s) over {source['window_days']} days "
+            f"Store history: {source['rows_read']:,} event(s) over {source['window_days']} days "
             f"from {local_time(source['covered_from'])}; {source['items_from_neon']} item(s) "
-            f"counted from Neon, {source['items_from_github']} from GitHub markers."
+            f"counted from the factory store, {source['items_from_github']} from GitHub markers."
         )
         if source["truncated"]:
-            console.warn("Neon history hit its row cap; older items use GitHub markers.")
+            console.warn("Store history hit its row cap; older items use GitHub markers.")
     for note in cast(list[str], data["notes"]):
         console.warn(note)
 
@@ -125,16 +125,16 @@ def _neon(context: Context, arguments: argparse.Namespace) -> tuple[Any, str, Ou
         found = estimate_source.earlier(context.github, arguments.run)
         if found.get("result") == "pending":
             _show_bridge(console, found)
-            console.line("The Neon history run has not finished. Try again shortly.")
+            console.line("The store history run has not finished. Try again shortly.")
             return None, "", Outcome(Result.PENDING, EXIT_CODES[Result.PENDING], found)
         return (*estimate_source.load(found), None)
     if arguments.no_wait:
         started = estimate_source.start(context.github)
-        console.ok("Started the Neon history run")
+        console.ok("Started the store history run")
         _show_bridge(console, started)
         console.line(f"Read it with: baste estimate {arguments.what} --run ID")
         return None, "", Outcome(Result.SUBMITTED, EXIT_OK, started)
-    console.waiting("Reading Neon history through the label claim workflow on GitHub")
+    console.waiting("Reading store history through the label claim workflow on GitHub")
     try:
         found = estimate_source.fetch(context.github, context.clock, started=context.progress)
     except bridge.BridgeError as exc:

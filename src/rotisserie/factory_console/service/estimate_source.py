@@ -1,7 +1,7 @@
-"""Neon history for an estimate, read through the label claim workflow, and its use.
+"""store history for an estimate, read through the label claim workflow, and its use.
 
 The console starts the adopter's ``rotisserie-label-claim.yml`` in
-``estimate-history`` mode and reads the JSON artifact it publishes. Neon
+``estimate-history`` mode and reads the JSON artifact it publishes. The factory store
 replaces only attempt counts and person signals; features and merge facts
 still come from GitHub. An item that started before the history window keeps
 its GitHub count.
@@ -18,7 +18,7 @@ from rotisserie.factory_console.service import estimate_neon as neon
 from rotisserie.factory_console.service.estimate_model import Item
 from rotisserie.factory_console.tracker import Clock
 
-NEON = "Neon history through the label claim workflow"
+NEON = "store history through the label claim workflow"
 GITHUB = "GitHub labels and factory marker comments"
 
 
@@ -85,7 +85,7 @@ def parse(data: dict[str, object]) -> History:
     if data.get("mode") != neon.MODE or data.get("schema") != neon.SCHEMA:
         raise ValueError("the workflow did not return estimate history (an older runtime?)")
     if data.get("status") != "ok":
-        raise ValueError(f"Neon history is unavailable: {data.get('reason') or 'no reason given'}")
+        raise ValueError(f"store history is unavailable: {data.get('reason') or 'no reason given'}")
     try:
         covered = datetime.fromisoformat(str(data.get("covered_from")))
     except ValueError:
@@ -109,12 +109,12 @@ def parse(data: dict[str, object]) -> History:
 
 
 def apply(item: Item, history: History) -> tuple[Item, Runs | None]:
-    """The item with Neon's attempts and person signals; ``None`` runs keep marker counts.
+    """The item with the store's attempts and person signals; ``None`` runs keep marker counts.
 
     Coverage starts at the item's first factory activity, not the issue's
     creation, so a long-lived backlog issue worked recently still counts. A
     recorded person signal applies whatever the window. A covered item with
-    markers but no Neon run keeps its marker count: a missing run record is not
+    markers but no store run keeps its marker count: a missing run record is not
     proof that no worker ran.
     """
     runs = history.runs(item.numbers)

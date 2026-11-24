@@ -142,7 +142,7 @@ def _take_over_external(context: Context, number: int, data: dict[str, object]) 
     except external.ClaimStoreUnavailable as exc:
         console.note(
             f"Can't see outside-agent claims from here ({exc}). If one holds #{number}, "
-            "run 'baste revoke' where the factory's Neon connection is set up."
+            "run 'baste revoke' where the factory's store connection is set up."
         )
         return True
     except (RuntimeError, ValueError) as exc:

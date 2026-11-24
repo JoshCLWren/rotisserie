@@ -63,8 +63,10 @@ def test_dispatcher_releases_both_locks_before_roster_delay() -> None:
     assert "inputs.mode == 'roster'" in cadence["if"]
     assert "!(inputs.target || inputs.provider)" in cadence["if"]
 
-    # Scheduler is at the end, after every assignment and review operation.
-    assert cadence is steps[-1]
+    # Scheduler is at the end, after every assignment and review operation;
+    # only the store token removal follows it.
+    assert cadence is steps[-2]
+    assert steps[-1]["name"] == "Remove the factory store token"
 
 
 def test_successor_is_isolated_and_read_only_except_actions_dispatch() -> None:

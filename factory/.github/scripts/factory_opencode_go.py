@@ -14,7 +14,7 @@ from decimal import Decimal, InvalidOperation
 from pathlib import Path
 from typing import Any
 
-SOURCE = "opencode-free"  # Keep existing worker IDs, claims and Neon history.
+SOURCE = "opencode-free"  # Keep existing worker IDs, claims and store history.
 PROVIDER = "opencode-go"
 PREFERRED = "hy4-flash-free"
 CATALOG_URL = "https://opencode.ai/console/api/v1/models"

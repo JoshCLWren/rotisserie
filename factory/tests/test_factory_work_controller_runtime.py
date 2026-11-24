@@ -1258,11 +1258,11 @@ def test_batch_assignment_omits_redundant_reconciliation(
 
 
 def test_release_label_write_updates_run_local_discovery(
-    controller: types.ModuleType, monkeypatch: pytest.MonkeyPatch,
+    controller: types.ModuleType, monkeypatch: pytest.MonkeyPatch, tmp_path: Path,
 ) -> None:
-    """A label write updates only this dispatcher run, with no Neon projection."""
+    """A label write updates only this dispatcher run, with no store projection."""
     events: list[str] = []
-    monkeypatch.setenv("FACTORY_STATE_DSN_FILE", "/trusted/dsn")
+    monkeypatch.setenv("FACTORY_STATE_SQLITE", str(tmp_path / "state.sqlite"))
     monkeypatch.setattr(
         controller, "target_json",
         lambda number: {
@@ -1289,11 +1289,11 @@ def test_release_label_write_updates_run_local_discovery(
 
 
 def test_failed_local_discovery_refresh_does_not_undo_github_release(
-    controller: types.ModuleType, monkeypatch: pytest.MonkeyPatch,
+    controller: types.ModuleType, monkeypatch: pytest.MonkeyPatch, tmp_path: Path,
 ) -> None:
     """Projection failure must not strand a successful GitHub label release."""
     events: list[str] = []
-    monkeypatch.setenv("FACTORY_STATE_DSN_FILE", "/trusted/dsn")
+    monkeypatch.setenv("FACTORY_STATE_SQLITE", str(tmp_path / "state.sqlite"))
     monkeypatch.setattr(
         controller, "target_json",
         lambda number: {

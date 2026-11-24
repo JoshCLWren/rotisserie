@@ -64,7 +64,7 @@ jobs:
       - name: Overlay Rotisserie factory runtime
         run: bash .rotisserie/runtime/factory/install/overlay.sh .
 
-      - name: Install Neon-first GitHub read shim
+      - name: Install budgeted GitHub read shim
         shell: bash
         run: |
           set -Eeuo pipefail

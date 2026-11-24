@@ -1,0 +1,42 @@
+name: Factory Store (trusted controller only)
+description: Give a trusted factory job the libSQL (Turso) store URL and a token file
+
+inputs:
+  url:
+    required: false
+    description: The adopter's FACTORY_TURSO_URL secret
+  token:
+    required: false
+    description: FACTORY_TURSO_TOKEN, or FACTORY_TURSO_READ_TOKEN for read-only jobs; never given to model jobs
+
+runs:
+  using: composite
+  steps:
+    - name: Write the factory store token file
+      shell: bash
+      env:
+        STORE_URL: ${{ inputs.url }}
+        STORE_TOKEN: ${{ inputs.token }}
+      run: |
+        set -Eeuo pipefail
+        if [[ -z "$STORE_URL" || -z "$STORE_TOKEN" ]]; then
+          if [[ "${FACTORY_STATE_REQUIRED:-}" == "true" ]]; then
+            echo "::error::The factory store is required: set the FACTORY_TURSO_URL and FACTORY_TURSO_TOKEN secrets and re-run the installer"
+            exit 1
+          fi
+          echo "::warning::The factory store is not configured; this job runs without it"
+          exit 0
+        fi
+        echo "::add-mask::$STORE_URL"
+        echo "::add-mask::$STORE_TOKEN"
+        # Only trusted controller steps read this file. A final step of the
+        # job removes it; the token never becomes a job output or env value.
+        umask 077
+        token_file="$RUNNER_TEMP/factory-store-token"
+        printf '%s' "$STORE_TOKEN" > "$token_file"
+        chmod 600 "$token_file"
+        {
+          echo "FACTORY_TURSO_URL=$STORE_URL"
+          echo "FACTORY_TURSO_TOKEN_FILE=$token_file"
+        } >> "$GITHUB_ENV"
+        echo "Factory store configured for this trusted job"

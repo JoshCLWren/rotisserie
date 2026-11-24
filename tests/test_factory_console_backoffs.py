@@ -90,7 +90,7 @@ def test_quota_only_reset_runs_the_trusted_reset_workflow(monkeypatch: pytest.Mo
 def test_full_reset_is_not_offered_and_direct_read_needs_neon(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.delenv("FACTORY_STATE_DSN_FILE", raising=False)
+    monkeypatch.delenv("FACTORY_TURSO_TOKEN_FILE", raising=False)
     calls: list[Any] = []
     for argv in (["backoffs", "reset", "--yes"], ["backoffs"]):
         code, data = _run(argv, monkeypatch, calls)

@@ -206,11 +206,12 @@ def test_unavailability_health_is_persisted_from_the_log_not_a_snapshot(
     import factory_state_operations as operations
 
     projected: list[dict[str, object]] = []
-    monkeypatch.setattr(ledger, "record_events", lambda _repo, entries: len(entries))
-    monkeypatch.setattr(operations, "enabled", lambda: True)
+    monkeypatch.setattr("factory_turso_events.record_events", lambda _repo, entries: len(entries))
+    monkeypatch.setattr("factory_turso_core.enabled", lambda: True)
+    monkeypatch.setattr("factory_turso_core.store", lambda: None)
     monkeypatch.setattr(
-        operations, "record_runtime",
-        lambda _repo, _run, outcome: projected.append(outcome) or True,
+        "factory_turso_runtime.project_runtime",
+        lambda _db, _repo, _run, outcome: projected.append(outcome) or True,
     )
     for run, classification in enumerate(
         ("model_unavailable", "provider_quota", "model_retired_410"), start=100,

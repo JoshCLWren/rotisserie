@@ -94,26 +94,24 @@ def test_disabled_models_join_exclusions_in_every_catalog_form():
     assert "opencode-free" not in explicit
 
 
-def test_trusted_exports_apply_the_switch_with_and_without_neon(monkeypatch):
+def test_trusted_exports_apply_the_switch_with_and_without_the_store(tmp_path, monkeypatch):
+    from tests import turso_support as support
+
     monkeypatch.setenv(
         settings.REPO_VARS_ENV,
         repo_vars("kilo-auto", "opencode-go=opencode-go/hy4")[settings.REPO_VARS_ENV],
     )
-    monkeypatch.setattr(operations, "enabled", lambda: False)
-    monkeypatch.delenv("FACTORY_NEON_LEASE_REQUIRED", raising=False)
+    monkeypatch.delenv("FACTORY_TURSO_URL", raising=False)
+    monkeypatch.delenv("FACTORY_STATE_SQLITE", raising=False)
+    monkeypatch.delenv("FACTORY_STATE_REQUIRED", raising=False)
     assert operations.export_model_exclusions("acme/widgets") == {
         "opencode-free": ["hy4", "opencode-go/hy4"]
     }
-    monkeypatch.setattr(operations, "enabled", lambda: True)
-    monkeypatch.setattr(
-        operations,
-        "_run",
-        lambda fn, *args: (
-            ["kilo-auto", "nvidia"] if fn is operations._export_fleet_failover_sources else {}
-        ),
-    )
-    assert operations.export_fleet_failover_sources("acme/widgets", "7") == ["nvidia"]
-    assert operations.export_model_exclusions("acme/widgets")["opencode-free"]
+    with support.bound("file", tmp_path / "state.sqlite", monkeypatch) as (_, repo):
+        support.use_roster(monkeypatch, {"7": ("kilo-auto", "")})
+        sources = operations.export_fleet_failover_sources(repo, "7")
+        assert "kilo-auto" not in sources and "nvidia" in sources
+        assert operations.export_model_exclusions(repo)["opencode-free"]
 
 
 def test_check_command_exits_nonzero_for_a_disabled_lane():

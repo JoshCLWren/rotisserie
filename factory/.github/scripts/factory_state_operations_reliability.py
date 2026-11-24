@@ -5,8 +5,6 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from typing import Any
 
-import factory_state_operations_core as core
-
 
 RELIABILITY_WINDOWS = {"24h": "24 hours", "7d": "7 days"}
 
@@ -69,31 +67,3 @@ def summarize_reliability(rows: list[dict[str, Any]], health: list[dict[str, Any
         "providers": sorted(providers.values(), key=lambda item: item["source"]),
         "models": sorted(models.values(), key=lambda item: (item["source"], item["model"])),
     }
-
-
-async def _export_reliability(conn: Any, repo: str) -> dict[str, Any]:
-    rows = []
-    for window, interval in RELIABILITY_WINDOWS.items():
-        for row in await conn.fetch(
-            f"""SELECT detail->>'source' AS source, detail->>'model' AS model, event_type,
-                       detail->>'outcome_class' AS outcome_class,
-                       (detail->>'delivery_outcome') = 'persisted' AS delivered,
-                       count(*) AS n
-                  FROM public.factory_state_events
-                 WHERE subject_type='worker'
-                   AND event_type IN ('worker_completed','worker_idle','worker_failed')
-                   AND created_at > now() - interval '{interval}'
-                 GROUP BY 1,2,3,4,5"""
-        ):
-            rows.append(dict(row) | {"window": window})
-    health = [dict(row) for row in await conn.fetch(
-        """SELECT source, model, status, last_outcome, cooldown_until
-             FROM public.factory_model_health WHERE repo=$1""", repo)]
-    return summarize_reliability(rows, health, datetime.now(timezone.utc))
-
-
-def export_reliability(repo: str) -> dict[str, Any]:
-    """Publishable reliability snapshot; contains counts only, never logs or secrets."""
-    if not core.enabled():
-        raise RuntimeError("Factory reliability requires the trusted Neon connection")
-    return core._run(_export_reliability, repo)

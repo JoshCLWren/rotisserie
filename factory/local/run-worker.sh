@@ -98,7 +98,7 @@ docker run --rm \
     tar -C /rotisserie-factory --exclude=.venv --exclude=__pycache__ --exclude=.pytest_cache --exclude=local -cf - . \
       | tar -C .rotisserie/runtime/factory -xf -
     bash .rotisserie/runtime/factory/install/overlay.sh . >/dev/null
-    for f in factory-neon-model-exclusions.json factory-fleet-sources.json factory-fleet-catalogs.json; do
+    for f in factory-trusted-model-exclusions.json factory-fleet-sources.json factory-fleet-catalogs.json; do
       echo "{}" > "$RUNNER_TEMP/$f"
     done
     registry="$(python3 .github/scripts/factory_provider_registry.py config --source ollama-cloud --model "$FACTORY_MODEL")"

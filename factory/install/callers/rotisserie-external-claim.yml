@@ -45,4 +45,5 @@ jobs:
       claim_id: ${{ inputs.claim_id }}
       evidence: ${{ inputs.evidence }}
     secrets:
-      NEON_API_KEY: ${{ secrets.NEON_API_KEY }}
+      FACTORY_TURSO_TOKEN: ${{ secrets.FACTORY_TURSO_TOKEN }}
+      FACTORY_TURSO_URL: ${{ secrets.FACTORY_TURSO_URL }}

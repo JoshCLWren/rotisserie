@@ -24,7 +24,7 @@ endpoint, refusal text, or the provider's policy default).
 reset --quota-only clears the backoffs that quota and throttle refusals wrote
 before they stopped growing streaks, and caps the other streaks at one day. It
 keeps real-failure streaks. Both run through the repository's trusted workflows;
-this machine never connects to Neon.
+this machine never connects to the factory store.
 """
 
 

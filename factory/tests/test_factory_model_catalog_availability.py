@@ -105,7 +105,7 @@ def test_model_rotation_is_bound_to_trusted_fleet_admission() -> None:
     """Cross-provider rotation only uses Neon-admitted sources and free filters."""
     selector = _failover_selector()
     assert '--eligible-sources-file "$RUNNER_TEMP/factory-fleet-sources.json"' in selector
-    assert '--exclusions-file "$RUNNER_TEMP/factory-neon-model-exclusions.json"' in selector
+    assert '--exclusions-file "$RUNNER_TEMP/factory-trusted-model-exclusions.json"' in selector
     assert "--blocked-provider" in selector
     workflow = adopter_view(WORKFLOW.name)
     assert "export-fleet-failover-sources" in workflow

@@ -1,6 +1,6 @@
 """Worker claims, controller operation leases and lease listing on the libSQL store.
 
-The same public functions as the Neon ledger (``factory_state_ledger``), so the
+The same public functions as the retired Neon ledger (``factory_state_ledger``), so the
 cutover changes the facade's imports, not its callers. The repository advisory
 lock is gone: each acquisition is one batch whose anchor row is written only
 when every key is free, the external work-in-progress count still matches and
@@ -156,8 +156,14 @@ def acquire_lease(
     ttl: int = FIXED_LEASE_TTL_SECONDS,
     *,
     external_wip_seen: int | None = None,
+    explicit: bool = False,
 ) -> str | None:
-    """Claim UUID on success, ``None`` on conflict or ineligibility, ``''`` without a store."""
+    """Claim UUID on success, ``None`` on conflict or ineligibility, ``''`` without a store.
+
+    The factory's own picks raise ``ClaimsPaused`` while store usage is
+    critical. An operator's explicit target (``explicit``) is never paused by
+    usage; an exhausted store still refuses it.
+    """
     if not WORKER_RE.fullmatch(worker) or not numbers or any(n <= 0 for n in numbers):
         raise ValueError("invalid factory lease target or worker")
     if not 60 <= ttl <= 86400:
@@ -165,6 +171,8 @@ def acquire_lease(
     if not core.enabled():
         _unconfigured("trusted factory dispatcher requires the factory store")
         return ""
+    if not explicit:
+        core.refuse_if_paused()
     from factory_turso_operations import eligible_source
 
     db = core.store()

@@ -52,8 +52,9 @@ def test_bad_claims_are_refused(worker: str, number: int, ttl: int, distinct: st
         ledger.acquire_slot("acme/widgets", worker, number, ["attempt-1"], ttl, distinct=distinct)
 
 
-def test_without_neon_racing_is_refused(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.delenv("FACTORY_STATE_DSN_FILE", raising=False)
+def test_without_the_store_racing_is_refused(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv("FACTORY_STATE_SQLITE", raising=False)
+    monkeypatch.delenv("FACTORY_TURSO_URL", raising=False)
     answer = ledger.acquire_slot("acme/widgets", "3", 239, ["attempt-1", "piece-api"], 600)
     assert answer == {"status": "conflict", "reason": "ledger_disabled"}
     assert ledger.slot_holders("acme/widgets", 239) == []

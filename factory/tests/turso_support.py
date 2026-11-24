@@ -193,3 +193,85 @@ def uncapped_workers(count_: int) -> list[str]:
     caps = importlib.import_module("factory_source_budget").load_budgets()
     pool = [w for source, ws in workers_by_source().items() if source not in caps for w in ws]
     return pool[:count_]
+
+
+def use_roster(monkeypatch: Any, names: dict[str, tuple[str, str]]) -> None:
+    """Pin the trusted worker roster everywhere the store modules read it."""
+    names_ = ("factory_turso_operations", "factory_turso_exports", "factory_turso_runtime")
+    modules = [importlib.import_module(name) for name in names_]
+    for module in modules:
+        monkeypatch.setattr(module, "roster", lambda: dict(names))
+
+
+def backoff(
+    db: Any,
+    repo: str,
+    kind: str,
+    *,
+    source: str = "",
+    model: str = "",
+    worker: str = "",
+    outcome: str = "",
+    streak: int = 0,
+    retry_in: int | None = None,
+    expires_in: int = 90 * 86400,
+    detail: dict[str, Any] | None = None,
+) -> str:
+    """Seed one backoff row under the key the production writers use; returns the key."""
+    import json
+
+    key = {
+        "worker": f"factory-worker-backoff-v1:{repo}:worker:{worker}",
+        "model": f"factory-model-backoff-v1:{repo}:source:{source}:model:{model}",
+        "provider": f"factory-provider-backoff-v1:{repo}:source:{source}",
+        "pool": f"factory-credit-pool-v1:{repo}:source:{source}",
+    }[kind]
+    db.batch(
+        [
+            (
+                "INSERT INTO factory_backoff (backoff_key, repo, kind, source, model, worker,"
+                " outcome, streak, next_retry_at, expires_at, updated_at, detail)"
+                " VALUES (:key, :repo, :kind, :source, :model, :worker, :outcome, :streak,"
+                " CASE WHEN :retry IS NULL THEN NULL ELSE unixepoch() + :retry END,"
+                " unixepoch() + :expires, unixepoch(), :detail)",
+                {
+                    "key": key,
+                    "repo": repo,
+                    "kind": kind,
+                    "source": source,
+                    "model": model,
+                    "worker": worker,
+                    "outcome": outcome,
+                    "streak": streak,
+                    "retry": retry_in,
+                    "expires": expires_in,
+                    "detail": json.dumps(detail or {"suspended": False}),
+                },
+            )
+        ]
+    )
+    return key
+
+
+def health(
+    db: Any, repo: str, source: str, model: str, status: str, until_in: int | None, **extra: Any
+) -> None:
+    db.batch(
+        [
+            (
+                "INSERT INTO factory_model_health (repo, source, model, status, last_outcome,"
+                " cooldown_until, last_run_id, updated_at) VALUES (:repo, :source, :model, :status,"
+                " :outcome, CASE WHEN :until IS NULL THEN NULL ELSE unixepoch() + :until END,"
+                " :run, unixepoch())",
+                {
+                    "repo": repo,
+                    "source": source,
+                    "model": model,
+                    "status": status,
+                    "outcome": extra.get("outcome"),
+                    "until": until_in,
+                    "run": extra.get("run_id", 0),
+                },
+            )
+        ]
+    )

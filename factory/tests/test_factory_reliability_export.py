@@ -41,5 +41,6 @@ def test_summary_counts_deliveries_idles_and_failure_reasons():
 
 def test_status_pages_publish_the_snapshot():
     workflow = (ROOT.parent / '.github/workflows/factory-status-pages.yml').read_text()
-    assert 'export-reliability > site/factory-stats.json.tmp' in workflow
+    assert 'factory_state_operations.py export-reliability' in workflow
+    assert "| jq '.counts_generated_at = .generated_at' > site/factory-stats.json.tmp" in workflow
     assert 'publish_snapshot site/factory-stats.json factory-stats.json' in workflow

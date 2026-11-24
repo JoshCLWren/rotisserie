@@ -25,8 +25,8 @@ jobs:
     cache-mode: read
     uses: JoshCLWren/rotisserie/.github/workflows/factory-status-pages.yml@main
     secrets:
-      NEON_API_KEY: ${{ secrets.NEON_API_KEY }}
+      FACTORY_TURSO_API_TOKEN: ${{ secrets.FACTORY_TURSO_API_TOKEN }}
+      FACTORY_TURSO_TOKEN: ${{ secrets.FACTORY_TURSO_TOKEN }}
+      FACTORY_TURSO_URL: ${{ secrets.FACTORY_TURSO_URL }}
       OMNIROUTE_API_KEY: ${{ secrets.OMNIROUTE_API_KEY }}
       OMNIROUTE_MANAGEMENT_API_KEY: ${{ secrets.OMNIROUTE_MANAGEMENT_API_KEY }}
-      FACTORY_TURSO_API_TOKEN: ${{ secrets.FACTORY_TURSO_API_TOKEN }}
-      FACTORY_TURSO_URL: ${{ secrets.FACTORY_TURSO_URL }}

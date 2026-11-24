@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """One authoritative mapping from factory quota sources to OpenCode providers.
 
-Factory source keys remain stable for budgets and Neon. The provider/model
+Factory source keys remain stable for budgets and the factory store. The provider/model
 selector and compatible API configuration are derived from this registry.
 Published upstream model IDs are passed through without prefix rewriting.
 """

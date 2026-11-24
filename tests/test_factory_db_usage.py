@@ -74,11 +74,11 @@ def read(fetch: Any, now: datetime = NOW, env: dict[str, str] = ENV) -> dict[str
     return result
 
 
-def test_an_empty_database_is_ok_and_not_in_use_yet() -> None:
+def test_an_empty_database_is_ok_and_in_use() -> None:
     fetch, calls = fake_api(counts())
-    report = read(fetch, env={**ENV, "FACTORY_NEON_CONFIGURED": "true"})
+    report = read(fetch)
     assert report["status"] == "ok"
-    assert report["label"] == "not in use yet" and report["in_use"] is False
+    assert report["label"] == "" and report["in_use"] is True
     assert report["allowance_source"] == "turso plan free"
     assert report["metrics"]["rows_read"]["allowance"] == 500_000_000
     assert report["resets_at"] == "2026-12-01T00:00:00+00:00"
@@ -88,10 +88,10 @@ def test_an_empty_database_is_ok_and_not_in_use_yet() -> None:
     assert "secret-token" not in json.dumps(report) and "acme" not in json.dumps(report)
 
 
-def test_after_cutover_the_label_goes_away() -> None:
+def test_without_a_store_url_the_store_is_not_in_use() -> None:
     fetch, _ = fake_api(counts())
-    report = read(fetch, env={**ENV, "FACTORY_NEON_CONFIGURED": "false"})
-    assert report["in_use"] is True and report["label"] == ""
+    report = read(fetch, env={**ENV, "FACTORY_TURSO_URL": ""})
+    assert report["in_use"] is False and report["label"] == "not in use yet"
 
 
 def test_projection_over_seventy_percent_warns() -> None:
@@ -257,11 +257,11 @@ def test_doctor_line_reads_only_the_published_value() -> None:
     assert status == "fail" and "rows written" in text and "new claims pause" in hint
     fetch, _ = fake_api(counts())
     status, text, _ = db_usage.health(stats_with(read(fetch)), NOW + timedelta(minutes=10))
-    assert status == "ok" and text.startswith("not in use yet: rows read 0 of 500.0M")
+    assert status == "ok" and text.startswith("rows read 0 of 500.0M")
     status, text, _ = db_usage.health(stats_with(read(fetch)), NOW + timedelta(hours=2))
     assert status == "warn" and text.startswith("published Turso usage is stale")
     assert db_usage.health(stats_with(None), NOW)[0] == "ok"
-    assert db_usage.health(None, NOW)[1] == "no Turso usage published yet (not in use yet)"
+    assert db_usage.health(None, NOW)[1] == "no Turso usage published yet"
 
 
 def run_cli(
@@ -300,7 +300,7 @@ def test_cli_shows_the_published_value_as_json(monkeypatch: pytest.MonkeyPatch) 
 def test_cli_text_and_live_without_a_token(monkeypatch: pytest.MonkeyPatch) -> None:
     fetch, _ = fake_api(counts())
     code, out, _ = run_cli(monkeypatch, ["db-usage"], stats_with(read(fetch)))
-    assert code == 0 and "Turso usage: ok (not in use yet)" in out and "rows read" in out
+    assert code == 0 and "Turso usage: ok" in out and "not in use" not in out and "rows read" in out
     monkeypatch.delenv("FACTORY_TURSO_API_TOKEN", raising=False)
     monkeypatch.delenv("FACTORY_TURSO_URL", raising=False)
     code, out, calls = run_cli(monkeypatch, ["db-usage", "--live", "--json"], {})

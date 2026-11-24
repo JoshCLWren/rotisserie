@@ -71,10 +71,10 @@ def test_post_session_cleanup_runs_under_worker_lock() -> None:
     assert workflow["concurrency"]["cancel-in-progress"] is False
     assert cleanup["runs-on"] == "ubuntu-latest"
     assert own_steps(cleanup)[0]["with"] == {"ref": "main", "persist-credentials": False}
-    assert own_steps(cleanup)[2]["uses"] == "./.github/actions/factory-state-cache"
+    assert own_steps(cleanup)[2]["uses"] == "./.github/actions/factory-store"
     assert own_steps(cleanup)[2]["with"] == {
-        "neon-api-key": "${{ secrets.NEON_API_KEY }}",
-        "neon-project-id": "${{ vars.NEON_PROJECT_ID }}",
+        "url": "${{ secrets.FACTORY_TURSO_URL }}",
+        "token": "${{ secrets.FACTORY_TURSO_TOKEN }}",
     }
     release = own_steps(cleanup)[3]
     assert "post-session-exit-run-${GITHUB_RUN_ID}" in release["run"]
@@ -82,7 +82,7 @@ def test_post_session_cleanup_runs_under_worker_lock() -> None:
     assert cleanup["permissions"] == {
         "contents": "read", "issues": "write", "pull-requests": "write",
     }
-    assert "factory-state-cache" not in json.dumps(workflow["jobs"]["factory"])
+    assert "factory-store" not in json.dumps(workflow["jobs"]["factory"])
 
 
 def test_post_session_cleanup_executes_token_bound_release(tmp_path: Path) -> None:
@@ -96,7 +96,7 @@ def test_post_session_cleanup_executes_token_bound_release(tmp_path: Path) -> No
     result = subprocess.run(
         ["bash", "-c", release["run"]], cwd=tmp_path,
         env={**os.environ, "FACTORY_WORKER": worker, "GITHUB_RUN_ID": "43455638659",
-             "FACTORY_STATE_DSN_FILE": str(dsn), "FACTORY_ASSIGNMENT": '{"claim_id":"test-claim"}'},
+             "FACTORY_TURSO_TOKEN_FILE": str(dsn), "FACTORY_ASSIGNMENT": '{"claim_id":"test-claim"}'},
         capture_output=True, text=True, check=True,
     )
     assert json.loads(result.stdout) == [
@@ -116,16 +116,16 @@ def test_cleanup_uses_a_fresh_trusted_runner_and_workflow_token() -> None:
     assert checkout["with"] == {"ref": "main", "persist-credentials": False}
     assert own_steps(cleanup)[1]["uses"] == "./.github/actions/factory-syntax"
     neon = own_steps(cleanup)[2]
-    assert neon["uses"] == "./.github/actions/factory-state-cache"
+    assert neon["uses"] == "./.github/actions/factory-store"
     assert neon["with"] == {
-        "neon-api-key": "${{ secrets.NEON_API_KEY }}",
-        "neon-project-id": "${{ vars.NEON_PROJECT_ID }}",
+        "url": "${{ secrets.FACTORY_TURSO_URL }}",
+        "token": "${{ secrets.FACTORY_TURSO_TOKEN }}",
     }
     # The privileged DB action belongs to cleanup, never the model job.
-    assert "factory-state-cache" not in json.dumps(workflow["jobs"]["factory"])
+    assert "factory-store" not in json.dumps(workflow["jobs"]["factory"])
     assert "NEON_API_KEY" not in json.dumps(workflow["jobs"]["factory"])
     release = own_steps(cleanup)[3]
-    assert "FACTORY_STATE_DSN_FILE" in release["run"]
+    assert "FACTORY_TURSO_TOKEN_FILE" in release["run"]
     assert "refusing split release" in release["run"]
     assert release["env"] == {
         "GH_TOKEN": "${{ github.token }}",
@@ -155,7 +155,7 @@ def test_cleanup_calls_existing_controller_with_run_provenance(
     result = subprocess.run(
         ["bash", "-c", release["run"]], cwd=tmp_path,
         env={**os.environ, "FACTORY_WORKER": worker, "GITHUB_RUN_ID": "41323597249",
-             "FACTORY_STATE_DSN_FILE": str(dsn), "FACTORY_ASSIGNMENT": '{"claim_id":"test-claim"}'},
+             "FACTORY_TURSO_TOKEN_FILE": str(dsn), "FACTORY_ASSIGNMENT": '{"claim_id":"test-claim"}'},
         capture_output=True, text=True, check=True,
     )
     assert json.loads(result.stdout) == [
@@ -192,7 +192,7 @@ def test_cleanup_rejects_unknown_decimal_worker_before_invoking_controller(
     result = subprocess.run(
         ["bash", "-c", release["run"]], cwd=tmp_path,
         env={**os.environ, "FACTORY_WORKER": "1000", "GITHUB_RUN_ID": "41323597249",
-             "FACTORY_STATE_DSN_FILE": str(dsn), "FACTORY_ASSIGNMENT": '{"claim_id":"c"}'},
+             "FACTORY_TURSO_TOKEN_FILE": str(dsn), "FACTORY_ASSIGNMENT": '{"claim_id":"c"}'},
         capture_output=True, text=True, check=False,
     )
     assert result.returncode != 0
@@ -210,12 +210,12 @@ def test_cleanup_refuses_label_release_without_neon_connection(tmp_path: Path) -
     result = subprocess.run(
         ["bash", "-c", release["run"]], cwd=tmp_path,
         env={**os.environ, "FACTORY_WORKER": "104", "GITHUB_RUN_ID": "41323597249",
-             "FACTORY_STATE_DSN_FILE": ""},
+             "FACTORY_TURSO_TOKEN_FILE": ""},
         capture_output=True, text=True, check=False,
     )
     assert result.returncode == 1
     assert result.stdout == ""
-    assert "Neon factory lease connection missing" in result.stderr
+    assert "Factory store connection missing" in result.stderr
 
 
 def _load_controller_release(helpers: dict[str, object]):

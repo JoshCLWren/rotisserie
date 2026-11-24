@@ -79,7 +79,7 @@ module that `rotisserie web` uses.
 | Workflow | Accepts | Token |
 | --- | --- | --- |
 | `rotisserie-operator.yml` | one write operation (`run`, `claim`, `settings`, ...) | issues, pull requests and actions write |
-| `rotisserie-operator-read.yml` | `{"operation": "read", "reads": [...]}`, up to 8 read commands | read-only, plus the Neon lease store |
+| `rotisserie-operator-read.yml` | `{"operation": "read", "reads": [...]}`, up to 8 read commands | read-only, plus the factory store (read-only token) |
 
 Each run writes one JSON result and uploads it as the artifact
 `rotisserie-operator-<run id>` (kept one day), also when the command is
@@ -146,7 +146,7 @@ tracker also shows Estimate. The PR workbench reads checks for a PR or for
 asks for a reason and a confirmation. The Diagnostics page reads the GitHub API
 limits and the backoffs, and resets quota backoffs after a confirmation. Both
 backoff controls go through the trusted workflows (`--via github`) locally; the
-hosted read workflow reads backoffs from Neon directly. Run history lists the
+hosted read workflow reads backoffs from the factory store directly. Run history lists the
 failed worker runs of the last 10 hours. Test factory store and Back up factory
 store start `baste store selftest` and `baste store export` with
 `--no-wait`. Migrate store (dry run) starts `baste store migrate --dry-run`,
@@ -409,7 +409,7 @@ labels (`bug`, `user-reported`, `code-debt`, `frontend`), then the same issue
 size. The command drops size first, then labels, and needs at least six
 similar finished items. With fewer it says so and gives no number. Items still
 open are not counted, so the chance is optimistic. By default it reads only
-GitHub and `factory-stats.json`, never Neon. The web UI runs it as the
+GitHub and `factory-stats.json`, never the factory store. The web UI runs it as the
 `estimate` read (the Estimate button in the Item tracker).
 
 GitHub shows only the first and last 100 label changes of an item, so the
@@ -423,7 +423,7 @@ worker runs. `estimate issue:N --via github` reads exact history instead:
   ran (no exit code and no duration) collapse to one counted row per run and
   outcome class before the row cap, so a refusal burst of hundreds of rows
   does not use up the cap. It publishes per-item counts only: no claim UUIDs,
-  logins, prompts or failure log tails. This machine never connects to Neon.
+  logins, prompts or failure log tails. This machine never connects to the factory store.
 - An attempt is one worker run that reached a model: a model row that ran
   with an attempt class, or a delivered run. A catalog refusal (a model row
   that never ran) or a capacity answer is counted as a refusal and is never
@@ -434,17 +434,17 @@ worker runs. `estimate issue:N --via github` reads exact history instead:
   not know counts as an attempt, and the output names it. An owner claim
   through `factory:claimed` (client `label`) and an operator revocation count
   as a person; an outside agent's claim does not.
-- Neon replaces only the attempt counts and person signals. Similar items,
+- The store replaces only the attempt counts and person signals. Similar items,
   merge facts and `factory:blocked` still come from GitHub. The window covers
   an item when its first factory claim (or its pull request) falls inside it,
-  whatever the issue's age. An item with no Neon run in the window (it
+  whatever the issue's age. An item with no store run in the window (it
   started earlier, or no run was recorded) keeps its marker count, and the
   output says how many did. A recorded owner claim counts either way.
 - If the run cannot start, fails, or returns no usable history (for example,
   an adopter whose installed caller does not list the mode yet), the estimate
   falls back to GitHub and says why. The output always names its source.
 - `--no-wait` starts the run and prints its ID; `--run ID` uses that run's
-  history later. The web UI's Exact estimate (Neon) button does both and shows
+  history later. The web UI's Exact estimate (store) button does both and shows
   the result in the Item tracker. The hosted control room can start the run
   through the operator workflow but cannot show the result until it has a
   signed-in read path.
@@ -557,11 +557,11 @@ replaces the hand-run `sync_watch.py` watcher, which is retired and must not be
 restarted. One implementation (`factory_branch_sync.py` in the factory runtime)
 serves the scheduler, `sync`, `unstick --yes` and `doctor --fix`.
 
-- **Ownership comes from Neon leases.** A sync first takes a short (5 min)
-  operation lease on the PR's Neon target key, which is the key a worker claim
+- **Ownership comes from store leases.** A sync first takes a short (5 min)
+  operation lease on the PR's store target key, which is the key a worker claim
   checks. No worker can be assigned the PR mid-sync, and a PR a worker holds is
-  never touched. Owner labels are used only where Neon cannot be reached, and
-  then every result says "Neon leases were not consulted".
+  never touched. Owner labels are used only where the factory store cannot be reached, and
+  then every result says "store leases were not consulted".
 - **Never overwrites work.** The write is GitHub's update-branch with
   `expected_head_sha`: if a worker pushed since the snapshot, GitHub refuses and
   the result is `head-moved`. It never force-pushes and never pushes to the
@@ -572,9 +572,9 @@ serves the scheduler, `sync`, `unstick --yes` and `doctor --fix`.
 - **Results** per PR: `synced`, `held-by-worker`, `already-current`,
   `conflicts`, `head-moved`, `closed` or `error`, each with a sentence of text.
   `--json` prints them as data.
-- **Where it runs.** On a laptop without Neon, `sync --yes` *queues* each PR
+- **Where it runs.** On a laptop without the factory store, `sync --yes` *queues* each PR
   with the `factory-sync-main` label. The dispatcher's routine pass, "Sync queued
-  factory PRs with main under Neon leases", performs queued syncs under a lease
+  factory PRs with main under store leases", performs queued syncs under a lease
   (at most 5 writes per tick) and removes the label once a PR is synced,
   current, conflicting or closed. `--now` syncs right away on owner labels
   alone. `--contains SHA` treats a PR whose head already has that commit as done.
@@ -587,8 +587,8 @@ serves the scheduler, `sync`, `unstick --yes` and `doctor --fix`.
   queued costs one list call.
 
 `baste leases [pr:N ...]` shows who holds what: every worker and
-target lease row from Neon (active or expired, with its claim and holder) where
-Neon is reachable (`FACTORY_STATE_DSN_FILE` set and the ledger importable).
+target lease row from the factory store (active or expired, with its claim and holder) where
+the store is reachable (`FACTORY_TURSO_URL` set and the ledger importable).
 Otherwise it says leases are visible only to the trusted runtime and shows owner
 labels instead. `leases --release-expired` deletes lease rows that expired over
 an hour ago. Expired rows already block nothing, so this is cleanup only and
@@ -718,13 +718,16 @@ the split. The published value holds counts, status and dates only.
 Projections are a straight line from the month so far to month end, from at
 least one elapsed day. Storage is compared as it stands. Allowances come from
 the organization's plan quotas (`/plans`), or the documented free plan when
-those are missing. Until the cutover (D4) removes `NEON_PROJECT_ID`, every
-view labels the usage "not in use yet".
+those are missing. A workflow without the store URL labels the usage "not in
+use yet".
 
 `pause_new_claims(report, error)` in `factory_turso_usage.py` returns a pause
-when the status is critical or a database error says `BLOCKED`. The Turso
-persistence code calls it before a new claim. Nothing on the Neon path calls
-it. Unknown, stale or unconfigured usage never pauses.
+when the status is critical or a database error says `BLOCKED`. The dispatcher
+saves the published report to `FACTORY_DB_USAGE_FILE`, and `acquire_lease` and
+`acquire_slot` raise `ClaimsPaused` at critical usage, so the factory starts no
+new work. An operator's explicit target, renewals, releases and outside-agent
+claims are not paused by usage; a `BLOCKED` store refuses them on its own.
+Unknown, stale or unconfigured usage never pauses.
 
 Both control rooms show it on the Diagnostics page (Database usage). The
 hosted page serves it from the published snapshot without sign-in.
@@ -823,7 +826,7 @@ Controller** workflow. Full rules: [external-agent-claims.md](external-agent-cla
 
 ### Label claims from the console
 
-These commands drive the label claim controller (#191) and need no Neon
+These commands drive the label claim controller (#191) and need no store connection
 connection on your machine. Each one waits for the controller's own answer:
 
 ```bash
@@ -834,8 +837,8 @@ baste runs pr:N                 # the controller's recent runs and results
 baste follow pr:N               # print each stage change until done or held
 baste follow pr:N --once        # where it stands now
 baste labels --via github [--repair]       # label doctor report
-baste leases pr:N --via github  # who holds it in Neon
-baste why issue:N --via github  # eligibility plus the Neon holder
+baste leases pr:N --via github  # who holds it in the factory store
+baste why issue:N --via github  # eligibility plus the store holder
 ```
 
 `wait-for-work` never offers a review of a PR you authored, because GitHub

@@ -1,7 +1,7 @@
 """Read-only ranked execution frontier for agents outside the factory fleet.
 
 All eligibility and ordering come from the installed controller's work policy.
-A candidate is never a lease, and missing Neon evidence cannot be treated as
+A candidate is never a lease, and missing store evidence cannot be treated as
 a free claim. The write boundary belongs to the trusted controller, not here.
 """
 
@@ -61,7 +61,7 @@ class Frontier:
         return {
             **asdict(self),
             "requires_claim": True,
-            "claim_authority": "trusted Rotisserie controller / Neon fenced lease",
+            "claim_authority": "trusted Rotisserie controller / store fenced lease",
             "disclaimer": (
                 "Candidates are read-only. A GitHub label or this response does not "
                 "reserve work. Requery and acquire a trusted fenced claim before acting."
@@ -78,7 +78,7 @@ def _active_leases(repository: str) -> tuple[dict[int, dict[str, object]], str]:
         rows: list[dict[str, Any]] = ledger.list_leases(repository)
         leases = _target_leases(repository, rows)
     except Exception as exc:
-        return {}, f"Neon lease state unavailable ({type(exc).__name__})"
+        return {}, f"store lease state unavailable ({type(exc).__name__})"
     return leases, ""
 
 
@@ -92,10 +92,10 @@ def _target_leases(repository: str, rows: list[dict[str, Any]]) -> dict[int, dic
             continue  # Worker rows share target lists, but are not target leases.
         number_text = key.removeprefix(prefix)
         if not number_text.isascii() or not number_text.isdecimal():
-            raise ValueError("Neon ledger returned an invalid target lease key")
+            raise ValueError("store ledger returned an invalid target lease key")
         number = int(number_text)
         if number <= 0 or number in leases:
-            raise ValueError("Neon ledger returned a duplicate or invalid target")
+            raise ValueError("store ledger returned a duplicate or invalid target")
         # Expired rows remain holds until trusted liveness reconciliation.
         leases[number] = {
             "claim_id": str(row.get("claim_id", "")),
@@ -200,7 +200,7 @@ def from_snapshot(
         claimed = [n for n in touched if n in active_targets]
         if claimed:
             blockers.append(
-                "Existing or unreconciled Neon lease on " + ", ".join(f"#{n}" for n in claimed)
+                "Existing or unreconciled store lease on " + ", ".join(f"#{n}" for n in claimed)
             )
         dependencies: set[int] = set()
         if kind == "issue" and issue_hold:
@@ -325,20 +325,20 @@ def from_snapshot(
         instant.isoformat(),
         (instant + FRESH_FOR).isoformat(),
         not bool(lease_problem),
-        lease_problem or "Neon leases inspected, but no work has been reserved",
+        lease_problem or "store leases inspected, but no work has been reserved",
         tuple(offers),
         tuple(holds),
     )
 
 
 def capture(github: GitHub, *, now: datetime) -> Frontier:
-    """Read existing GitHub/controller eligibility, ranking and Neon lease state."""
+    """Read existing GitHub/controller eligibility, ranking and store lease state."""
     variables = providers.repository_variables(github)
     summary = queue.summarize_queue(github, now=int(now.timestamp()), variables=variables)
     board = summary.board
     # This is precisely the installed factory policy's deterministic candidate
     # order. In-flight Jev overrides remain controller-owned, never simulated.
-    # Shared Neon target keys record external ownership; count each linked
+    # Shared store target keys record external ownership; count each linked
     # PR/issue claim only once when enforcing the normal WIP gate.
     leases, problem = _active_leases(github.repo)
     if len(board.issues) >= 1000 or len(board.prs) >= 500:

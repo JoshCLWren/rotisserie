@@ -67,9 +67,16 @@ def _job_permissions(reusable: dict) -> list[dict]:
     return blocks
 
 
+# NEON_API_KEY stays declared in store workflows until adopters re-run the
+# installer, so old callers fail closed; new callers never pass it there.
+TRANSITIONAL = "Kept until every adopter re-runs the installer"
+
+
 def _secrets_used(name: str) -> set[str]:
     text = (REUSABLE / name).read_text(encoding="utf-8")
     used = set(re.findall(r"secrets\.([A-Z0-9_]+)", text)) - {"GITHUB_TOKEN"}
+    if TRANSITIONAL in text:
+        used.discard("NEON_API_KEY")
     for local in re.findall(r"uses: \./\.github/workflows/(\S+)", text):
         used |= _secrets_used(local)
     return used
@@ -100,6 +107,8 @@ def test_caller_is_thin_and_matches_its_reusable_workflow(caller: Path) -> None:
         suffix = " == true }}" if kind == "boolean" else " }}"
         assert value == f"${{{{ inputs.{name}{suffix}"
     declared = set(call.get("secrets") or {})
+    if TRANSITIONAL in (REUSABLE / caller.name).read_text(encoding="utf-8"):
+        declared.discard("NEON_API_KEY")
     assert declared == _secrets_used(caller.name)
     assert job.get("secrets", {}) == {name: f"${{{{ secrets.{name} }}}}" for name in declared}
     granted = workflow["permissions"]

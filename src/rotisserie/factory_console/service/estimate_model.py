@@ -35,7 +35,7 @@ HUMAN_SIGNALS = {
     "owner_claim": "the owner claimed it (factory:claimed or factory:local)",
     "blocked": "it was parked in factory:blocked",
     "person_wrote": "a person wrote the change (author marker says model-human)",
-    "operator_revoked": "an operator revoked a claim on it (Neon history only)",
+    "operator_revoked": "an operator revoked a claim on it (store history only)",
 }
 
 

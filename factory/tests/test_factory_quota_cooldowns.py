@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import asyncio
 import io
 import json
 import sys
@@ -19,64 +18,18 @@ sys.path.insert(0, str(ROOT / ".github" / "scripts"))
 import factory_quota_probe as probe  # noqa: E402
 import factory_quota_reset as reset  # noqa: E402
 import factory_state_operations as operations  # noqa: E402
-import factory_state_operations_core as core  # noqa: E402
 
-REPO = "acme/widgets"
+from tests import turso_support as support  # noqa: E402
+
 OBSERVED = datetime(2026, 11, 24, 15, 30, tzinfo=UTC)
 MIDNIGHT = datetime(2026, 11, 25, tzinfo=UTC)
 
 
-class Recorder:
-    def __init__(self, rows=()):
-        self.writes: list[tuple[str, tuple]] = []
-        self.rows = list(rows)
-        self.keys: set[int] = set()
-
-    def transaction(self):
-        class Tx:
-            async def __aenter__(self):
-                return self
-
-            async def __aexit__(self, *exc):
-                return False
-
-        return Tx()
-
-    async def execute(self, query, *args):
-        self.writes.append((query, args))
-
-    async def fetchval(self, query, *args):
-        if "factory_runtime_event_keys" in query:
-            if args[1] in self.keys:
-                return None
-            self.keys.add(args[1])
-            return args[1]
-        return None
-
-    async def fetchrow(self, query, *args):
-        return None
-
-    async def fetch(self, query, *args):
-        if "factory_state_kv" in query:
-            return [
-                r for r in self.rows if str(r.get("cache_key", "")).startswith(args[0].rstrip("%"))
-            ]
-        return []
-
-    def kv(self, prefix):
-        return {
-            a[0]: (json.loads(a[1]), a[2] if len(a) > 2 else None)
-            for q, a in self.writes
-            if "INSERT INTO public.factory_state_kv" in q and str(a[0]).startswith(prefix)
-        }
-
-    def health(self):
-        return [a for q, a in self.writes if "INSERT INTO public.factory_model_health" in q]
-
-
 @pytest.fixture
-def nvidia_worker(monkeypatch):
-    monkeypatch.setattr(core, "_roster", lambda: {"7": ("nvidia", "")})
+def store(tmp_path, monkeypatch):
+    with support.bound("file", tmp_path / "state.sqlite", monkeypatch) as (db, repo):
+        support.use_roster(monkeypatch, {"7": ("nvidia", "")})
+        yield db, repo
 
 
 def outcome(run_id: int, cls: str, **extra) -> dict:
@@ -92,24 +45,40 @@ def outcome(run_id: int, cls: str, **extra) -> dict:
     }
 
 
-def project(conn, run_id, out):
-    return asyncio.run(operations.project_runtime(conn, REPO, run_id, out))
+def project(store, run_id, out):
+    _, repo = store
+    return operations.record_runtime(repo, run_id, out)
 
 
-def test_quota_never_grows_a_streak_and_cools_the_account_until_reset(nvidia_worker):
-    conn = Recorder()
+def backoffs(store, kind: str) -> list[dict]:
+    db, repo = store
+    return db.read(
+        "SELECT * FROM factory_backoff WHERE repo = :r AND kind = :k", {"r": repo, "k": kind}
+    )
+
+
+def health(store) -> list[tuple[str, str]]:
+    db, repo = store
+    rows = db.read(
+        "SELECT model, last_outcome FROM factory_model_health WHERE repo = :r ORDER BY model",
+        {"r": repo},
+    )
+    return [(r["model"], r["last_outcome"]) for r in rows]
+
+
+def test_quota_never_grows_a_streak_and_cools_the_account_until_reset(store):
     for run_id in (11, 12, 13):
-        assert project(conn, run_id, outcome(run_id, "provider_quota"))
-    assert not conn.kv("factory-model-backoff-v1:")
-    assert not conn.kv("factory-worker-backoff-v1:")
-    ((state, until),) = {k: v for k, v in conn.kv("factory-provider-backoff-v1:").items()}.values()
-    assert state[0]["outcome"] == "provider_quota" and "streak" not in state[0]
-    assert state[0]["reset_source"] == "policy"
+        assert project(store, run_id, outcome(run_id, "provider_quota"))
+    assert not backoffs(store, "model")
+    assert not backoffs(store, "worker")
+    (row,) = backoffs(store, "provider")
+    assert row["outcome"] == "provider_quota" and row["streak"] == 0
+    assert json.loads(row["detail"])["reset_source"] == "policy"
+    until = datetime.fromtimestamp(row["expires_at"], UTC)
     assert until.hour == 0 and until.minute == 0 and until > datetime.now(UTC)
 
 
-def test_throttle_cools_only_the_refused_model(nvidia_worker):
-    conn = Recorder()
+def test_throttle_cools_only_the_refused_model(store):
     epoch = int((datetime.now(UTC) + timedelta(seconds=90)).timestamp())
     hint = {
         "source": "nvidia",
@@ -119,36 +88,33 @@ def test_throttle_cools_only_the_refused_model(nvidia_worker):
         "reset_at": epoch,
         "reset_source": "header",
     }
-    assert project(conn, 21, outcome(21, "provider_throttle", quota_hints=[hint]))
-    assert not conn.kv("factory-provider-backoff-v1:")
-    assert not conn.kv("factory-model-backoff-v1:")
-    assert [(a[2], a[3]) for a in conn.health()] == [("vendor/m", "provider_throttle")]
+    assert project(store, 21, outcome(21, "provider_throttle", quota_hints=[hint]))
+    assert not backoffs(store, "provider")
+    assert not backoffs(store, "model")
+    assert health(store) == [("vendor/m", "provider_throttle")]
 
 
-def test_real_failure_still_grows_a_capped_streak(nvidia_worker):
-    conn = Recorder()
-    assert project(conn, 31, outcome(31, "agent_timeout", exact_model_proven=True))
-    ((state, _),) = conn.kv("factory-model-backoff-v1:").values()
-    assert state[0]["streak"] == 1
+def test_real_failure_still_grows_a_capped_streak(store):
+    assert project(store, 31, outcome(31, "agent_timeout", exact_model_proven=True))
+    (row,) = backoffs(store, "model")
+    assert row["streak"] == 1
     assert operations.fibonacci_worker_delay(40) == 86400
     assert operations.fibonacci_retry_at(OBSERVED, 40) == OBSERVED + timedelta(days=1)
 
 
-def test_pool_refusal_cools_priced_models_only(nvidia_worker):
-    conn = Recorder()
+def test_pool_refusal_cools_priced_models_only(store):
     failures = [
         {"source": "nvidia", "model": "vendor/paid", "outcome": "provider_quota", "scope": "pool"}
     ]
     assert project(
-        conn, 41, outcome(41, "success", exact_model_proven=True, model_failures=failures)
+        store, 41, outcome(41, "success", exact_model_proven=True, model_failures=failures)
     )
-    assert conn.kv("factory-credit-pool-v1:")
-    assert not conn.kv("factory-provider-backoff-v1:")
-    assert [a[2] for a in conn.health() if a[3] == "provider_quota"] == ["vendor/paid"]
+    assert backoffs(store, "pool")
+    assert not backoffs(store, "provider")
+    assert [m for m, o in health(store) if o == "provider_quota"] == ["vendor/paid"]
 
 
-def test_oversized_request_sets_no_cooldown(nvidia_worker):
-    conn = Recorder()
+def test_oversized_request_sets_no_cooldown(store):
     hint = {
         "source": "nvidia",
         "model": "vendor/m",
@@ -157,8 +123,8 @@ def test_oversized_request_sets_no_cooldown(nvidia_worker):
         "reset_at": 0,
         "reset_source": "text",
     }
-    assert project(conn, 51, outcome(51, "provider_quota", quota_hints=[hint]))
-    assert not conn.kv("factory-provider-backoff-v1:") and not conn.kv("factory-model-backoff")
+    assert project(store, 51, outcome(51, "provider_quota", quota_hints=[hint]))
+    assert not backoffs(store, "provider") and not backoffs(store, "model")
 
 
 @pytest.mark.parametrize(
@@ -238,30 +204,16 @@ def test_legacy_quota_fibonacci_rows_no_longer_gate_and_old_rows_are_capped():
     assert effective_retry_at(real, OBSERVED) == OBSERVED + timedelta(days=1)
 
 
-def test_fleet_failover_and_exclusions_honor_capacity_cooldowns(monkeypatch):
+def test_fleet_failover_and_exclusions_honor_capacity_cooldowns(store, monkeypatch):
     import factory_source_budget
 
-    monkeypatch.setattr(core, "_roster", lambda: {"7": ("nvidia", "")})
+    db, repo = store
     monkeypatch.setattr(factory_source_budget, "load_budgets", lambda: {})
-    later = datetime.now(UTC) + timedelta(hours=2)
-    conn = Recorder(
-        rows=[
-            {
-                "cache_key": f"factory-provider-backoff-v1:{REPO}:source:groq-free",
-                "payload": [{"outcome": "provider_quota"}],
-                "expires_at": later,
-            },
-            {
-                "cache_key": f"factory-credit-pool-v1:{REPO}:source:z-ai",
-                "payload": [{"outcome": "provider_quota"}],
-                "expires_at": later,
-            },
-        ]
-    )
-    sources = asyncio.run(operations._export_fleet_failover_sources(conn, REPO, "7"))
+    for kind, source in (("provider", "groq-free"), ("pool", "z-ai")):
+        support.backoff(db, repo, kind, source=source, outcome="provider_quota", expires_in=7200)
+    sources = operations.export_fleet_failover_sources(repo, "7")
     assert "groq-free" not in sources and "z-ai" in sources and "nvidia" in sources
-    exclusions = asyncio.run(operations._export_model_exclusions(conn, REPO))
-    assert exclusions["@credit_pool"] == ["z-ai"]
+    assert operations.export_model_exclusions(repo)["@credit_pool"] == ["z-ai"]
 
 
 def test_failover_skips_priced_models_of_a_credit_cooled_source():
@@ -274,8 +226,15 @@ def test_failover_skips_priced_models_of_a_credit_cooled_source():
         ]
     }
     picks = {
-        select_next("nvidia", "7", set(), {"@credit_pool": ["nvidia"]},
-                    catalog_json=catalog, proven=set(), rotation=r)["model"]
+        select_next(
+            "nvidia",
+            "7",
+            set(),
+            {"@credit_pool": ["nvidia"]},
+            catalog_json=catalog,
+            proven=set(),
+            rotation=r,
+        )["model"]
         for r in range(12)
     }
     assert picks == {"free"}
@@ -445,9 +404,9 @@ def test_agent_prose_never_becomes_a_reset_hint():
     )
 
 
-def test_no_capacity_is_never_a_worker_failure(nvidia_worker):
-    conn = Recorder()
-    assert project(conn, 31, outcome(31, "no_capacity"))
-    (metrics,) = [a for q, a in conn.writes if "INSERT INTO public.factory_worker_metrics" in q]
-    assert metrics[6] == 0
-    assert not conn.kv("factory-worker-backoff-v1:")
+def test_no_capacity_is_never_a_worker_failure(store):
+    db, repo = store
+    assert project(store, 31, outcome(31, "no_capacity"))
+    rows = db.read("SELECT failures FROM factory_worker_metrics WHERE repo = :r", {"r": repo})
+    assert rows == [{"failures": 0}]
+    assert not backoffs(store, "worker")

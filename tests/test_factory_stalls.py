@@ -243,7 +243,7 @@ class Runs:
         return {
             "jobs": [
                 {
-                    "name": "Persist trusted worker outcome in Neon",
+                    "name": "Persist trusted worker outcome in the store",
                     "steps": [
                         {
                             "name": "Classify and persist this completed worker",

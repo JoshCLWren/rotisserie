@@ -79,7 +79,7 @@ def leases(
     *,
     started: dict[str, object] | None = None,
 ) -> dict[str, object]:
-    """Neon lease holders (factory and outside claims), read by the trusted workflow."""
+    """Store lease holders (factory and outside claims), read by the trusted workflow."""
     for target in targets:
         parse_target(target)
     result = bridge.run(
@@ -227,7 +227,7 @@ def claim(
     """Add ``factory:claimed`` and return the controller's answer.
 
     The label is only a request: the answer (status, claim UUID, reason) comes
-    from the trusted workflow, which takes the Neon lease or refuses.
+    from the trusted workflow, which takes the store lease or refuses.
     """
     _, number = parse_target(target)
     since = clock.now()

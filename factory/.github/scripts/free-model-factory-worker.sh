@@ -532,7 +532,7 @@ zero_exit_provider_refusal() {
 }
 record_model_failover_failure() {
   local failed_source="$1" failed_model="$2" classification="$3" scope="$4"
-  # Timestamped markers are the attested records the trusted Entry persister writes to Neon.
+  # Timestamped markers are the attested records the trusted Entry persister writes to the factory store.
   log "FACTORY_TRUSTED_FAILOVER: source=$failed_source model=$failed_model outcome=$classification scope=$scope"
   [[ "$classification" == provider_quota || "$classification" == provider_throttle ]] && log "FACTORY_QUOTA_RESET: $(python3 "$FACTORY_TRUSTED_FAILOVER_DIR/factory_quota_reset.py" hint --source "$failed_source" --model "$failed_model" --outcome "$classification" --log "/tmp/opencode-factory-$WORKER.log" --probe --probe-cache "$RUNNER_TEMP/factory-quota-probe.json" 2>/dev/null)" || true
 }
@@ -544,7 +544,7 @@ select_next_eligible_model() {
   local next_json next_source next_model next_runtime candidate_status pair provider
   local -a select_args=(--source "$ORIGINAL_SOURCE" --worker "$WORKER" \
     --rotation "${GITHUB_RUN_ID:-0}" \
-    --exclusions-file "$RUNNER_TEMP/factory-neon-model-exclusions.json" \
+    --exclusions-file "$RUNNER_TEMP/factory-trusted-model-exclusions.json" \
     --eligible-sources-file "$RUNNER_TEMP/factory-fleet-sources.json" \
     --fleet-catalog-cache "$RUNNER_TEMP/factory-fleet-catalogs.json")
   for pair in "${attempted_pairs[@]}"; do select_args+=(--attempted-pair "$pair"); done
@@ -596,7 +596,7 @@ select_next_eligible_model() {
       fi
     fi
     # The trusted FACTORY_FLEET_TRANSITION log marker below (attested from
-    # the completed job log into Neon) is the only transition record.
+    # the completed job log into the factory store) is the only transition record.
     stop_work_checkpoint
     SOURCE="$next_source"
     MODEL="$next_model"

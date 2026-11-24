@@ -185,7 +185,8 @@ def test_read_workflow_is_read_only_and_admin_gated() -> None:
         assert f"{scope}: write" not in source
     assert source.index("Authorize GitHub actor") < source.index("Check out adopter main")
     assert "ROTISSERIE_ADMIN_GITHUB_IDS" in source
-    assert "uses: ./.github/actions/factory-state-cache" in source
+    assert "uses: ./.github/actions/factory-store" in source
+    assert "token: ${{ secrets.FACTORY_TURSO_READ_TOKEN }}" in source
     assert "rotisserie.hosted_operator read --output" in source
     assert "name: rotisserie-operator-${{ github.run_id }}" in source
     assert "retention-days: 1" in source
@@ -203,11 +204,12 @@ def test_write_workflow_publishes_its_result_even_on_failure() -> None:
     assert "request_id" not in source
 
 
-def test_read_caller_passes_only_the_request_and_neon_secret() -> None:
+def test_read_caller_passes_only_the_request_and_read_only_store_secrets() -> None:
     source = (CALLERS / "rotisserie-operator-read.yml").read_text(encoding="utf-8")
     assert "workflow_dispatch:" in source
     assert "rotisserie-operator-read.yml@main" in source
-    assert "NEON_API_KEY: ${{ secrets.NEON_API_KEY }}" in source
+    assert "FACTORY_TURSO_READ_TOKEN: ${{ secrets.FACTORY_TURSO_READ_TOKEN }}" in source
+    assert "FACTORY_TURSO_TOKEN:" not in source and "NEON" not in source
     assert ": write" not in source
 
 

@@ -2,9 +2,9 @@
 """Persist Entry terminal outcomes that the in-run persister could not write.
 
 Entry's ``persist_outcome`` job downloads the completed factory job log,
-classifies it and writes the terminal outcome to Neon. When GitHub's
+classifies it and writes the terminal outcome to the factory store. When GitHub's
 installation rate limit is exhausted (runs 44031401652 and 44032359658) the
-log download fails, the job exits and no outcome ever reaches Neon. This
+log download fails, the job exits and no outcome ever reaches the store. This
 bounded reconciler, run by later Entry persisters, finds recent completed
 Entry runs without a recorded ``runtime:<run_id>`` event and classifies them
 with the same trusted code path. It is idempotent, and it stops at the first
@@ -26,7 +26,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 ENTRY_WORKFLOW = "free-model-factory-entry.yml"
 FACTORY_JOB = "run / factory"
-PERSIST_JOB = "Persist trusted worker outcome in Neon"
+# Entry runs from before the store cutover name the persister job "... in Neon".
+PERSIST_JOB = "Persist trusted worker outcome"
 # Adopters call the reusable Entry from a thin caller job named rotisserie.
 CALLER_JOB_PREFIX = "rotisserie / "
 # run-name is derived only from the trusted dispatcher's `worker` input.
@@ -87,7 +88,7 @@ def classify_run(repo: str, run: dict[str, Any], api: GhApi) -> tuple[dict[str, 
     from factory_dynamic_outcome import classify
 
     jobs = json.loads(api(f"repos/{repo}/actions/runs/{run['id']}/jobs?per_page=100")).get("jobs") or []
-    persist = [job for job in jobs if _job_name(job) == PERSIST_JOB]
+    persist = [job for job in jobs if _job_name(job).startswith(PERSIST_JOB)]
     # Only completed persisters; one still running may yet succeed itself.
     if not persist or any(job.get("status") != "completed" for job in persist):
         return None
@@ -165,7 +166,7 @@ def main() -> int:
     from factory_state_ledger import enabled, recorded_runtime_runs
 
     if not enabled():
-        print("[factory-outcome-reconcile] Neon unavailable; nothing to reconcile", file=sys.stderr)
+        print("[factory-outcome-reconcile] factory store unavailable; nothing to reconcile", file=sys.stderr)
         return 0
     summary = reconcile(
         args.repo, recorded=recorded_runtime_runs, record=_record,

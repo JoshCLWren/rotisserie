@@ -155,6 +155,25 @@ such change must be called out here and in its release notes.
 
 ### Changed
 
+- The factory runs on its libSQL (Turso) store instead of Neon (#257).
+  `factory_state_ledger.py` and `factory_state_operations.py` keep their
+  public names and command lines and call the `factory_turso_*` modules. The
+  Neon modules, the `factory-state-cache` action and the factory's asyncpg
+  dependency are gone. Trusted jobs get the new `factory-store` action: the
+  `FACTORY_TURSO_URL` secret and a 0600 token file (`FACTORY_TURSO_TOKEN`, or
+  `FACTORY_TURSO_READ_TOKEN` for the read-only operator read and frontier
+  workflows), removed by each job's last step. `FACTORY_STATE_REQUIRED`
+  replaces `FACTORY_NEON_LEASE_REQUIRED` and `FACTORY_NEON_CONFIGURED`.
+  Adopters must re-run the installer: until then, callers that still pass
+  `NEON_API_KEY` fail closed.
+- New factory claims pause while the published store usage is critical; an
+  operator's explicit target, renewals and releases do not.
+- The status job's retention step is `factory_state_operations.py prune`
+  (30-day lifecycle events, 120-day raw model attempts). The reliability export
+  runs at most hourly, and the dispatcher recovery watchdog runs hourly at :37.
+- The `measure` dispatcher input reports store requests and rows read and
+  written.
+
 - Review independence excludes only the model that authored the current head
   (owner decision, 2026-11-24). A model that authored an earlier head may review
   once a later commit by someone else is the head; before, every model that

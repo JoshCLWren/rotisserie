@@ -10,6 +10,10 @@ name: Factory Status Pages
 on:
   workflow_call:
     secrets:
+      FACTORY_TURSO_TOKEN:
+        required: false
+      # Kept until every adopter re-runs the installer: a caller that still
+      # passes it keeps the store required, so the job fails closed.
       NEON_API_KEY:
         required: false
       OMNIROUTE_API_KEY:
@@ -22,6 +26,9 @@ on:
         required: false
 
 env:
+  # The store is required wherever the adopter configured one; missing
+  # credentials then fail the job instead of running without coordination.
+  FACTORY_STATE_REQUIRED: ${{ secrets.FACTORY_TURSO_URL != '' || secrets.NEON_API_KEY != '' }}
   ROTISSERIE_ADMIN_GITHUB_IDS: ${{ vars.ROTISSERIE_ADMIN_GITHUB_IDS }}
   # Operator settings (rotisserie factory settings) reach every factory script.
   FACTORY_REPO_VARS: >-
@@ -84,23 +91,23 @@ jobs:
       - name: Overlay Rotisserie factory runtime
         run: bash .rotisserie/runtime/factory/install/overlay.sh .
 
-      - name: Configure shared Neon factory discovery cache
-        uses: ./.github/actions/factory-state-cache
+      - name: Configure the factory store
+        uses: ./.github/actions/factory-store
         with:
-          neon-api-key: ${{ secrets.NEON_API_KEY }}
-          neon-project-id: ${{ vars.NEON_PROJECT_ID }}
+          url: ${{ secrets.FACTORY_TURSO_URL }}
+          token: ${{ secrets.FACTORY_TURSO_TOKEN }}
 
-      - name: Prune retired discovery and audit events
+      - name: Prune aged lifecycle events and roll up old model attempts
         shell: bash
         run: |
           set -Eeuo pipefail
-          if [[ -z "${FACTORY_STATE_DSN_FILE:-}" ]]; then
-            echo "::warning::Factory Neon unavailable; bounded retention deferred"
+          if [[ -z "${FACTORY_TURSO_TOKEN_FILE:-}" ]]; then
+            echo "::warning::Factory store unavailable; bounded retention deferred"
             exit 0
           fi
-          python3 .github/scripts/factory_state_cache.py prune-obsolete
+          python3 .github/scripts/factory_state_operations.py prune --repo "$GITHUB_REPOSITORY"
 
-      - name: Install Neon-first GitHub read shim
+      - name: Install budgeted GitHub read shim
         shell: bash
         run: |
           set -Eeuo pipefail
@@ -128,7 +135,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           PYTHONPATH: .github/scripts
           # The dashboard asks for the same inventory during demand and
-          # rendering. Share it within this trusted job, not in Neon.
+          # rendering. Share it within this trusted job, not in the store.
           FACTORY_DISCOVERY_DIR: ${{ runner.temp }}/factory-discovery
           OMNIROUTE_API_KEY: ${{ secrets.OMNIROUTE_API_KEY }}
           OMNIROUTE_MANAGEMENT_API_KEY: ${{ secrets.OMNIROUTE_MANAGEMENT_API_KEY }}
@@ -146,11 +153,25 @@ jobs:
         id: reliability
         continue-on-error: true
         env:
+          GH_TOKEN: ${{ github.token }}
           PYTHONPATH: .github/scripts
         run: |
           set -Eeuo pipefail
+          # The export scans a week of events, so it runs at most hourly; the
+          # quarter-hour runs republish the previous counts.
+          published="$RUNNER_TEMP/published-stats.json"
+          gh api "repos/${GITHUB_REPOSITORY}/contents/factory-stats.json?ref=factory-status-live" \
+            --jq '.content' 2>/dev/null | base64 -d > "$published" 2>/dev/null || rm -f "$published"
+          counted="$(jq -r '.counts_generated_at // empty' "$published" 2>/dev/null || true)"
+          if [[ -n "$counted" ]] && (( $(date -u +%s) - $(date -u -d "$counted" +%s) < 3300 )); then
+            jq --arg now "$(date -u +%Y-%m-%dT%H:%M:%S+00:00)" '.generated_at = $now' \
+              "$published" > site/factory-stats.json
+            echo "Reliability counts are under an hour old; republished them"
+            exit 0
+          fi
           # Counts of trusted worker outcomes only; read by `rotisserie factory stats`.
-          python3 .github/scripts/factory_state_operations.py export-reliability > site/factory-stats.json.tmp
+          python3 .github/scripts/factory_state_operations.py export-reliability \
+            | jq '.counts_generated_at = .generated_at' > site/factory-stats.json.tmp
           mv site/factory-stats.json.tmp site/factory-stats.json
 
       # The worker's own exclusion export, so `baste unstick` never pins a model
@@ -183,7 +204,6 @@ jobs:
           FACTORY_TURSO_URL: ${{ secrets.FACTORY_TURSO_URL }}
           FACTORY_TURSO_ORG: ${{ vars.FACTORY_TURSO_ORG }}
           FACTORY_TURSO_DATABASE: ${{ vars.FACTORY_TURSO_DATABASE }}
-          FACTORY_NEON_CONFIGURED: ${{ vars.NEON_PROJECT_ID != '' }}
         run: |
           set -Eeuo pipefail
           python3 .github/scripts/factory_turso_usage.py > "$RUNNER_TEMP/db-usage.json"
@@ -261,6 +281,9 @@ jobs:
           publish_snapshot site/factory-status-snapshot.json factory-status-snapshot.json 'chore: refresh public factory state snapshot' "$snapshot_sha"
           legacy_sha="$(gh api "repos/${GITHUB_REPOSITORY}/contents/legacy-dashboard.html?ref=${branch}" --jq '.sha' 2>/dev/null || true)"
           publish_snapshot site/legacy-dashboard.html legacy-dashboard.html 'chore: preserve detailed legacy metrics' "$legacy_sha"
+      - name: Remove the factory store token
+        if: always()
+        run: rm -f "$RUNNER_TEMP/factory-store-token"
 
   build-pages-shell:
     if: github.event_name == 'push'
