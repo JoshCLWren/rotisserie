@@ -152,8 +152,12 @@ def test_worker_wires_the_pool_before_the_next_inference_call() -> None:
     ) in selector
     clause = text.split('attempted_pairs+=("$(jq -nc --arg source "$SOURCE"', 2)[2]
     clause = clause.split("break\n        ;;", 1)[0]
-    trip = clause.index('trip_exhausted_credit_pool "$SOURCE" "$MODEL" "$attempt_elapsed"')
-    assert clause.index("failure_scope=model") < trip
+    trip = clause.index(
+        'trip_exhausted_capacity "$SOURCE" "$MODEL" "$failure_class" "$attempt_elapsed"'
+    )
+    outcome = OUTCOME.read_text(encoding="utf-8")
+    capacity = outcome.split("trip_exhausted_capacity() {", 1)[1].split("\n}\n", 1)[0]
+    assert capacity.index("failure_scope=model") < capacity.index("trip_exhausted_credit_pool")
     assert (
         trip
         < clause.index("record_model_failover_failure")

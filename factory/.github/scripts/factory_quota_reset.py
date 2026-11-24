@@ -259,9 +259,42 @@ def parse_marker(message: str) -> dict[str, object] | None:
     return {**match.groupdict(), "reset_at": int(match["reset_at"])}
 
 
+LABELS = {"openrouter-free": "OpenRouter"}
+CENTRAL = ZoneInfo("America/Chicago")
+
+
+def capacity_sentence(source: str, kind: str, until: datetime) -> str:
+    """The one-line reason an account quota ended same-run failover."""
+    label = LABELS.get(source, source)
+    noun = "free allowance" if source.endswith("-free") else "quota"
+    local = until.astimezone(CENTRAL)
+    when = f"{local:%b} {local.day}, {local.hour % 12 or 12}:{local:%M %p} CT"
+    return f"{label} {kind} {noun} used up; resets at {when}"
+
+
+ANSI_RE = re.compile(r"\x1b\[[0-?]*[ -/]*[@-~]")
+
+
+def account_kind(source: str, outcome: str, log: str) -> str:
+    """daily or monthly only when the refusal text itself says the account ran out.
+
+    Unlike the cross-run hint, there is no policy fallback: a refusal without
+    readable evidence, a credit refusal or a throttle keeps per-model failover.
+    """
+    kind = refusal_kind(outcome, refusal_evidence(ANSI_RE.sub("", log)))
+    return kind if kind in {DAILY, MONTHLY} and scope(source, kind) == "account" else ""
+
+
+def account_exhaustion(source: str, kind: str, reset: Reset) -> str:
+    """kind, reset epoch and sentence for the worker's same-run stop."""
+    until = reset.until or policy_reset(source, kind, datetime.now(UTC))
+    sentence = capacity_sentence(source, kind, until)
+    return f"{kind}\t{int(until.timestamp())}\t{sentence}"
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("command", choices=("hint",))
+    parser.add_argument("command", choices=("hint", "account"))
     parser.add_argument("--source", required=True)
     parser.add_argument("--model", required=True)
     parser.add_argument("--outcome", required=True, choices=sorted(CAPACITY_OUTCOMES))
@@ -277,6 +310,9 @@ def main() -> int:
             text = handle.read().decode("utf-8", "replace")
     except OSError:
         text = ""
+    kind = account_kind(args.source, args.outcome, text) if args.command == "account" else ""
+    if args.command == "account" and not kind:
+        return 1
     reset = from_text(args.source, args.outcome, refusal_evidence(text), observed)
     if args.probe and reset.reset_source == "policy" and reset.kind != NEEDS_CREDITS:
         from factory_quota_probe import probe_reset
@@ -284,6 +320,9 @@ def main() -> int:
         probed = probe_reset(args.source, args.model, reset.kind, observed, args.probe_cache)
         if probed is not None:
             reset = probed
+    if kind:
+        print(account_exhaustion(args.source, kind, reset))
+        return 0
     print(f"source={args.source} model={args.model} outcome={args.outcome} {reset.fields()}")
     return 0
 

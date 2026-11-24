@@ -372,6 +372,9 @@ def test_worker_never_blocks_provider_for_model_credit_error():
     worker = (ROOT / ".github/scripts/free-model-factory-worker.sh").read_text()
     clause = worker.split('attempted_pairs+=("$(jq -nc --arg source "$SOURCE"', 1)[1]
     clause = clause.split("record_model_failover_failure", 1)[0]
-    assert "failure_scope=model" in clause
-    assert "failure_scope=account" not in clause
-    assert 'blocked_providers+=("$SOURCE")' not in clause
+    assert 'trip_exhausted_capacity "$SOURCE" "$MODEL" "$failure_class"' in clause
+    trip = (ROOT / ".github/scripts/factory-worker-outcome.sh").read_text()
+    trip = trip.split("trip_exhausted_capacity() {", 1)[1].split("\n}\n", 1)[0]
+    assert "failure_scope=model" in trip
+    assert "failure_scope=account" not in trip
+    assert 'blocked_providers+=("$SOURCE")' not in clause + trip

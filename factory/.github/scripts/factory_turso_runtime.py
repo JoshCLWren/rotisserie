@@ -255,7 +255,9 @@ def project_runtime(db: Any, repo: str, run_id: int, outcome: dict[str, Any]) ->
                 detail={"scope": f_scope},
             )
         )
-    if attributed and proven and classification not in TRANSIENT and classification != "no_work":
+    if attributed and proven and classification not in TRANSIENT and classification not in {
+        "no_work", "no_capacity",
+    }:
         statements.append(
             clear_statement(
                 f"factory-provider-backoff-v1:{repo}:source:{source}",
