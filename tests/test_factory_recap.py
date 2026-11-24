@@ -161,7 +161,7 @@ def test_needs_you_lists_only_owner_actions() -> None:
     assert texts[1].startswith("Reconcile plans list after a cross-tab rename (#20) is stuck")
     assert "Old gate held this (#21)" in texts[2]
     assert "Repair the importer (#30) has an open claim" in texts[3]
-    assert rows[3]["action"] == "When you are done, run `rotisserie factory finish issue:30`."
+    assert rows[3]["action"] == "When you are done, run `baste finish issue:30`."
     assert texts[4] == "Your claim on Cleanup (#31) was refused."
     assert texts[5] == "OpenRouter ran out of quota or credits (1 failed runs)."
     assert not any("Dashboard" in text for text in texts)

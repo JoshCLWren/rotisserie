@@ -32,8 +32,8 @@ CAUSE_WORDS = {**OUTCOME_WORDS, "no_work": "nothing it could do", "": "no record
 FIXES = {
     "no_capacity": "Add a provider or turn one back on: no model was free to take the work.",
     "provider_quota": "Add credits, or turn the provider off until its quota resets.",
-    "control_plane_failure": "Run `rotisserie factory failures` to see which factory step broke.",
-    "model_retired_410": "Turn the retired model off with `rotisserie factory models disable`.",
+    "control_plane_failure": "Run `baste failures` to see which factory step broke.",
+    "model_retired_410": "Turn the retired model off with `baste models disable`.",
     "unconfigured": "Add the provider's credentials, or turn the provider off.",
 }
 HANDLED_CHECKS = frozenset(("main verification", "review deadlocks"))
@@ -129,7 +129,7 @@ def needs_you(sources: Sources) -> list[dict[str, object]]:
             add(
                 "blocked",
                 f"{named(string(pr, 'title'), number)} is parked as blocked.",
-                f"`rotisserie factory review pr:{number}` says why and can send it back.",
+                f"`baste review pr:{number}` says why and can send it back.",
                 string(pr, "html_url"),
             )
     for item in sources.claims:
@@ -143,7 +143,7 @@ def needs_you(sources: Sources) -> list[dict[str, object]]:
             add(
                 "claim",
                 f"{name} has an open claim (factory:claimed).",
-                f"When you are done, run `rotisserie factory finish {kind}:{number}`.",
+                f"When you are done, run `baste finish {kind}:{number}`.",
                 string(item, "html_url"),
             )
     quota = Counter(row.provider or "unknown" for row in sources.failures if _out_of_quota(row))
