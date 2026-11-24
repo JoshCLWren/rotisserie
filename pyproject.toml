@@ -57,6 +57,7 @@ include = [
   "/factory/.github/scripts/factory_adopter.py",
   "/factory/.github/scripts/factory_branch_sync.py",
   "/factory/.github/scripts/factory_main_health.py",
+  "/factory/.github/scripts/factory_billing_pool.py",
   "/factory/scripts/factory_eligibility.py",
   "/CHANGELOG.md",
   "/docs",
