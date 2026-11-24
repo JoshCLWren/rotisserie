@@ -104,6 +104,7 @@ jobs:
               case "$MODE" in
                 repair) args=(factory labels --repair) ;;
                 delete-legacy) args=(factory labels --repair --delete-legacy) ;;
+                backoffs) args=(factory backoffs) ;;
                 leases)
                   read -r -a wanted <<< "${TARGETS:-}"
                   for item in "${wanted[@]}"; do

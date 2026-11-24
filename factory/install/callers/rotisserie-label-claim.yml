@@ -14,7 +14,7 @@ on:
       mode:
         description: Label doctor mode, or leases to read Neon holders
         type: choice
-        options: [dry-run, repair, delete-legacy, leases]
+        options: [dry-run, repair, delete-legacy, leases, backoffs]
         default: dry-run
       targets:
         description: For leases, space-separated issue:N / pr:N (blank means every lease)

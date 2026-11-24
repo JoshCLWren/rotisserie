@@ -7,6 +7,11 @@ on:
         type: boolean
         default: false
         required: false
+      quota_only:
+        description: Clear only quota and throttle backoffs; cap real failure streaks at one day
+        type: boolean
+        default: false
+        required: false
 permissions:
   contents: read
 concurrency:
@@ -17,5 +22,6 @@ jobs:
     uses: JoshCLWren/rotisserie/.github/workflows/factory-model-health-reset.yml@main
     with:
       include_retired: ${{ inputs.include_retired == true }}
+      quota_only: ${{ inputs.quota_only == true }}
     secrets:
       NEON_API_KEY: ${{ secrets.NEON_API_KEY }}
