@@ -1290,16 +1290,14 @@ def test_service_layer_stays_front_end_neutral() -> None:
     import ast
     from pathlib import Path
 
-    service = Path(commands.__file__).with_name("service")
-    for path in sorted(service.glob("*.py")):
+    paths = sorted(Path(commands.__file__).parent.with_name("service").glob("*.py"))
+    assert paths
+    for path in paths:
         tree = ast.parse(path.read_text())
         for node in ast.walk(tree):
             if isinstance(node, ast.ImportFrom) and node.module:
-                assert node.module not in (
-                    "rotisserie.factory_console.ui",
-                    "rotisserie.factory_console.commands",
-                    "argparse",
-                ), f"{path.name} imports {node.module}"
+                assert node.module not in ("rotisserie.factory_console.ui", "argparse"), path.name
+                assert not node.module.startswith("rotisserie.factory_console.commands"), path.name
             if isinstance(node, ast.Import):
                 assert all(alias.name != "argparse" for alias in node.names), path.name
             if isinstance(node, ast.Call) and isinstance(node.func, ast.Name):
