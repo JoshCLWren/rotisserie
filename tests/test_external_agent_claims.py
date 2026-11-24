@@ -13,7 +13,7 @@ from urllib.parse import unquote
 import pytest
 
 from rotisserie.factory_console.github import GitHub
-from rotisserie.factory_console.service import external, frontier, queue
+from rotisserie.factory_console.service import external, external_checks, frontier, queue
 
 REPO = "acme/widgets"
 REAL_LIVE_OFFER = external._live_offer  # before any fixture replaces it
@@ -424,7 +424,7 @@ def test_repair_waits_for_required_ci(monkeypatch: pytest.MonkeyPatch) -> None:
         head_sha="a" * 40,
     )
     monkeypatch.setattr(frontier, "capture", lambda *a, **k: make_frontier(offered))
-    monkeypatch.setattr(external, "_required_checks_outcome", lambda *a, **k: "waiting")
+    monkeypatch.setattr(external_checks, "_required_checks_outcome", lambda *a, **k: "waiting")
     ok, reason = external._live_offer(cast(GitHub, GitHubDouble()), offered)
     assert not ok
     assert "required CI" in reason
@@ -1142,7 +1142,7 @@ def test_repair_of_a_pr_whose_issue_closed_reserves_just_the_pr(
     setup: LedgerDouble, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     monkeypatch.setattr(frontier, "capture", lambda *a, **k: make_frontier(_pr_offer()))
-    monkeypatch.setattr(external, "_required_checks_outcome", lambda *a, **k: "passed")
+    monkeypatch.setattr(external_checks, "_required_checks_outcome", lambda *a, **k: "passed")
     github = GitHubDouble()
     github.closed = {7}
     # The issue is closed, so the PR's own labels carry its ranked priority.
@@ -1282,7 +1282,7 @@ def test_ci_repair_that_turned_green_after_reservation_is_released(
 ) -> None:
     offer = replace(_pr_offer(), action="ci-repair")
     monkeypatch.setattr(frontier, "capture", lambda *a, **k: make_frontier(offer))
-    monkeypatch.setattr(external, "_required_checks_outcome", lambda *a, **k: "passed")
+    monkeypatch.setattr(external_checks, "_required_checks_outcome", lambda *a, **k: "passed")
     github = GitHubDouble()
     github.review_labels = ["factory", "factory:ci", "factory:unowned"]
     result = external.reserve_next(cast(GitHub, github), client="chatgpt", environment={})

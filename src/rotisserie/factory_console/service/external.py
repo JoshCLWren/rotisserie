@@ -7,42 +7,63 @@ code-writing agent is enrolled in the provider/model roster.
 
 from __future__ import annotations
 
-import importlib.util
 import json
 import re
-from collections.abc import Callable
 from datetime import UTC, datetime
-from pathlib import Path
 from types import ModuleType
-from typing import Any
-from urllib.parse import quote
 
-from rotisserie.factory_console import runtime
 from rotisserie.factory_console.github import GitHub, GitHubError, obj, string
-from rotisserie.factory_console.service import frontier, queue
+from rotisserie.factory_console.service import frontier
 from rotisserie.factory_console.service import sync as branch_sync
+from rotisserie.factory_console.service.external_checks import (
+    _bypasses_wip,
+    _post_claim_change,
+)
+from rotisserie.factory_console.service.external_checks import (
+    _conflict_without_ci as _conflict_without_ci,
+)
+from rotisserie.factory_console.service.external_checks import (
+    _linked_targets as _linked_targets,
+)
+from rotisserie.factory_console.service.external_checks import (
+    _live_offer as _live_offer,
+)
+from rotisserie.factory_console.service.external_checks import (
+    _required_checks_outcome as _required_checks_outcome,
+)
+from rotisserie.factory_console.service.external_checks import (
+    claim_scope as claim_scope,
+)
+from rotisserie.factory_console.service.external_checks import (
+    live_now as live_now,
+)
+from rotisserie.factory_console.service.external_handoff import EVIDENCE, _evidence_pr
+from rotisserie.factory_console.service.external_handoff import (
+    _closed_issues as _closed_issues,
+)
+from rotisserie.factory_console.service.external_handoff import (
+    _verify_and_project_handoff as _verify_and_project_handoff,
+)
+from rotisserie.factory_console.service.external_reserve import (
+    CLAIM_ID,
+    _rollback,
+    handoff_packet,
+)
+from rotisserie.factory_console.service.external_reserve import (
+    EVIDENCE_REQUIRED as EVIDENCE_REQUIRED,
+)
+from rotisserie.factory_console.service.external_reserve import (
+    reconcile as reconcile,
+)
 
 # Work an outside agent can finish through the existing factory gates. A
 # review counts once the trusted bridge records the agent's declared model
 # (#191); the bridge refuses a model that authored the PR.
 ACTIONS = frozenset({"implement", "review", "review-findings", "ci-repair", "merge-conflict"})
-REPAIRS = frozenset({"review-findings", "ci-repair", "merge-conflict"})
-COMPLETION_STAGES = frozenset({"factory:review", "factory:ci", "factory:changes-requested"})
-WORKFLOW = "rotisserie-external-claim.yml"
 # Events whose workflow file GitHub always takes from the default branch, so a
 # pull request cannot change the code that receives the claim store secret.
 LABEL_EVENTS = ("issues", "pull_request_target", "issue_comment")
-CLAIM_ID = re.compile(r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\Z")
 CLIENT = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]{0,63}\Z")
-# Every form GitHub accepts after a closing keyword: #N, owner/repo#N, issue URL.
-CLOSING = re.compile(
-    r"(?i)\b(?:close[sd]?|fix(?:e[sd])?|resolve[sd]?):?\s+"
-    r"(?:https://github\.com/(?P<url_repo>[\w.-]+/[\w.-]+)/issues/(?P<url_n>\d+)"
-    r"|(?P<repo>[\w.-]+/[\w.-]+)?#(?P<n>\d+))"
-)
-EVIDENCE = re.compile(
-    r"https://github\.com/[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+/(?:issues|pull|actions/runs)/[1-9][0-9]*(?:#(?:issuecomment|discussion_r|pullrequestreview)-[0-9]+)?\Z"
-)
 
 
 def ledger() -> ModuleType:
@@ -93,398 +114,6 @@ def principal(github: GitHub, environment: dict[str, str]) -> str:
     if permission not in ("admin", "maintain", "write"):
         raise ValueError("GitHub actor lacks verified write access to this repository")
     return actor
-
-
-def _linked_targets(github: GitHub, offer: frontier.Offer) -> list[int]:
-    kind, number_text = offer.target.split(":")
-    number = int(number_text)
-    if kind == "issue":
-        live = obj(github.repo_api(f"issues/{number}"))
-        if string(live, "state") != "open" or "pull_request" in live:
-            raise ValueError("issue was closed or replaced by a pull request")
-        return [number]
-    live = obj(github.repo_api(f"pulls/{number}"))
-    if string(live, "state") != "open":
-        raise ValueError("pull request was closed")
-    head = string(obj(live.get("head")), "sha")
-    if head != offer.head_sha:
-        raise ValueError("pull request head changed")
-    link = _linked_open_issue(github, number, live)
-    return [link, number] if link is not None else [number]
-
-
-def _linked_open_issue(github: GitHub, number: int, pr: dict[str, Any]) -> int | None:
-    """The open issue a PR is linked to, which a claim on the PR also fences."""
-    link = runtime.module("factory_work_policy").linked_issue_from_pr(
-        {
-            "number": number,
-            "headRefName": string(obj(pr.get("head")), "ref"),
-            "body": string(pr, "body"),
-            "title": string(pr, "title"),
-        }
-    )
-    if link is None or int(link) == number:
-        return None
-    issue = obj(github.repo_api(f"issues/{link}"))
-    if string(issue, "state") != "open" or "pull_request" in issue:
-        return None
-    return int(link)
-
-
-def _required_checks_outcome(github: GitHub, number: int) -> str:
-    """Use the same exact-head required-check classification as the dispatcher."""
-    try:
-        values = json.loads(
-            github.gh(
-                "pr",
-                "checks",
-                str(number),
-                "--repo",
-                github.repo,
-                "--required",
-                "--json",
-                "state",
-                allow_exit_one=True,
-            )
-        )
-    except (GitHubError, ValueError):
-        return "waiting"
-    if not isinstance(values, list) or not values:
-        return "waiting"
-    states = [
-        str(row.get("state", "")).upper()
-        for row in values
-        if isinstance(row, dict) and isinstance(row.get("state"), str)
-    ]
-    if len(states) != len(values):
-        return "waiting"
-    passed = {"SUCCESS", "NEUTRAL", "SKIPPED"}  # the dispatcher's passing states
-    failed = set(runtime.module("factory_work_policy").REQUIRED_CHECK_FAILURE_STATES)
-    if any(value not in passed | failed for value in states):
-        return "waiting"
-    return "failed" if any(value in failed for value in states) else "passed"
-
-
-def _conflict_without_ci(github: GitHub, number: int, head: str | None) -> bool:
-    """Narrow controller exception: a conflicted head whose CI is not running."""
-    if head is None:
-        return False
-    try:
-        pr = obj(github.repo_api(f"pulls/{number}"))
-        if (
-            string(obj(pr.get("head")), "sha") != head
-            or string(pr, "state") != "open"
-            or not (
-                pr.get("mergeable") is False or string(pr, "mergeable_state").upper() == "DIRTY"
-            )
-        ):
-            return False
-        response = obj(github.repo_api(f"commits/{head}/check-runs?per_page=100"))
-    except GitHubError:
-        return False
-    runs = response.get("check_runs")
-    if (
-        not isinstance(runs, list)
-        or not isinstance(response.get("total_count"), int)
-        or response["total_count"] != len(runs)
-    ):
-        return False
-    # Same rule as the dispatcher (#182): only a still-running check waits.
-    return not any(
-        not isinstance(run, dict) or str(run.get("status", "")).lower() != "completed"
-        for run in runs
-    )
-
-
-def _live_offer(
-    github: GitHub, previous: frontier.Offer, latest: frontier.Frontier | None = None
-) -> tuple[bool, str]:
-    """Reject moved heads, priority/stage changes, new dependencies and holds."""
-    if latest is None:
-        latest = frontier.capture(github, now=datetime.now(UTC))
-    if not latest.authoritative_claim_available:
-        return False, "Neon ownership became unavailable"
-    found = next((o for o in latest.offers if o.target == previous.target), None)
-    if found is None:
-        return False, "offer disappeared from current controller ranking"
-    if (
-        found.action != previous.action
-        or found.head_sha != previous.head_sha
-        or found.priority != previous.priority
-        or found.lane != previous.lane
-    ):
-        # Rank is not compared: unrelated offers enter and leave above this
-        # one all the time. The caller walks one fresh capture in its order.
-        return False, "head, priority, stage or action changed"
-    if found.status != "candidate":
-        return False, "offer no longer eligible: " + "; ".join(found.hold_reasons)
-    return live_now(github, previous.target, previous.action, previous.head_sha)
-
-
-def live_now(github: GitHub, target: str, action: str, head_sha: str | None) -> tuple[bool, str]:
-    """The live GitHub conditions reserve-next checks before reserving a candidate.
-
-    Open dependencies for an issue; for a PR, required CI that is still
-    running (except a conflicted PR with no CI to wait for) or, for a CI
-    repair, no terminal failure to repair.
-    """
-    kind, number_text = target.split(":")
-    number = int(number_text)
-    if kind == "issue":
-        blocked, problem = queue.open_blocker(github, number)
-        if blocked:
-            return False, problem or "issue dependencies changed"
-        return True, ""
-    checks = _required_checks_outcome(github, number)
-    if checks == "waiting" and not (
-        action == "merge-conflict" and _conflict_without_ci(github, number, head_sha)
-    ):
-        return False, "required CI is still running or unknown"
-    if action == "ci-repair" and checks != "failed":
-        return False, "current head has no terminal required CI failure"
-    return True, ""
-
-
-def _implemented_issues(github: GitHub, core: ModuleType) -> set[int]:
-    """Issues an open PR already implements, read live (the controller's rule)."""
-    rows = json.loads(
-        github.gh(
-            "pr",
-            "list",
-            "--repo",
-            github.repo,
-            "--state",
-            "open",
-            "--limit",
-            "500",
-            "--json",
-            "number,headRefName,body,title,state",
-        )
-    )
-    if not isinstance(rows, list) or len(rows) >= 500:
-        raise ValueError("open pull requests could not be listed completely")
-    return {
-        int(linked)
-        for row in rows
-        if isinstance(row, dict)
-        and core.pr_suppresses_issue_candidate(row, {})
-        and (linked := core.linked_issue_from_pr(row)) is not None
-    }
-
-
-def _bypasses_wip(github: GitHub, offer: frontier.Offer) -> bool:
-    """The work policy's own WIP bypass (urgent defects) for this issue offer."""
-    if offer.action != "implement":
-        return False
-    core = runtime.module("factory_work_policy")
-    issue = obj(github.repo_api(f"issues/{offer.target.split(':')[1]}"))
-    saturated = offer.capacity.get("review_backlog", 0) >= offer.capacity.get("review_limit", 1)
-    return bool(core.issue_bypasses_wip_limit(issue, review_backlog_saturated=saturated))
-
-
-def _post_claim_change(
-    github: GitHub, offer: frontier.Offer, numbers: list[int], live: dict[str, Any]
-) -> str:
-    """Recheck ownership, priority, dependencies, PR stage and CI after CAS."""
-    core = runtime.module("factory_work_policy")
-    labels = core.labels_of(live)
-    if core.owner_of(labels) not in (None, "factory:unowned"):
-        return "another worker became the GitHub owner after reservation"
-    kind, number_text = offer.target.split(":")
-    if kind == "issue":
-        # The same static gate the controller applies: manual-only, epics,
-        # blocked/terminal labels and ownership added since the snapshot.
-        if not core.issue_is_static_candidate(
-            {**live, "number": int(number_text)}, _implemented_issues(github, core)
-        ):
-            return "issue is no longer eligible (manual-only, blocked or owned)"
-        blocked, why = queue.open_blocker(github, int(number_text))
-        if blocked:
-            return why or "dependency graph changed after reservation"
-        body = string(live, "body")
-        for prerequisite in sorted(core.parse_depends_on_numbers(body) - {int(number_text)}):
-            row = obj(github.repo_api(f"issues/{prerequisite}"))
-            if string(row, "state") == "open":
-                return f"issue now depends on open #{prerequisite}"
-        all_labels = labels
-    else:
-        all_labels = set(labels)
-        live_link = core.linked_issue_from_pr(
-            {
-                "number": int(number_text),
-                "headRefName": string(obj(live.get("head")), "ref"),
-                "body": string(live, "body"),
-                "title": string(live, "title"),
-            }
-        )
-        if live_link is not None and live_link not in numbers:
-            # A closed linked issue is not leased (the factory leases only the
-            # PR then); any open one we did not fence means the link changed.
-            relinked = obj(github.repo_api(f"issues/{live_link}"))
-            if string(relinked, "state") == "open" and "pull_request" not in relinked:
-                return "the pull request's linked issue changed after reservation"
-        if len(numbers) == 2:
-            linked = next(n for n in numbers if n != int(number_text))
-            linked_row = obj(github.repo_api(f"issues/{linked}"))
-            if string(linked_row, "state") != "open":
-                return "linked issue changed after reservation"
-            linked_labels = core.labels_of(linked_row)
-            if core.owner_of(linked_labels) not in (None, "factory:unowned"):
-                return "another worker became the linked issue's owner after reservation"
-            all_labels.update(linked_labels)
-        row = {
-            "number": int(number_text),
-            "state": string(live, "state"),
-            "isDraft": live.get("draft") is True,
-            "body": string(live, "body"),
-            "title": string(live, "title"),
-            "headRefName": string(obj(live.get("head")), "ref"),
-            "labels": live.get("labels") or [],
-        }
-        if not core.pr_is_static_candidate(row, {}):
-            return "pull request is no longer eligible (manual-only, draft, blocked or owned)"
-        conflicting = (
-            live.get("mergeable") is False or string(live, "mergeable_state").upper() == "DIRTY"
-        )
-        if core.completion_action_for(core.stage_of(labels), conflicting) != offer.action:
-            return "PR stage or merge state changed after reservation"
-        checks = _required_checks_outcome(github, int(number_text))
-        if checks == "waiting" and not (
-            offer.action == "merge-conflict"
-            and _conflict_without_ci(github, int(number_text), offer.head_sha)
-        ):
-            return "required CI became pending or unknown after reservation"
-        if offer.action == "ci-repair" and checks != "failed":
-            return "required CI is no longer failing; nothing to repair"
-    if (
-        core.priority_rank(all_labels) != offer.priority
-        or core.provenance_lane(all_labels, pull_request=(kind == "pr")) != offer.lane
-    ):
-        return "priority or scheduling lane changed after reservation"
-    return ""
-
-
-EVIDENCE_REQUIRED = {
-    "implement": (
-        "Open a non-draft pull request in this repository whose body says 'Closes #N' "
-        "for the claimed issue, then hand off that pull request's URL"
-    ),
-    "review-findings": (
-        "Push commits resolving the review findings to this pull request's branch, "
-        "then hand off the pull request's URL"
-    ),
-    "ci-repair": (
-        "Push commits that make this pull request's own failing checks pass, "
-        "then hand off the pull request's URL"
-    ),
-    "merge-conflict": (
-        "Push a commit resolving the conflict with the base branch, "
-        "then hand off the pull request's URL"
-    ),
-    "review": (
-        "Submit a formal GitHub review (Approve or Request changes) on this exact head. "
-        "Its body needs one 'Model: <your exact model id>' line; an approval also needs "
-        "the issue's FACTORY_ACCEPTANCE_V1= report. Then hand off the review's URL"
-    ),
-}
-
-
-def handoff_packet(
-    github: GitHub,
-    offer: frontier.Offer,
-    *,
-    claim_id: str,
-    client: str,
-    actor: str,
-    expires_at: str,
-    title: str,
-    acceptance: str,
-) -> dict[str, object]:
-    """Portable, secret-free task packet for whichever agent won the claim."""
-    repo = github.repo
-    cli = f"--client {client} --repo {repo}"
-    bridge = (
-        f"gh workflow run {WORKFLOW} --repo {repo} --ref main "
-        f"-f client={client} -f claim_id={claim_id}"
-    )
-    return {
-        "schema_version": 1,
-        "repository": repo,
-        "target": offer.target,
-        "url": offer.url,
-        "task_title": title,
-        "action": offer.action,
-        "goal": offer.instruction,
-        "rank": offer.rank,
-        "priority": offer.priority,
-        "lane": offer.lane,
-        "acceptance_criteria": acceptance[:12000],
-        "prerequisites": list(offer.prerequisites),
-        "blocked_by": list(offer.blocked_by),
-        "head_sha": offer.head_sha,
-        "claim_id": claim_id,
-        "client": client,
-        "actor": actor,
-        "expires_at": expires_at,
-        "renew": f"rotisserie factory renew {claim_id} {cli}",
-        "release": f"rotisserie factory release {claim_id} {cli}",
-        "renew_github": f"{bridge} -f operation=renew",
-        "release_github": f"{bridge} -f operation=release",
-        "handoff_github": f"{bridge} -f operation=handoff -f evidence=URL",
-        "renew_before": "Renew well before expires_at; an expired claim can only be released",
-        "evidence_required": EVIDENCE_REQUIRED.get(offer.action, ""),
-        "provenance": (
-            "End every commit message with a 'Model: <your exact model id>' trailer. "
-            "The factory reads it so the model that wrote this work never approves it."
-        ),
-        "report": offer.url,
-        "review_and_merge_gates": (
-            "Handoff is not approval. Existing exact-head independent review, required CI, "
-            "acceptance, merge authorization and production verification still decide."
-        ),
-    }
-
-
-def _target_closed(github: GitHub, number: int) -> bool:
-    """GitHub's own answer on whether the issue or PR is finished (closed/merged)."""
-    return string(obj(github.repo_api(f"issues/{number}")), "state") == "closed"
-
-
-def reconcile(github: GitHub, *, actor: str, store: ModuleType) -> list[dict[str, object]]:
-    """Remove outside-agent claims whose work GitHub says no longer exists.
-
-    A lapsed timestamp never proves an agent stopped, so expiry alone frees
-    nothing. A claim is recovered only on authoritative evidence that its work
-    is gone: every target it holds is closed or merged on GitHub. The removal
-    is UUID-fenced and logged like an operator revoke. Any read failure leaves
-    the claim in place.
-    """
-    removed: list[dict[str, object]] = []
-    marker = f"factory-lease-v1:{github.repo}:external:"
-    try:
-        rows: list[dict[str, Any]] = store.list_leases(github.repo)
-    except Exception:  # noqa: BLE001 - unknown state keeps every claim
-        return removed
-    for row in rows:
-        if not str(row.get("key", "")).startswith(marker):
-            continue
-        claim_id = str(row.get("claim_id", ""))
-        targets = [n for n in row.get("targets") or [] if isinstance(n, int)]
-        if not CLAIM_ID.fullmatch(claim_id) or not targets:
-            continue
-        try:
-            finished = all(_target_closed(github, number) for number in targets)
-        except GitHubError:
-            continue
-        if not finished:
-            continue
-        closed = ", ".join(f"#{n}" for n in targets)
-        result: dict[str, object] = store.revoke_external(
-            github.repo, actor, claim_id, reason=f"work finished on GitHub: {closed} closed"
-        )
-        if result.get("status") == "revoked":
-            removed.append(result)
-    return removed
 
 
 def reserve_next(
@@ -665,340 +294,6 @@ def reserve_next(
     return outcome
 
 
-def _human_hold(core: ModuleType, pr: dict[str, Any]) -> bool:
-    labels = core.labels_of(pr)
-    return bool(core.eligibility.is_manual_only(string(pr, "body")) or labels & core.BLOCKED_LABELS)
-
-
-def _project_review_stage(
-    github: GitHub,
-    core: ModuleType,
-    number: int,
-    head: str,
-    in_scope: Callable[[dict[str, Any]], None],
-) -> None:
-    """Put a PR into the factory's existing review queue, exactly as a worker would.
-
-    A factory worker finishing an implementation or repair leaves its PR in
-    ``factory:review`` with no owner. This is that same projection: labels
-    are hints for the existing controllers, never ownership or approval.
-    Labels are added and removed one by one from a fresh read, so a hold or
-    any other label someone adds meanwhile is never overwritten.
-    """
-    fresh = obj(github.repo_api(f"pulls/{number}"))
-    if _human_hold(core, fresh):
-        raise ValueError("the PR is on a human hold (manual-only or blocked); nothing was changed")
-    in_scope(fresh)
-    labels = core.labels_of(fresh)
-    if core.owner_of(labels) not in (None, "factory:unowned"):
-        raise ValueError("handoff PR is owned by another worker")
-    missing = sorted({"factory", "factory:review", "factory:unowned"} - labels)
-    if missing:
-        fields = [arg for label in missing for arg in ("-f", f"labels[]={label}")]
-        github.gh("api", f"repos/{github.repo}/issues/{number}/labels", "--method", "POST", *fields)
-    stale_labels = labels & (set(core.STAGE_LABELS) - {"factory:review"} | {"factory:available"})
-    for stale in sorted(stale_labels):
-        github.gh(
-            "api",
-            f"repos/{github.repo}/issues/{number}/labels/{quote(stale, safe='')}",
-            "--method",
-            "DELETE",
-        )
-    final = obj(github.repo_api(f"pulls/{number}"))
-    if string(obj(final.get("head")), "sha") != head:
-        raise ValueError("the pull request moved during handoff; hand off its new head")
-    if _human_hold(core, final):
-        raise ValueError("a human hold was added during handoff; the claim stays held")
-    in_scope(final)
-    actual = core.labels_of(final)
-    if core.stage_of(actual) != "factory:review" or core.owner_of(actual) != "factory:unowned":
-        raise RuntimeError("could not verify the review handoff labels")
-
-
-def _closed_issues(repo: str, *texts: str) -> set[int]:
-    """Every issue in ``repo`` that GitHub would close from these PR texts."""
-    found: set[int] = set()
-    for text in texts:
-        for match in CLOSING.finditer(text):
-            other = match.group("url_repo") or match.group("repo")
-            if other and other.lower() != repo.lower():
-                continue
-            found.add(int(match.group("url_n") or match.group("n")))
-    return found
-
-
-def _delivered_authors(github: GitHub, pr: int, since: str | None) -> list[tuple[str, str]]:
-    """``(commit, model)`` for every commit this handoff delivers, or refuse.
-
-    Delivered commits are the PR's own (not on its base branch); for a repair,
-    only those new since the claimed head. Each must carry exactly one
-    ``Model:`` trailer, so every contributing model is recorded.
-    """
-    policy = runtime.module("factory_review_policy")
-    path = f"repos/{github.repo}/pulls/{pr}/commits?per_page=100"
-    pages = json.loads(github.gh("api", "--paginate", "--slurp", path))
-    own = [
-        c
-        for page in (pages if isinstance(pages, list) else [])
-        if isinstance(page, list)
-        for c in page
-        if isinstance(c, dict)
-    ]
-    if len(own) >= 250:
-        raise ValueError("the pull request has too many commits to attribute (250+)")
-    if since is not None and own:
-        route = f"repos/{github.repo}/compare/{since}...{string(own[-1], 'sha')}?per_page=100"
-        compared = json.loads(github.gh("api", "--paginate", "--slurp", route))
-        new = {
-            string(c, "sha")
-            for page in (compared if isinstance(compared, list) else [])
-            if isinstance(page, dict) and isinstance(page.get("commits"), list)
-            for c in page["commits"]
-            if isinstance(c, dict)
-        }
-        own = [c for c in own if string(c, "sha") in new]
-    if not own:
-        raise ValueError("no new commit on the claimed PR; release the claim instead")
-    authors: list[tuple[str, str]] = []
-    for commit in own:
-        models = policy.model_trailer_models(string(obj(commit.get("commit")), "message"))
-        if len(models) != 1:
-            raise ValueError(
-                f"commit {string(commit, 'sha')[:12]} needs exactly one "
-                "'Model: <your model id>' trailer so the factory can keep its author "
-                "from approving this work"
-            )
-        authors.append((string(commit, "sha"), str(next(iter(models)))))
-    return authors
-
-
-def _record_authors(
-    github: GitHub,
-    pr: int,
-    authors: list[tuple[str, str]],
-    client: str,
-    environment: dict[str, str],
-) -> None:
-    """Write a controller-trusted author-model marker for each delivered commit.
-
-    Only the Actions bot's comments count as author records, so this runs in
-    the GitHub bridge. Every head of a PR counts toward its known authors, so
-    one marker per commit records each contributing model exactly once.
-    """
-    if environment.get("GITHUB_ACTIONS") != "true":
-        raise ValueError(
-            "handoffs run in the GitHub bridge so the factory records the head's "
-            f"author: gh workflow run {WORKFLOW} --repo {github.repo} --ref main "
-            "-f operation=handoff -f client=CLIENT -f claim_id=UUID -f evidence=URL"
-        )
-    policy = runtime.module("factory_review_policy")
-    for commit, model in authors:
-        marker = policy.agent_model_author_marker(
-            pr=pr, head=commit, model=model, agent=f"external-{client}"
-        )
-        # REST, not `gh issue comment`: its GraphQL addComment needs
-        # pull-requests: write, which the bridge's token does not hold.
-        github.gh(
-            "api",
-            f"repos/{github.repo}/issues/{pr}/comments",
-            "--method",
-            "POST",
-            "-f",
-            f"body={marker}",
-        )
-
-
-def _verify_and_project_handoff(
-    github: GitHub,
-    claim: dict[str, Any],
-    evidence: str,
-    environment: dict[str, str] | None = None,
-) -> None:
-    """Validate evidence against the fenced task, then hand the PR to review.
-
-    Runs inside the ledger's locked handoff transaction: if anything here
-    fails, the claim stays held and nothing is released. Only a pull request
-    proven to carry the claimed work is moved into the review queue.
-    """
-    prefix = f"https://github.com/{github.repo}/"
-    if not evidence.startswith(prefix) or not EVIDENCE.fullmatch(evidence):
-        raise ValueError("handoff evidence must be a same-repository GitHub URL")
-    route = evidence[len(prefix) :].split("#", 1)[0]
-    if not route.startswith("pull/"):
-        raise ValueError(
-            "hand off the pull request that carries the work; with no PR, release the claim"
-        )
-    kind, number_str = str(claim["target"]).split(":")
-    number = int(number_str)
-    action = str(claim["action"])
-    core = runtime.module("factory_work_policy")
-    pr_number = int(route.split("/")[1])
-    pr = obj(github.repo_api(f"pulls/{pr_number}"))
-    head = string(obj(pr.get("head")), "sha")
-    if string(pr, "state") != "open" or pr.get("draft") is True or not head:
-        raise ValueError("handoff PR must be open, not a draft, with an exact head")
-    labels = core.labels_of(pr)
-    if core.owner_of(labels) not in (None, "factory:unowned"):
-        raise ValueError("handoff PR is owned by another worker")
-    if _human_hold(core, pr):
-        raise ValueError("the PR is on a human hold (manual-only or blocked); nothing was changed")
-    stage = core.stage_of(labels)
-    head_at_claim = ""
-    if action == "implement":
-        if kind != "issue":
-            raise ValueError("implementation handoff must originate from an issue")
-        if stage not in (None, "factory:review"):
-            raise ValueError("handoff PR is already in a different factory stage")
-    elif action in REPAIRS:
-        if kind != "pr" or pr_number != number:
-            raise ValueError("handoff evidence points to a different PR")
-        if head == claim.get("head"):
-            raise ValueError("no new commit on the claimed PR; release the claim instead")
-        head_at_claim = str(claim.get("head") or "")
-        if stage not in COMPLETION_STAGES:
-            raise ValueError("the PR left the factory's completion stages")
-    elif action == "review":
-        if kind != "pr" or pr_number != number:
-            raise ValueError("handoff evidence points to a different PR")
-        if head != claim.get("head"):
-            raise ValueError("the PR moved since the review claim; release it and claim again")
-        if stage != "factory:review":
-            raise ValueError("the PR left factory:review")
-        _check_handoff_scope(github, core, claim, pr_number, pr)
-        review = _claimant_review(github, pr_number, head, str(claim["actor"]), evidence)
-        _record_review(github, pr_number, head, str(claim["actor"]), review, environment or {})
-        return
-    else:
-        raise ValueError("unsupported claimed action")
-
-    def in_scope(live: dict[str, Any]) -> None:
-        _check_handoff_scope(github, core, claim, pr_number, live)
-
-    in_scope(pr)
-    authors = _delivered_authors(
-        github, pr_number, None if action == "implement" else head_at_claim
-    )
-    if authors[-1][0] != head:
-        raise ValueError("the pull request moved during handoff; hand off its new head")
-    # Every handoff gets the bridge's trusted author records for the commits
-    # it delivers; the review controller cannot attest every outside head.
-    _record_authors(github, pr_number, authors, str(claim["client"]), environment or {})
-    _project_review_stage(github, core, pr_number, head, in_scope)
-
-
-REVIEW_ID = re.compile(r"#pullrequestreview-(?P<id>[0-9]+)\Z")
-
-
-def _claimant_review(
-    github: GitHub, pr: int, head: str, actor: str, evidence: str
-) -> dict[str, Any]:
-    """The claimant's latest decisive formal review of the claimed head."""
-    pages = json.loads(
-        github.gh("api", "--paginate", "--slurp", f"repos/{github.repo}/pulls/{pr}/reviews")
-    )
-    reviews = [
-        row
-        for page in (pages if isinstance(pages, list) else [])
-        if isinstance(page, list)
-        for row in page
-        if isinstance(row, dict)
-        and string(obj(row.get("user")), "login") == actor
-        and string(row, "commit_id") == head
-        and string(row, "state") in ("APPROVED", "CHANGES_REQUESTED")
-    ]
-    wanted = REVIEW_ID.search(evidence)
-    if wanted:
-        reviews = [row for row in reviews if str(row.get("id")) == wanted.group("id")]
-    if not reviews:
-        raise ValueError("no Approve or Request changes review by the claimant on the claimed head")
-    return reviews[-1]
-
-
-def _record_review(
-    github: GitHub,
-    pr: int,
-    head: str,
-    actor: str,
-    review: dict[str, Any],
-    environment: dict[str, str],
-) -> None:
-    """Hand the review to the adopter's trusted recorder; only the Actions bot counts."""
-    if environment.get("GITHUB_ACTIONS") != "true":
-        raise ValueError(
-            "review handoffs run in the GitHub bridge so the factory records the reviewer: "
-            f"gh workflow run {WORKFLOW} --repo {github.repo} --ref main "
-            "-f operation=handoff -f client=CLIENT -f claim_id=UUID -f evidence=URL"
-        )
-    script = Path.cwd() / ".github" / "scripts" / "factory_external_review.py"
-    if not script.is_file():
-        raise RuntimeError("the adopter checkout lacks factory_external_review.py")
-    spec = importlib.util.spec_from_file_location("factory_external_review", script)
-    if spec is None or spec.loader is None:
-        raise RuntimeError("could not load the trusted review recorder")
-    recorder = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(recorder)
-    recorder.record(pr_number=pr, head=head, actor=actor, review=review, environment=environment)
-
-
-def _check_handoff_scope(
-    github: GitHub,
-    core: ModuleType,
-    claim: dict[str, Any],
-    pr_number: int,
-    pr: dict[str, Any],
-) -> None:
-    """Refuse a handoff whose PR now links work outside the claim's fence.
-
-    A body edit leaves the head unchanged, so this runs on every read of the
-    PR during the handoff, including the final one before the claim releases.
-    """
-    number = int(str(claim["target"]).split(":")[1])
-    if claim["action"] == "implement":
-        row = {
-            "number": pr_number,
-            "headRefName": string(obj(pr.get("head")), "ref"),
-            "body": string(pr, "body"),
-            "title": string(pr, "title"),
-        }
-        # GitHub closes what the body names; the factory links by branch first.
-        # Both must name the claimed issue.
-        if (
-            core.issue_explicitly_closed_by_pr(row) != number
-            or core.linked_issue_from_pr(row) != number
-            or _closed_issues(github.repo, string(pr, "body"), string(pr, "title")) != {number}
-        ):
-            raise ValueError("PR body must say 'Closes #N' for the claimed issue and nothing else")
-        return
-    # A repair claim fenced the PR and the issue it linked at reservation. A
-    # body edited since to link another open issue would hand off (and
-    # release) work this claim never held; a dropped or closed link is fine.
-    link = _linked_open_issue(github, pr_number, pr)
-    if link is not None and link not in [int(n) for n in claim.get("targets") or []]:
-        raise ValueError(
-            f"the PR now links #{link}, which this claim does not hold; "
-            "release the claim and reserve the PR again"
-        )
-
-
-def _evidence_pr(github: GitHub, evidence: str) -> int | None:
-    """The PR number a handoff URL names, so the ledger can check nobody holds it."""
-    route = evidence.removeprefix(f"https://github.com/{github.repo}/").split("#", 1)[0]
-    return int(route.split("/")[1]) if route.startswith("pull/") else None
-
-
-def _rollback(
-    store: ModuleType, github: GitHub, actor: str, client: str, claim_id: str, why: str
-) -> bool:
-    """Release our own just-acquired claim; False when that cannot be confirmed."""
-    try:
-        result: dict[str, object] = store.external_lease_action(
-            github.repo, actor, client, claim_id, operation="release", evidence=why
-        )
-    except Exception:  # noqa: BLE001 - the caller reports the claim it still holds
-        return False
-    return result.get("status") == "released"
-
-
 def claim_action(
     github: GitHub,
     *,
@@ -1036,25 +331,6 @@ def claim_action(
 
 class ClaimStoreUnavailable(RuntimeError):
     """This machine has no connection to the shared claim store (Neon)."""
-
-
-def claim_scope(github: GitHub, kind: str, number: int) -> list[int]:
-    """The numbers a claim on this item could sit on: a PR and its linked issue."""
-    if kind != "pr":
-        return [number]
-    try:
-        pr = obj(github.repo_api(f"pulls/{number}"))
-    except GitHubError:
-        return [number]
-    linked = runtime.module("factory_work_policy").linked_issue_from_pr(
-        {
-            "number": number,
-            "headRefName": string(obj(pr.get("head")), "ref"),
-            "body": string(pr, "body"),
-            "title": string(pr, "title"),
-        }
-    )
-    return [number] if linked in (None, number) else [number, int(linked)]
 
 
 def holder(github: GitHub, number: int) -> dict[str, object] | None:
