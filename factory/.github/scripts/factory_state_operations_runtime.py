@@ -7,6 +7,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Any
 
 import factory_state_operations_core as core
+from factory_quota_reset import CAPACITY_OUTCOMES
 from factory_state_operations_backoff import (
     MODEL_COOLDOWNS,
     TRANSIENT,
@@ -19,6 +20,7 @@ from factory_state_operations_backoff import (
     validate_intermediate_model_failures,
 )
 from factory_state_operations_core import HEAD_RE, REPO_RE
+from factory_state_operations_quota import capacity_hints, record_capacity_cooldown
 
 
 async def project_runtime(conn: Any, repo: str, run_id: int, outcome: dict[str, Any]) -> bool:
@@ -54,6 +56,7 @@ async def project_runtime(conn: Any, repo: str, run_id: int, outcome: dict[str, 
     # A trusted job-log collector can attest multiple attempted free models.
     # This evidence belongs to this same idempotent runtime transaction.
     model_failures = validate_intermediate_model_failures(outcome.get("model_failures"), source)
+    hints = capacity_hints(outcome.get("quota_hints"))
     async with conn.transaction():
         inserted = await conn.fetchval(
             """INSERT INTO public.factory_runtime_event_keys(repo,run_id)
@@ -96,9 +99,20 @@ async def project_runtime(conn: Any, repo: str, run_id: int, outcome: dict[str, 
                    WHERE factory_model_health.last_run_id <= EXCLUDED.last_run_id
                      AND factory_model_health.status != 'retired'""",
                 repo, source, model, status, classification, until, observed if proven else None, run_id)
+        if attributed and not delivered and classification in CAPACITY_OUTCOMES:
+            await record_capacity_cooldown(
+                conn, repo, source, model, classification, "model",
+                hints.get((source, model)), observed, run_id,
+            )
         # Record every failed candidate independently even if another model
         # eventually completed the same leased task. No provider-wide breaker.
         for failed_source, failed_model, failed_outcome, failed_scope in model_failures:
+            if failed_outcome in CAPACITY_OUTCOMES:
+                await record_capacity_cooldown(
+                    conn, repo, failed_source, failed_model, failed_outcome, failed_scope,
+                    hints.get((failed_source, failed_model)), observed, run_id,
+                )
+                continue
             failed_status = (
                 "retired" if failed_outcome == "model_retired_410"
                 else "unavailable" if failed_outcome in MODEL_COOLDOWNS

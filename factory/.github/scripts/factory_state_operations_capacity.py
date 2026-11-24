@@ -45,11 +45,11 @@ async def _eligibility(conn: Any, repo: str, workers: list[str]) -> tuple[list[s
         if isinstance(payload, str):
             payload = json.loads(payload)
         state = payload[0] if isinstance(payload, list) and payload else {}
-        if isinstance(state, dict) and state.get("outcome") in {"provider_quota", "provider_failure"}:
+        if isinstance(state, dict) and state.get("outcome") in {"provider_quota", "provider_failure", "provider_throttle"}:
             provider_backoffs[key.removeprefix(prefix)] = state
     model_backoffs = {}
     for row in await conn.fetch(
-        """SELECT cache_key,payload,expires_at FROM public.factory_state_kv
+        """SELECT cache_key,payload,expires_at,updated_at FROM public.factory_state_kv
            WHERE cache_key LIKE $1 AND expires_at>now()""",
         f"factory-model-backoff-v1:{repo}:source:%"
     ):

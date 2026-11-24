@@ -7,6 +7,8 @@ import re
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
+from factory_quota_reset import CAPACITY_OUTCOMES
+
 TRANSIENT = {"provider_failure": 900, "provider_throttle": 1800, "provider_quota": 1800}
 MODEL_COOLDOWNS = {"model_unavailable": 21600, "model_policy_violation": 21600,
                    "model_retired_410": 21600}
@@ -16,7 +18,7 @@ MODEL_SCOPED_SOURCES = {"omniroute-free", "omniroute-opencode"}
 
 
 def model_scoped_transient(source: str, outcome: str) -> bool:
-    return outcome in TRANSIENT
+    return outcome in TRANSIENT and outcome not in CAPACITY_OUTCOMES
 
 
 def provider_scoped_transient(source: str, outcome: str) -> bool:
@@ -28,14 +30,9 @@ def provider_scoped_transient(source: str, outcome: str) -> bool:
 def _provider_cooldown(source: str, outcome: str, observed: datetime, seconds: int | None = None) -> datetime | None:
     if outcome not in TRANSIENT:
         return None
-    if outcome == "provider_quota":
-        try:
-            from factory_quota_pause import quota_reset_epoch
-            reset = quota_reset_epoch(source, int(observed.timestamp()))
-            if reset > observed.timestamp():
-                return datetime.fromtimestamp(reset, timezone.utc)
-        except (ImportError, ValueError, KeyError):
-            pass
+    if outcome in CAPACITY_OUTCOMES and seconds is None:
+        from factory_quota_reset import resolve
+        return resolve(source, outcome, None, observed).until
     return observed + timedelta(seconds=seconds if seconds is not None else TRANSIENT[outcome])
 
 
@@ -57,21 +54,44 @@ def exponential_provider_delay(
 
 # Worker failures get durable Fibonacci backoff while retaining their roster pins.
 # Credential absence is gated before lease assignment, never charged to a model.
+# Quota and throttle are provider capacity: they get a reset-timed cooldown
+# (factory_quota_reset), never a streak.
 WORKER_RETRY_CLASSES = frozenset({
-    "agent_timeout", "provider_failure", "provider_throttle", "provider_quota",
+    "agent_timeout", "provider_failure",
     "model_unavailable", "model_policy_violation", "environment_failure",
     "control_plane_failure", "unknown_failure", "work_failure",
 })
 
 
+MAX_FIBONACCI_DELAY_SECONDS = 24 * 3600
+
+
 def fibonacci_worker_delay(streak: int) -> int:
-    """Five-minute Fibonacci retries per exact model, with no upper bound."""
+    """Five-minute Fibonacci retries per exact model, capped at one day."""
     if streak < 1:
         raise ValueError("failure streak must be positive")
     previous, current = 1, 1
     for _ in range(1, streak):
         previous, current = current, previous + current
-    return previous * 300
+        if previous * 300 >= MAX_FIBONACCI_DELAY_SECONDS:
+            return MAX_FIBONACCI_DELAY_SECONDS
+    return min(previous * 300, MAX_FIBONACCI_DELAY_SECONDS)
+
+
+def legacy_capacity_backoff(state: Any) -> bool:
+    """A Fibonacci row written for a quota or throttle refusal before the fix."""
+    return isinstance(state, dict) and state.get("outcome") in CAPACITY_OUTCOMES
+
+
+def effective_retry_at(state: dict[str, Any], updated_at: Any = None) -> datetime | None:
+    """Stored not-before time, clamped to the one-day cap for rows written uncapped."""
+    try:
+        retry_at = datetime.fromisoformat(str(state.get("next_retry_at")))
+    except (TypeError, ValueError):
+        return None
+    if isinstance(updated_at, datetime):
+        retry_at = min(retry_at, updated_at + timedelta(seconds=MAX_FIBONACCI_DELAY_SECONDS))
+    return retry_at
 
 
 def fibonacci_retry_at(observed: datetime, streak: int) -> datetime:
@@ -105,6 +125,8 @@ def worker_backoff_reason(record: Any, source: str, model: str, now: datetime) -
     # failure must not suppress the entire slot's alternate model capacity.
     if not model and state.get("outcome") in MODEL_RETRY_CLASSES:
         return None
+    if legacy_capacity_backoff(state):
+        return None
     if model and model != "@catalog" and state.get("model") != model:
         return None
     retry_at = state.get("next_retry_at")
@@ -112,12 +134,11 @@ def worker_backoff_reason(record: Any, source: str, model: str, now: datetime) -
     if retry_at is None and "suspended" in state:
         return None
     if retry_at is not None:
-        try:
-            if datetime.fromisoformat(str(retry_at)) > now:
-                return f"Fibonacci retry deferred until {retry_at}"
-        except ValueError:
+        updated = record.get("updated_at") if hasattr(record, "get") else None
+        until = effective_retry_at(state, updated)
+        if until is None:
             return "invalid worker backoff state"
-        return None
+        return f"Fibonacci retry deferred until {until.isoformat()}" if until > now else None
     # Backward compatibility: old timeout keys stored their delay in expires_at.
     return "legacy timeout cooling in Neon" if record["expires_at"] > now else None
 
@@ -126,6 +147,7 @@ MODEL_RETRY_CLASSES = frozenset({
     "agent_timeout", "provider_failure", "provider_throttle", "provider_quota",
     "model_unavailable", "model_policy_violation",
 })
+MODEL_STREAK_CLASSES = MODEL_RETRY_CLASSES - CAPACITY_OUTCOMES
 
 
 def validate_intermediate_model_failures(
@@ -167,7 +189,7 @@ def validate_intermediate_model_failures(
 
 def attributable_model_failure(classification: str, proven: bool) -> bool:
     """Only blame the shared source/model when inference was attempted."""
-    return classification in MODEL_RETRY_CLASSES or (
+    return classification in MODEL_STREAK_CLASSES or (
         proven and classification in {"work_failure", "unknown_failure"}
     )
 

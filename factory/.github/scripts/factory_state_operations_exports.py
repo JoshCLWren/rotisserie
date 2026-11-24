@@ -7,7 +7,9 @@ from datetime import datetime, timezone
 from typing import Any
 
 import factory_state_operations_core as core
+from factory_state_operations_backoff import effective_retry_at, legacy_capacity_backoff
 from factory_state_operations_core import REPO_RE
+from factory_state_operations_quota import CREDIT_POOL_KEY, active_capacity_cooldowns
 
 
 async def _export_model_exclusions(
@@ -71,7 +73,7 @@ async def _export_model_exclusions(
     # Durable source/model Fibonacci backoffs outlive the shorter model
     # health cooldowns. Export them as candidate exclusions for catalog slots.
     backoffs = await conn.fetch(
-        """SELECT payload FROM public.factory_state_kv
+        """SELECT payload,updated_at FROM public.factory_state_kv
            WHERE cache_key LIKE $1""",
         f"factory-model-backoff-v1:{repo}:source:%"
     )
@@ -86,10 +88,9 @@ async def _export_model_exclusions(
         source, model = state.get("source"), state.get("model")
         if not isinstance(source, str) or not isinstance(model, str) or not model:
             continue
-        try:
-            retry_at = datetime.fromisoformat(str(state.get("next_retry_at")))
-        except (ValueError, TypeError):
-            retry_at = None
+        if legacy_capacity_backoff(state):
+            continue
+        retry_at = effective_retry_at(state, row.get("updated_at") if hasattr(row, "get") else None)
         if retry_at is not None and retry_at > now:
             if (
                 retry_override == (source, model)
@@ -106,6 +107,9 @@ async def _export_model_exclusions(
     # comment locators are retired and never exported to the runner.
     if worker and (not worker.isdecimal() or worker not in core._roster()):
         raise ValueError("invalid trusted worker for model exclusions")
+    pools = sorted((await active_capacity_cooldowns(conn, repo))["pool"])
+    if pools:
+        excluded[CREDIT_POOL_KEY] = pools
     return excluded
 
 
@@ -238,16 +242,16 @@ async def _export_fleet_failover_sources(conn: Any, repo: str, worker: str) -> l
         )
     }
     caps = load_budgets()
+    cooling = (await active_capacity_cooldowns(conn, repo))["account"]
     sources = set(PROVIDERS) | {"opencode-free", "openrouter-free", "kilo-auto"}
     selected = {assigned}
     for source in sources - {assigned}:
         budget = budgets.get(source)
-        if source in caps:
+        if source in caps or source in cooling:
             continue
         if budget is not None:
             if budget["concurrency_limit"] is not None or budget["daily_limit"] is not None:
                 continue
-            # No provider-wide cooldown: failing models back off individually.
         selected.add(source)
     return sorted(selected)
 

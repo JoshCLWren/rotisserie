@@ -532,10 +532,9 @@ zero_exit_provider_refusal() {
 }
 record_model_failover_failure() {
   local failed_source="$1" failed_model="$2" classification="$3" scope="$4"
-  # The timestamped log marker is the attested record the trusted Entry
-  # persister writes to Neon (refine_trusted_failover_models). Issue #1093
-  # is retired as a registry and is never written.
+  # Timestamped markers are the attested records the trusted Entry persister writes to Neon.
   log "FACTORY_TRUSTED_FAILOVER: source=$failed_source model=$failed_model outcome=$classification scope=$scope"
+  [[ "$classification" == provider_quota || "$classification" == provider_throttle ]] && log "FACTORY_QUOTA_RESET: $(python3 "$FACTORY_TRUSTED_FAILOVER_DIR/factory_quota_reset.py" hint --source "$failed_source" --model "$failed_model" --outcome "$classification" --log "/tmp/opencode-factory-$WORKER.log" --probe --probe-cache "$RUNNER_TEMP/factory-quota-probe.json" 2>/dev/null)" || true
 }
 select_next_eligible_model() {
   if [[ "${FACTORY_EXACT_MODEL:-auto}" != auto || "${FACTORY_EXACT_SOURCE:-auto}" != auto ]]; then

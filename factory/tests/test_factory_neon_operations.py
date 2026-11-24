@@ -301,20 +301,17 @@ def test_intermediate_model_failures_use_terminal_runtime_idempotency():
     assert "last_run_id <= EXCLUDED.last_run_id" in text
 
 
-def test_fibonacci_retry_progresses_without_cap():
+def test_fibonacci_retry_progresses_to_a_one_day_cap():
     fib = operations.fibonacci_worker_delay
     assert [fib(i) for i in range(1, 8)] == [300, 300, 600, 900, 1500, 2400, 3900]
-    # No 24h ceiling: per-model backoff keeps growing.
-    assert fib(20) == 6765 * 300
-    assert fib(50) > fib(49) > 86400
+    assert fib(13) == 233 * 300 and fib(14) == fib(20) == fib(500) == 86400
 
 
-def test_fibonacci_retry_at_clamps_only_at_datetime_max():
+def test_fibonacci_retry_at_is_capped_at_one_day():
     observed = datetime(2026, 11, 17, tzinfo=UTC)
     assert operations.fibonacci_retry_at(observed, 3) == observed + timedelta(seconds=600)
-    assert operations.fibonacci_retry_at(observed, 30) - observed == timedelta(seconds=832040 * 300)
-    huge = operations.fibonacci_retry_at(observed, 200)
-    assert huge == datetime.max.replace(tzinfo=UTC)
+    assert operations.fibonacci_retry_at(observed, 30) - observed == timedelta(days=1)
+    assert operations.fibonacci_retry_at(observed, 200) == observed + timedelta(days=1)
 
 
 def test_retry_time_and_retained_streak_are_independent_of_ttl():
@@ -358,14 +355,11 @@ def test_missing_credentials_are_not_inference_failures():
 def test_one_model_failure_does_not_cool_an_entire_provider():
     """Catalog model failures leave independent models on the same provider usable."""
     for source in ("vercel-ai-gateway", "ollama-cloud", "mistral", "pollinations"):
-        for outcome in ("provider_failure", "provider_throttle"):
-            assert operations.model_scoped_transient(source, outcome)
+        assert operations.model_scoped_transient(source, "provider_failure")
+        for outcome in ("provider_failure", "provider_throttle", "provider_quota"):
             assert not operations.provider_scoped_transient(source, outcome)
-        assert not operations.provider_scoped_transient(source, "provider_quota")
-        assert operations.model_scoped_transient(source, "provider_quota")
-    for source in operations.MODEL_SCOPED_SOURCES:
-        assert operations.model_scoped_transient(source, "provider_quota")
-        assert not operations.provider_scoped_transient(source, "provider_quota")
+        # Capacity refusals get a reset-timed cooldown, not the model-transient path.
+        assert not operations.model_scoped_transient(source, "provider_quota")
     for outcome in ("model_unavailable", "model_policy_violation", "unknown_failure"):
         assert not operations.provider_scoped_transient("mistral", outcome)
 
@@ -373,9 +367,10 @@ def test_one_model_failure_does_not_cool_an_entire_provider():
 def test_all_actionable_model_failures_use_fibonacci_without_credential_penalty():
     # Every real inference failure class must count; credential, checkout,
     # and controller failures belong to the worker, not an unrelated model.
-    for name in ("provider_failure", "provider_throttle", "provider_quota",
-                 "model_unavailable", "model_policy_violation", "agent_timeout"):
+    for name in ("provider_failure", "model_unavailable", "model_policy_violation", "agent_timeout"):
         assert operations.attributable_model_failure(name, False), name
+    for name in ("provider_throttle", "provider_quota"):
+        assert not operations.attributable_model_failure(name, True), name
     for name in ("work_failure", "unknown_failure"):
         assert operations.attributable_model_failure(name, True), name
         assert not operations.attributable_model_failure(name, False)
@@ -401,8 +396,9 @@ def test_history_seeds_failed_source_model_without_double_counting_current_run()
     ]
     # A current terminal event already in Neon must never count twice.
     rows = [event("worker_failed", 51, "work_failure", proven=True), *old]
-    assert operations.historical_failure_streak(rows, 51, "kilo-auto", "kilo-auto/free", model_only=True) == 3
-    assert operations.historical_failure_streak(rows, 51, "kilo-auto", "kilo-auto/free", model_only=False) == 3
+    # The throttle at run 49 is capacity, not a model fault: it never counts.
+    assert operations.historical_failure_streak(rows, 51, "kilo-auto", "kilo-auto/free", model_only=True) == 2
+    assert operations.historical_failure_streak(rows, 51, "kilo-auto", "kilo-auto/free", model_only=False) == 2
     assert operations.historical_failure_streak(rows, 51, "z-ai", "x", model_only=True) == 0
 
 
@@ -603,7 +599,7 @@ def test_model_backoffs_are_in_trusted_catalog_exclusions():
     future = datetime.now(UTC) + timedelta(minutes=20)
     db = FakeConnection(model_backoffs=[{
         "payload": [{"source": "openrouter-free", "model": "vendor/failed:free",
-                     "outcome": "provider_throttle", "streak": 3,
+                     "outcome": "provider_failure", "streak": 3,
                      "next_retry_at": future.isoformat()}],
     }])
     exclusions = run(operations._export_model_exclusions(db, REPO))
@@ -657,6 +653,7 @@ def test_fleet_admission_does_not_double_book_capped_provider() -> None:
 
     class CapacityConnection:
         async def fetch(self, sql, *args):
+            if "factory_state_kv" in sql: return []  # noqa: E701
             assert "factory_provider_budget" in sql
             return [
                 {"source": "requesty", "concurrency_limit": 1, "daily_limit": None,
@@ -677,53 +674,26 @@ def test_fleet_admission_does_not_double_book_capped_provider() -> None:
     assert "cloudflare-workers-ai" not in allowed
 
 
-def test_legacy_account_refusal_only_backs_off_the_exact_model(monkeypatch):
-    """Old account-labelled records are downgraded to exact-model Fibonacci."""
+def test_account_quota_refusal_never_writes_a_model_streak(monkeypatch):
+    """A refused account cools the provider until its reset; no per-model streak."""
     monkeypatch.setenv("FACTORY_SLOTS_PER_PROVIDER", "1")
     monkeypatch.delenv("FACTORY_SLOT_PROVIDER_SOURCES", raising=False)
-    roster = operations._roster()
-    worker, (terminal_source, _) = sorted(roster.items())[0]
-    from factory_provider_candidates import ADAPTERS
-
-    refused_source = next(s for s in sorted(ADAPTERS) if s != terminal_source)
-    refused_model = "generated/refused-model"
-    model_key = f"factory-model-backoff-v1:{REPO}:source:{refused_source}:model:{refused_model}"
-    provider_key = f"factory-provider-backoff-v1:{REPO}:source:{refused_source}"
+    worker, (terminal_source, _) = sorted(operations._roster().items())[0]
+    refused = "openrouter-free" if terminal_source != "openrouter-free" else "nvidia"
+    model_key = f"factory-model-backoff-v1:{REPO}:source:{refused}:model:generated/refused"
+    provider_key = f"factory-provider-backoff-v1:{REPO}:source:{refused}"
     conn = RuntimeConn()
-
-    def outcome(run_id: int) -> dict:
-        return {
-            "worker": worker, "source": terminal_source, "model": f"generated/terminal-{run_id}",
+    for run_id in (2001, 2002, 2003):
+        assert run(operations.project_runtime(conn, REPO, run_id, {
+            "worker": worker, "source": terminal_source, "model": f"generated/t-{run_id}",
             "outcome_class": "provider_throttle", "exact_model_proven": True,
             "persisted_work": False, "configured": True,
-            "model_failures": [{
-                "source": refused_source, "model": refused_model,
-                "outcome": "provider_quota", "scope": "account",
-            }],
-        }
-
-    for run_id, expected_streak in [(2001, 1), (2002, 2), (2003, 3)]:
-        assert run(operations.project_runtime(conn, REPO, run_id, outcome(run_id))) is True
-        record = conn.kv[model_key][0]
-        assert record["outcome"] == "provider_quota"
-        assert record["streak"] == expected_streak
-        assert record["suspended"] is False
-        assert record["next_retry_at"] is not None
-        assert provider_key not in conn.kv
-
-    # The cooled model is excluded, but the provider's other models and slots remain available.
-    model_row = {
-        "cache_key": model_key, "payload": conn.kv[model_key],
-        "expires_at": datetime.now(UTC) + timedelta(hours=1),
-    }
-    db = FakeConnection(model_backoffs=[model_row])
-    exclusions = run(operations._export_model_exclusions(db, REPO))
-    assert exclusions == {refused_source: [refused_model]}
-    with patch.object(core, "_roster", return_value={
-        "41": (refused_source, "@catalog"), "42": (terminal_source, "@catalog"),
-    }):
-        kept, rejected = run(operations._eligibility(db, REPO, ["41", "42"]))
-    assert kept == ["41", "42"] and not rejected
+            "model_failures": [{"source": refused, "model": "generated/refused",
+                                "outcome": "provider_quota", "scope": "account"}],
+        })) is True
+    assert model_key not in conn.kv
+    assert conn.kv[provider_key][0]["outcome"] == "provider_quota"
+    assert not any(k.startswith(f"factory-worker-backoff-v1:{REPO}:") for k in conn.kv)
 
 
 def test_legacy_account_failure_is_now_model_scoped():

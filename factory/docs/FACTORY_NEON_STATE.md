@@ -86,6 +86,65 @@ processes at most 1,000 records per invocation. It cannot delete lease, backoff,
 registry or provider state. This cleanup is not a replacement cache. Physical
 Postgres allocation can remain until ordinary vacuum reclaims dead storage.
 
+## Backoffs: real failures, quota and throttle
+
+A real execution failure (agent timeout, provider failure, unavailable model,
+proven work failure) grows a Fibonacci streak per worker and per exact
+source/model pair: 5, 5, 10, 15, 25 ... minutes. The delay stops growing at
+24 hours (`MAX_FIBONACCI_DELAY_SECONDS`). Rows written before the cap are read
+as at most 24 hours after their last update.
+
+A quota, throttle or empty-balance refusal is provider capacity, not a model
+fault. It never grows a streak. `factory_quota_reset.py` decides one cooldown:
+
+| Refusal | Cooldown ends | Blocks |
+| --- | --- | --- |
+| Daily quota | The provider's next daily reset | Whole account, or the pair where limits are per model |
+| Monthly quota | First instant of the next UTC month | Whole account |
+| Empty credit balance ("Insufficient balance", "Add usage credits", "out of credits") | Recheck after 24 hours | Priced models of that source only (`@credit_pool` exclusion) |
+| Throttle (HTTP 429 without a daily limit) | The provider's wait hint, else 5 minutes (at most 1 hour) | Same as the source's scope |
+| Oversized request (input above a per-minute token limit) | No cooldown | Nothing |
+
+Reset policies per source (`RESET_POLICIES`):
+
+- `openrouter-free`: daily, account, next UTC midnight. The OpenRouter limits
+  page counts free-model requests "per UTC day". The trusted probe reads
+  `GET /api/v1/key` (`free_model_daily_requests.remaining`) without inference.
+- `groq-free`: daily, per model. Refusal text such as "try again in 1m26.4s"
+  sets the time.
+- `gemini-free`: daily, per model, next midnight in America/Los_Angeles (the
+  Gemini rate-limit page; unverified from this repository).
+- `mistral`, `ollama-cloud`, `cohere-eval`: monthly, account.
+- Every other source: no documented reset, so the conservative default is the
+  next UTC midnight, account scope.
+
+Where the cooldown lives:
+
+- account: `factory-provider-backoff-v1:<repo>:source:<source>`. The dispatcher
+  filter and `export-fleet-failover-sources` skip the source until it expires.
+- pool: `factory-credit-pool-v1:<repo>:source:<source>`, exported to the runner
+  as `"@credit_pool": [sources]` in `export-model-exclusions`. Selection drops
+  only the models whose catalog row publishes a positive price.
+- model: `factory_model_health` status `cooling` for the exact pair.
+
+A later refusal never shortens an active cooldown. Old Fibonacci rows whose
+outcome was quota or throttle no longer gate dispatch.
+
+### Reset hints and the probe
+
+After a quota or throttle failover the worker writes one trusted marker:
+`FACTORY_QUOTA_RESET: source= model= outcome= kind= reset_at= reset_source=`.
+`reset_source` is `text` (the refusal named the wait), `header` (Retry-After or
+X-RateLimit-Reset from the probe), `key_endpoint` (OpenRouter key endpoint) or
+`policy` (the default above). Parsed resets are clamped between now and
+32 days (1 hour for a throttle).
+
+`factory_quota_probe.py` sends at most one request per source per run, from the
+worker shell and never from the model. It prints only parsed numbers. A 401 or
+403 is a blocked probe and never a reset signal. Sources whose request headers
+OpenCode sets per session (`opencode-free`, `kilo-auto`, `omniroute-free`) are
+never probed: they use the policy default.
+
 ## Slot leases (several holders on one target)
 
 A normal lease lets one worker hold an issue or PR. Incident racing (#239)
