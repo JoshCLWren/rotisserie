@@ -78,9 +78,10 @@ such change must be called out here and in its release notes.
 - The hosted dashboard's sign-in service comes from `[dashboard] auth_url`
   (or `build_hosted_control_room.py --auth-url`); without it the dashboard is
   read-only.
-- `scripts/sync_factory_quota.py` requires `FACTORY_QUOTA_SOURCE_REPOSITORY`
-  and `FACTORY_QUOTA_PUBLISH_REPOSITORY`. The quota observer's public alias
-  is `factory-actions`.
+- `scripts/sync_factory_quota.py` reads quota observations from
+  `GITHUB_REPOSITORY` and publishes to its owner's `OWNER.github.io`
+  (`FACTORY_QUOTA_SOURCE_REPOSITORY` and `FACTORY_QUOTA_PUBLISH_REPOSITORY`
+  override both). The quota observer's public alias is `factory-actions`.
 - Labels, commit authors, PR titles and dashboards say "Factory N" and use
   the repository name instead of a product name.
 - Factory comment markers derive their prefix from the adopter repository name

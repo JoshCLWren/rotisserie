@@ -18,8 +18,14 @@ from typing import Any
 
 from scripts.publish_factory_quota import sanitize
 
-SOURCE = os.environ.get("FACTORY_QUOTA_SOURCE_REPOSITORY", "")
-DESTINATION = os.environ.get("FACTORY_QUOTA_PUBLISH_REPOSITORY", "")
+# The adopter workflow publishes its own observations to its owner's Pages site.
+SOURCE = os.environ.get("FACTORY_QUOTA_SOURCE_REPOSITORY") or os.environ.get(
+    "GITHUB_REPOSITORY", ""
+)
+_OWNER = SOURCE.split("/", 1)[0]
+DESTINATION = os.environ.get("FACTORY_QUOTA_PUBLISH_REPOSITORY") or (
+    f"{_OWNER}/{_OWNER}.github.io" if _OWNER else ""
+)
 PUBLIC_ALIAS = "factory-actions"
 SLUG = re.compile(r"[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+")
 ARTIFACT_NAME = "factory-api-quota"
@@ -138,7 +144,8 @@ def main() -> None:
         raise SystemExit("Missing separate scoped factory observation and publishing tokens")
     if not (SLUG.fullmatch(SOURCE) and SLUG.fullmatch(DESTINATION)):
         raise SystemExit(
-            "Set FACTORY_QUOTA_SOURCE_REPOSITORY and FACTORY_QUOTA_PUBLISH_REPOSITORY to OWNER/NAME"
+            "Set GITHUB_REPOSITORY, or FACTORY_QUOTA_SOURCE_REPOSITORY and "
+            "FACTORY_QUOTA_PUBLISH_REPOSITORY, to OWNER/NAME"
         )
     now = datetime.now(UTC)
     payload = aggregate(observations_from_artifacts(now), now)
