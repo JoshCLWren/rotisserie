@@ -106,15 +106,23 @@ def select_next(
     available = ids - excluded
     if not available:
         raise ExhaustedCandidatesError(f"no eligible unattempted {source} models")
-    preferred = {
-        model for provider, model in (proven_models() if proven is None else proven)
-        if provider == source
-    } & available
-    if proven_only and not preferred:
-        raise ExhaustedCandidatesError(f"no eligible proven {source} models")
-    if preferred:
-        # Narrow the existing selector's choice to proven models only.
-        excluded |= available - preferred
+    from factory_model_track_record import has_history
+    from factory_model_track_record import proven as track_proven
+
+    if has_history(source, sorted(available)):
+        # The selector weights by track record and keeps exploring; narrowing would stop that.
+        if proven_only and not track_proven(source, sorted(available)):
+            raise ExhaustedCandidatesError(f"no eligible proven {source} models")
+    else:
+        preferred = {
+            model for provider, model in (proven_models() if proven is None else proven)
+            if provider == source
+        } & available
+        if proven_only and not preferred:
+            raise ExhaustedCandidatesError(f"no eligible proven {source} models")
+        if preferred:
+            # Narrow the existing selector's choice to proven models only.
+            excluded |= available - preferred
     if source == "opencode-free":
         from factory_opencode_go import choose
         selected = choose(catalog_json or {}, worker, rotation, excluded)
@@ -123,10 +131,12 @@ def select_next(
 
         selected = choose(catalog_text or "", worker, excluded, rotation)
     elif source == "openrouter-free":
-        from factory_published_model_catalog import choose_model
+        from factory_published_model_catalog import choose
 
-        model = choose_model(source, worker, catalog_json, excluded, rotation)
-        selected = {"model": model, "runtime_model": f"openrouter/{model}"}
+        model, why = choose(source, worker, catalog_json, excluded, rotation)
+        selected = {
+            "model": model, "runtime_model": f"openrouter/{model}", "selection_reason": why,
+        }
     else:
         from factory_runtime_model_select import select
 

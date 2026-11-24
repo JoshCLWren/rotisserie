@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import argparse
-import hashlib
 import json
 import re
 import sys
@@ -51,10 +50,11 @@ def choose(
     candidates = [item for item in sorted(selectors) if item not in (excluded or set())]
     if not candidates:
         raise ValueError("Kilo CLI reported no eligible catalog candidates")
-    offset = int.from_bytes(hashlib.sha256(f"{worker}:{rotation}".encode()).digest()[:8], "big")
-    selected = candidates[offset % len(candidates)]
+    from factory_model_track_record import pick
+
+    selected, why = pick("kilo-auto", candidates, f"{worker}:{rotation}")
     return {"model": selected, "runtime_model": selectors[selected], "source": "kilo-auto",
-            "reason": "selected-from-live-kilo-cli"}
+            "reason": "selected-from-live-kilo-cli", "selection_reason": why}
 
 
 def main() -> int:

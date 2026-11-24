@@ -11,6 +11,16 @@ such change must be called out here and in its release notes.
 
 ### Added
 
+- An `auto` worker now weighs each eligible live-catalog model by its track
+  record over the last 7 days, for the same action (implement, review,
+  ci-repair, merge-conflict, review-findings) when it has 3 or more runs
+  there. 20% of picks go to models with fewer than 3 runs, so new catalog
+  models get tried. Picks among tried models use Thompson sampling, and no
+  model takes more than 70% of them, so concurrent workers spread. With no
+  usable history the pick is the previous uniform pick. The worker reads the
+  published `factory-stats.json` once per run (no factory store reads). The
+  run summary and `baste failures` show why the model was chosen, and
+  `rotisserie factory stats` gains a "By action" column.
 - `baste turning` says whether the factory is moving work: 🍗🔄 Turning,
   🐢 Slowing or 🔥🔥 Burning, with the most likely reason, the next command
   and the evidence (last worker start and outcome, dispatcher passes with their
