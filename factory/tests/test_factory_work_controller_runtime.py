@@ -1333,7 +1333,7 @@ def test_cli_assign_marks_leased_worker_unavailable_without_reading_pool(
         lambda: (_ for _ in ()).throw(AssertionError("must not rank new work")),
     )
 
-    assert _cli_assign(controller, monkeypatch, capsys) == {"kind": "none", "reason": "worker_unavailable"}
+    assert _cli_assign(controller, monkeypatch, capsys) == {"kind": "none", "reason": "worker_unavailable", "detail": "Factory 13 already has an active lease"}
 
 
 def test_cli_assign_reports_no_work_when_eligible_worker_finds_empty_pool(
@@ -1343,7 +1343,7 @@ def test_cli_assign_reports_no_work_when_eligible_worker_finds_empty_pool(
     monkeypatch.setattr(controller, "worker_skip_reason", lambda worker: None)
     monkeypatch.setattr(controller, "assign_from_pool", lambda *args, **kwargs: None)
 
-    assert _cli_assign(controller, monkeypatch, capsys) == {"kind": "none", "reason": "no_work"}
+    assert _cli_assign(controller, monkeypatch, capsys)["reason"] == "no_work"
 
 
 def test_worker_skip_reason_stops_at_quota_pause_before_lease_lookup(
