@@ -128,7 +128,7 @@ function renderRecap(d){const m=d.merged||{},w=d.went_wrong||{},p=d.providers||{
  +((d.unread||[]).length?'<div class="hint">Could not read: '+h(d.unread.join(", "))+'</div>':"")}
 async function loadHeal(){loading("overview-heal","Reading what the factory fixed by itself…","heal",{since:"24h"});try{const d=await get("heal",{since:"24h"});const rows=(d.healed||[]).map(x=>recapRow(x.text,fmtDate(x.at),x.url));el("overview-heal").innerHTML=asOf(d)+(rows.length?rows.join(""):empty("The factory cleared no stall by itself in the last 24 hours."))}catch(err){el("overview-heal").innerHTML=empty(err.message)}}
 async function loadRecap(){loading("overview-recap","Reading what the factory did…","recap",{since:"12h"});try{const d=await get("recap",{since:"12h"});state.recap=d;el("overview-recap").innerHTML=renderRecap(d)}catch(err){el("overview-recap").innerHTML=empty(err.message)}}
-const FACES={turning:"🍗🔄 Turning",slowing:"🐢 Slowing",burning:"🔥🔥 Burning"};
+const FACES={turning:"🍗🔄 Turning",slowing:"🐢 Slowing",burning:"🔥🔥 Burning",unknown:"❔ Unknown"};
 const decorate=t=>{const m=/^(\w+):([\s\S]*)$/.exec(String(t||""));const f=m&&FACES[m[1].toLowerCase()];return f?f+":"+m[2]:String(t||"")};
 const reasonWords=r=>Object.entries(r||{}).map(([k,v])=>(k==="not logged"?"reason not logged":k)+" "+v).join(", ");
 function renderTurning(d){const e=d.evidence||{},p=e.dispatcher_passes||[],f=e.control_failures||[],b=e.backlog||{},s=e.store||{},pr=e.providers||{};

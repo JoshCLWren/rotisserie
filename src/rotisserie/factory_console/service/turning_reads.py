@@ -13,9 +13,18 @@ from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 
-from rotisserie.factory_console.github import GitHub, Obj, integer, items, string, timestamp
+from rotisserie.factory_console.github import (
+    GitHub,
+    Obj,
+    integer,
+    items,
+    job_name,
+    string,
+    timestamp,
+)
 from rotisserie.factory_console.service.failures import PERSIST_JOB, first_failed_step
 from rotisserie.factory_console.tracker import DISPATCH_WORKFLOW, WORKER_WORKFLOW, Tracker
+from rotisserie.factory_console.verdicts import outcome_class
 
 ASSIGN_STEP = "Resolve and dispatch fixed workers"
 STORE_STEP = "Initialize the factory store"
@@ -224,9 +233,13 @@ def control_failures(
     failed.sort(key=lambda run: string(run, "updated_at"), reverse=True)
 
     def persist(run: Obj) -> ControlFailure | None:
-        job, step = first_failed_step(tracker.jobs(integer(run, "id") or 0))
+        jobs = tracker.jobs(integer(run, "id") or 0)
+        job, step = first_failed_step(jobs)
         if not job.startswith(PERSIST_JOB):
             return None
+        failed_job = next((row for row in jobs if job_name(row) == job), {})
+        if outcome_class(tracker.log(integer(failed_job, "id") or 0)):
+            return None  # the outcome was recorded; the run is red only for that outcome
         return ControlFailure(
             "Entry persist", string(run, "html_url"), string(run, "updated_at"), step
         )

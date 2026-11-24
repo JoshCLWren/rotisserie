@@ -21,6 +21,7 @@ FACES = {
     turning.TURNING: "🍗🔄 Turning",
     turning.SLOWING: "🐢 Slowing",
     turning.BURNING: "🔥🔥 Burning",
+    turning.UNKNOWN: "❔ Unknown",
 }
 HELP = """\
 Is the factory actually moving work right now? 🍗🔄 Turning, 🐢 Slowing or 🔥🔥 Burning.
@@ -31,8 +32,8 @@ Is the factory actually moving work right now? 🍗🔄 Turning, 🐢 Slowing or
 
 Burning: no worker started for longer than --idle (45m) while eligible work or
 workers exist. Slowing: --failures (3) or more control workflow runs failed in
---window (1h), or the dispatcher is late. Each verdict names its most likely
-reason and the command that digs further.
+--window (1h). Unknown: the worker runs could not be read. Each verdict names
+its most likely reason and the command that digs further.
 
 --follow prints only changes. It exits 10 on Burning and 11 on Slowing, the
 first reading included, so scripts and agents can wake on it.

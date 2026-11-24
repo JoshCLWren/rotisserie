@@ -193,9 +193,69 @@ def test_control_failures_over_the_threshold_are_slowing() -> None:
     assert turning.assess(evidence(failures=[failure("dispatcher")] * 2)).verdict == "turning"
 
 
-def test_a_late_dispatcher_with_running_workers_is_slowing() -> None:
-    verdict = turning.assess(evidence(newest_pass=stamp(timedelta(minutes=40))))
-    assert (verdict.verdict, verdict.reason) == ("slowing", "scheduler-late")
+def test_an_idle_factory_between_watchdog_ticks_is_not_slowing() -> None:
+    found = evidence(
+        workers=idle(),
+        passes=[DispatcherPass(eligible=0)],
+        newest_pass=stamp(timedelta(minutes=40)),
+        backlog={"eligible_issues": 0, "open_prs": 0, "limit": "", "limit_text": ""},
+    )
+    assert (turning.assess(found).verdict, turning.assess(found).reason) == (
+        "turning",
+        "nothing-to-do",
+    )
+    running = evidence(newest_pass=stamp(timedelta(minutes=40)))
+    assert turning.assess(running).verdict == "turning"
+
+
+def test_unread_worker_runs_give_no_verdict_and_no_alert(monkeypatch: pytest.MonkeyPatch) -> None:
+    found = evidence(workers=None, passes=[none_pass()], unread=["worker runs"])
+    verdict = turning.assess(found)
+    assert (verdict.verdict, verdict.reason) == ("unknown", "unread")
+    seen = scripted(monkeypatch, [found, found, evidence(workers=idle(), passes=[none_pass()])])
+    code, out = invoke(["turning", "--follow", "--every", "1m"])
+    assert code == view.EXIT_BURNING and len(seen) == 3
+    assert "❔ Unknown" in out
+
+
+def entry_run(run_id: int) -> tuple[dict[str, JSON], dict[str, JSON]]:
+    run: dict[str, JSON] = {
+        "id": run_id,
+        "status": "completed",
+        "conclusion": "failure",
+        "created_at": stamp(timedelta(minutes=50)),
+        "updated_at": stamp(timedelta(minutes=5)),
+        "html_url": f"https://github.com/acme/widgets/actions/runs/{run_id}",
+    }
+    jobs: dict[str, JSON] = {
+        "jobs": [
+            {"id": 1, "name": "run / factory", "conclusion": "success", "steps": []},
+            {"id": run_id * 10, "name": "Persist trusted worker outcome in Neon",
+             "conclusion": "failure", "steps": [
+                 {"name": "Classify and persist this completed worker", "conclusion": "failure"}
+             ]},
+        ]
+    }  # fmt: skip
+    return run, jobs
+
+
+def test_a_recorded_worker_outcome_is_not_a_control_failure(fake: FakeGitHub) -> None:
+    from rotisserie.factory_console.github import GitHub
+    from rotisserie.factory_console.service.turning_reads import control_failures
+    from rotisserie.factory_console.tracker import Tracker
+
+    recorded = '[factory-outcome-class] {"class":"work_failure","source":"nvidia"}\n'
+    worked, worked_jobs = entry_run(41)
+    lost, lost_jobs = entry_run(42)
+    fake.routes[r"actions/runs/41/jobs"] = worked_jobs
+    fake.routes[r"actions/runs/42/jobs"] = lost_jobs
+    fake.texts["actions/jobs/410/logs"] = recorded
+    fake.texts["actions/jobs/420/logs"] = "##[error]store unreachable\n"
+    fake.routes[r"actions/runs\?status=failure"] = {"workflow_runs": []}
+    github = GitHub("acme/widgets", executable="sh")
+    found = control_failures(github, Tracker(github), NOW - timedelta(hours=1), [worked, lost])
+    assert [row.url.rsplit("/", 1)[-1] for row in found] == ["42"]
+    assert found[0].workflow == "Entry persist"
 
 
 def stats_content() -> JSON:
@@ -337,14 +397,21 @@ def fake_github() -> Any:
     return GitHub("acme/widgets", executable="sh")
 
 
-def test_recap_names_a_burning_stretch() -> None:
+def test_recap_names_a_stretch_and_says_burning_only_while_doctor_fails() -> None:
     since = NOW - timedelta(hours=12)
     runs: list[dict[str, JSON]] = [{"created_at": stamp(timedelta(hours=h))} for h in (11, 10, 2)]
     sources = build.Sources(since=since, now=NOW, runs=runs)
     gap = recap.burning_stretch(sources)
     assert gap is not None
-    assert gap["minutes"] == 480 and gap["ongoing"] is False
-    assert gap["text"] == "Burning: no worker started for 8h 00m, then workers started again."
+    assert gap["minutes"] == 480 and gap["ongoing"] is False and gap["burning"] is False
+    assert gap["text"] == "No worker started for 8h 00m, then workers started again."
+    sources.runs = [{"created_at": stamp(timedelta(hours=11))}]
+    quiet = recap.burning_stretch(sources)
+    assert quiet is not None and str(quiet["text"]).startswith("No worker started for 11h")
+    sources.findings = [doctor.Finding(turning.CHECK, "fail", "Burning: ...")]
+    stretch = recap.burning_stretch(sources)
+    assert stretch is not None and stretch["burning"] is True
+    assert stretch["text"] == "Burning: no worker started for 11h 00m, until now."
     sources.runs = [{"created_at": stamp(timedelta(minutes=m))} for m in range(0, 720, 30)]
     assert recap.burning_stretch(sources) is None
     sources.unread.append("worker runs")

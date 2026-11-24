@@ -121,7 +121,11 @@ def burning_stretch(sources: build.Sources) -> dict[str, object] | None:
         return None
     span = turning.minutes_words(int(str(gap["minutes"])))
     until = "until now" if gap["ongoing"] else "then workers started again"
-    return {**gap, "text": f"Burning: no worker started for {span}, {until}."}
+    burning = gap["ongoing"] and any(
+        item.check == turning.CHECK and item.status == "fail" for item in sources.findings
+    )
+    text = f"no worker started for {span}, {until}."
+    return {**gap, "burning": burning, "text": f"Burning: {text}" if burning else text.capitalize()}
 
 
 def gather(

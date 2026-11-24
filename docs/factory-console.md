@@ -688,9 +688,13 @@ verdict comes first, then the evidence.
 - 🍗🔄 **Turning**: a worker started within `--idle` (45 minutes), or there is
   no work and no worker to start.
 - 🐢 **Slowing**: `--failures` (3) or more control workflow runs failed in
-  `--window` (1 hour), or workers run but the dispatcher is over 20 minutes late.
+  `--window` (1 hour). An Entry run counts only when its persist job failed
+  before it recorded an outcome; a run that is red for its recorded outcome
+  (for example `work_failure`) is a worker result, not a control failure.
 - 🔥🔥 **Burning**: no worker started for longer than `--idle` while eligible
   work or eligible workers exist. A stopped rotisserie burns the food.
+- ❔ **Unknown**: the worker runs could not be read. `--follow` does not alert
+  on it and checks again on the next interval.
 
 Each verdict names the most likely reason and the command that digs further
 (👉). Burning reasons, in the order they are checked:
@@ -716,7 +720,7 @@ The evidence:
   skipped (daily budget reached, turned off, missing credentials).
 - 💥 failed runs of the dispatcher, status pages, label claim, ready-merge drain
   and completion drain workflows in the window, and Entry runs whose persist job
-  failed, with links. Workflows are matched by file path, not run name.
+  failed before recording an outcome, with links. Workflows are matched by file path, not run name.
 - 🧊 providers whose models are all cooling, 📦 eligible issues, open factory
   PRs and any backlog limit, ⏰ expired holds (store leases; readable only where
   the store is configured), 🗄️ the store step of the last pass and the age of
@@ -734,8 +738,9 @@ once. `--notify` also shows a macOS notification (osascript) and does nothing
 elsewhere. `--json` keeps plain values (`"verdict": "burning"`), no emoji.
 
 `baste doctor` runs the same logic as its `work turning` check, and
-`baste recap` adds a 🔥🔥 Burning line when no worker started for over 45
-minutes inside the recap window. Both control rooms show the verdict at the top
+`baste recap` names the longest stretch over 45 minutes without a worker start
+inside the recap window. It says 🔥🔥 Burning only when that stretch is still
+going and the doctor's `work turning` check fails; otherwise it states the gap. Both control rooms show the verdict at the top
 of the overview, above the morning recap.
 
 ## Is the factory itself healthy?

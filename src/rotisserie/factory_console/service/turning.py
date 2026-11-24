@@ -35,7 +35,7 @@ FAILURES = 3
 PASSES = 3
 SCHEDULER_LATE = timedelta(minutes=20)
 READ_ERRORS = (GitHubError, RuntimeError, ValueError, OSError)
-TURNING, SLOWING, BURNING = "turning", "slowing", "burning"
+TURNING, SLOWING, BURNING, UNKNOWN = "turning", "slowing", "burning", "unknown"
 CHECK = "work turning"
 NEXT = {
     "store-unreachable": "baste store selftest",
@@ -47,7 +47,6 @@ NEXT = {
     "no-capacity": "baste backoffs --via github",
     "unknown": "baste why",
     "control-failures": "baste failures",
-    "scheduler-late": "baste doctor",
 }
 
 
@@ -148,6 +147,9 @@ def assess(found: Evidence) -> Verdict:
     offered = any(item.eligible for item in found.passes)
     work_or_workers = offered or work > 0 or not (work_known or found.passes)
     evidence = evidence_dict(found)
+    if "worker runs" in found.unread:
+        text = "The worker runs could not be read, so there is no verdict this time."
+        return Verdict(UNKNOWN, "unread", text, "baste status", evidence)
     if (idle_for is None or idle_for > found.idle) and work_or_workers:
         reason, text = _burning_reason(found)
         idle_words = (
@@ -165,10 +167,6 @@ def assess(found: Evidence) -> Verdict:
         )
         command = "baste failures" if "Entry persist" in names else "baste doctor"
         return Verdict(SLOWING, "control-failures", text, command, evidence)
-    newest = moment(found.newest_pass)
-    if found.passes and newest and found.now - newest > SCHEDULER_LATE:
-        text = f"Workers run, but the dispatcher last ran {_minutes(found.now - newest)} ago."
-        return Verdict(SLOWING, "scheduler-late", text, NEXT["scheduler-late"], evidence)
     if idle_for is not None and idle_for > found.idle:
         text = f"No worker for {_minutes(idle_for)}, and there is no work or worker to start."
         return Verdict(TURNING, "nothing-to-do", text, "", evidence)
@@ -314,7 +312,7 @@ def gather(
 def health(github: GitHub, now: datetime, clock: Clock | None = None) -> tuple[str, str, str]:
     """(status, text, hint) for doctor: burning fails, slowing warns."""
     verdict = assess(gather(github, now=now, clock=clock))
-    status = {BURNING: "fail", SLOWING: "warn"}.get(verdict.verdict, "ok")
+    status = {BURNING: "fail", SLOWING: "warn", UNKNOWN: "warn"}.get(verdict.verdict, "ok")
     text = f"{verdict.verdict.capitalize()}: {verdict.text}".strip()
     return status, text, verdict.next
 
