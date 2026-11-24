@@ -732,6 +732,12 @@ A run that names the provider (`run PROVIDER ...`) or the exact model may still
 use it. A disable never cancels work that is already running. To stop it, run
 `rotisserie factory cancel issue:N` (or `pr:N`).
 
+Dispatch by worker ID (`fixed-model-factory-dispatch` with `worker=`) obeys
+the switch: a worker ID does not name the provider. OmniRoute chooses its
+upstream providers itself, so only `omniroute-free` as a whole can be turned
+off. The provider health probes and the DeepSeek auth comparison check
+providers but never pick one for work, so they ignore the switch.
+
 The local overnight scripts (`factory/scripts/opencode-factory.sh` and
 `opencode-model-scout.sh`) run on your own machine with their own
 `FACTORY_ALLOWED_PROVIDERS` list. They do not read repository variables.

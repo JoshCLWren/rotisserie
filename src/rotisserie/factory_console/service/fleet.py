@@ -14,7 +14,7 @@ from datetime import datetime
 from types import ModuleType
 
 from rotisserie.factory_console import runtime
-from rotisserie.factory_console.github import GitHub, GitHubNotFoundError
+from rotisserie.factory_console.github import GitHub, GitHubError, GitHubNotFoundError
 from rotisserie.factory_console.service import providers
 
 MAX_REASON = 200
@@ -116,6 +116,17 @@ def read(github: GitHub) -> FleetState:
     return state(providers.repository_variables(github))
 
 
+def _current(github: GitHub) -> dict[str, str]:
+    """Live repository variables; a failed read stops the write instead of dropping entries."""
+    try:
+        rows = json.loads(
+            github.gh("variable", "list", "--repo", github.repo, "--json", "name,value")
+        )
+    except ValueError:
+        raise GitHubError("GitHub returned an unreadable variable list") from None
+    return {str(row["name"]): str(row["value"]) for row in rows if isinstance(row, dict)}
+
+
 def switchable_provider(name: str) -> str:
     """Canonical name for a provider the fleet switch knows, or raise SwitchError."""
     wanted = canonical(name)
@@ -200,7 +211,7 @@ class Change:
 
 def set_provider(github: GitHub, name: str, *, enabled: bool, reason: str, now: datetime) -> Change:
     module = _switch()
-    variables = providers.repository_variables(github)
+    variables = _current(github)
     current = set(state(variables).providers)
     target = (
         canonical(name) if enabled and canonical(name) in current else switchable_provider(name)
@@ -221,7 +232,7 @@ def set_model(
         provider = runtime.resolve_provider(provider_name)
     except ValueError as exc:
         raise SwitchError(str(exc)) from None
-    variables = providers.repository_variables(github)
+    variables = _current(github)
     current = set(state(variables).models)
     pair = (provider.source, model)
     if not (enabled and pair in current):

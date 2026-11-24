@@ -11,6 +11,15 @@ such change must be called out here and in its release notes.
 
 ### Added
 
+- Fleet switch: `rotisserie factory providers disable|enable NAME` and
+  `rotisserie factory models disable|enable PROVIDER MODEL`, each with
+  `--reason`. The switch stores `FACTORY_DISABLED_PROVIDERS` and
+  `FACTORY_DISABLED_MODELS` as repository variables, delivered in
+  `FACTORY_REPO_VARS`, so the next dispatcher tick obeys it. Roster offers,
+  worker assignment (forced runs too), model choice, failover, `unstick`, the
+  local Ollama reviewer (`local-ollama`) and PR-Agent review skip a turned-off
+  provider or model. A run that names it explicitly may still use it. Listings
+  show what is off and why. The web UI can switch providers and models.
 - `rotisserie factory checks main` (or `branch:NAME`): why the branch's
   product CI fails on its current commit, reading only the configured CI
   workflows, not factory jobs on the same commit. Job summaries now name

@@ -12,7 +12,7 @@ import pytest
 
 from rotisserie import cli, web
 from rotisserie.factory_console import commands
-from rotisserie.factory_console.github import GitHub
+from rotisserie.factory_console.github import GitHub, GitHubError
 from rotisserie.factory_console.service import catalog, fleet, model_choice
 from rotisserie.factory_console.tracker import Clock
 
@@ -208,3 +208,21 @@ def test_web_switch_writes_map_to_cli_commands(
 def test_web_switch_refuses_unsafe_input(body: dict[str, object]) -> None:
     with pytest.raises(web.InvalidRequest):
         web.write_command(body)
+
+
+def test_a_failed_variable_read_changes_nothing(
+    github: Variables, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    github.values["FACTORY_DISABLED_PROVIDERS"] = "local-ollama"
+    original = Variables._run
+
+    def failing(self: Variables, args: Sequence[str], **_: object) -> str:
+        if list(args[:2]) == ["variable", "list"]:
+            raise GitHubError("HTTP 502")
+        return original(self, args)
+
+    monkeypatch.setattr(GitHub, "_run", lambda self, args, **kw: failing(github, args))
+    data = run(github, ["providers", "disable", "kilo-auto"], monkeypatch)
+    assert data["exit_code"] == 5
+    assert not github.writes
+    assert github.values["FACTORY_DISABLED_PROVIDERS"] == "local-ollama"
