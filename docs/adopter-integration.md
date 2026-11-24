@@ -24,8 +24,7 @@ Rotisserie owns portable coordination behavior:
 - completion readiness, expired-lease recovery, and human-only boundaries;
 - versioned decision evidence and divergence reports.
 
-The legacy code under `reference/legacy-factory/` remains evidence. ComicPile
-must translate its live state through an external adapter and consume only
+An adopter must translate its live state through an external adapter and consume only
 Rotisserie's versioned package or CLI boundary; it must not import Rotisserie
 internals or receive a Rotisserie credential.
 

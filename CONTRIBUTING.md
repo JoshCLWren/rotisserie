@@ -43,7 +43,6 @@ test suite. Use `uv build` to verify package distributions.
 - Preserve exact-revision, lease, independent-review, and dry-run invariants.
 - Never introduce credentials, real user data, private prompts, or live tokens
   into source or fixtures.
-- Do not activate anything in `reference/legacy-factory/`.
 - Run `tests/test_rotisserie_actions.py` after changing `.github/`.
 - Run `git diff --check` before committing.
 - Add user-visible changes under `Unreleased` in [CHANGELOG.md](CHANGELOG.md).

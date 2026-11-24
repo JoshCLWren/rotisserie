@@ -17,7 +17,7 @@ ROOT = Path(__file__).resolve().parents[1]
 LIMIT = 500
 BASELINE = ROOT / "tests" / "file_size_baseline.json"
 PATTERNS = ("*.py", "*.cjs", "*.js", "*.sh")
-EXCLUDED = ("prototype/", "reference/")
+EXCLUDED = ("prototype/",)
 
 
 def sizes(root: Path = ROOT) -> dict[str, int]:
