@@ -52,6 +52,10 @@ such change must be called out here and in its release notes.
 
 ### Fixed
 
+- An expired factory lease no longer blocks an outside claim on its item. The
+  factory's own intake already treated those rows as free. An expired outside
+  claim still blocks, because an elapsed timestamp never proves an outside
+  agent stopped (#212).
 - The post-merge closer no longer closes an issue a person reopened. Before,
   it closed ComicPile #5695 again because an earlier merged PR said "Closes",
   although the reproduction still failed. A reopen by the factory itself (for

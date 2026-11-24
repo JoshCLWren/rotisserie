@@ -182,6 +182,27 @@ def test_external_claim_blocks_factory_workers_even_after_it_expires(neon: str) 
     assert _reserve("agent-b", [7, 44])["status"] == "reserved"
 
 
+def test_an_expired_factory_lease_frees_its_target_for_an_outside_claim(neon: str) -> None:
+    _sql(
+        """INSERT INTO public.factory_state_kv (cache_key, payload, fetched_at, expires_at)
+           VALUES ($1, $2::jsonb, now(), now() + interval '10 minutes')""",
+        ledger._target_key(REPO, 7),
+        '[{"claim_id": "f-1", "worker": "3", "targets": [7]}]',
+    )
+    assert _reserve("agent-a", [7], target="issue:7", action="implement", head=None)[
+        "reason"
+    ] == "existing_or_unreconciled_lease"
+    _sql("UPDATE public.factory_state_kv SET expires_at = now() - interval '1 minute' RETURNING 1")
+    claim = _reserve("agent-a", [7], target="issue:7", action="implement", head=None)
+    assert claim["status"] == "reserved"
+
+
+def test_an_expired_outside_claim_still_blocks_another_outside_claim(neon: str) -> None:
+    assert _reserve("agent-a", [7, 44])["status"] == "reserved"
+    _sql("UPDATE public.factory_state_kv SET expires_at = now() - interval '2 hours'")
+    assert _reserve("agent-b", [7, 44])["reason"] == "existing_or_unreconciled_lease"
+
+
 def test_stale_or_foreign_clients_cannot_touch_a_claim(neon: str) -> None:
     claim = _reserve("agent-a", [7, 44])
     token = claim["claim_id"]
