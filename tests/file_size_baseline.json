@@ -56,7 +56,6 @@
   "src/rotisserie/cli.py": 1139,
   "src/rotisserie/factory_console/commands.py": 3508,
   "src/rotisserie/factory_console/service/baseline.py": 503,
-  "src/rotisserie/factory_console/service/external.py": 1094,
   "src/rotisserie/factory_console/service/groom.py": 714,
   "src/rotisserie/factory_console/service/unstick.py": 531,
   "src/rotisserie/factory_console/tracker.py": 535,
