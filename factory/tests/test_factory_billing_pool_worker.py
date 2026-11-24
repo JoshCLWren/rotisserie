@@ -18,7 +18,7 @@ OUTCOME = SCRIPTS / "factory-worker-outcome.sh"
 sys.path.insert(0, str(SCRIPTS))
 
 OUT_OF_CREDITS = (
-    "Error: You’re out of credits — this request needs $0.4213. Add credits to keep going\n"
+    "Error: You\u2019re out of credits \u2014 this request needs $0.4213. Add credits to keep going\n"
 )
 CATALOG = {
     "data": [

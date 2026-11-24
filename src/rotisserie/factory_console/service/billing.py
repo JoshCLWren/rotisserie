@@ -49,7 +49,7 @@ def read_catalog(provider: runtime.Provider, catalog_file: Path | None) -> tuple
     published = runtime.module("factory_published_model_catalog")
     if provider.source not in published.PUBLIC_CATALOGS:
         raise CatalogUnavailableError(
-            f"{provider.key} has no public catalog; pass --catalog with a saved catalog file"
+            f"{provider.key} has no public catalog; pass --billing FILE with a saved catalog"
         )
     return published.published_catalog(provider.source, timeout=10), "public catalog"
 

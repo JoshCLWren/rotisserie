@@ -28,7 +28,7 @@ from factory_billing_pool import (  # noqa: E402
 from factory_model_failover import ExhaustedCandidatesError, select_next_fleet  # noqa: E402
 
 OUT_OF_CREDITS = (
-    "Error: You’re out of credits — this request needs $0.4213. Add credits to keep going\n"
+    "Error: You\u2019re out of credits \u2014 this request needs $0.4213. Add credits to keep going\n"
 )
 PAID_COUNT = 150
 FREE = ("synthetic/zero-token-coder", "synthetic/zero-request-coder")

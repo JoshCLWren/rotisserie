@@ -71,6 +71,6 @@ record_exhausted_capacity() {
   [[ "$(cut -f1 "$TERMINAL_OUTCOME_FILE" 2>/dev/null)" == provider_quota ]] || return 0
   local retry_at
   retry_at="$(python3 "$FACTORY_TRUSTED_FAILOVER_DIR/factory_billing_pool.py" retry-at)" || retry_at=unknown
-  record_terminal_outcome provider_quota "paid credit balance exhausted at ${exhausted_pools[*]}; no other eligible candidate in this run; earliest canonical Fibonacci retry ${retry_at}"
+  record_terminal_outcome provider_quota "paid credit balance exhausted at ${exhausted_pools[*]}; failover ended in this run; earliest canonical Fibonacci retry ${retry_at}"
   log "FACTORY_CAPACITY_EXHAUSTED: pools=${exhausted_pools[*]} earliest_retry_at=${retry_at}"
 }

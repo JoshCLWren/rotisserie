@@ -34,7 +34,7 @@ def test_pool_membership_reads_a_worker_fleet_snapshot(tmp_path: Path) -> None:
 
 
 def test_provider_without_a_public_catalog_needs_a_saved_one() -> None:
-    with pytest.raises(billing.CatalogUnavailableError, match="--catalog"):
+    with pytest.raises(billing.CatalogUnavailableError, match="--billing FILE"):
         billing.pool_membership(runtime.resolve_provider("orcarouter"))
 
 
