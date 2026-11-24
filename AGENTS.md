@@ -102,6 +102,10 @@ When editing:
   service under `src/rotisserie/factory_console/service/` that returns plain
   data, so the CLI only renders it and other consumers such as the web UI can
   call it.
+- Keep every source file at or under 500 lines, tests included.
+  `tests/test_file_size_limit.py` enforces it. Files listed in
+  `tests/file_size_baseline.json` predate the rule: they may only shrink, so
+  split one into focused modules before you add code to it.
 
 ## Tests
 
