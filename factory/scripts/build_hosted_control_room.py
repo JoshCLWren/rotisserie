@@ -5,9 +5,11 @@ The generated HTML is deliberately a static client. Public reads come only
 from sanitized status snapshots; operator writes go through an authenticated
 GitHub Actions dispatch, not directly to privileged factory credentials.
 """
+
 from __future__ import annotations
 
 import argparse
+import importlib.util
 import json
 import os
 import re
@@ -16,7 +18,11 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 UI = ROOT / "src" / "rotisserie" / "web_ui.html"
+CONTRACT = ROOT / "src" / "rotisserie" / "control_contract.py"
 ADAPTER = Path(__file__).with_name("hosted_control_room.js")
+PARTS = tuple(
+    Path(__file__).parent / "hosted" / name for name in ("public_reads.js", "session.js", "live.js")
+)
 REQUEST = re.compile(r"(?m)^async function request\(path,body\)\{[^\n]*\}$")
 AUTH_URL = re.compile(r"https://[A-Za-z0-9.-]+(?::[0-9]+)?(?:/[A-Za-z0-9._~/-]*)?")
 
@@ -30,6 +36,28 @@ def configured_auth_url() -> str:
     except FileNotFoundError:
         return ""
     return value if isinstance(value, str) else ""
+
+
+def contract_tables() -> dict[str, object]:
+    """The shared command contract, loaded by path: the Pages job installs nothing."""
+    spec = importlib.util.spec_from_file_location("rotisserie_control_contract", CONTRACT)
+    if spec is None or spec.loader is None:
+        raise RuntimeError("Rotisserie control contract not found")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return {
+        "public_reads": sorted(module.PUBLIC_READS),
+        "live_reads": sorted(module.LIVE_READS),
+        "write_operations": sorted(module.WRITE_OPERATIONS),
+        "max_batch": module.MAX_BATCH,
+    }
+
+
+def adapter(auth_url: str) -> str:
+    script = "\n".join(part.read_text(encoding="utf-8") for part in (*PARTS, ADAPTER))
+    script = script.replace('"__AUTH_BASE__"', json.dumps(auth_url))
+    tables = json.dumps(contract_tables())
+    return f'"use strict";\n(function () {{\nconst CONTRACT = {tables};\n{script}\n}})();'
 
 
 def render(repo: str, auth_url: str = "") -> str:
@@ -48,9 +76,7 @@ def render(repo: str, auth_url: str = "") -> str:
         raise RuntimeError("Local control-room request contract changed; refusing to publish")
     page = page.replace(
         '<script>\n"use strict";',
-        "<script>\n"
-        + ADAPTER.read_text(encoding="utf-8").replace('"__AUTH_BASE__"', json.dumps(auth_url))
-        + "\n</script>\n<script>\n\"use strict\";",
+        "<script>\n" + adapter(auth_url) + '\n</script>\n<script>\n"use strict";',
         1,
     )
     page = page.replace("Local operator session", "Hosted factory dashboard")
@@ -60,17 +86,19 @@ def render(repo: str, auth_url: str = "") -> str:
     )
     page = page.replace(
         "Served locally · All mutations pass through existing factory commands",
-        "GitHub Pages · Published snapshot · Operator writes use GitHub Actions",
+        "GitHub Pages · Published snapshot for public views · "
+        "Live views and operator actions run in GitHub Actions after sign-in",
     )
     page = page.replace(
         "</aside>",
         '<div class="sidebar-bottom" id="hosted-admin">'
-        '<strong>GitHub operator access</strong>'
+        "<strong>GitHub operator access</strong>"
         '<p class="hint">Use your existing GitHub account. '
-        'Only approved administrators can control the factory.</p>'
+        "Only approved administrators can control the factory.</p>"
         '<button class="button small" id="github-connect">Sign in with GitHub</button>'
         '<div class="hint" id="github-identity">Read-only visitor</div>'
-        '</div></aside>',
+        '<div class="hint" id="hosted-live" aria-live="polite"></div>'
+        "</div></aside>",
         1,
     )
     page = page.replace(
@@ -78,9 +106,9 @@ def render(repo: str, auth_url: str = "") -> str:
         '<meta name="referrer" content="no-referrer">'
         '<meta http-equiv="Content-Security-Policy" '
         'content="default-src &#39;none&#39;; script-src &#39;unsafe-inline&#39;; '
-        'style-src &#39;unsafe-inline&#39;; connect-src https://raw.githubusercontent.com'
+        "style-src &#39;unsafe-inline&#39;; connect-src https://raw.githubusercontent.com"
         + (f" {auth_origin}" if auth_origin else "")
-        + '; img-src data:; base-uri &#39;none&#39;; '
+        + "; img-src data:; base-uri &#39;none&#39;; "
         'form-action &#39;none&#39;; frame-ancestors &#39;none&#39;">'
         "</head>",
         1,
