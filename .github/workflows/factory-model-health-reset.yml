@@ -5,6 +5,9 @@ on:
       include_retired:
         type: boolean
         required: false
+      quota_only:
+        type: boolean
+        required: false
     secrets:
       NEON_API_KEY:
         required: false
@@ -49,6 +52,7 @@ jobs:
         shell: bash
         env:
           INCLUDE_RETIRED: ${{ inputs.include_retired }}
+          QUOTA_ONLY: ${{ inputs.quota_only }}
         run: |
           set -Eeuo pipefail
           if [[ -z "${FACTORY_STATE_DSN_FILE:-}" ]]; then
@@ -59,4 +63,16 @@ jobs:
           if [[ "$INCLUDE_RETIRED" == "true" ]]; then
             args+=(--include-retired)
           fi
-          python3 .github/scripts/factory_state_operations.py "${args[@]}" | tee "$GITHUB_STEP_SUMMARY"
+          if [[ "$QUOTA_ONLY" == "true" ]]; then
+            args+=(--quota-only)
+          fi
+          python3 .github/scripts/factory_state_operations.py "${args[@]}" \
+            | tee "$RUNNER_TEMP/model-health-reset.json" >> "$GITHUB_STEP_SUMMARY"
+      - name: Publish bounded result
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: factory-model-health-reset-${{ github.run_id }}
+          path: ${{ runner.temp }}/model-health-reset.json
+          retention-days: 1
+          if-no-files-found: warn

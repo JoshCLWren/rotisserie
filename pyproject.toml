@@ -103,7 +103,7 @@ testpaths = ["prototype", "tests"]
 [tool.ruff]
 target-version = "py314"
 line-length = 100
-extend-exclude = ["factory"]
+extend-exclude = ["factory", ".claude"]
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP"]
