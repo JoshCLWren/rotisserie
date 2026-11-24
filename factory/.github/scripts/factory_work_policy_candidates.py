@@ -352,6 +352,7 @@ def explain_issue_report(
     pr_wip_limit: int = FACTORY_PR_WIP_LIMIT,
     review_backlog_limit: int = FACTORY_REVIEW_BACKLOG_LIMIT,
     no_diff_limit: int = FACTORY_NO_DIFF_RETRY_LIMIT,
+    incidents: Mapping[int, int] | None = None,
 ) -> dict[str, Any]:
     """Explain one issue's queue eligibility from already-read factory state.
 
@@ -370,6 +371,7 @@ def explain_issue_report(
         pr_wip_limit: Effective ``FACTORY_PR_WIP_LIMIT``.
         review_backlog_limit: Effective ``FACTORY_REVIEW_BACKLOG_LIMIT``.
         no_diff_limit: Effective ``FACTORY_NO_DIFF_RETRY_LIMIT``.
+        incidents: Declared incidents; None reads ``FACTORY_INCIDENTS``.
 
     Returns:
         A JSON-serializable report with the verdict, its reasons, the canonical
@@ -383,9 +385,10 @@ def explain_issue_report(
         and pr_suppresses_issue_candidate(pr, issue_map)
     }
     non_executable = set(NON_EXECUTABLE_ISSUES)
+    incident_issues = sorted(active_incidents([*issues, payload], incidents))
     unauthorized: set[int] = set()
     if intake is not None:
-        unauthorized = set(issue_map) - intake
+        unauthorized = set(issue_map) - intake - set(incident_issues)
         non_executable |= unauthorized
     verdict = eligibility.explain_issue_eligibility(
         number=number,
@@ -404,16 +407,16 @@ def explain_issue_report(
         if linked_issue_from_pr(pr) == number and pr_suppresses_issue_candidate(pr, issue_map)
     )
     review_backlog = factory_review_backlog_count(prs)
-    incident_issues = sorted(active_incidents([*issues, payload]))
+    in_incident = number in incident_issues
     gates: dict[str, Any] = {
         'active_incidents': incident_issues,
-        'incident_intake_pause': bool(incident_issues) and number not in incident_issues,
+        'incident_intake_pause': bool(incident_issues) and not in_incident,
         'factory_pr_wip': factory_pr_wip_count(prs),
         'factory_pr_wip_limit': pr_wip_limit,
         'review_backlog': review_backlog,
         'review_backlog_limit': review_backlog_limit,
-        'bypasses_wip_limit': issue_bypasses_wip_limit(payload),
-        'bypasses_saturated_review_backlog': issue_bypasses_wip_limit(
+        'bypasses_wip_limit': in_incident or issue_bypasses_wip_limit(payload),
+        'bypasses_saturated_review_backlog': in_incident or issue_bypasses_wip_limit(
             payload, review_backlog_saturated=True
         ),
         'rotisserie_intake': (

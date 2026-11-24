@@ -20,6 +20,7 @@ settings = importlib.import_module("factory_settings")
 jev = importlib.import_module("factory_jev_shadow")
 
 HEAD = "a" * 40
+INCIDENT = "factory:incident"
 
 
 def issue(number: int, *labels: str, state: str = "OPEN") -> dict[str, Any]:
@@ -73,13 +74,13 @@ def test_the_variable_arrives_through_the_workflow_settings_snapshot() -> None:
     assert incident.declared(env) == {239: 2}
 
 
-def test_an_incident_is_active_only_while_its_issue_is_open() -> None:
-    issues = [issue(239), issue(240, state="CLOSED")]
-    assert incident.active(issues, {239: 3, 240: 3, 241: 3}) == {239: 3}
+def test_an_incident_is_active_only_while_its_issue_is_open_and_labeled() -> None:
+    issues = [issue(239, INCIDENT), issue(240, state="CLOSED")]
+    assert incident.active(issues, {239: 3, 240: 3, 241: 3, 242: 3}) == {239: 3}
 
 
 def test_incident_issue_ranks_first_and_other_new_intake_pauses() -> None:
-    issues = [issue(1, "main-breakage"), issue(2, "factory:override"), issue(239)]
+    issues = [issue(1, "main-breakage"), issue(2, "factory:override"), issue(239, INCIDENT)]
     prs = [pr(50, 7)]
     candidates = policy.build_candidates(issues, prs, incidents={239: 3})
     assert numbers(candidates) == [("issue", 239), ("pr", 50)]
@@ -88,7 +89,7 @@ def test_incident_issue_ranks_first_and_other_new_intake_pauses() -> None:
 
 
 def test_without_an_incident_intake_is_unchanged() -> None:
-    issues = [issue(1, "main-breakage"), issue(239)]
+    issues = [issue(1, "main-breakage"), issue(239, INCIDENT)]
     assert numbers(policy.build_candidates(issues, [], incidents={})) == [
         ("issue", 1),
         ("issue", 239),
@@ -105,7 +106,7 @@ def test_the_incident_issue_bypasses_wip_and_review_backlog_limits() -> None:
     busy = [pr(100 + n, 300 + n) for n in range(3)]
     for row in busy:
         row["labels"] = [{"name": "factory:7"}, {"name": "factory:review"}]
-    issues = [issue(5), issue(239)]
+    issues = [issue(5), issue(239, INCIDENT)]
     blocked = policy.build_candidates(issues, busy, pr_wip_limit=1, incidents={})
     assert [c.number for c in blocked if c.kind == "issue"] == []
     allowed = policy.build_candidates(issues, busy, pr_wip_limit=1, incidents={239: 3})
@@ -118,7 +119,7 @@ def test_the_incident_issue_bypasses_wip_and_review_backlog_limits() -> None:
 
 
 def test_operator_force_still_sees_paused_issues() -> None:
-    issues = [issue(5), issue(239)]
+    issues = [issue(5), issue(239, INCIDENT)]
     forced = policy.build_candidates(
         issues, [], include_backpressured_issues=True, incidents={239: 3}
     )
@@ -126,7 +127,7 @@ def test_operator_force_still_sees_paused_issues() -> None:
 
 
 def test_incident_pr_work_jumps_owner_picks_and_main_breakage_for_every_worker() -> None:
-    issues = [issue(1, "main-breakage"), issue(2, "factory:override"), issue(239)]
+    issues = [issue(1, "main-breakage"), issue(2, "factory:override"), issue(239, INCIDENT)]
     prs = [
         pr(60, 1),
         pr(61, 2, "factory:ci"),
@@ -140,7 +141,7 @@ def test_incident_pr_work_jumps_owner_picks_and_main_breakage_for_every_worker()
 
 
 def test_an_attempt_author_still_never_reviews_its_incident_pr() -> None:
-    candidates = policy.build_candidates([issue(239)], [pr(62, 239)], incidents={239: 3})
+    candidates = policy.build_candidates([issue(239, INCIDENT)], [pr(62, 239)], incidents={239: 3})
     ordered = policy.order_candidates_for_worker(candidates, "18")
     assert 62 not in [c.number for c in ordered]
 
@@ -170,7 +171,7 @@ def test_jev_completion_ranking_cannot_promote_past_incident_work() -> None:
 
 
 def test_explain_reports_the_incident_intake_pause() -> None:
-    issues = [issue(5), issue(239)]
+    issues = [issue(5), issue(239, INCIDENT)]
     with pytest.MonkeyPatch.context() as patch:
         patch.setenv(incident.INCIDENTS_VAR, "239:3")
         report = policy.explain_issue_report(
@@ -181,7 +182,11 @@ def test_explain_reports_the_incident_intake_pause() -> None:
     assert report["dynamic_gates"]["active_incidents"] == [239]
 
 
-def test_superseded_prs_are_only_open_factory_prs_for_that_issue() -> None:
+def test_superseded_prs_are_only_free_attempt_branches_for_that_issue() -> None:
+    claimed = pr(67, 239)
+    claimed["labels"] = [{"name": "factory:claimed"}]
+    running = pr(68, 239)
+    running["labels"] = [{"name": "factory:18"}, {"name": "factory:review"}]
     prs = [
         pr(62, 239),
         pr(63, 239, state="CLOSED"),
@@ -190,8 +195,50 @@ def test_superseded_prs_are_only_open_factory_prs_for_that_issue() -> None:
          "labels": []},
         {"number": 66, "state": "OPEN", "headRefName": "local/fix", "body": "Fixes #239",
          "labels": [{"name": "factory"}]},
+        claimed,
+        running,
     ]  # fmt: skip
-    assert incident.superseded_prs(prs, 239) == [62, 66]
+    assert incident.superseded_prs(prs, 239) == [62]
+    assert incident.held_prs(prs, 239) == [67, 68]
+
+
+def test_a_held_attempt_keeps_the_label_until_a_later_tick(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls: list[tuple[str, ...]] = []
+    held = pr(68, 239)
+    held["labels"] = [{"name": "factory:override"}]
+
+    def fake_gh(*args: str) -> str:
+        calls.append(args)
+        if args[0] == "api" and len(args) == 2:
+            return json.dumps({"state": "closed", "labels": [{"name": INCIDENT}]})
+        return json.dumps([pr(62, 239), held])
+
+    monkeypatch.setattr(incident, "_gh", fake_gh)
+    ended = incident.reconcile("acme/widgets", {239: 3})
+    assert ended == [{"issue": 239, "closed_prs": [62], "held_prs": [68]}]
+    assert not any(call[:3] == ("api", "--method", "DELETE") for call in calls)
+
+
+def test_an_ended_incident_costs_one_read_per_tick(monkeypatch: pytest.MonkeyPatch) -> None:
+    calls: list[tuple[str, ...]] = []
+
+    def fake_gh(*args: str) -> str:
+        calls.append(args)
+        return json.dumps({"state": "closed", "labels": []})
+
+    monkeypatch.setattr(incident, "_gh", fake_gh)
+    assert incident.reconcile("acme/widgets", {239: 3}) == []
+    assert calls == [("api", "repos/acme/widgets/issues/239")]
+
+
+def test_a_reopened_issue_without_the_label_does_not_restart_the_incident() -> None:
+    issues = [issue(239), issue(5)]
+    assert numbers(policy.build_candidates(issues, [], incidents={239: 3})) == [
+        ("issue", 5),
+        ("issue", 239),
+    ]
 
 
 def test_reconcile_ends_only_closed_incidents(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -201,14 +248,15 @@ def test_reconcile_ends_only_closed_incidents(monkeypatch: pytest.MonkeyPatch) -
     def fake_gh(*args: str) -> str:
         calls.append(args)
         if args[0] == "api" and len(args) == 2:
-            return json.dumps({"state": states[int(args[1].rsplit("/", 1)[1])]})
+            state = states[int(args[1].rsplit("/", 1)[1])]
+            return json.dumps({"state": state, "labels": [{"name": INCIDENT}]})
         if args[:2] == ("pr", "list"):
             return json.dumps([pr(62, 239), pr(70, 240)])
         return ""
 
     monkeypatch.setattr(incident, "_gh", fake_gh)
     ended = incident.reconcile("acme/widgets", {239: 3, 240: 3})
-    assert ended == [{"issue": 239, "closed_prs": [62]}]
+    assert ended == [{"issue": 239, "closed_prs": [62], "held_prs": []}]
     assert ("pr", "close", "62", "--repo", "acme/widgets", "--comment",
             incident.superseded_comment(239)) in calls  # fmt: skip
     assert any(
@@ -224,7 +272,7 @@ def test_reconcile_dry_run_mutates_nothing(monkeypatch: pytest.MonkeyPatch) -> N
     def fake_gh(*args: str) -> str:
         calls.append(args)
         if args[0] == "api":
-            return json.dumps({"state": "closed"})
+            return json.dumps({"state": "closed", "labels": [{"name": INCIDENT}]})
         return json.dumps([pr(62, 239)])
 
     monkeypatch.setattr(incident, "_gh", fake_gh)

@@ -816,7 +816,9 @@ writes two repository variables and labels the issue `factory:incident`:
 - `FACTORY_INCIDENT_NOTES`: JSON with each reason and start time. Only the
   console reads it.
 
-While the incident issue is open:
+An incident is active while its issue is open and still carries the
+`factory:incident` label. Removing the label ends it, so a reopened issue does
+not restart an ended incident. While it is active:
 
 - the issue and every PR linked to it rank ahead of all other work, owner picks
   (`factory:override`) and main-breakage included, for every worker;
@@ -828,10 +830,14 @@ While the incident issue is open:
   work as usual. The fleet switch and the independent-review rule still apply.
 
 When the issue closes (normally because its PR merged), intake resumes on the
-next tick. The dispatcher then closes the incident's leftover factory PRs as
-superseded and removes the label. `incident stop` does the same at once and
-clears the variable. On an issue that is still open, `stop` ends the incident
-but keeps its PR.
+next tick. The dispatcher then closes the incident's leftover attempt PRs
+(`factory/<worker>-<N>-...` branches) as superseded and removes the label. It
+never closes a PR under an owner claim (`factory:claimed`, `factory:override`)
+or a PR a worker holds; while one exists the label stays, and a later tick
+closes the PR once it is free. `incident stop` closes the free attempt PRs at
+once, removes the label and clears the variable. On an issue that is still
+open, `stop` ends the incident but keeps its PR. Until `stop` clears the
+variable, the dispatcher reads an ended incident's issue once per tick.
 
 `--attempts K` (1 to 6, default 3) is stored for racing: several providers
 building separate fix attempts at once. Racing needs per-attempt leases and is

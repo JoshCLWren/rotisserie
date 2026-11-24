@@ -30,7 +30,7 @@ from typing import Any
 from urllib.parse import quote
 
 from factory_settings import repository_variables
-from factory_work_policy_base import is_factory_managed_pr, linked_issue_from_pr
+from factory_work_policy_base import labels_of, linked_issue_from_branch, owner_of
 
 INCIDENTS_VAR = "FACTORY_INCIDENTS"
 NOTES_VAR = "FACTORY_INCIDENT_NOTES"
@@ -39,6 +39,7 @@ DEFAULT_ATTEMPTS = 3
 MAX_ATTEMPTS = 6
 ENTRY_RE = re.compile(r"^([1-9][0-9]{0,8})(?::([1-9][0-9]?))?$")
 SUPERSEDED_MARKER = "factory-incident-superseded-v1"
+HELD_LABELS = frozenset({"factory:claimed", "factory:override"})
 
 
 def parse(raw: str) -> dict[int, int]:
@@ -70,21 +71,41 @@ def _is_open(item: Mapping[str, Any]) -> bool:
 def active(
     issues: Iterable[Mapping[str, Any]], incidents: Mapping[int, int] | None = None
 ) -> dict[int, int]:
-    """Declared incidents whose issue is open in this snapshot."""
+    """Declared incidents whose issue is open and still carries the label.
+
+    The label is removed when the incident ends, so a reopened issue does not
+    restart an ended incident.
+    """
     wanted = declared() if incidents is None else incidents
-    open_numbers = {int(issue["number"]) for issue in issues if _is_open(issue)}
-    return {number: attempts for number, attempts in wanted.items() if number in open_numbers}
+    live = {
+        int(issue["number"])
+        for issue in issues
+        if _is_open(issue) and LABEL in labels_of(dict(issue))
+    }
+    return {number: attempts for number, attempts in wanted.items() if number in live}
+
+
+def _attempt_prs(prs: Iterable[Mapping[str, Any]], number: int) -> list[Mapping[str, Any]]:
+    return [
+        pr
+        for pr in prs
+        if _is_open(pr) and linked_issue_from_branch(str(pr.get("headRefName") or "")) == number
+    ]
+
+
+def _held(pr: Mapping[str, Any]) -> bool:
+    """An owner claim or a running worker keeps a PR open."""
+    labels = labels_of(dict(pr))
+    return bool(labels & HELD_LABELS) or owner_of(labels) not in (None, "factory:unowned")
 
 
 def superseded_prs(prs: Iterable[Mapping[str, Any]], number: int) -> list[int]:
-    """Open factory PRs for an ended incident issue: no longer needed."""
-    return sorted(
-        int(pr["number"])
-        for pr in prs
-        if _is_open(pr)
-        and is_factory_managed_pr(dict(pr))
-        and linked_issue_from_pr(dict(pr)) == number
-    )
+    """Open factory attempt PRs (factory/<worker>-<N>-...) nobody holds."""
+    return sorted(int(pr["number"]) for pr in _attempt_prs(prs, number) if not _held(pr))
+
+
+def held_prs(prs: Iterable[Mapping[str, Any]], number: int) -> list[int]:
+    return sorted(int(pr["number"]) for pr in _attempt_prs(prs, number) if _held(pr))
 
 
 def superseded_comment(number: int) -> str:
@@ -100,26 +121,32 @@ def _gh(*args: str) -> str:
 
 def _end(repo: str, number: int, prs: list[dict[str, Any]], dry_run: bool) -> dict[str, Any]:
     closed = superseded_prs(prs, number)
+    held = held_prs(prs, number)
     if not dry_run:
         for pr in closed:
             _gh("pr", "close", str(pr), "--repo", repo, "--comment", superseded_comment(number))
-        try:
-            label = quote(LABEL, safe="")
-            _gh("api", "--method", "DELETE", f"repos/{repo}/issues/{number}/labels/{label}")
-        except subprocess.CalledProcessError:
-            pass
-    return {"issue": number, "closed_prs": closed}
+        if not held:
+            try:
+                label = quote(LABEL, safe="")
+                _gh("api", "--method", "DELETE", f"repos/{repo}/issues/{number}/labels/{label}")
+            except subprocess.CalledProcessError:
+                pass
+    return {"issue": number, "closed_prs": closed, "held_prs": held}
 
 
 def reconcile(
     repo: str, incidents: Collection[int], *, dry_run: bool = False
 ) -> list[dict[str, Any]]:
-    """End every declared incident whose issue has closed."""
+    """End every declared incident whose issue has closed and still has the label.
+
+    The label stays while an owner claim or a running worker holds an attempt
+    PR, so a later tick closes that PR once it is free.
+    """
     ended = []
     prs: list[dict[str, Any]] | None = None
     for number in sorted(incidents):
         issue = json.loads(_gh("api", f"repos/{repo}/issues/{number}"))
-        if str(issue.get("state") or "").lower() != "closed":
+        if str(issue.get("state") or "").lower() != "closed" or LABEL not in labels_of(issue):
             continue
         if prs is None:
             prs = json.loads(

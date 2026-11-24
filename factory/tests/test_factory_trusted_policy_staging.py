@@ -13,6 +13,11 @@ WORK_POLICY_SIBLINGS = tuple(
     f"factory_work_policy_{part}.py"
     for part in ("assignment", "backlog", "base", "candidates", "priority")
 ) + ("factory_incident.py",)
+WORKER_SCRIPTS = (
+    "free-model-factory-worker.sh",
+    "nvidia-factory-worker.sh",
+    "omniroute-factory-worker.sh",
+)
 
 
 def test_staged_worker_policy_imports_only_pinned_eligibility(tmp_path: Path) -> None:
@@ -22,8 +27,10 @@ def test_staged_worker_policy_imports_only_pinned_eligibility(tmp_path: Path) ->
 
     staged = tmp_path / "trusted"
     staged.mkdir()
-    for sibling in WORK_POLICY_SIBLINGS:
-        assert f".github/scripts/{sibling}" in worker
+    for script in WORKER_SCRIPTS:
+        text = (ROOT / ".github/scripts" / script).read_text()
+        for name in (*WORK_POLICY_SIBLINGS, "factory_settings.py"):
+            assert f".github/scripts/{name}" in text, (script, name)
     for name in ("factory_work_policy.py", "factory_review_policy.py", "factory_adopter.py", "factory_settings.py", *WORK_POLICY_SIBLINGS):
         shutil.copy2(ROOT / ".github/scripts" / name, staged / name)
     shutil.copy2(ROOT / "scripts/factory_eligibility.py", staged / "factory_eligibility.py")

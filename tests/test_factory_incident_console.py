@@ -13,6 +13,7 @@ import pytest
 from rotisserie import cli, web
 from rotisserie.factory_console import commands
 from rotisserie.factory_console.github import GitHub, GitHubNotFoundError
+from rotisserie.factory_console.service import queue
 from rotisserie.factory_console.tracker import Clock
 
 REPO = "acme/widgets"
@@ -48,7 +49,7 @@ class Repo(GitHub):
         if argv[:2] == ["pr", "close"]:
             self.closed.append(int(argv[2]))
             return ""
-        if argv[0] == "api":
+        if argv[0] == "api" and "/issues/" in argv[1]:
             path = argv[1]
             number = int(path.split("/issues/")[1].split("/")[0])
             if number not in self.issues:
@@ -223,3 +224,26 @@ def test_web_lists_incidents_read_only() -> None:
     assert web.read_command("incident", {}) == ["incident"]
     with pytest.raises(web.InvalidRequest):
         web.read_command("incident", {"target": "issue:1"})
+
+
+def test_why_names_the_incident_pause_from_repository_variables() -> None:
+    def row(number: int, *labels: str) -> dict[str, Any]:
+        names = ("factory:unowned", *labels)
+        return {"number": number, "state": "OPEN", "title": "t", "body": "",
+                "labels": [{"name": name} for name in names]}  # fmt: skip
+
+    board = queue.Board([row(5), row(239, "factory:incident")], [], 8, 6, intake=None)
+    board.incidents = {239: 3}
+    other = queue.verdict(queue.explain(board, board.issues[0], blocker=None), board)
+    assert other.status == "waiting"
+    assert [reason.code for reason in other.reasons] == ["incident"]
+    fix = queue.verdict(queue.explain(board, board.issues[1], blocker=None), board)
+    assert fix.status == "ready"
+    board.incidents = {}
+    resumed = queue.verdict(queue.explain(board, board.issues[0], blocker=None), board)
+    assert resumed.status == "ready"
+
+
+def test_the_board_reads_incidents_from_repository_variables(repo: Repo) -> None:
+    board = queue.read_board(repo, {"FACTORY_INCIDENTS": "239:2"}, 0)
+    assert board.incidents == {239: 2}

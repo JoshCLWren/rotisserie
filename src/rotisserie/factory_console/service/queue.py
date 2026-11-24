@@ -17,7 +17,7 @@ import re
 from collections import Counter
 from collections.abc import Mapping
 from concurrent.futures import ThreadPoolExecutor
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, field
 
 from rotisserie.factory_console import runtime
 from rotisserie.factory_console.github import (
@@ -68,6 +68,7 @@ class Board:
     # None: legacy lane, no intake restriction. Otherwise number -> (eligible, reasons).
     intake: dict[int, tuple[bool, tuple[str, ...]]] | None
     intake_problem: str = ""
+    incidents: dict[int, int] = field(default_factory=dict)
 
     def admitted(self) -> set[int] | None:
         if self.intake is None:
@@ -84,37 +85,13 @@ def _rows(raw: str) -> list[Obj]:
 
 
 def read_board(github: GitHub, variables: dict[str, str], now: int) -> Board:
-    issues = _rows(
-        github.gh(
-            "issue",
-            "list",
-            "--repo",
-            github.repo,
-            "--state",
-            "open",
-            "--limit",
-            "1000",
-            "--json",
-            ISSUE_FIELDS,
-        )
-    )
-    prs = _rows(
-        github.gh(
-            "pr",
-            "list",
-            "--repo",
-            github.repo,
-            "--state",
-            "open",
-            "--limit",
-            "500",
-            "--json",
-            PR_FIELDS,
-        )
-    )
+    listing = ("list", "--repo", github.repo, "--state", "open", "--json")
+    issues = _rows(github.gh("issue", *listing, ISSUE_FIELDS, "--limit", "1000"))
+    prs = _rows(github.gh("pr", *listing, PR_FIELDS, "--limit", "500"))
     wip_limit = runtime.setting_integer("FACTORY_PR_WIP_LIMIT", variables)
     backlog_limit = runtime.setting_integer("FACTORY_REVIEW_BACKLOG_LIMIT", variables)
     board = Board(issues, prs, wip_limit, backlog_limit, intake={})
+    board.incidents = runtime.module("factory_work_policy").declared_incidents(variables)
     _read_intake(github, board, now)
     return board
 
@@ -201,6 +178,7 @@ def explain(board: Board, row: Obj, *, blocker: bool | None) -> runtime.Explanat
         open_blocker=blocker,
         pr_wip_limit=board.pr_wip_limit,
         review_backlog_limit=board.review_backlog_limit,
+        incidents=board.incidents,
     )
 
 
@@ -349,6 +327,15 @@ def _intake_lines(number: int, board: Board, known: set[str]) -> list[Reason]:
 def _limit_lines(explanation: runtime.Explanation) -> list[Reason]:
     """The controller's backpressure gates, applied to an otherwise eligible issue."""
     held: list[Reason] = []
+    if explanation.incident_pause:
+        held.append(
+            Reason(
+                "incident",
+                "An incident is open (rotisserie factory incident). New intake of other "
+                "issues pauses until the incident issue closes.",
+                setting="FACTORY_INCIDENTS",
+            )
+        )
     if explanation.pr_wip >= explanation.pr_wip_limit and not explanation.bypasses_wip_limit:
         held.append(
             Reason(
@@ -388,6 +375,7 @@ CATEGORY_WORDS = {
     "intake": "were held back by Rotisserie intake",
     "wip-limit": "wait for the open-PR limit",
     "review-limit": "wait for the review backlog to drain",
+    "incident": "wait for an open incident to end",
     "closed": "are closed",
     "other": "for other reasons",
 }

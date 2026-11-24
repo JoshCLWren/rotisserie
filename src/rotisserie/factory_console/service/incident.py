@@ -41,7 +41,7 @@ class Incident:
 
     @property
     def active(self) -> bool:
-        return self.issue_state != "closed"
+        return self.issue_state != "closed" and self.labeled is not False
 
     def to_dict(self) -> dict[str, object]:
         return {
