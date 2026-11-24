@@ -81,12 +81,12 @@ def test_sync_head_blocked_by_the_old_gate_is_requeued_without_inventing_authors
     report = review.inspect(github, 7)
     assert report.status == "no-approval"
     assert report.author_models == ("opencode-go+hy4-flash-free",)
-    assert not report.head_attributed
+    assert not report.head_attributed and report.head_authors == ()
     assert report.blocked_by_review_gate and report.block_head == OLD
-    # Two reads: the PR and its comments.
     assert [path for _m, path in github.requests] == [
         "pulls/7",
         "issues/7/comments?per_page=100&page=1",
+        f"commits/{HEAD}",
     ]
 
     done = review.requeue(github, report)
@@ -113,11 +113,31 @@ def test_known_author_reviewing_itself_is_self_review() -> None:
     )
     github = FakeGitHub(
         routes(pull(["factory", "factory:unowned", "factory:review"]),
-               [author("opencode-go/hy4-flash-free"), approval(), reviewer])
+               [author("opencode-go/hy4-flash-free", HEAD), approval(), reviewer])
     )  # fmt: skip
     report = review.inspect(github, 7)
     assert report.status == "self-review" and not report.eligible
     assert any("different model" in action for action in report.actions)
+
+
+def test_earlier_head_author_may_review_and_the_head_author_is_shown() -> None:
+    reviewer = bot(
+        policy.reviewer_model_marker(
+            pr=7, head=HEAD, reviewer_model="zen/hy4-flash", reviewer_agent="17"
+        )
+    )
+    github = FakeGitHub(
+        routes(pull(["factory", "factory:unowned", "factory:review"]),
+               [author("opencode-go/hy4-flash-free"), author("zai/glm-4.6", HEAD),
+                approval(), reviewer])
+    )  # fmt: skip
+    report = review.inspect(github, 7)
+    assert report.eligible and report.head_authors == ("zai+glm-4.6",)
+    assert review.authorship_lines(report) == [
+        "Head author: zai+glm-4.6 (its controller record)",
+        "Excluded from reviewing this head: zai+glm-4.6",
+        "Earlier-head authors, now eligible to review: opencode-go+hy4-flash-free",
+    ]
 
 
 def test_requeue_refuses_other_blocks_held_prs_and_moved_heads() -> None:

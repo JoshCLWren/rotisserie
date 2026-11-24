@@ -81,6 +81,7 @@
 .github/scripts/factory_quota_pause.py
 .github/scripts/factory_quota_probe.py
 .github/scripts/factory_quota_reset.py
+.github/scripts/factory_review_exclusion.py
 .github/scripts/factory_review_model_guard.py
 .github/scripts/factory_review_policy.py
 .github/scripts/factory_rotisserie_adopter.py

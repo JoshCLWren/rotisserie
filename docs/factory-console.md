@@ -449,29 +449,42 @@ worker runs. `estimate issue:N --via github` reads exact history instead:
 
 ## Whose review counts?
 
-The owner's rule is narrow: **a model known to have authored a PR must not
-approve it.** One eligible approval is always enough.
+The owner's rule (2026-11-24) is narrow: **the model that authored the current
+head must not approve it.** A model that authored only an earlier head may
+review once a later commit by someone else is the head. One eligible approval
+is always enough. Long-lived PRs ran out of reviewers under the old rule, which
+excluded every model that authored any head.
 
-- Known authorship comes only from the controller's author records (what the
-  runtime actually executed), across every head of the PR, so a sync or merge
-  without a new author record never launders an earlier author away.
+- The head author comes from the controller's author records for that exact
+  head (what the runtime actually executed). Every model those records name is
+  excluded, even when they disagree. Without a record, the head commit's
+  `Model:` trailer counts.
+- A sync (a merge of the default branch with no change of its own, proven from
+  GitHub's compare API) carries the author of the commit it merged into, up to
+  five syncs deep. A merge that resolved conflicts or edited files does not.
+- A head that a factory worker pushed without a model record excludes every
+  model recorded on the PR (fail closed).
+- `factory_review_exclusion.for_pull` is the one resolver. Reviewer selection,
+  the outside-review bridge, the merge gate, `baste review` and `baste unstick`
+  use it or the same policy function.
 - The reviewer's model is the controller's record of what the runtime executed
   for that approval, never a worker's historical roster slot. A worker that
   switched models may review its own earlier PR with the new model.
 - Models are compared by canonical identity: provider, route and pricing-tier
   spellings of the same weights (`opencode-go/hy4-flash-free`, `zen/hy4-flash`)
   are one model; `glm-4.6` and `glm-4.5` are different models.
-- No recorded author (a human, an external tool such as ChatGPT or Claude Code,
-  an unattributed head): any model may review. Missing metadata is reported,
-  never a blocker.
+- No recorded head author (a human, an external tool such as ChatGPT or Claude
+  Code, an unattributed head): any model may review. Missing metadata is
+  reported, never a blocker.
 - A known self-review, or an approval whose model was not recorded while the
-  PR has known authors, sends the PR back to `factory:review` for a different
-  model. The dispatcher also refuses to start a review on an author model: it
+  head has an author, sends the PR back to `factory:review` for a different
+  model. The dispatcher also refuses to start a review on the head author: it
   re-picks across the fleet before the session starts.
 
-`baste review pr:N` shows the known author models, whether the
-current head has its own author record, the approvals and their recorded
-models, and the verdict. `--blocked` checks every open factory PR parked in
+`baste review pr:N` shows the head author (and the sync it was carried
+through), the models excluded from reviewing the head, earlier-head authors
+that may now review, the approvals and their recorded models, and the
+verdict. `--blocked` checks every open factory PR parked in
 `factory:blocked`. `--requeue` (confirm, or `--yes`) moves PRs the retired
 review gate parked there back to review, together with their linked issue. It
 refuses a PR blocked for any other reason, one a worker holds, or one whose

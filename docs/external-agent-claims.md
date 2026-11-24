@@ -49,7 +49,9 @@ factory: they need merge authorization and production evidence.
 
 An outside review counts for the merge gate (#191). The trusted bridge
 records the reviewer's declared model, and refuses the review when that model
-matches a `Model:` trailer on any commit of the PR or a recorded author model.
+authored the current head: the head's recorded author model, else its `Model:`
+trailer, followed through a clean sync merge to the commit it carries. A model
+that authored only an earlier head may review.
 GitHub itself refuses a formal review from the pull request's author. Any
 other login can review with a model that did not author the PR; the factory
 does not compare logins.

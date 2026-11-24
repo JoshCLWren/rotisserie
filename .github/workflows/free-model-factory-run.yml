@@ -176,8 +176,8 @@ jobs:
           fleet_sources="$(python3 .github/scripts/factory_state_operations.py export-fleet-failover-sources --repo "$GITHUB_REPOSITORY" --worker "$FACTORY_WORKER")"
           jq -e 'type == "array" and all(.[]; type == "string")' <<< "$fleet_sources" >/dev/null
           echo "fleet_sources=$fleet_sources" >> "$GITHUB_OUTPUT"
-          # A review must not run on a model that authored the PR. Read the PR's
-          # comments once here and hand the known author models to selection.
+          # A review must not run on the model that authored the current head.
+          # Resolve it once here and hand the excluded models to selection.
           review_authors='[]'
           if jq -e '.kind == "pr" and .stage == "factory:review"' <<< "$FACTORY_ASSIGNMENT" >/dev/null; then
             review_pr="$(jq -er '.number' <<< "$FACTORY_ASSIGNMENT")"
@@ -593,7 +593,7 @@ jobs:
           runtime_model="$(jq -er '.runtime_model' <<< "$selection")"
           # Known self-review cannot count at the merge gate, so never spend a
           # review session on it: re-pick across the eligible fleet, treating
-          # each author-model pick as attempted. Operator pins are respected.
+          # each head-author pick as attempted. Operator pins are respected.
           if [[ "$REQUESTED_MODEL" == auto ]]; then
             avoided=()
             while why="$(python3 .github/scripts/factory_review_model_guard.py check \
@@ -619,12 +619,12 @@ jobs:
                   --exclusions-file "$exclusions_file" \
                   "${repick[@]}" "${avoided[@]}")"; then
                 # Each avoided pick was an eligible model outside exclusions that
-                # authored the PR; failover exhaustion means none other remains.
+                # authored the current head; failover exhaustion means none other remains.
                 picked=$(( ${#avoided[@]} / 2 ))
                 scope="$picked"
                 if (( ${#avoided[@]} > 32 )); then scope="at least $picked"; fi
                 authors="$(jq 'length' <<< "${FACTORY_REVIEW_AUTHORS:-[]}" 2>/dev/null || echo unknown)"
-                reason="No reviewer model: ${scope} model(s) outside exclusions are eligible and all ${picked} authored this PR (${authors} author model(s) recorded); the review waits for a non-author model"
+                reason="No reviewer model: ${scope} model(s) outside exclusions are eligible and all ${picked} authored the current head (${authors} head author model(s) recorded); the review waits for a non-author model"
                 printf 'no_capacity\t%s\n' "$reason" > "$discovery_outcome"
                 echo "::error::$reason"
                 exit 1

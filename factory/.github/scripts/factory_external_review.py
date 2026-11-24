@@ -47,24 +47,6 @@ def declared_model(body: str, policy: ModuleType) -> str:
     return str(next(iter(models)))
 
 
-def commit_trailer_models(pr: int, ctrl: ModuleType) -> set[str]:
-    pages = ctrl.gh_json(
-        ["api", "--paginate", "--slurp", f"repos/{ctrl.REPO}/pulls/{pr}/commits?per_page=100"]
-    )
-    found: set[str] = set()
-    for page in pages if isinstance(pages, list) else []:
-        for commit in page if isinstance(page, list) else []:
-            message = ((commit or {}).get("commit") or {}).get("message")
-            found |= ctrl._review_policy.model_trailer_models(message)
-    return found
-
-
-def self_review(model: str, authors: set[str], policy: ModuleType) -> str | None:
-    return next(
-        (author for author in sorted(authors) if policy.same_actual_model(model, author)), None
-    )
-
-
 def record(
     *,
     pr_number: int,
@@ -98,13 +80,18 @@ def record(
         raise RuntimeError("the PR moved, closed or became a draft")
     if ctrl.active_factory_owner(ctrl.labels_of(pr)) is not None:
         raise RuntimeError("a factory worker owns the PR")
-    trailers = commit_trailer_models(pr_number, ctrl)
-    authors = trailers | set(
-        policy.known_author_models(ctrl.model_comment_bodies(pr_number), pr=pr_number)
+    exclusion = ctrl._review_exclusion.resolve(
+        ctrl.repo_fetch,
+        pr=pr_number,
+        head=head,
+        base_branch=str(pr.get("baseRefName") or ""),
+        comments=ctrl.model_comment_bodies(pr_number),
     )
-    clash = self_review(model, authors, policy)
-    if clash is not None:
-        raise ValueError(f"model {model} authored this PR ({clash}); it cannot review it")
+    clash = exclusion.matches(model)
+    if clash:
+        raise ValueError(
+            f"model {model} authored the current head ({clash[0]}); it cannot review it"
+        )
 
     identity = reviewer_identity(actor)
     if state == "CHANGES_REQUESTED":

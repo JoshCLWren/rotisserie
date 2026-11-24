@@ -1,9 +1,10 @@
 """Why a pull request's review does or does not count, and safe recovery.
 
-The owner's rule: a model known to have authored a PR must not approve it.
-Nothing else about models blocks a review. This service explains, for one PR,
-which models trusted records name as its authors, which models approved its
-current head, whether that is known self-review or merely missing metadata,
+The owner's rule (2026-11-24): the model that authored the current head must
+not approve it. A model that authored only an earlier head may. This service
+explains, for one PR, who authored the current head (following a sync merge to
+the commit it carries), which models approved that head, whether that is known
+self-review or merely missing metadata,
 and whether the PR is parked in ``factory:blocked`` by the old review gate,
 which no longer blocks. ``requeue`` moves such a PR back to ``factory:review``
 so a different model reviews it. It never invents authorship, never writes a
@@ -40,8 +41,11 @@ class ReviewReport:
     head: str
     stage: str
     owner: str  # factory owner label, "" when none
-    author_models: tuple[str, ...]  # trusted records, any head of the PR
+    author_models: tuple[str, ...]  # trusted records on any head (informational)
     head_attributed: bool  # the current head has its own author record
+    head_authors: tuple[str, ...]  # excluded from reviewing the current head
+    head_author_commit: str  # commit whose record decided ("" when none)
+    head_author_source: str  # marker | trailer | unrecorded-worker | ""
     approvers: tuple[str, ...]  # trusted approval markers on the current head
     reviewer_models: tuple[str, ...]  # executed models recorded for those approvals
     status: str  # eligible | self-review | reviewer-model-unrecorded | no-approval
@@ -69,6 +73,15 @@ class Requeued:
 
 def _policy() -> ModuleType:
     return runtime.module("factory_review_policy")
+
+
+def _exclusion() -> ModuleType:
+    return runtime.module("factory_review_exclusion")
+
+
+def excluded_models(github: GitHub, number: int, *, pull: Obj | None = None) -> object:
+    """``factory_review_exclusion.Exclusion`` for one PR: the models that may not review it."""
+    return _exclusion().for_pull(github.repo_api, number, pull=pull)
 
 
 def _pages(github: GitHub, path: str, *, limit: int = 30) -> list[Obj]:
@@ -130,8 +143,12 @@ def inspect(
     model_bodies = policy.controller_comment_bodies(rows)
     trusted_bodies = policy.trusted_comment_bodies(rows)
     approvers = sorted(policy.current_head_approvers(trusted_bodies, pr=number, head=head))
+    base = string(obj(raw.get("base")), "ref")
+    exclusion = _exclusion().resolve(
+        github.repo_api, pr=number, head=head, base_branch=base, comments=model_bodies
+    )
     verdict = policy.evaluate_review_eligibility(
-        model_bodies, pr=number, head=head, approvers=approvers
+        model_bodies, pr=number, head=head, approvers=approvers, excluded=exclusion.excluded
     )
     reviewer_models = tuple(
         model for model, _agent in policy.head_reviewer_models(model_bodies, pr=number, head=head)
@@ -151,8 +168,11 @@ def inspect(
         head=head,
         stage=stage,
         owner=owner,
-        author_models=tuple(verdict.author_models),
+        author_models=tuple(exclusion.earlier_authors),
         head_attributed=attributed,
+        head_authors=tuple(exclusion.excluded),
+        head_author_commit=exclusion.author_commit,
+        head_author_source=exclusion.source,
         approvers=tuple(approvers),
         reviewer_models=reviewer_models,
         status=verdict.status,
@@ -163,6 +183,34 @@ def inspect(
         block_head=note_head,
         actions=tuple(actions),
     )
+
+
+def authorship_lines(report: ReviewReport) -> list[str]:
+    """Who authored the current head, which models that excludes, and who may review."""
+    names = ", ".join(report.head_authors)
+    commit = report.head_author_commit[:10]
+    if not report.head_author_commit:
+        lines = ["Head author: none recorded (a human push or a sync); no model is excluded."]
+    elif not report.head_authors:
+        lines = ["Head author: a human; no model is excluded."]
+    elif report.head_author_source == "unrecorded-worker":
+        lines = [f"Head author: a factory worker with no model record on {commit}; all excluded."]
+    elif report.head_author_commit != report.head:
+        lines = [f"Head author: {names} (a sync carries {commit}, which {names} authored)"]
+    else:
+        how = "Model: trailer" if report.head_author_source == "trailer" else "controller record"
+        lines = [f"Head author: {names} (its {how})"]
+    if report.head_authors:
+        lines.append(f"Excluded from reviewing this head: {names}")
+    same = _policy().same_actual_model
+    earlier = [
+        model
+        for model in report.author_models
+        if not any(same(model, author) for author in report.head_authors)
+    ]
+    if earlier:
+        lines.append(f"Earlier-head authors, now eligible to review: {', '.join(earlier)}")
+    return lines
 
 
 def requeue(github: GitHub, report: ReviewReport) -> Requeued:

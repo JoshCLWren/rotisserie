@@ -1,7 +1,7 @@
 """Pure semantic review authorization policy for Rotisserie factories."""
 from __future__ import annotations
 import re
-from collections.abc import Iterable, Mapping
+from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from typing import Any, Literal
 from factory_adopter import MARKER_PREFIX
@@ -613,17 +613,7 @@ def current_head_author_identity(
 ) -> tuple[str, str] | None:
     """Return the unique author model family and agent for one exact PR head.
 
-    Missing markers and conflicting markers both fail closed.
-
-    Args:
-        comments: Controller-authored comment bodies.
-        pr: Pull request number.
-        head: Exact commit SHA.
-
-    Returns:
-        ``(model_family, agent)`` when exactly one author identity is recorded,
-        otherwise ``None``.
-
+    ``None`` when the head has no marker or conflicting markers.
     """
     identities: set[tuple[str, str]] = set()
     for body in comments:
@@ -678,16 +668,6 @@ def head_has_cross_model_review(
     """Return whether the exact head has a review that is not known self-review.
 
     Thin boolean over :func:`evaluate_review_eligibility`; see it for the rule.
-
-    Args:
-        comments: Controller-authored comment bodies.
-        pr: Pull request number.
-        head: Exact commit SHA being merged.
-        approvers: Workers with a trusted exact-head approval marker.
-
-    Returns:
-        True when an eligible approval of ``head`` exists.
-
     """
     return evaluate_review_eligibility(
         comments, pr=pr, head=head, approvers=approvers
@@ -759,19 +739,10 @@ def same_actual_model(left: str, right: str) -> bool:
 
 
 def known_author_models(comments: Iterable[str], *, pr: int) -> list[str]:
-    """Every model a trusted controller record names as an author of this PR.
+    """Every model a controller author record names on any head of this PR, sorted.
 
-    The set spans every head of the pull request, not only the current one: a
-    sync or repair stacks onto earlier heads, so their authors' code is still
-    there. Human attributions are omitted (they are not models).
-
-    Args:
-        comments: Controller-authored comment bodies.
-        pr: Pull request number.
-
-    Returns:
-        Distinct recorded author model tokens, sorted.
-
+    Informational since the 2026-11-24 rule; :func:`head_author_record` decides
+    who may not review. Human attributions are omitted (they are not models).
     """
     models: set[str] = set()
     for body in comments:
@@ -785,6 +756,46 @@ def known_author_models(comments: Iterable[str], *, pr: int) -> list[str]:
             continue
         models.add(marker["model"])
     return sorted(models)
+
+
+def _models(found: Iterable[str]) -> tuple[str, ...]:
+    return tuple(sorted({m for m in found if canonical_model_identity(m) != HUMAN_AUTHOR_MODEL}))
+
+
+def head_author_record(
+    comments: Iterable[str],
+    *,
+    pr: int,
+    heads: Sequence[str],
+    trailers: Mapping[str, Iterable[str]] | None = None,
+) -> tuple[str, tuple[str, ...], str]:
+    """``(commit, models, source)``: the current head's authors, who may not review it.
+
+    Owner rule (2026-11-24): only the current head's author is excluded, so an
+    earlier head's author may review once someone else's commit is the head.
+    ``heads`` is the current head, then the PR-side parent of each clean
+    default-branch merge it sits on (a sync carries that parent's author). The
+    first commit with evidence decides: every controller author marker for it
+    (all of them when they disagree; ``human`` excludes no model), else its
+    ``Model:`` trailers, else, when a worker recorded it but no model, every
+    author on the PR (fail closed). ``("", (), "")``: no evidence, nobody excluded.
+    """
+    rows = [str(body or "").strip() for body in comments]
+    for sha in heads:
+        markers = {
+            marker["model"]
+            for body in rows
+            if "\n" not in body
+            and (marker := parse_agent_model_author_marker(body))
+            and int(marker["pr"]) == pr
+            and marker["head"] == sha
+        }
+        found = markers or set((trailers or {}).get(sha, ()))
+        if found:
+            return sha, _models(found), "marker" if found & markers else "trailer"
+        if current_head_contributors(rows, pr=pr, head=sha):
+            return sha, tuple(known_author_models(rows, pr=pr)), "unrecorded-worker"
+    return "", (), ""
 
 
 def reviewer_model_marker(*, pr: int, head: str, reviewer_model: str, reviewer_agent: str) -> str:
@@ -850,7 +861,7 @@ class ReviewEligibility:
     Attributes:
         eligible: An approval of the exact head may count toward merge.
         status: Stable machine reason.
-        author_models: Models trusted records name as authors of this PR.
+        author_models: The current head's author models, excluded from approving it.
         qualifying: Reviewer models whose approval counts.
         self_reviews: Reviewer models that matched a known author model.
         cleared_agents: Reviewer agents whose approval counts by model, even if
@@ -874,39 +885,22 @@ def evaluate_review_eligibility(
     pr: int,
     head: str,
     approvers: Iterable[str] = (),
+    excluded: Sequence[str] | None = None,
 ) -> ReviewEligibility:
-    """Apply the owner's review rule to one exact head.
+    """Apply the owner's review rule (2026-11-24) to one exact head.
 
-    The rule is narrow: a model known to have authored this pull request must
-    not approve it. Known authorship comes only from controller-authored author
-    markers (trusted execution records), across every head of the PR, so a sync
-    or a merge without a new author marker never launders earlier authors away.
-    The reviewer's model comes only from the controller's reviewer-model record
-    of what the runtime executed, never from a worker's historical roster slot.
-
-    - An approval by a model different from every known author counts, even in
-      the same family (``glm-4.6`` reviewing ``glm-4.5``).
-    - When no factory author is known (human, external, or unattributed heads)
-      any trusted approval counts: missing attribution is a diagnostic, not a
-      blocker.
-    - When authors are known and every recorded reviewer matches one, it is
-      self-review: the PR goes back to review for another model.
-    - When authors are known but no reviewer model was recorded, the approval
-      cannot be checked; it goes back to review too, never to a permanent block.
-
-    Args:
-        comments: Controller-authored comment bodies.
-        pr: Pull request number.
-        head: Exact commit SHA under consideration.
-        approvers: Workers with a trusted exact-head approval marker.
-
-    Returns:
-        The typed eligibility verdict.
-
+    Only the current head's author models may not approve it; see
+    :func:`head_author_record`. ``excluded`` replaces that lookup with an
+    already resolved set (``factory_review_exclusion`` follows sync merges). The reviewer's model comes only from the
+    controller's record of what the runtime executed. An approval by any other
+    model counts, even in the same family. With no head author recorded, any
+    trusted approval counts. A known self-review, or an approval whose model was
+    not recorded while the head has an author, goes back to review.
     """
     rows = [str(body or "") for body in comments]
     approving = sorted({str(item) for item in approvers})
-    authors = known_author_models(rows, pr=pr)
+    found = head_author_record(rows, pr=pr, heads=(head,))[1] if excluded is None else excluded
+    authors = list(found)
     records = head_reviewer_models(rows, pr=pr, head=head)
     qualifying = [
         (model, agent) for model, agent in records
@@ -920,7 +914,7 @@ def evaluate_review_eligibility(
     }
     if qualifying:
         models = sorted({model for model, _agent in qualifying})
-        known = f"known authors {authors_text}" if authors else "no known factory author"
+        known = f"head author {authors_text}" if authors else "no recorded head author"
         return ReviewEligibility(
             eligible=True,
             status="eligible",
@@ -936,7 +930,7 @@ def evaluate_review_eligibility(
             qualifying=tuple(sorted({model for model, _agent in records})),
             cleared_agents=(),
             reason=(
-                "Approved; no factory author model is recorded for this PR "
+                "Approved; no author model is recorded for the current head "
                 "(human, external, or unattributed), so any reviewer may approve."
             ),
             **common,
@@ -949,7 +943,8 @@ def evaluate_review_eligibility(
             cleared_agents=(),
             reason=(
                 f"Self-review: the approval came from {', '.join(f'`{m}`' for m in self_reviews)}, "
-                f"which authored this PR ({authors_text}). A different model must review it."
+                f"which authored the current head ({authors_text}). "
+                "A different model must review it."
             ),
             **common,
         )
@@ -960,7 +955,7 @@ def evaluate_review_eligibility(
             qualifying=(),
             cleared_agents=(),
             reason=(
-                f"The PR has known author models ({authors_text}) but no record of which "
+                f"The current head has author models ({authors_text}) but no record of which "
                 "model executed the approval, so self-review cannot be ruled out. "
                 "It needs a review whose model the runtime records."
             ),

@@ -1,5 +1,5 @@
 {
-  "factory/.github/scripts/factory-review-controller.py": 2826,
+  "factory/.github/scripts/factory-review-controller.py": 2779,
   "factory/.github/scripts/factory-review-findings.sh": 587,
   "factory/.github/scripts/factory-visibility-enrollment.test.cjs": 610,
   "factory/.github/scripts/factory-visibility-greptile.test.cjs": 554,
@@ -12,7 +12,7 @@
   "factory/.github/scripts/factory_fork_control.py": 642,
   "factory/.github/scripts/factory_implementation_delivery.py": 526,
   "factory/.github/scripts/factory_jev_shadow.py": 960,
-  "factory/.github/scripts/factory_review_policy.py": 1148,
+  "factory/.github/scripts/factory_review_policy.py": 1143,
   "factory/.github/scripts/factory_rotisserie_adopter.py": 627,
   "factory/.github/scripts/free-model-factory-worker-primitives.sh": 1273,
   "factory/.github/scripts/free-model-factory-worker.sh": 1121,
