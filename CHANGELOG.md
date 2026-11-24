@@ -47,6 +47,12 @@ such change must be called out here and in its release notes.
 
 ### Fixed
 
+- A claim on a named issue or PR (label claim or `rotisserie factory claim`)
+  is no longer judged by factory intake. Capacity, backpressure, ranking and
+  "offered now" checks applied, so ComicPile #5695, a reopened production bug,
+  was refused while the review backlog was full. Only another active lease on
+  the item now refuses a claim, and the refusal names the holder, the expiry
+  and the command to end it (#212).
 - Console commands that run a factory workflow (`labels --via github`,
   `leases --via github`, `claim` and the others on the bridge) now wait while a
   run created seconds ago still reads as missing. Before, they stopped at once

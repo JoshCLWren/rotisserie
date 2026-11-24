@@ -134,10 +134,18 @@ def request(
         # Closed or merged work needs no answer on the item; the doctor never
         # reads closed items, so a rejection label there would never clear.
         _remove(github, number, lp.CLAIMED)
+        status_comment(
+            github,
+            number,
+            [
+                f"Not claimed: {target} is closed.",
+                f"Reopen {target}, then add `factory:claimed` again.",
+            ],
+        )
         return {"event": "claim", "target": target, "status": "ignored", "reason": "closed"}
     try:
-        outcome = external.reserve_next(
-            github, client=lp.LABEL_CLIENT, environment=environment, pick=target
+        outcome = external.reserve_target(
+            github, client=lp.LABEL_CLIENT, environment=environment, target=target
         )
     except (RuntimeError, ValueError) as exc:
         outcome = {"status": "conflict", "reason": str(exc)}
@@ -166,8 +174,8 @@ def request(
     if current and current.get("actor") == actor and current.get("client") == lp.LABEL_CLIENT:
         return {"event": "claim", "target": target, "status": "already-held", **current}
     lines = [
-        f"Rejected claim by @{actor}: {outcome.get('reason', 'unknown')}.",
-        "Nothing was reserved. Pick another item labeled `factory:available`.",
+        f"Not claimed for @{actor}: {outcome.get('reason', 'unknown')}.",
+        f"Next: {outcome.get('next') or 'add `factory:claimed` again to retry.'}",
     ]
     if current and current.get("client") == lp.LABEL_CLIENT:
         # Another agent's label claim won the race; its label stays.
