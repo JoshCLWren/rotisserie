@@ -149,7 +149,9 @@ backoff controls go through the trusted workflows (`--via github`) locally; the
 hosted read workflow reads backoffs from Neon directly. Run history lists the
 failed worker runs of the last 10 hours. Test factory store and Back up factory
 store start `baste store selftest` and `baste store export` with
-`--no-wait`; Read store run shows the result of a run by its ID. `tests/test_control_parity.py` checks that every `baste`
+`--no-wait`. Migrate store (dry run) starts `baste store migrate --dry-run`,
+and Migrate store starts the real copy after a confirmation. Read store run
+shows the result of a self-test, backup or migration run by its ID. `tests/test_control_parity.py` checks that every `baste`
 command has a control in both control rooms, or a reason in
 `src/rotisserie/control_parity.py` why it has none. The Diagnostics page starts a
 label doctor dry run or repair on GitHub and links the run. The Models page
@@ -710,6 +712,47 @@ it. Unknown, stale or unconfigured usage never pauses.
 
 Both control rooms show it on the Diagnostics page (Database usage). The
 hosted page serves it from the published snapshot without sign-in.
+
+### Moving the factory state from Neon to Turso
+
+`baste store migrate` copies the factory's Neon state into the libSQL store
+once, before the cutover (#257). It starts `factory-store-migrate.yml` in the
+repository's Actions, which reads Neon with the `NEON_API_KEY` secret and the
+`NEON_PROJECT_ID` variable and writes with `FACTORY_TURSO_URL` and
+`FACTORY_TURSO_TOKEN`. This machine never connects to either database.
+
+```bash
+baste store migrate --dry-run      # read and count only; writes nothing
+baste store migrate                # copy, then count every copied row back
+baste store migrate --run ID       # read an earlier run's summary
+```
+
+Run the dry run first. It reports what would be copied and what is skipped,
+with a reason for each skipped row. It also reports the number of
+`factory-projection-v1` keys, every provider budget row that holds a limit or
+a cooldown (the source and the column names only), and the row count of every
+Neon factory table. A table that does not exist is reported as absent.
+
+The tool (`.github/scripts/factory_turso_migrate.py`) reads Neon inside one
+read-only snapshot. It maps lease, backoff and health reset keys to
+`factory_lease`, `factory_backoff` and `factory_repo_state`, and copies events
+and the typed tables. Projection, GitHub read and open-list keys stay in Neon.
+Expired reservations are not copied. Expired external claims are copied,
+because they still hold their targets. An event without an `event_id` gets
+`neon:<id>`, so a re-run finds it again.
+
+Each batch is one transaction of inserts that skip a row whose key is already
+stored, so a stored row is never overwritten. After each batch the tool
+counts the copied keys in the store. The run reports `mismatch` and exits
+non-zero when a count does not agree. An interrupted run is started again from
+the beginning and copies only what is missing. A completed run writes a
+marker event, and a later run reports `already_migrated` and copies nothing:
+copying again after the cutover would bring back claims and backoffs that the
+factory has released since. Copy before the factory writes to the store, so
+the copied events keep their order.
+
+The summary artifact `factory-store-migrate-<run>` holds counts, table names,
+row category names and provider source names only.
 
 ### Serialized merges
 

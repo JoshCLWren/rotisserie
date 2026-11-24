@@ -125,6 +125,10 @@
 .github/scripts/factory_turso_slots.py
 .github/scripts/factory_turso_usage.py
 .github/scripts/factory_turso_selftest.py
+.github/scripts/factory_turso_migrate.py
+.github/scripts/factory_turso_migrate_map.py
+.github/scripts/factory_turso_migrate_neon.py
+.github/scripts/factory_turso_migrate_rows.py
 .github/scripts/factory_work_policy.py
 .github/scripts/factory_work_policy_assignment.py
 .github/scripts/factory_work_policy_backlog.py
