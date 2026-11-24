@@ -49,10 +49,11 @@ def test_every_store_job_removes_the_token_and_uses_the_right_token() -> None:
                 assert last["run"] == 'rm -f "$RUNNER_TEMP/factory-store-token"', (path.name, name)
 
 
-def test_callers_pass_store_secrets_and_never_neon() -> None:
+def test_callers_pass_store_secrets_and_neon_only_to_the_migration() -> None:
     for path in sorted(CALLERS.glob("*.yml")):
         text = path.read_text()
-        assert "NEON_API_KEY" not in text, path.name
+        if path.name != "factory-store-migrate.yml":
+            assert "NEON_API_KEY" not in text, path.name
         name = path.name
         if (WORKFLOWS / name).exists() and STORE_STEP in (WORKFLOWS / name).read_text():
             token = "FACTORY_TURSO_READ_TOKEN" if name in READ_ONLY else "FACTORY_TURSO_TOKEN"
