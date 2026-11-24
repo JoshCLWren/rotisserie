@@ -29,7 +29,8 @@ PROVIDER = re.compile(r"^[a-zA-Z0-9][a-zA-Z0-9_.-]{0,79}$")
 MODEL = re.compile(r"^[a-zA-Z0-9_./:+-]{1,180}$")
 SETTING = re.compile(r"^[A-Z][A-Z0-9_]{1,100}$")
 INTEGER = re.compile(r"^[0-9]{1,7}$")
-REASON = re.compile(r"^[A-Za-z0-9 _.,:;()'/+-]{0,180}$")
+REASON = re.compile(r"^[A-Za-z0-9 _.,:;()'/+#-]{0,180}$")
+CHECKS = re.compile(r"^(?:pr:[1-9][0-9]*|main)$")
 ACTIONS = frozenset(
     ("advance", "implement", "review", "review-findings", "ci-repair", "merge-conflict")
 )
@@ -109,7 +110,9 @@ def read_command(name: str, query: Mapping[str, str]) -> list[str]:
         target = _string(query, "target")
         if target:
             args.append(_match(target, re.compile(r"^issue:[1-9][0-9]*$"), "target"))
-    elif name in ("checks", "review", "conflicts"):
+    elif name == "checks":
+        args.append(_match(_string(query, "target", required=True), CHECKS, "target"))
+    elif name in ("review", "conflicts"):
         args.append(_match(_string(query, "target", required=True), PR, "target"))
     elif name in ("runs", "history"):
         args.append(_match(_string(query, "target", required=True), TARGET, "target"))
@@ -182,6 +185,8 @@ def write_command(data: Mapping[str, Any]) -> list[str]:
         if name == "model_switch":
             words.append(_match(_string(data, "model", required=True), MODEL, "model"))
         reason = _match(_string(data, "reason"), REASON, "reason")
+        if words[0] == "disable" and not reason.strip():
+            raise InvalidRequest("Turning off needs a reason")
         command = "providers" if name == "provider_switch" else "models"
         return [command, *words, f"--reason={reason}"]
     if name == "doctor_fix":

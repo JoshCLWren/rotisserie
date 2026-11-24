@@ -6,6 +6,7 @@ import http.client
 import json
 import threading
 from http.server import ThreadingHTTPServer
+from pathlib import Path
 from typing import Any
 
 import pytest
@@ -21,6 +22,11 @@ from rotisserie import cli, web
         ("models", {"provider": "opencode-go"}, ["models", "opencode-go"]),
         ("why", {"target": "issue:123"}, ["why", "issue:123"]),
         ("checks", {"target": "pr:45"}, ["checks", "pr:45"]),
+        ("checks", {"target": "main"}, ["checks", "main"]),
+        ("follow", {"target": "pr:7"}, ["follow", "pr:7", "--once"]),
+        ("follow", {"target": "issue:8"}, ["follow", "issue:8", "--once"]),
+        ("runs", {"target": "issue:8"}, ["runs", "issue:8"]),
+        ("history", {"target": "pr:7"}, ["history", "pr:7"]),
         ("unstick", {}, ["unstick", "--dry-run"]),
         ("stats", {"window": "24h"}, ["stats", "--window", "24h"]),
         ("outcomes", {}, ["outcomes", "--since", "2h", "--limit", "40"]),
@@ -38,12 +44,65 @@ def test_read_commands_are_bounded(name: str, query: dict[str, str], expected: l
         ("models", {"provider": "--dangerous"}),
         ("why", {"target": "pr:1"}),
         ("checks", {"target": "issue:1"}),
+        ("checks", {"target": "branch:main"}),
+        ("checks", {"target": "main;rm"}),
+        ("review", {"target": "main"}),
+        ("follow", {}),
+        ("follow", {"target": "pr:1", "interval": "1"}),
+        ("runs", {"target": "main"}),
+        ("history", {"target": "issue:0"}),
         ("stats", {"window": "30d"}),
     ],
 )
 def test_reads_refuse_mutations_or_invalid_args(name: str, query: dict[str, str]) -> None:
     with pytest.raises(web.InvalidRequest):
         web.read_command(name, query)
+
+
+@pytest.mark.parametrize(
+    ("body", "expected"),
+    [
+        ({"operation": "claim", "target": "issue:12"}, ["claim", "issue:12", "--no-wait"]),
+        ({"operation": "finish", "target": "pr:13"}, ["finish", "pr:13", "--no-wait"]),
+        ({"operation": "labels"}, ["labels", "--via", "github", "--no-wait"]),
+        (
+            {"operation": "labels", "mode": "dry-run"},
+            ["labels", "--via", "github", "--no-wait"],
+        ),
+        (
+            {"operation": "labels", "mode": "repair"},
+            ["labels", "--repair", "--via", "github", "--no-wait"],
+        ),
+    ],
+)
+def test_claim_finish_and_label_doctor_writes_return_at_once(
+    body: dict[str, Any], expected: list[str]
+) -> None:
+    args = web.write_command(body)
+    assert args == expected
+    cli.parser().parse_args(["factory", *args])
+
+
+def test_page_has_a_control_for_each_new_operation() -> None:
+    page = (Path(web.__file__).parent / "web_ui.html").read_text(encoding="utf-8")
+    for marker in (
+        'data-item-read="follow"',
+        'data-item-read="runs"',
+        'data-item-read="history"',
+        'id="item-claim"',
+        'id="item-finish"',
+        'id="main-checks"',
+        'id="labels-dry-run"',
+        'id="labels-repair"',
+        'id="provider-switches"',
+        'operation:"labels",mode:"dry-run"',
+        'operation:"labels",mode:"repair"',
+        '"model_switch":"provider_switch"',
+        "data-switch-off",
+        "data-switch-on",
+        "window.confirm(",
+    ):
+        assert marker in page, marker
 
 
 def test_run_maps_to_nonblocking_console_command_without_shell() -> None:
@@ -93,6 +152,11 @@ def test_run_maps_to_nonblocking_console_command_without_shell() -> None:
         {"operation": "settings", "name": "FAKE;rm", "value": "1"},
         {"operation": "settings", "name": "FACTORY_LIMIT", "value": "1;rm"},
         {"operation": "close", "target": "pr:1"},
+        {"operation": "claim", "target": "main"},
+        {"operation": "finish", "target": "issue:-1"},
+        {"operation": "finish"},
+        {"operation": "labels", "mode": "--repair"},
+        {"operation": "labels", "mode": "audit"},
     ],
 )
 def test_writes_refuse_unsupported_or_unsafe_inputs(body: dict[str, Any]) -> None:

@@ -110,6 +110,12 @@ such change must be called out here and in its release notes.
 
 ### Fixed
 
+- The web UI now has a control for each command its server allowed but the
+  page did not offer: Follow, Claim runs, History, Claim and Finish claim for
+  one item, checks on `main`, the label doctor dry run and repair, and the
+  provider and model switches. The models listing reports
+  `disabled_reason`. The web server refuses to turn a provider or model off
+  without a reason.
 - An expired factory lease no longer blocks an outside claim on its item. The
   factory's own intake already treated those rows as free. An expired outside
   claim still blocks, because an elapsed timestamp never proves an outside

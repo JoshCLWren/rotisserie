@@ -22,6 +22,10 @@ def _reason(off: fleet.Off | None) -> str:
     return "off" + (f": {off.reason}" if off.reason else "")
 
 
+def _off_reason(off: fleet.Off | None) -> str | None:
+    return (off.reason or None) if off else None
+
+
 def _switch_words(words: list[str], count: int, usage: str) -> tuple[bool, list[str]] | None:
     if not words or words[0] not in SWITCH_WORDS:
         return None
@@ -216,6 +220,7 @@ def _list_models(context: Context, provider_name: str) -> Outcome:
                     "source": r[2],
                     "offered": (r[0] in known) if known else None,
                     "disabled": switched.model_off(provider.source, r[0]) is not None,
+                    "disabled_reason": _off_reason(switched.model_off(provider.source, r[0])),
                 }
                 for r in rows
             ],
