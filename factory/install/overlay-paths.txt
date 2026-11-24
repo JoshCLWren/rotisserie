@@ -30,6 +30,7 @@
 .github/scripts/factory-worker-push-token.sh
 .github/scripts/factory_adopter.py
 .github/scripts/factory_app_client_id.py
+.github/scripts/factory_assign_trace.py
 .github/scripts/factory_attempt_history.py
 .github/scripts/factory_billing_pool.py
 .github/scripts/factory_branch_sync.py
@@ -76,6 +77,7 @@
 .github/scripts/factory_post_merge_closure_policy.py
 .github/scripts/factory_post_merge_closure_testing.py
 .github/scripts/factory_pinned_model.py
+.github/scripts/factory_pr_merge_state.py
 .github/scripts/factory_provider_candidates.py
 .github/scripts/factory_provider_registry.py
 .github/scripts/factory_published_model_catalog.py
