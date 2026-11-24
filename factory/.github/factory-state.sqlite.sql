@@ -47,6 +47,17 @@ CREATE TABLE IF NOT EXISTS factory_provider_reservation (
 CREATE INDEX IF NOT EXISTS idx_factory_provider_reservation_active
     ON factory_provider_reservation (repo, source, expires_at);
 
+-- Operator-set provider limits. No row means no limit beyond the checked-in
+-- source budget; acquisition enforces both inside its write statement.
+CREATE TABLE IF NOT EXISTS factory_provider_budget (
+    repo TEXT NOT NULL,
+    source TEXT NOT NULL,
+    concurrency_limit INTEGER CHECK (concurrency_limit IS NULL OR concurrency_limit > 0),
+    daily_limit INTEGER CHECK (daily_limit IS NULL OR daily_limit >= 0),
+    updated_at INTEGER NOT NULL,
+    PRIMARY KEY (repo, source)
+) STRICT;
+
 -- Fibonacci backoffs (worker, source/model) and reset-timed capacity
 -- cooldowns (provider account, credit pool). One row per key.
 CREATE TABLE IF NOT EXISTS factory_backoff (

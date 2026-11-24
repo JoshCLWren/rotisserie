@@ -12,6 +12,7 @@ TABLES = {
     "_schema_version",
     "factory_lease",
     "factory_provider_reservation",
+    "factory_provider_budget",
     "factory_backoff",
     "factory_repo_state",
     "factory_model_health",
