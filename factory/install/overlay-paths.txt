@@ -112,6 +112,17 @@
 .github/scripts/factory_state_operations_runtime.py
 .github/scripts/factory_state_operations_slots.py
 .github/scripts/factory_state_retention.py
+.github/scripts/factory_libsql.py
+.github/scripts/factory_turso_backoff.py
+.github/scripts/factory_turso_backup.py
+.github/scripts/factory_turso_core.py
+.github/scripts/factory_turso_events.py
+.github/scripts/factory_turso_exports.py
+.github/scripts/factory_turso_external.py
+.github/scripts/factory_turso_leases.py
+.github/scripts/factory_turso_operations.py
+.github/scripts/factory_turso_runtime.py
+.github/scripts/factory_turso_slots.py
 .github/scripts/factory_turso_usage.py
 .github/scripts/factory_work_policy.py
 .github/scripts/factory_work_policy_assignment.py
