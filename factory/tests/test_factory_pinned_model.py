@@ -176,6 +176,16 @@ def test_a_provider_with_no_eligible_model_is_no_capacity(tmp_path):
     assert pinned.EXACT_ERROR not in result.stdout
 
 
+def test_a_pinned_provider_with_an_empty_catalog_is_no_capacity(tmp_path):
+    result, _ = _run(tmp_path, pick="", REQUESTED_MODEL="auto")
+    assert result.returncode == 1
+    outcome = (tmp_path / "runner/factory-discovery-outcome").read_text()
+    assert outcome.startswith("no_capacity\tPinned provider nvidia has no eligible model")
+    assert pinned.EXACT_ERROR not in result.stdout
+    calls = [json.loads(line) for line in (tmp_path / "stub.log").read_text().splitlines()]
+    assert not [args for name, args in calls if name == "factory_model_failover.py"]
+
+
 def test_fallback_pick_still_obeys_the_review_author_rule(tmp_path):
     result, outputs = _run(
         tmp_path,

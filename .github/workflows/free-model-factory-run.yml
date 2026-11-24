@@ -493,15 +493,11 @@ jobs:
           # does after a failed attempt, and log the trusted transition.
           fleet_fallback() {
             local reason="$1" fallback
-            if [[ -n "$pin_reason" ]]; then
+            # A pinned provider is never switched: an empty own catalog is no_capacity.
+            if [[ -n "$pin_reason" || "$REQUESTED_PROVIDER" != auto ]]; then
               python3 .github/scripts/factory_pinned_model.py exhausted \
                 --requested-model "$REQUESTED_MODEL" --source "$SOURCE" --reason "$reason" \
                 --pin-reason "$pin_reason" --outcome-file "$discovery_outcome"
-              exit 1
-            fi
-            if [[ "$REQUESTED_MODEL" != auto || "$REQUESTED_PROVIDER" != auto ]]; then
-              printf 'model_unavailable\tOperator-pinned provider/model unavailable: %s\n' "$reason" > "$discovery_outcome"
-              echo "::error::Exact requested model could not be selected; no provider fallback"
               exit 1
             fi
             if fallback="$(python3 .github/scripts/factory_model_failover.py \

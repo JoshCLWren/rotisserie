@@ -64,9 +64,9 @@ def exhausted(requested: str, source: str, reason: str, *, pin_reason: str) -> d
             "error": f"No eligible {source} model replaces unavailable pinned model {requested}",
         }
     return {
-        "outcome": "model_unavailable",
-        "detail": f"Operator-pinned provider/model unavailable: {reason}",
-        "error": EXACT_ERROR,
+        "outcome": "no_capacity",
+        "detail": f"Pinned provider {source} has no eligible model: {reason}",
+        "error": f"No eligible {source} model for the pinned provider; it is never switched",
     }
 
 
