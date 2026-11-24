@@ -106,6 +106,12 @@ When editing:
   service under `src/rotisserie/factory_console/service/` that returns plain
   data, so the CLI only renders it and other consumers such as the web UI can
   call it.
+- Every new or changed `rotisserie factory` command also gets a working control
+  in both user interfaces in the same PR: the local web UI (`src/rotisserie/web.py`
+  allowlists and `src/rotisserie/web_ui.html`) and the hosted control room on
+  GitHub Pages (`factory/scripts/hosted_control_room.js` and
+  `factory/scripts/build_hosted_control_room.py`). A server allowlist entry
+  alone does not count.
 - Keep every source file at or under 500 lines, tests included.
   `scripts/check_file_size.py` enforces it as a lint step in
   `./scripts/verify`. Files listed in `tests/file_size_baseline.json` predate
