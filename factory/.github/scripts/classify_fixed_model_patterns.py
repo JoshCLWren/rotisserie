@@ -18,6 +18,7 @@ CANONICAL_OUTCOME_CLASSES = frozenset(
         "model_policy_violation",
         "environment_failure",
         "control_plane_failure",
+        "no_capacity",
         "unknown_failure",
     }
 )
@@ -64,7 +65,9 @@ BACKING_UNAVAILABLE_RE = re.compile(
     r"([\w./:-]+):\s*model\s+[—\-]\s*.*not available",
     re.I,
 )
-TIMEOUT_RE = re.compile(r"timed? out|timeout|exit status 124|process completed with exit code 124", re.I)
+TIMEOUT_RE = re.compile(
+    r"timed? out|timeout|exit status 124|process completed with exit code 124", re.I
+)
 SESSION_TIMEOUT_RE = re.compile(
     r"exit status 124|process completed with exit code 124",
     re.I,
@@ -72,10 +75,12 @@ SESSION_TIMEOUT_RE = re.compile(
 # Trust the actual work-session exit as the model proof. No separate prompt.
 WORK_SESSION_OK_RE = re.compile(
     r"\[factory:(?P<worker>\d+)\](?:\[[^\]\n]+\])*\s+"
-    r"agent exit status 0 for (?P<kind>issue|pr) #(?P<number>\d+)\b", re.I,
+    r"agent exit status 0 for (?P<kind>issue|pr) #(?P<number>\d+)\b",
+    re.I,
 )
 NO_ASSIGNMENT_RE = re.compile(
-    r"\[factory:\d+\].*no control-plane assignment is leased to this worker", re.I,
+    r"\[factory:\d+\].*no control-plane assignment is leased to this worker",
+    re.I,
 )
 AGENT_TIMEOUT_RE = re.compile(
     r"\[factory:\d+\](?:\[[^\]\n]+\])*\s+agent exit status 124 for (?:issue|pr) #\d+\b",
@@ -112,11 +117,14 @@ TRUSTED_GUARD_RE = re.compile(
     r"(?:blocked|rejected|denied) by (?:trusted )?(?:policy|guard)",
     re.I,
 )
+# Only the trusted worker's own [factory:W] lines count. Agent output, diffs
+# and file listings name controller scripts without any controller failing.
 CONTROL_PLANE_RE = re.compile(
+    r"^(?:\d{4}-\d{2}-\d{2}T\S+Z )?(?:##\[error\])?\[factory:\d+\][^\n]*?(?:"
     r"factory[-_ ](?:work|review|completion)[-_ ]controller|"
-    r"controller-assignment-read-failed|"
-    r"(?:lease|state[- ]machine|lifecycle|dispatch(?:er)?) (?:error|failed|failure|exception)",
-    re.I,
+    r"controller-assignment-read-failed|control_plane_failure:|"
+    r"(?:lease|state[- ]machine|lifecycle|dispatch(?:er)?) (?:error|failed|failure|exception))",
+    re.I | re.M,
 )
 WORK_FAILURE_RE = re.compile(
     r"(?:tests?|checks?|lint|coverage|mechanical (?:merge )?gate) (?:failed|failing|failure)|"
@@ -141,3 +149,18 @@ PRODUCTIVE_SIGNALS = (
     "pushed repairs to PR #",
     "all exact-head gates passed for PR #",
 )
+
+# OpenCode prints its own provider retries as "! retrying (attempt N): ...".
+# The agent's tool output and prose never start a log line this way.
+PROVIDER_RETRY_RE = re.compile(
+    r"^(?:\d{4}-\d{2}-\d{2}T\S+Z\s+)?! retrying \(attempt \d+\): (?P<message>[^\n]*)$", re.M
+)
+PROVIDER_429_RE = re.compile(r"\b429\b|too many requests", re.I)
+
+
+def provider_retry_outcome(text: str) -> str | None:
+    """Throttle or quota when the session's last provider retry was an HTTP 429."""
+    retries = list(PROVIDER_RETRY_RE.finditer(re.sub(r"\x1b\[[0-9;]*m", "", text)))
+    if not retries or not PROVIDER_429_RE.search(retries[-1]["message"]):
+        return None
+    return "provider_quota" if QUOTA_RE.search(retries[-1]["message"]) else "provider_throttle"

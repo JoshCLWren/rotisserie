@@ -30,15 +30,17 @@ from rotisserie.factory_console.github import (
     string,
     timestamp,
 )
+from rotisserie.factory_console.verdicts import EXIT_CODES as EXIT_CODES
+from rotisserie.factory_console.verdicts import OUTCOME_LINE as OUTCOME_LINE
+from rotisserie.factory_console.verdicts import VERDICTS as VERDICTS
+from rotisserie.factory_console.verdicts import Result as Result
+from rotisserie.factory_console.verdicts import WorkerOutcome as WorkerOutcome
+from rotisserie.factory_console.verdicts import failure_reasons as failure_reasons
+from rotisserie.factory_console.verdicts import parse_outcome as parse_outcome
 
 DISPATCH_WORKFLOW = "fixed-model-factory-dispatch.yml"
 WORKER_WORKFLOW = "free-model-factory-entry.yml"
 RESULT_STATUSES = ("dispatched", "deferred", "busy")
-OUTCOME_LINE = re.compile(r"\[factory-outcome\] (?P<verdict>[a-z_]+): (?P<message>.+)$", re.M)
-TRACEBACK_ERROR = re.compile(
-    r"^(?:\S+ )?(?:[A-Za-z_.]+(?:Error|Exception|Unavailable)): (.+)$", re.M
-)
-GENERIC_ANNOTATION = re.compile(r"^Process completed with exit code \d+\.?$")
 
 
 class Stage(StrEnum):
@@ -55,33 +57,6 @@ class Stage(StrEnum):
     WORKING = "working"  # the model session really started
     FINISHING = "finishing"
     DONE = "done"
-
-
-class Result(StrEnum):
-    PENDING = "pending"
-    STARTED = "started"  # the model is working (default stopping point)
-    DELIVERED = "delivered"  # a verified PR was handed off
-    COMPLETED = "completed"  # finished without needing a PR (e.g. a review)
-    IDLE = "idle"  # nothing useful to do
-    NO_WORK = "no_work"  # nothing was assigned
-    BUSY = "busy"  # the chosen item belongs to another worker
-    FAILED = "failed"
-    UNKNOWN = "unknown"  # finished but the result could not be read
-    SUBMITTED = "submitted"  # --no-wait
-
-
-EXIT_CODES = {
-    Result.SUBMITTED: 0,
-    Result.STARTED: 0,
-    Result.DELIVERED: 0,
-    Result.COMPLETED: 0,
-    Result.IDLE: 0,
-    Result.NO_WORK: 3,
-    Result.BUSY: 3,
-    Result.FAILED: 4,
-    Result.UNKNOWN: 6,
-    Result.PENDING: 6,
-}
 
 
 @dataclass
@@ -351,53 +326,6 @@ def parse_result(log: str) -> DispatchOutcome | None:
         owner_worker=str(found.get("owner_worker") or ""),
         busy_number=number_value if isinstance(number_value, int) else None,
         blocker=str(found.get("blocker") or ""),
-    )
-
-
-def failure_reasons(annotations: list[Obj], log: str = "") -> list[str]:
-    """Specific error messages, without GitHub's generic exit-code line."""
-    reasons: list[str] = []
-    for note in annotations:
-        if string(note, "annotation_level") != "failure":
-            continue
-        message = string(note, "message").strip()
-        if message and not GENERIC_ANNOTATION.match(message) and message not in reasons:
-            reasons.append(message)
-    if not reasons and log:
-        matches = TRACEBACK_ERROR.findall(log)
-        if matches:
-            reasons.append(matches[-1].strip())
-    return reasons
-
-
-@dataclass(frozen=True)
-class WorkerOutcome:
-    result: Result
-    message: str
-    pr: int | None = None
-
-
-VERDICTS = {
-    "code_delivered": Result.DELIVERED,
-    "work_completed": Result.COMPLETED,
-    "idle": Result.IDLE,
-    "failed": Result.FAILED,
-}
-
-
-def parse_outcome(log: str) -> WorkerOutcome | None:
-    match = None
-    for match in OUTCOME_LINE.finditer(log):
-        pass
-    if match is None:
-        return None
-    message = match.group("message").strip()
-    # "Verified PR #N was handed off" or "Code saved on the work PR; ... (work PR: N)".
-    pr = re.search(r"PR #(\d+)|work PR: (\d+)", message)
-    return WorkerOutcome(
-        VERDICTS.get(match.group("verdict"), Result.UNKNOWN),
-        message,
-        int(pr.group(1) or pr.group(2)) if pr else None,
     )
 
 

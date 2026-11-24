@@ -95,7 +95,7 @@ def cooldown_seconds(outcome: str | None) -> int:
     normalized = (outcome or "").strip().casefold()
     if normalized in {
         "success",
-        "no_work",
+        "no_work", "no_capacity",
         "work_failure",
         # Historical aliases retained while durable records age out.
         "no_change",
@@ -286,7 +286,7 @@ def worker_health_state(
     normalized = (outcome or "").strip().casefold()
     if normalized in {
         "success",
-        "no_work",
+        "no_work", "no_capacity",
         "healthy / productive",
         "healthy / idle",
         "work_failure",

@@ -48,6 +48,7 @@ OUTCOME_WORDS = {
     "provider_failure": "provider error",
     "model_retired_410": "model retired by provider",
     "control_plane_failure": "factory setup problem",
+    "no_capacity": "no capacity",
     "work_failure": "model could not finish the work",
     "no_progress": "model made no progress",
     "timeout": "ran out of time",

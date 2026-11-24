@@ -12,6 +12,8 @@ import re
 from datetime import datetime
 from typing import Any
 
+from classify_fixed_model_patterns import provider_retry_outcome
+
 ANSI = re.compile(r"\x1b\[[0-?]*[ -/]*[@-~]")
 STAMP = r"(?P<timestamp>\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d(?:\.\d+)?Z)"
 PREFIX = (
@@ -33,6 +35,13 @@ FAILOVER = re.compile(
 )
 NO_CHANGE = re.compile(r"^FACTORY_NO_CHANGE_FAILOVER\b")
 MAX_ATTEMPTS_PER_RUN = 2000
+# Provider-response classes the terminal classifier derives from runtime
+# evidence, which hold even when the model never proved itself with exit 0.
+TERMINAL_PROVIDER_CLASSES = frozenset({
+    "provider_throttle", "provider_quota", "provider_failure",
+    "model_unavailable", "model_retired_410", "model_policy_violation",
+})
+RETRY_OVERRIDABLE = frozenset({"unknown", "switched", "no_progress", "work_failure", "unknown_failure"})
 # Capture only diagnostic-shaped lines, never an arbitrary tail of agent output.
 # Raw model output may contain credentials, prompts, user data or tool results.
 MAX_FAILURE_TAIL_LINES = 8
@@ -169,11 +178,17 @@ def model_attempt_events(
             index == len(starts)
             and source == outcome.get("source")
             and model == outcome.get("model")
-            and outcome.get("exact_model_proven") is True
+            and (outcome.get("exact_model_proven") is True
+                 or outcome.get("outcome_class") in TERMINAL_PROVIDER_CLASSES)
             and evidence not in {"trusted_failover", "no_change_failover"}
         ):
             attempt_outcome = str(outcome.get("outcome_class") or "unknown")
             evidence = "trusted_terminal"
+        if attempt_outcome in RETRY_OVERRIDABLE:
+            throttled = provider_retry_outcome(clean[start.end():stop])
+            if throttled:
+                attempt_outcome = throttled
+                evidence = "provider_retry"
         elapsed_ms: int | None = None
         if finished_at:
             start_time, finish_time = _time(started_at), _time(finished_at)

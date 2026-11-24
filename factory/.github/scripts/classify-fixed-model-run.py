@@ -38,9 +38,10 @@ from classify_fixed_model_patterns import (  # noqa: E402
     TRUSTED_GUARD_RE,
     WORK_FAILURE_RE,
     WORK_SESSION_OK_RE,
+    provider_retry_outcome,
 )
 
-__all__ = ["CANONICAL_OUTCOME_CLASSES", "Result", "classify"]
+__all__ = ["CANONICAL_OUTCOME_CLASSES", "Result", "classify", "provider_retry_outcome"]
 SELF_TEST_MODULES = ("test_classify_fixed_model_run", "test_classify_fixed_model_run_provider")
 
 

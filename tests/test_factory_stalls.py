@@ -279,7 +279,7 @@ def test_a_fleet_where_no_worker_succeeds_fails_the_doctor() -> None:
     found = availability([("failure", PICK)] * 5 + [("failure", SESSION)] * 10)
     assert found.status == "fail"
     assert found.text == (
-        "0 of the last 15 finished workers succeeded; 5 could not pick any model (every "
+        "0 of the last 15 finished workers succeeded; 5 had no capacity: no usable model (every "
         "candidate cooling down, used up, or an author of the PR); 10 failed during their session"
     )
     assert "factory-model-health-reset.yml" in found.hint
@@ -314,7 +314,7 @@ def test_workers_that_finished_over_an_hour_ago_are_not_counted() -> None:
 def test_some_workers_without_a_model_is_a_warning() -> None:
     found = availability([("success", "")] * 4 + [("failure", PICK)])
     assert found.status == "warn"
-    assert found.text.startswith("4 of the last 5 finished workers succeeded; 1 could not")
+    assert found.text.startswith("4 of the last 5 finished workers succeeded; 1 had no capacity")
 
 
 @pytest.mark.parametrize(

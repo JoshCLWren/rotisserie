@@ -241,7 +241,7 @@ def model_availability(github: GitHub, now: datetime, tracker: Tracker) -> Findi
     parts = [f"{succeeded} of the last {len(runs)} finished workers succeeded"]
     if no_model:
         parts.append(
-            f"{no_model} could not pick any model (every candidate cooling down, used up, "
+            f"{no_model} had no capacity: no usable model (every candidate cooling down, used up, "
             "or an author of the PR)"
         )
     if in_session:

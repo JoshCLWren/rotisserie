@@ -240,6 +240,11 @@ def _watch_worker(
         "message": outcome.message,
         "pr": outcome.pr,
     }
+    if outcome.result is Result.NO_CAPACITY:
+        console.warn("No capacity: no eligible model was free; the item stays queued")
+        console.line(f"Reason: {outcome.message.removeprefix('No capacity: ')}")
+        console.link("Worker", str(data["worker_url"]))
+        return Outcome(Result.NO_CAPACITY, EXIT_CODES[Result.NO_CAPACITY], data)
     if started_at is None and session_started(jobs) is None:
         console.fail("The model never started", "the claim was released")
         console.line(f"Reason: {outcome.message}")

@@ -29,6 +29,27 @@ _MODEL = re.compile(
 _COOLING = re.compile(
     r"factory catalog: [^\n]+: catalog contained no eligible candidates outside cooldown", re.I
 )
+_STAMP = r"^(?:\d{4}-\d{2}-\d{2}T\S+Z )?(?:##\[error\])?"
+# Executed lines only: the echoed run: script quotes the same text indented.
+_CAPACITY = re.compile(
+    _STAMP + r"(?P<reason>(?:Kilo catalog: Kilo CLI reported no eligible catalog candidates"
+    r"|OpenCode Go unavailable: No zero-cost Go coding models outside cooldown"
+    r"|factory catalog: \S+: no eligible catalog candidates available"
+    r"|factory failover exhausted: no eligible provider/model combination remains"
+    r"|Every available model authored this PR|No reviewer model:)[^\n]*)$",
+    re.M,
+)
+_FLEET_FALLBACK = re.compile(_STAMP + r"Factory \d+ lane \S+: [^\n]*; selecting across the eligible fleet$", re.M)
+
+
+def capacity_reason(log: str) -> str:
+    """The last capacity exit, unless a fleet fallback found a model after it."""
+    found = list(_CAPACITY.finditer(log))
+    if not found or any(m.start() > found[-1].end() for m in _FLEET_FALLBACK.finditer(log)):
+        return ""
+    return found[-1]["reason"].strip()
+
+
 _ACCOUNT_CREDITS = re.compile(
     r"add usage credits or subscribe|api key budget (?:limit )?exceeded|insufficient balance or no resource package|please recharge|"
     # Pollinations: OpenCode prints this refusal and still exits 0.
@@ -60,6 +81,7 @@ _STEP_METADATA = re.compile(
 )
 
 
+_RETRY_OVERRIDABLE = frozenset({"no_work", "work_failure", "unknown_failure"})
 _PROSE_PROVIDER_CLASSES = frozenset({"provider_throttle", "provider_quota", "model_unavailable"})
 _EXIT = re.compile(r"\[factory:(?P<worker>\d+)\](?:\[[^\]\n]+\])*\s+agent exit status (?P<status>\d+) for ")
 _ZERO_EXIT_REFUSAL = "agent exited 0 after a provider account refusal"
@@ -127,6 +149,11 @@ def classify(log: str) -> dict[str, Any]:
         None,
     )
     if model_event is None:
+        if reason := capacity_reason(log):
+            return asdict(canonical.Result(
+                worker=worker, source=source, configured=configured,
+                outcome="NO CAPACITY", outcome_class="no_capacity", detail=reason,
+            ))
         if _COOLING.search(log):
             return asdict(canonical.Result(
                 worker=worker, source=source, configured=configured,
@@ -184,6 +211,12 @@ def classify(log: str) -> dict[str, Any]:
     ):
         result = replace(result, outcome="WORK FAILURE", outcome_class="work_failure",
                          detail="semantic review ended without an authoritative terminal verdict")
+    throttled = canonical.provider_retry_outcome(executed_lines)
+    if (throttled and result.delivery_outcome == "none"
+            and result.outcome_class in _RETRY_OVERRIDABLE):
+        result = replace(result, outcome="PROVIDER THROTTLE" if throttled == "provider_throttle"
+                         else "PROVIDER QUOTA", outcome_class=throttled,
+                         detail="the session's last provider retry was an HTTP 429 response")
     return asdict(result)
 
 

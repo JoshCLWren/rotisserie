@@ -93,7 +93,7 @@ def record_runtime_outcome(
                  and outcome.get("persisted_work") is True
                  and str(outcome.get("delivery_pr") or "").isdecimal())
     event_type = ("worker_completed" if status == "success" or delivered
-                  else "worker_idle" if status == "no_work" else "worker_failed")
+                  else "worker_idle" if status in {"no_work", "no_capacity"} else "worker_failed")
     entries = [{
         "event_type": event_type,
         "event_id": f"runtime:{run_id}",

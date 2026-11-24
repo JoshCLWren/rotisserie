@@ -123,7 +123,9 @@ class ClassifierProviderTests(ClassifierCase):
 
     def test_openrouter_daily_free_pool_exhaustion_is_quota(self) -> None:
         """Daily free-provider budget exhaustion must not be treated as transient throttle."""
-        result = classify(self.BASE + "Error: Rate limit exceeded: free-models-per-day-high-balance.\\n")
+        result = classify(
+            self.BASE + "Error: Rate limit exceeded: free-models-per-day-high-balance.\\n"
+        )
         self.assertEqual(result.outcome_class, "provider_quota")
 
     def test_model_stream_interruption_is_provider_failure(self) -> None:
@@ -133,7 +135,7 @@ class ClassifierProviderTests(ClassifierCase):
 
     def test_control_plane_failure_is_distinct(self) -> None:
         """Controller lifecycle exceptions are not attributed to the model."""
-        result = classify(self.BASE + "FIXED_MODEL_OPENCODE_OK\nlifecycle exception\n")
+        result = classify(self.BASE + "FIXED_MODEL_OPENCODE_OK\n[factory:32] lifecycle exception\n")
         self.assertEqual(result.outcome_class, "control_plane_failure")
 
     def test_assignment_read_failure_is_control_plane(self) -> None:
@@ -141,7 +143,32 @@ class ClassifierProviderTests(ClassifierCase):
         result = classify(
             self.BASE
             + "FIXED_MODEL_OPENCODE_OK\n"
-            + "released pr #1897 (controller-assignment-read-failed)\n"
+            + "[factory:32][source:x][model:y] released pr #1897 "
+            + "(controller-assignment-read-failed)\n"
+        )
+        self.assertEqual(result.outcome_class, "control_plane_failure")
+
+    def test_controller_names_in_agent_or_diff_output_are_not_control_plane(self) -> None:
+        """Runs 45337725814, 45373867814, 45357706778: a diff listed the controller file."""
+        for line in (
+            "2026-11-24T06:06:26.1894297Z       - '.github/scripts/factory_completion_controller.py'\n",
+            "2026-11-24T10:22:33.8046745Z -      - '.github/scripts/factory_completion_controller.py'\n",
+            "the factory-work-controller lease failed in this fixture\n",
+        ):
+            with self.subTest(line=line):
+                result = classify(
+                    self.BASE
+                    + "[factory:32] checked out pr #5737 on work\n"
+                    + line
+                    + "[factory:32][source:x][model:y] agent exit status 0 for pr #5737\n"
+                )
+                self.assertEqual(result.outcome_class, "no_work")
+
+    def test_worker_control_plane_failure_line_is_control_plane(self) -> None:
+        result = classify(
+            self.BASE
+            + "2026-11-24T06:06:26Z [factory:32][source:x][model:y] control_plane_failure: "
+            + "PR #5 closed before trusted review-controller handoff\n"
         )
         self.assertEqual(result.outcome_class, "control_plane_failure")
 
@@ -153,8 +180,7 @@ class ClassifierProviderTests(ClassifierCase):
     def test_no_change_repair_is_no_work(self) -> None:
         """Selected repairs without a diff use canonical no_work."""
         result = classify(
-            self.BASE
-            + "FIXED_MODEL_OPENCODE_OK\nchecked out pr #123 on branch\nno changes\n"
+            self.BASE + "FIXED_MODEL_OPENCODE_OK\nchecked out pr #123 on branch\nno changes\n"
         )
         self.assertEqual(result.outcome_class, "no_work")
 
@@ -187,7 +213,7 @@ class ClassifierProviderTests(ClassifierCase):
             + "FIXED_MODEL_OPENCODE_OK\n"
             + "Review docs discuss rate limit and quota decisions\n"
             + "[factory:32][source:omniroute-opencode][model:oc/big-pickle] "
-              "agent exit status 124 for issue #4822\n"
+            "agent exit status 124 for issue #4822\n"
         )
         self.assertEqual(result.outcome_class, "agent_timeout")
 

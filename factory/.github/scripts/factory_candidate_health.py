@@ -37,7 +37,7 @@ HEALTHY_OUTCOMES = {
     "policy_blocked",
 }
 IGNORED_MODEL_OUTCOMES = {
-    "control_plane_failure",
+    "control_plane_failure", "no_capacity",
     "environment_failure",
     # Historical alias.
     "worker_environment_failure",

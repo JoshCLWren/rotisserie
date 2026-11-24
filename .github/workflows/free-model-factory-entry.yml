@@ -161,6 +161,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           INPUT_WORKER: ${{ inputs.worker }}
+          INPUT_ASSIGNMENT: ${{ inputs.assignment }}
         run: |
           set -Eeuo pipefail
           # Retry only transient GitHub responses. Every retry overwrites its
@@ -260,6 +261,11 @@ jobs:
           elif [[ "$classification" == no_work ]]; then
             verdict="idle"
             message="No code delivered; worker had no useful work to persist"
+          elif [[ "$classification" == no_capacity ]]; then
+            # Capacity exits are not worker failures: the run ends before any
+            # model starts, and the target stays queued for a later worker.
+            verdict="no_capacity"
+            message="No capacity: $(jq -r '.detail // "no eligible model"' "$RUNNER_TEMP/worker-outcome-attested.json")"
           elif [[ "$classification" == success ]]; then
             verdict="work_completed"
             message="Work completed without a verified PR handoff (for example review)"
@@ -284,6 +290,13 @@ jobs:
             printf 'Checkpoint saved: `%s`; work PR: `%s`; checkpoint validated: `false`\n' "$saved" "${recovery_pr:-none}"
           } >> "$GITHUB_STEP_SUMMARY"
           echo "[factory-outcome] $verdict: $message"
+          assignment_json="$(jq -c 'objects' <<< "${INPUT_ASSIGNMENT:-}" 2>/dev/null || true)"
+          [[ -n "$assignment_json" ]] || assignment_json='{}'
+          jq -rc --argjson assignment "$assignment_json" \
+            '"[factory-outcome-class] " + ({class: .outcome_class, source: (.source // ""),
+              model: (.model // ""), target: (if ($assignment.kind // "") | test("^(issue|pr)$")
+              then "\($assignment.kind):\($assignment.number)" else "" end)} | tojson)' \
+            "$RUNNER_TEMP/worker-outcome-attested.json" || true
           if [[ "$verdict" == failed ]]; then
             echo "::error::$message"
             exit 1
