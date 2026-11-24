@@ -11,6 +11,10 @@ such change must be called out here and in its release notes.
 
 ### Added
 
+- `rotisserie factory checks main` (or `branch:NAME`): why the branch's
+  product CI fails on its current commit, reading only the configured CI
+  workflows, not factory jobs on the same commit. Job summaries now name
+  TypeScript errors with file and line.
 - Owner picks go first. An accepted claim adds `factory:override` to the item
   and its linked issue or PR, and a hand-off adds it to the evidence PR. The
   factory ranks those items ahead of every lane and priority (implement,

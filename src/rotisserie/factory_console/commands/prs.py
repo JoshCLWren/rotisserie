@@ -16,6 +16,7 @@ from rotisserie.factory_console.service import (
     checks,
     claimops,
     conflicts,
+    main_health,
     review,
     stalls,
 )
@@ -168,10 +169,40 @@ def _show_leases(console: Console, data: dict[str, object]) -> None:
     _show_bridge(console, data)
 
 
+def _branch_checks(context: Context, branch: str) -> Outcome:
+    head = checks.branch_head(context.github, branch)
+    latest: dict[str, int] = {}
+    names = main_health.workflows(context.github)
+    for name, listing in zip(names, main_health.fetch_runs(context.github, head, names)):
+        runs = listing.get("workflow_runs") if isinstance(listing, dict) else None
+        if isinstance(runs, list) and runs and isinstance(runs[0], dict):
+            latest[name] = int(str(runs[0].get("id")))
+    if not latest:
+        context.console.warn(f"{branch} ({head[:8]}): product CI has not run on this commit")
+        return Outcome(Result.UNKNOWN, EXIT_OK, {"branch": branch, "head": head, "failing": []})
+    failing = checks.failing_checks_at(context.github, head, run_ids=list(latest.values()))
+    console = context.console
+    if not failing:
+        console.ok(f"{branch} ({head[:8]}): no failing checks")
+    else:
+        console.fail(f"{branch} ({head[:8]}): {len(failing)} failing check(s)")
+        for item in failing:
+            console.line(f"  {console.dot} {item.name} ({item.kind}): {item.summary}")
+            console.link("    Log", item.url)
+    data: dict[str, object] = {
+        "branch": branch,
+        "head": head,
+        "failing": [item.__dict__ for item in failing],
+    }
+    return Outcome(Result.COMPLETED if not failing else Result.FAILED, EXIT_OK, data)
+
+
 def cmd_checks(context: Context, arguments: argparse.Namespace) -> Outcome:
+    if arguments.what == "main" or arguments.what.startswith("branch:"):
+        return _branch_checks(context, arguments.what.removeprefix("branch:"))
     kind, number = _split_target(arguments.what)
     if kind != "pr":
-        raise UsageError("checks takes a pull request: pr:N")
+        raise UsageError("checks takes pr:N, main or branch:NAME")
     console = context.console
     failing = checks.failing_checks(context.github, number)
     shared = baseline.analyze(context.github, {number: failing}) if failing else baseline.Report()
