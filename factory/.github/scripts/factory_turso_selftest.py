@@ -27,7 +27,8 @@ SUITE = (
     "tests/test_turso_lifecycle.py",
     "tests/test_turso_faults.py",
 )
-NAMESPACE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]{2,60}$")
+PREFIX = "selftest-"
+NAMESPACE = re.compile(r"^selftest-[A-Za-z0-9_.-]{1,50}$")
 
 
 def _counts(report: Path) -> dict[str, int]:
@@ -53,18 +54,31 @@ def _usage(path: Path) -> dict[str, int]:
     return total
 
 
-def sweep(store: libsql.Store, namespace: str) -> int:
-    """Delete every row the suite may have left in its namespace."""
+def sweep(store: libsql.Store) -> int:
+    """Delete every row any self-test run left, including a cancelled earlier run's.
+
+    Runs share one concurrency group, so no other self-test is live. Test event
+    IDs are fixed and ``event_id`` is unique across repositories, so a stale
+    row from a killed run would otherwise turn a later insert into a no-op.
+    """
     from factory_turso_backup import TABLES
 
-    pattern = namespace.replace("_", "\\_") + "/%"
     results = store.batch(
         [
-            (f"DELETE FROM {table} WHERE repo LIKE :p ESCAPE '\\' RETURNING 1 AS x", {"p": pattern})
+            (
+                f"DELETE FROM {table} WHERE substr(repo, 1, :n) = :prefix RETURNING 1 AS x",
+                {"n": len(PREFIX), "prefix": PREFIX},
+            )
             for table in TABLES
         ]
     )
     return sum(len(rows) for rows in results)
+
+
+def _store() -> libsql.Store:
+    token_file = os.environ.get("FACTORY_TEST_LIBSQL_TOKEN_FILE")
+    token = Path(token_file).read_text(encoding="utf-8").strip() if token_file else ""
+    return libsql.HttpStore(os.environ["FACTORY_TEST_LIBSQL_URL"], token)
 
 
 def run(namespace: str, *, measure: bool) -> dict[str, object]:
@@ -79,6 +93,7 @@ def run(namespace: str, *, measure: bool) -> dict[str, object]:
         "FACTORY_TEST_USAGE_FILE": str(work / "usage.jsonl"),
     }
     report = work / "junit.xml"
+    stale = sweep(_store())
     started = datetime.now(UTC)
     tests = subprocess.run(
         [
@@ -105,6 +120,7 @@ def run(namespace: str, *, measure: bool) -> dict[str, object]:
         **_counts(report),
         "pytest_exit": tests.returncode,
         "tail": tests.stdout[-2000:],
+        "stale_rows_deleted_first": stale,
     }
     if measure:
         measured = subprocess.run(
@@ -120,13 +136,7 @@ def run(namespace: str, *, measure: bool) -> dict[str, object]:
             summary["measurement"] = json.loads(measured.stdout)
         except ValueError:
             summary["measurement"] = {"error": measured.stderr[-500:]}
-    store = libsql.HttpStore(
-        os.environ["FACTORY_TEST_LIBSQL_URL"],
-        Path(os.environ["FACTORY_TEST_LIBSQL_TOKEN_FILE"]).read_text(encoding="utf-8").strip()
-        if os.environ.get("FACTORY_TEST_LIBSQL_TOKEN_FILE")
-        else "",
-    )
-    summary["leftover_rows_deleted"] = sweep(store, namespace)
+    summary["leftover_rows_deleted"] = sweep(_store())
     summary["usage"] = _usage(work / "usage.jsonl")
     failed = tests.returncode != 0 or summary["failed"] or not summary["passed"]
     summary["status"] = "failed" if failed else "passed"
