@@ -185,6 +185,7 @@ def test_rows_serialize_for_json_output() -> None:
     [
         "Exact requested model could not be selected; no provider fallback",
         "Every available model authored this PR; the review stays queued for another model",
+        "OpenRouter daily free allowance used up; resets at Nov 22, 6:00 PM CT",
     ],
 )
 def test_capacity_refusals_recorded_as_setup_problems_count_as_no_capacity(error: str) -> None:

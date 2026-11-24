@@ -259,9 +259,30 @@ def parse_marker(message: str) -> dict[str, object] | None:
     return {**match.groupdict(), "reset_at": int(match["reset_at"])}
 
 
+LABELS = {"openrouter-free": "OpenRouter"}
+CENTRAL = ZoneInfo("America/Chicago")
+
+
+def capacity_sentence(source: str, kind: str, until: datetime) -> str:
+    """The one-line reason an account quota ended same-run failover."""
+    label = LABELS.get(source, source)
+    noun = "free allowance" if source.endswith("-free") else "quota"
+    local = until.astimezone(CENTRAL)
+    when = f"{local:%b} {local.day}, {local.hour % 12 or 12}:{local:%M %p} CT"
+    return f"{label} {kind} {noun} used up; resets at {when}"
+
+
+def account_exhaustion(source: str, reset: Reset) -> str | None:
+    """kind, reset epoch and sentence when this refusal blocks the whole source."""
+    if reset.until is None or scope(source, reset.kind) != "account":
+        return None
+    sentence = capacity_sentence(source, reset.kind, reset.until)
+    return f"{reset.kind}\t{int(reset.until.timestamp())}\t{sentence}"
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("command", choices=("hint",))
+    parser.add_argument("command", choices=("hint", "account"))
     parser.add_argument("--source", required=True)
     parser.add_argument("--model", required=True)
     parser.add_argument("--outcome", required=True, choices=sorted(CAPACITY_OUTCOMES))
@@ -284,6 +305,12 @@ def main() -> int:
         probed = probe_reset(args.source, args.model, reset.kind, observed, args.probe_cache)
         if probed is not None:
             reset = probed
+    if args.command == "account":
+        exhausted = account_exhaustion(args.source, reset)
+        if exhausted is None:
+            return 1
+        print(exhausted)
+        return 0
     print(f"source={args.source} model={args.model} outcome={args.outcome} {reset.fields()}")
     return 0
 

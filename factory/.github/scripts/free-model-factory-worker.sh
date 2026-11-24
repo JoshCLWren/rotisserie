@@ -515,7 +515,7 @@ fi
 ORIGINAL_SOURCE="$SOURCE"
 attempted_pairs=()
 blocked_providers=()
-exhausted_pools=()
+exhausted_pools=() exhausted_accounts=() exhausted_account_details=()
 ACCOUNT_REFUSAL_RE='out of credits|insufficient balance or no resource package|please recharge|add usage credits or subscribe|api key budget (limit )?exceeded|account (credits|balance) (depleted|exhausted)|billing_api_budget_exhausted|payment required|no resource package|(does|do)(n.t| not) have enough credits'
 account_wide_failure() {
   grep -Eqi "$ACCOUNT_REFUSAL_RE" "/tmp/opencode-factory-$WORKER.log"
@@ -550,6 +550,7 @@ select_next_eligible_model() {
   for pair in "${attempted_pairs[@]}"; do select_args+=(--attempted-pair "$pair"); done
   for provider in "${blocked_providers[@]}"; do select_args+=(--blocked-provider "$provider"); done
   for provider in "${exhausted_pools[@]}"; do select_args+=(--exhausted-credit-pool "$provider"); done
+  for provider in "${exhausted_accounts[@]}"; do select_args+=(--exhausted-account "$provider"); done
   while :; do
     (( $(remaining) > 540 )) || return 1
     if [[ -n "${OPENCODE_GO_CLIENT_ID:-}" ]]; then
@@ -704,11 +705,7 @@ while :; do
       provider_quota|provider_throttle|provider_failure|model_unavailable|model_retired_410|model_policy_violation)
         if [[ -z "$(git status --porcelain)" ]] && (( $(remaining) > 540 )); then
           attempted_pairs+=("$(jq -nc --arg source "$SOURCE" --arg model "$MODEL" '[$source,$model]')")
-          failure_scope=model
-          if [[ "$failure_class" == provider_quota ]] \
-            && trip_exhausted_credit_pool "$SOURCE" "$MODEL" "$attempt_elapsed"; then
-            failure_scope=pool
-          fi
+          trip_exhausted_capacity "$SOURCE" "$MODEL" "$failure_class" "$attempt_elapsed"
           if ! record_model_failover_failure "$SOURCE" "$MODEL" "$failure_class" "$failure_scope"; then
             record_terminal_outcome control_plane_failure "failed to persist exact attempt before failover"
             break
