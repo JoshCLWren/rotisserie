@@ -59,8 +59,15 @@ async def _reserve_external(
             await conn.execute(
                 "SELECT pg_advisory_xact_lock(hashtextextended($1, 0))", LEASE_PREFIX + repo
             )
-            # Unlike the historic numeric-worker fallback, an expired but
-            # unreconciled external row is NOT implicitly reusable.
+            # An expired factory lease frees its target, as factory intake
+            # already treats it. An expired external row is NOT reusable: an
+            # elapsed timestamp never proves an outside agent stopped.
+            await conn.execute(
+                """DELETE FROM public.factory_state_kv
+                   WHERE cache_key = ANY($1::text[]) AND expires_at <= now()
+                     AND coalesce(payload->0->>'external', '') <> 'true'""",
+                keys,
+            )
             busy = await conn.fetch(
                 "SELECT cache_key FROM public.factory_state_kv WHERE cache_key = ANY($1::text[])",
                 keys,
