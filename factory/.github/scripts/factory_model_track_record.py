@@ -32,7 +32,7 @@ import os
 import random
 import re
 import sys
-from collections.abc import Mapping, Sequence
+from collections.abc import Collection, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
@@ -52,6 +52,8 @@ NON_MODEL_FAILURES = frozenset(
 DELIVERY_KINDS = frozenset({"implement"})
 FILE_ENV = "FACTORY_TRACK_RECORD_FILE"
 KIND_ENV = "FACTORY_ACTION_KIND"
+MERGE_CONFLICT = "factory:merge-conflict"
+KIND_RE = re.compile(r"[a-z-]{0,40}")
 SELECTION_LINE = re.compile(r"\[factory-model-selection\] (\{.*\})\s*$", re.M)
 
 
@@ -62,8 +64,11 @@ class Record:
     basis: str
 
 
-def action_kind(assignment: Mapping[str, Any]) -> str:
-    """The action a dispatched assignment asks for, named as the planner names it."""
+def action_kind(assignment: Mapping[str, Any], labels: Collection[str] = ()) -> str:
+    """The action a dispatched assignment asks for, named as the planner names it.
+
+    The assignment stage never names a conflict, so the PR's labels decide that.
+    """
     if assignment.get("kind") == "issue":
         return "implement"
     if assignment.get("kind") != "pr":
@@ -71,7 +76,8 @@ def action_kind(assignment: Mapping[str, Any]) -> str:
     from factory_work_policy_backlog import completion_action_for
 
     stage = str(assignment.get("stage") or "")
-    return completion_action_for(stage, stage == "factory:merge-conflict") or "pr"
+    conflicted = MERGE_CONFLICT in labels or stage == MERGE_CONFLICT
+    return completion_action_for(stage, conflicted) or "pr"
 
 
 def _trial(window: Mapping[str, Any], kind: str) -> tuple[int, int]:
@@ -253,36 +259,44 @@ def pick(source: str, models: Sequence[str], seed: str) -> tuple[str, str]:
     )
 
 
-def logged_reason(log: str) -> str:
-    """The first selection marker in a run log, which precedes any model output."""
+def logged_selection(log: str) -> dict[str, str]:
+    """Kind and reason from the first selection marker, which precedes any model output."""
     match = SELECTION_LINE.search(log)
-    if match is None:
-        return ""
     try:
-        found = json.loads(match.group(1))
+        found = json.loads(match.group(1)) if match else None
     except ValueError:
-        return ""
+        found = None
     if not isinstance(found, dict):
-        return ""
+        return {"kind": "", "reason": ""}
+    kind = str(found.get("kind") or "")
     picked = f"{found.get('source') or '?'} / {found.get('model') or '?'}"
-    return f"{picked}: {found.get('reason') or ''}"[:300]
+    return {
+        "kind": kind if KIND_RE.fullmatch(kind) else "",
+        "reason": f"{picked}: {found.get('reason') or ''}"[:300],
+    }
 
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("command", choices=("kind", "reason"))
+    parser.add_argument("command", choices=("kind", "marker"))
     parser.add_argument("--log", type=Path)
+    parser.add_argument("--labels-json", default="[]")
     args = parser.parse_args(argv)
-    if args.command == "reason":
+    if args.command == "marker":
         if args.log is None:
-            parser.error("reason needs --log")
-        print(logged_reason(args.log.read_text(encoding="utf-8", errors="replace")))
+            parser.error("marker needs --log")
+        log = args.log.read_text(encoding="utf-8", errors="replace")
+        print(json.dumps(logged_selection(log)))
         return 0
     try:
         assignment = json.loads(os.environ.get("FACTORY_ASSIGNMENT") or "{}")
+        labels = json.loads(args.labels_json)
     except ValueError:
+        assignment, labels = {}, []
+    if not isinstance(assignment, dict):
         assignment = {}
-    print(action_kind(assignment) if isinstance(assignment, dict) else "")
+    names = [x for x in labels if isinstance(x, str)] if isinstance(labels, list) else []
+    print(action_kind(assignment, names))
     return 0
 
 

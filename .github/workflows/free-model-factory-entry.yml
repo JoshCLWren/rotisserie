@@ -237,10 +237,15 @@ jobs:
           }
           # Worker identity comes from the trusted dispatch input, *not* from
           # any untrusted text in a model-generated log.
-          action_kind="$(FACTORY_ASSIGNMENT="${INPUT_ASSIGNMENT:-}" \
-            python3 .github/scripts/factory_model_track_record.py kind 2>/dev/null || true)"
-          selection_reason="$(python3 .github/scripts/factory_model_track_record.py reason \
-            --log "$RUNNER_TEMP/factory-entry.log" 2>/dev/null || true)"
+          # The worker's first selection marker carries the action kind it used.
+          marker="$(python3 .github/scripts/factory_model_track_record.py marker \
+            --log "$RUNNER_TEMP/factory-entry.log" 2>/dev/null)" || marker='{}'
+          action_kind="$(jq -r '.kind // ""' <<< "$marker" 2>/dev/null || true)"
+          selection_reason="$(jq -r '.reason // ""' <<< "$marker" 2>/dev/null || true)"
+          if [[ -z "$action_kind" ]]; then
+            action_kind="$(FACTORY_ASSIGNMENT="${INPUT_ASSIGNMENT:-}" \
+              python3 .github/scripts/factory_model_track_record.py kind 2>/dev/null || true)"
+          fi
           jq --arg worker "$INPUT_WORKER" --arg kind "$action_kind" --arg why "$selection_reason" \
             '.worker = $worker | .action_kind = $kind | .selection_reason = $why' \
             "$RUNNER_TEMP/worker-outcome.json" \

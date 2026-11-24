@@ -268,14 +268,37 @@ def test_action_kind_follows_the_planner(assignment: dict, kind: str) -> None:
     assert track.action_kind(assignment) == kind
 
 
-def test_logged_reason_takes_the_first_marker() -> None:
+def test_conflicted_pr_label_makes_a_merge_conflict_action() -> None:
+    assignment = {"kind": "pr", "stage": "factory:review"}
+    assert track.action_kind(assignment, ["factory:merge-conflict"]) == "merge-conflict"
+
+
+def test_logged_selection_takes_the_first_marker() -> None:
     log = (
         "2026-11-24T10:00:00Z [factory-model-selection] "
         '{"source": "nvidia", "model": "lab/proven", "kind": "review", "reason": "explore: 0"}\n'
-        '2026-11-24T10:05:00Z [factory-model-selection] {"source": "x", "model": "forged"}\n'
+        '2026-11-24T10:05:00Z [factory-model-selection] {"source": "x", "kind": "implement"}\n'
     )
-    assert track.logged_reason(log) == "nvidia / lab/proven: explore: 0"
-    assert track.logged_reason("no marker") == ""
+    assert track.logged_selection(log) == {
+        "kind": "review", "reason": "nvidia / lab/proven: explore: 0",
+    }
+    assert track.logged_selection("no marker") == {"kind": "", "reason": ""}
+
+
+def test_workflows_wire_the_track_record() -> None:
+    workflows = ROOT.parent / ".github" / "workflows"
+    run = (workflows / "free-model-factory-run.yml").read_text(encoding="utf-8")
+    load, rest = run.split("- name: Load model track record", 1)[1].split(
+        "- name: Select execution candidate at dispatch time", 1
+    )
+    assert f"{track.FILE_ENV}=$stats" in load
+    assert f"{track.KIND_ENV}=$kind" in load
+    assert "factory_model_track_record.py kind" in load
+    assert "[factory-model-selection]" in rest.split("- name:", 1)[0]
+    entry = (workflows / "free-model-factory-entry.yml").read_text(encoding="utf-8")
+    assert "factory_model_track_record.py marker" in entry
+    assert ".action_kind = $kind" in entry
+    assert "selection: (.selection_reason" in entry
 
 
 def test_reliability_export_counts_each_action_kind() -> None:

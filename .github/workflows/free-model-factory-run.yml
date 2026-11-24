@@ -474,9 +474,6 @@ jobs:
           FACTORY_ASSIGNMENT: ${{ inputs.assignment }}
         run: |
           set -Eeuo pipefail
-          kind="$(python3 .github/scripts/factory_model_track_record.py kind)"
-          [[ "$kind" =~ ^[a-z-]*$ ]] || kind=''
-          echo "FACTORY_ACTION_KIND=$kind" >> "$GITHUB_ENV"
           stats="$RUNNER_TEMP/factory-track-record.json"
           if gh api -H 'Accept: application/vnd.github.raw+json' \
               "repos/${GITHUB_REPOSITORY}/contents/factory-stats.json?ref=factory-status-live" > "$stats" &&
@@ -485,6 +482,14 @@ jobs:
           else
             echo "::warning::Model track record unavailable; selection stays uniform"
           fi
+          # The assignment stage never names a conflict; the PR label does.
+          labels='[]'
+          if pr="$(jq -er 'select(.kind == "pr") | .number' <<< "$FACTORY_ASSIGNMENT" 2>/dev/null)"; then
+            labels="$(gh api "repos/${GITHUB_REPOSITORY}/issues/${pr}" --jq '[.labels[].name]' 2>/dev/null)" || labels='[]'
+          fi
+          kind="$(python3 .github/scripts/factory_model_track_record.py kind --labels-json "$labels")" || kind=''
+          [[ "$kind" =~ ^[a-z-]*$ ]] || kind=''
+          echo "FACTORY_ACTION_KIND=$kind" >> "$GITHUB_ENV"
 
       - name: Select execution candidate at dispatch time
         id: executor
