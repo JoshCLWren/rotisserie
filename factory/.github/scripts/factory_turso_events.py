@@ -14,7 +14,7 @@ from typing import Any
 import factory_turso_core as core
 from factory_libsql import placeholders
 from factory_state_ledger_core import WORKER_RE
-from factory_turso_leases import renewal_statements
+from factory_turso_leases import bind_run_statements, renewal_statements
 from factory_work_policy import FIXED_LEASE_TTL_SECONDS
 
 ORIGIN = "github-actions"
@@ -58,37 +58,43 @@ def record_events(repo: str, entries: list[dict[str, Any]]) -> int:
     db = core.store()
     inserted = 0
     started: list[str] = []
+    bound: list[core.Statement] = []
     for offset in range(0, len(entries), CHUNK):
         chunk = entries[offset : offset + CHUNK]
         results = db.batch([_insert(repo, entry) for entry in chunk])
         for entry, rows in zip(chunk, results, strict=True):
             if rows:
                 inserted += 1
-                if entry["event_type"] == "worker_started":
+                if entry["event_type"] == "worker_started" and entry.get("claim_id"):
+                    claim, run = str(entry["claim_id"]), str(entry["run_id"])
+                    bound += bind_run_statements(repo, claim, run, FIXED_LEASE_TTL_SECONDS)
+                elif entry["event_type"] == "worker_started":
                     started.append(str(entry["worker"]))
     if started:
-        db.batch(renewal_statements(repo, started, FIXED_LEASE_TTL_SECONDS))
+        bound += renewal_statements(repo, started, FIXED_LEASE_TTL_SECONDS)
+    if bound:
+        db.batch(bound)
     return inserted
 
 
-def record_lifecycle(repo: str, run_id: str, worker: str, status: str) -> int:
+def record_lifecycle(
+    repo: str, run_id: str, worker: str, status: str, claim_id: str | None = None
+) -> int:
     if not WORKER_RE.fullmatch(worker) or not run_id.isdecimal():
         raise ValueError("invalid trusted lifecycle identity")
     if status not in LIFECYCLE_STATUSES:
         raise ValueError("invalid trusted lifecycle status")
-    return record_events(
-        repo,
-        [
-            {
-                "event_type": LIFECYCLE_STATUSES[status],
-                "event_id": f"lifecycle:{run_id}:{status}",
-                "worker": worker,
-                "run_id": run_id,
-                "status": "running" if status == "started" else status,
-                "observed_at": datetime.now(UTC).isoformat(),
-            }
-        ],
-    )
+    entry = {
+        "event_type": LIFECYCLE_STATUSES[status],
+        "event_id": f"lifecycle:{run_id}:{status}",
+        "worker": worker,
+        "run_id": run_id,
+        "status": "running" if status == "started" else status,
+        "observed_at": datetime.now(UTC).isoformat(),
+    }
+    if claim_id:
+        entry["claim_id"] = claim_id
+    return record_events(repo, [entry])
 
 
 def record_runtime_outcome(

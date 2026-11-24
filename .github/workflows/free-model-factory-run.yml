@@ -205,11 +205,13 @@ jobs:
         continue-on-error: true
         env:
           FACTORY_WORKER: ${{ inputs.worker }}
+          FACTORY_ASSIGNMENT: ${{ inputs.assignment }}
         run: |
           set -Eeuo pipefail
+          claim_id="$(jq -r '.claim_id // empty' <<< "${FACTORY_ASSIGNMENT:-null}" 2>/dev/null || true)"
           python3 .github/scripts/factory_state_ledger.py lifecycle \
             --repo "$GITHUB_REPOSITORY" --run-id "$GITHUB_RUN_ID" \
-            --worker "$FACTORY_WORKER" --status started \
+            --worker "$FACTORY_WORKER" --status started ${claim_id:+--claim-id "$claim_id"} \
             || echo '::warning::FACTORY_LIFECYCLE_DEFERRED status=started; terminal outcome still persists from the job log'
       - name: Remove the factory store token
         if: always()

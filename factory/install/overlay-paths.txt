@@ -109,6 +109,7 @@
 .github/scripts/factory_state_operations_quota.py
 .github/scripts/factory_state_operations_reliability.py
 .github/scripts/factory_state_operations_slots.py
+.github/scripts/factory_lease_owners.py
 .github/scripts/factory_libsql.py
 .github/scripts/factory_turso_backoff.py
 .github/scripts/factory_turso_backup.py

@@ -245,6 +245,11 @@ def lease_row(row: Mapping[str, Any]) -> dict[str, Any]:
     from datetime import UTC, datetime
 
     targets = json.loads(row.get("targets") or "[]")
+    detail = json.loads(row.get("detail") or "{}")
+    acquired = row.get("acquired_at")
+    acquired_iso = (
+        "" if acquired is None else datetime.fromtimestamp(int(acquired), UTC).isoformat()
+    )
     return {
         "key": row["lease_key"],
         "claim_id": str(row.get("claim_id") or ""),
@@ -254,4 +259,6 @@ def lease_row(row: Mapping[str, Any]) -> dict[str, Any]:
         "targets": [int(n) for n in targets if str(n).isdecimal()],
         "expires_at": datetime.fromtimestamp(int(row["expires_at"]), UTC).isoformat(),
         "active": bool(row.get("active")),
+        "acquired_at": acquired_iso,
+        "run_id": str(detail.get("run_id") or "") if isinstance(detail, dict) else "",
     }

@@ -2380,7 +2380,7 @@ def test_leases_without_neon_explains_and_shows_owner_labels(fake: FakeGitHub) -
     assert [row["target"] for row in data["rows"]] == ["#305"]
     code, out = invoke(["--json", "leases", "pr:301"])
     assert json.loads(out)["rows"] == [
-        {"target": "#301", "holder": "free", "active": False, "expires_at": ""}
+        {"target": "#301", "holder": "free", "active": False, "expires_at": "", "owner_run": ""}
     ]
 
 

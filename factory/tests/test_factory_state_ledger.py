@@ -224,7 +224,8 @@ def test_verified_lease_renewal_is_only_called_after_actions_liveness() -> None:
     import inspect
 
     controller = (Path(__file__).resolve().parents[1] / ".github/scripts/factory-work-controller.py").read_text()
-    assert "renew_verified_workers(REPO, [str(worker) for worker in active])" in controller
+    assert "factory_lease_owners.reconcile(REPO, " in controller
+    assert "renew_verified_workers" not in controller
     assert "prior_claims[worker_id] = worker_claim(REPO, worker_id)" in controller
     assert "release_lease(REPO, worker_id, token, 'stale-lease-reconciled')" in controller
     assert "not target_owned_by(number, f'factory:{worker_id}')" in controller
