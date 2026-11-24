@@ -10,7 +10,14 @@ from rotisserie.factory_console.commands._shared import EXIT_OK, TARGET, Outcome
 from rotisserie.factory_console.commands.status import parse_since
 from rotisserie.factory_console.context import Context, UsageError
 from rotisserie.factory_console.github import GitHubError, GitHubRateLimitError
-from rotisserie.factory_console.service import baseline, doctor, limits, outcomes, unstick
+from rotisserie.factory_console.service import (
+    baseline,
+    doctor,
+    limits,
+    outcomes,
+    unstick,
+    unstick_run,
+)
 from rotisserie.factory_console.tracker import EXIT_CODES, Result
 from rotisserie.factory_console.ui import Console, local_time
 
@@ -32,7 +39,9 @@ def cmd_unstick(context: Context, arguments: argparse.Namespace) -> Outcome:
         model=arguments.model,
         skip=frozenset(arguments.skip),
         only=frozenset(arguments.only),
+        step=console.step,
     )
+    console.finish()
     data: dict[str, object] = {"plan": found.to_dict()}
     _show_plan(console, found)
     if not found.assignments and not found.syncs:
@@ -53,26 +62,44 @@ def cmd_unstick(context: Context, arguments: argparse.Namespace) -> Outcome:
         if not context.prompt.confirm(" and ".join(work).capitalize() + "?"):
             console.line("Nothing was started.")
             return Outcome(Result.NO_WORK, EXIT_CODES[Result.NO_WORK], data)
-    synced = [unstick.sync(context.github, item) for item in found.syncs]
-    for change in synced:
+    done = unstick_run.execute(context.github, context.clock, found, console.step)
+    console.finish()
+    for change in done.synced:
         (console.ok if change.ok else console.warn)(change.text)
-    data["synced"] = [asdict(change) for change in synced]
-    if not found.assignments:
-        result = Result.SUBMITTED if any(change.ok for change in synced) else Result.NO_WORK
-        return Outcome(result, EXIT_CODES[result], data)
-    submissions = unstick.start(context.github, context.clock, found)
-    started = []
-    for submission in submissions:
-        target = submission.request.target
-        if submission.run_id is None:
-            console.warn(f"{target}: sent, but its scheduler run could not be found")
+    for item in done.started:
+        if item.error:
+            console.fail(f"{item.target}: not started", item.error)
+        elif item.run_id is None:
+            console.warn(f"{item.target}: sent, but its scheduler run could not be found")
         else:
-            console.ok(f"{target}: request sent", submission.url)
-        started.append({"target": target, "run_id": submission.run_id, "url": submission.url})
-    data["started"] = started
-    console.line()
-    console.line("Watch them: baste status")
-    return Outcome(Result.SUBMITTED, EXIT_CODES[Result.SUBMITTED], data)
+            console.ok(f"{item.target}: request sent", item.url)
+    if done.stopped:
+        console.fail(f"Stopped before {len(done.not_attempted)} more actions", done.stopped)
+    started = [
+        {"target": item.target, "run_id": item.run_id, "url": item.url}
+        for item in done.started
+        if not item.error
+    ]
+    failed = [{"target": item.target, "error": item.error} for item in done.started if item.error]
+    data.update(
+        synced=[asdict(change) for change in done.synced],
+        started=started,
+        failed=failed,
+        not_attempted=list(done.not_attempted),
+    )
+    if started:
+        console.line()
+        console.line("Watch them: baste status")
+    if started or any(change.ok for change in done.synced):
+        result = Result.SUBMITTED
+    elif failed or done.stopped:
+        result = Result.FAILED
+        data["error"] = done.stopped or str(failed[0]["error"])
+    else:
+        result = Result.NO_WORK
+    if done.stopped:
+        data["stopped"] = done.stopped
+    return Outcome(result, EXIT_CODES[result], data)
 
 
 def _show_plan(console: Console, found: unstick.Plan) -> None:

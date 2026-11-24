@@ -11,6 +11,17 @@ such change must be called out here and in its release notes.
 
 ### Added
 
+- `baste --progress` writes one JSON line per step to stderr. `baste unstick`
+  reports each step: reading open work, checks and claims, the plan counts,
+  and one line per action with its GitHub run link or its error. A failed
+  request no longer hides the others; the JSON lists `started`, `failed` and
+  `not_attempted`.
+- The local control room runs every change, and the "See proposed actions"
+  read, as a background job. "Unblock work" shows each step and the elapsed
+  time while it runs, then what started (with run links), what was skipped and
+  why, and any errors. A change is never stopped on a timeout. A reload finds
+  the running job again. The hosted control room shows the operator run link
+  as soon as GitHub accepts the request.
 - The factory state export is encrypted (AES-256, PBKDF2) with the adopter's
   `FACTORY_EXPORT_KEY` secret before upload, because public repositories expose
   Actions artifacts. The workflow refuses to run without the key.

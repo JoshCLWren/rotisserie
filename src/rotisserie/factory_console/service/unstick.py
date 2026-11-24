@@ -10,9 +10,8 @@ Starting the plan submits one forced, targeted request per task.
 
 from __future__ import annotations
 
-from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field, replace
-from datetime import datetime, timedelta
+from datetime import datetime
 
 from rotisserie.factory_console import runtime
 from rotisserie.factory_console.github import (
@@ -26,16 +25,13 @@ from rotisserie.factory_console.github import (
 )
 from rotisserie.factory_console.service import (
     baseline,
-    checks,
     dispatch,
     model_choice,
-    outcomes,
     providers,
     queue,
 )
-from rotisserie.factory_console.service import conflicts as conflict_check
-from rotisserie.factory_console.service import obsolete as obsolete_check
-from rotisserie.factory_console.tracker import Clock
+from rotisserie.factory_console.service import unstick_checks as read
+from rotisserie.factory_console.service.steps import Step, quiet
 
 # Order within the backlog: a review can move a PR straight to ready (out of the
 # backlog); repairs come next; conflicts need a rebase before anything merges.
@@ -137,13 +133,20 @@ def plan(
     model: str | None = None,
     skip: frozenset[str] = frozenset(),
     only: frozenset[str] = frozenset(),
+    step: Step = quiet,
 ) -> Plan:
     """Diagnose the queue and plan workers for it. Reads only; starts nothing."""
+    step("Reading open issues, pull requests, claims and settings", phase="read")
     variables = providers.repository_variables(github)
     summary = queue.summarize_queue(github, now=int(now.timestamp()), variables=variables)
     board = summary.board
     backlog = runtime.completion_backlog(list(board.prs))
     wip = runtime.pr_wip_count(list(board.prs))
+    step(
+        f"Read {len(board.prs)} open pull requests; {len(backlog)} wait on review or checks, "
+        f"{len(summary.ready)} issues can start",
+        phase="read",
+    )
     diagnosis: list[queue.Reason] = []
     tasks: list[Task] = []
     held: list[queue.Reason] = []
@@ -171,29 +174,27 @@ def plan(
             )
         )
 
-    free = [item for item in backlog if item.free]
-    with ThreadPoolExecutor(max_workers=6) as pool:
-        stale = dict(
-            zip(
-                (item.number for item in free),
-                pool.map(lambda pr: _staleness(github, pr.number), free),
-                strict=True,
-            )
-        )
+    stale = read.each_pr(
+        [item.number for item in backlog if item.free],
+        lambda number: read.staleness(github, number),
+        step,
+        phase="obsolete",
+        label="Checking for work main already did",
+    )
     obsolete = [
         queue.Reason("obsolete", found.text, prs=(found.pr,))
         for found in stale.values()
         if found is not None and found.obsolete
     ]
-    live = [item for item in backlog if stale.get(item.number) is None or not _gone(stale, item)]
-    with ThreadPoolExecutor(max_workers=6) as pool:
-        red = dict(
-            zip(
-                (item.number for item in live),
-                pool.map(lambda pr: _red_checks(github, pr.number), live),
-                strict=True,
-            )
-        )
+    live = [item for item in backlog if not read.gone(stale, item)]
+    red = read.each_pr(
+        [item.number for item in live],
+        lambda number: read.red_checks(github, number),
+        step,
+        phase="checks",
+        label="Reading failing checks",
+    )
+    step("Comparing failing checks with main", phase="baseline")
     try:
         shared = baseline.analyze(github, {number: found for number, found in red.items() if found})
     except GitHubError:
@@ -210,7 +211,7 @@ def plan(
                 queue.Reason(
                     "waiting-on-main",
                     f"PR #{item.number}: red because main fails "
-                    f"({_inherited_text(shared, item.number)}). No worker until main is fixed.",
+                    f"({read.inherited_text(shared, item.number)}). No worker until main is fixed.",
                     prs=(item.number,),
                 )
             )
@@ -219,7 +220,7 @@ def plan(
         # merges main anyway, so it takes the normal path below.
         if everything and shared.needs_sync(item.number) and not item.conflicted:
             if item.free:
-                head = _head(github, item.number)
+                head = read.head(github, item.number)
                 if head:
                     syncs.append(
                         Sync(
@@ -227,7 +228,7 @@ def plan(
                             head,
                             item.title,
                             f"red because of an older main "
-                            f"({_inherited_text(shared, item.number)}); main has moved on"
+                            f"({read.inherited_text(shared, item.number)}); main has moved on"
                             + (
                                 "; its own failures get a worker once the checks run again"
                                 if shared.own_failures(item.number, everything)
@@ -255,7 +256,7 @@ def plan(
                 held.append(
                     queue.Reason(
                         "red-checks",
-                        f"PR #{item.number}: its checks fail ({_red_text(failing)}), but the "
+                        f"PR #{item.number}: its checks fail ({read.red_text(failing)}), but the "
                         "worker on it is not repairing them. Take it over: run PROVIDER MODEL "
                         f"--target pr:{item.number} --action ci-repair --take-over",
                         prs=(item.number,),
@@ -277,7 +278,7 @@ def plan(
                 )
             )
             continue
-        detail = f"; checks fail: {_red_text(failing)}" if failing else ""
+        detail = f"; checks fail: {read.red_text(failing)}" if failing else ""
         tasks.append(
             Task(
                 f"pr:{item.number}",
@@ -315,15 +316,19 @@ def plan(
     capped = tasks if max_workers is None else tasks[:max_workers]
     left_out = len(tasks) - len(capped)
     choice_text, ranked, problems = model_choice.choose_models(
-        github, variables, now, provider, model
+        github, variables, now, provider, model, step
     )
-    missed = _recent_misses(github, now) if ranked and len(ranked) > 1 else {}
+    if ranked and len(ranked) > 1:
+        step("Reading which models recently missed on these items", phase="misses")
+    missed = read.recent_misses(github, now) if ranked and len(ranked) > 1 else {}
     needs_person: list[queue.Reason] = []
     keep: list[Task] = []
     for task in capped:
         tried = missed.get(task.target, set())
+        if task.action == "merge-conflict":
+            step(f"Reading the conflicting files of {task.target}", phase="conflicts")
         if task.action == "merge-conflict" and len(tried) >= GIVE_UP_AFTER:
-            overlap = _overlap_text(github, task.target)
+            overlap = read.overlap_text(github, task.target)
             needs_person.append(
                 queue.Reason(
                     "needs-person",
@@ -336,7 +341,7 @@ def plan(
             )
             continue
         if task.action == "merge-conflict":
-            overlap = _overlap_text(github, task.target)
+            overlap = read.overlap_text(github, task.target)
             if overlap:
                 task = replace(task, why=f"{task.why}; {overlap}")
         keep.append(task)
@@ -347,6 +352,15 @@ def plan(
     syncs = [item for item in syncs if f"pr:{item.pr}" not in skip]
     if only:
         syncs = [item for item in syncs if f"pr:{item.pr}" in only]
+    step(
+        f"Plan: {len(assignments)} workers to start, {len(syncs)} pull requests to sync "
+        f"with main, {len(held)} held by running workers, {len(needs_person)} need a person",
+        phase="plan",
+        assignments=len(assignments),
+        syncs=len(syncs),
+        held=len(held),
+        needs_person=len(needs_person),
+    )
     return Plan(
         tuple(diagnosis),
         assignments,
@@ -361,19 +375,6 @@ def plan(
         tuple(waiting),
         tuple(syncs),
     )
-
-
-def _inherited_text(shared: baseline.Report, pr: int) -> str:
-    found = [item for item in shared.for_pr(pr) if item.not_the_prs]
-    names = ", ".join(dict.fromkeys(item.check for item in found))
-    return f"{names}: {found[0].summary}" if found else names
-
-
-def _head(github: GitHub, number: int) -> str:
-    try:
-        return string(obj(obj(github.repo_api(f"pulls/{number}")).get("head")), "sha")
-    except GitHubError:
-        return ""
 
 
 def sync(github: GitHub, item: Sync) -> Synced:
@@ -427,54 +428,6 @@ def runtime_owner(label: str) -> bool:
 GIVE_UP_AFTER = 3
 
 
-def _overlap_text(github: GitHub, target: str) -> str:
-    try:
-        report = conflict_check.pr_conflicts(github, int(target.split(":")[1]))
-    except GitHubError:
-        return ""
-    return report.text.split(": ", 1)[1] if report.overlaps else ""
-
-
-def _gone(stale: dict[int, obsolete_check.Staleness | None], item: runtime.BacklogPR) -> bool:
-    found = stale.get(item.number)
-    return found is not None and found.obsolete
-
-
-def _red_checks(github: GitHub, number: int) -> list[checks.FailingCheck]:
-    try:
-        return checks.failing_checks(github, number)
-    except GitHubError:
-        return []
-
-
-def _red_text(failing: list[checks.FailingCheck]) -> str:
-    return "; ".join(f"{item.name}: {item.summary}" for item in failing[:2])
-
-
-def _staleness(github: GitHub, number: int) -> obsolete_check.Staleness | None:
-    try:
-        return obsolete_check.pr_staleness(github, number)
-    except GitHubError:
-        return None
-
-
-# How far back a model's miss on an item keeps it off that item.
-MISS_WINDOW = timedelta(hours=6)
-
-
-def _recent_misses(github: GitHub, now: datetime) -> dict[str, set[str]]:
-    """Models whose recent request on each target did not reach its goal."""
-    found: dict[str, set[str]] = {}
-    try:
-        recent = outcomes.request_outcomes(github, since=now - MISS_WINDOW)
-    except GitHubError:
-        return found
-    for item in recent:
-        if item.goal == "not-met" and item.model and item.target:
-            found.setdefault(item.target, set()).add(item.model)
-    return found
-
-
 def _assign(
     task: Task, ranked: list[tuple[str, str, str]], missed: dict[str, set[str]]
 ) -> Assignment:
@@ -488,8 +441,3 @@ def _assign(
     return Assignment(
         task, provider, model, why + "; every offered model already missed on it recently"
     )
-
-
-def start(github: GitHub, clock: Clock, chosen: Plan) -> list[dispatch.Submission]:
-    """Submit every planned worker. Each is a forced, targeted scheduler request."""
-    return [dispatch.submit(github, clock, item.request()) for item in chosen.assignments]

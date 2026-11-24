@@ -62,6 +62,7 @@ def main(
     env: dict[str, str] | None = None,
     stdout: TextIO | None = None,
     stdin: TextIO | None = None,
+    stderr: TextIO | None = None,
     clock: Clock | None = None,
     executable: str = "gh",
 ) -> int:
@@ -72,6 +73,7 @@ def main(
         json_mode=json_mode,
         verbose=bool(getattr(arguments, "verbose", False)),
         env=values,
+        progress=(stderr or sys.stderr) if getattr(arguments, "progress", False) else None,
     )
     command = arguments.factory_command
     if command is None:

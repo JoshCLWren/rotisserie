@@ -312,7 +312,9 @@ def test_both_control_rooms_serve_db_usage_without_sign_in() -> None:
     assert contract.read_command("db-usage", {}) == ["db-usage"]
     assert "db-usage" in contract.PUBLIC_READS and "db-usage" not in contract.LIVE_READS
     assert CONTROLS["db-usage"] == ("read:db-usage",)
-    ui = (ROOT / "src/rotisserie/web_ui.html").read_text(encoding="utf-8")
+    ui = "".join(
+        (ROOT / "src/rotisserie" / name).read_text() for name in ("web_ui.html", "web_ui.js")
+    )
     assert 'get("db-usage")' in ui and 'id="db-usage-read"' in ui
 
 

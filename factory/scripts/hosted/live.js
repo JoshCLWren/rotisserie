@@ -31,8 +31,20 @@ function progress(label, run) {
   const text = label + ": GitHub run " + (run.run_id || "") + " " +
     String(run.status || "queued").replace(/_/g, " ") + "…";
   const status = document.getElementById("operation-status");
-  if (label.startsWith("Operator") && status) status.textContent = text;
-  else liveLine(text);
+  if (!label.startsWith("Operator") || !status) {
+    liveLine(text);
+    return;
+  }
+  status.textContent = text;
+  // Show the run link while the write is still running, not only when it ends.
+  if (/^https:\/\/github\.com\//.test(run.run_url || "") && document.createElement) {
+    const anchor = document.createElement("a");
+    anchor.href = run.run_url;
+    anchor.target = "_blank";
+    anchor.rel = "noopener noreferrer";
+    anchor.textContent = "Open the GitHub run";
+    status.append(" ", anchor);
+  }
 }
 
 async function waitForRun(accepted, label, limitMs) {

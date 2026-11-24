@@ -28,8 +28,10 @@ from rotisserie.control_contract import (
     write_command,
 )
 from rotisserie.factory_console.context import UsageError, find_repository
+from rotisserie.web_jobs import JobRefused, Jobs
 
 REPO = re.compile(r"^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$")
+JOB = re.compile(r"^/api/jobs/([A-Za-z0-9_-]{1,64})$")
 __all__ = [
     "READ_ONLY",
     "InvalidRequest",
@@ -83,8 +85,10 @@ def make_handler(
     token: str,
     *,
     runner: Callable[[str, list[str]], dict[str, Any]] = invoke,
+    jobs: Jobs | None = None,
 ) -> type[BaseHTTPRequestHandler]:
     """Construct an isolated handler, injectable without running GitHub in tests."""
+    background = jobs or Jobs(repository)
 
     class Handler(BaseHTTPRequestHandler):
         server_version = "RotisserieWeb/0.1"
@@ -98,7 +102,7 @@ def make_handler(
             self.send_header("X-Frame-Options", "DENY")
             self.send_header(
                 "Content-Security-Policy",
-                "default-src 'none'; script-src 'unsafe-inline'; "
+                "default-src 'none'; script-src 'self' 'unsafe-inline'; "
                 "style-src 'unsafe-inline'; connect-src 'self'; "
                 "img-src 'self' data:; base-uri 'none'; frame-ancestors 'none'",
             )
@@ -121,12 +125,27 @@ def make_handler(
             self._headers(code, "application/json; charset=utf-8")
             self._write_body(blob)
 
-        def _authorized(self) -> bool:
-            host = self.headers.get("Host", "")
+        def _local(self) -> bool:
+            # Host validation for every document prevents DNS-rebinding access.
             allowed = f"127.0.0.1:{cast(ThreadingHTTPServer, self.server).server_port}"
             origin = self.headers.get("Origin", "")
-            if host != allowed or (origin and origin != f"http://{allowed}"):
+            if self.headers.get("Host", "") != allowed or (
+                origin and origin != f"http://{allowed}"
+            ):
                 self._send_json(403, {"error": "This console is localhost-only."})
+                return False
+            return True
+
+        def _start(self, args: list[str], *, mutating: bool) -> None:
+            try:
+                job = background.start(args, mutating=mutating)
+            except JobRefused as exc:
+                self._send_json(409, {"error": str(exc), "running": exc.running})
+                return
+            self._send_json(202, background.view(job))
+
+        def _authorized(self) -> bool:
+            if not self._local():
                 return False
             if not secrets.compare_digest(self.headers.get("X-Rotisserie-Token", ""), token):
                 self._send_json(403, {"error": "Invalid console session."})
@@ -135,13 +154,14 @@ def make_handler(
 
         def do_GET(self) -> None:
             parsed = urlsplit(self.path)
+            if parsed.path == "/web_ui.js":
+                if self._local():
+                    script = files("rotisserie").joinpath("web_ui.js").read_bytes()
+                    self._headers(200, "text/javascript; charset=utf-8")
+                    self._write_body(script)
+                return
             if parsed.path == "/":
-                # Host validation for the document prevents DNS-rebinding access.
-                if (
-                    self.headers.get("Host", "")
-                    != f"127.0.0.1:{cast(ThreadingHTTPServer, self.server).server_port}"
-                ):
-                    self._send_json(403, {"error": "This console is localhost-only."})
+                if not self._local():
                     return
                 page = files("rotisserie").joinpath("web_ui.html").read_text(encoding="utf-8")
                 page = page.replace("__SESSION_TOKEN__", json.dumps(token))
@@ -154,14 +174,26 @@ def make_handler(
                     return
                 self._send_json(404, {"error": "Not found"})
                 return
+            found = JOB.match(parsed.path)
+            if found:
+                job = background.get(found.group(1))
+                if job is None:
+                    self._send_json(404, {"error": "That job is no longer known."})
+                else:
+                    self._send_json(200, background.view(job))
+                return
             try:
                 name = parsed.path.removeprefix("/api/")
                 if len(self.path) > 512:
                     raise InvalidRequest("Query too long")
                 query = {k: v[-1] for k, v in parse_qs(parsed.query).items()}
+                in_background = query.pop("background", "") == "1"
                 args = read_command(name, query)
             except InvalidRequest as exc:
                 self._send_json(400, {"error": str(exc)})
+                return
+            if in_background:
+                self._start(args, mutating=False)
                 return
             self._send_json(200, runner(repository, args))
 
@@ -182,7 +214,7 @@ def make_handler(
             except (ValueError, TypeError, json.JSONDecodeError, InvalidRequest) as exc:
                 self._send_json(400, {"error": str(exc)})
                 return
-            self._send_json(200, runner(repository, args))
+            self._start(args, mutating=True)
 
         def log_message(self, format: str, *args: object) -> None:
             # Never log requests or tokens on a shared terminal.

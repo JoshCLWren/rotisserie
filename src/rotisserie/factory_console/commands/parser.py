@@ -38,6 +38,9 @@ def add_parser(
         "--json", action="store_true", help="print one JSON document, no progress text"
     )
     factory.add_argument("--verbose", action="store_true", help="also show raw diagnostic detail")
+    factory.add_argument(
+        "--progress", action="store_true", help="write one JSON line per step to stderr"
+    )
     commands = factory.add_subparsers(dest="factory_command", metavar="COMMAND")
 
     run = commands.add_parser(

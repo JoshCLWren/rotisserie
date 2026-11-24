@@ -22,7 +22,10 @@ from rotisserie.control_parity import CLI_ONLY, CONTROLS
 from rotisserie.factory_console.commands.parser import add_parser
 
 ROOT = Path(__file__).resolve().parents[1]
-UI = (ROOT / "src" / "rotisserie" / "web_ui.html").read_text(encoding="utf-8")
+UI = "\n".join(
+    (ROOT / "src" / "rotisserie" / name).read_text(encoding="utf-8")
+    for name in ("web_ui.html", "web_ui.js")
+)
 BUILDER = ROOT / "factory" / "scripts" / "build_hosted_control_room.py"
 
 READ_SAMPLES: dict[str, dict[str, str]] = {
