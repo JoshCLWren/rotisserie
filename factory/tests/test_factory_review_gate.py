@@ -891,7 +891,7 @@ def test_validate_review_lease_rejects_unleased_pr() -> None:
 def test_parse_head_contributor_marker() -> None:
     """Parse the new head contributor marker format."""
     line = (
-        "<!-- comic-pile-factory-head-contributor-v1:"
+        "<!-- widgets-factory-head-contributor-v1:"
         "pr-123:head-abcdef1234567890abcdef1234567890abcdef12:worker-42:epoch-1234567890 -->"
     )
     result = parse_head_contributor_marker(line)
@@ -2148,8 +2148,8 @@ def test_owner_posted_model_markers_are_ignored() -> None:
         reviewer_agent="17",
     )
     owner_comments = [
-        {"user": {"login": "JoshCLWren"}, "author_association": "OWNER", "body": author},
-        {"user": {"login": "JoshCLWren"}, "author_association": "OWNER", "body": review},
+        {"user": {"login": "acme"}, "author_association": "OWNER", "body": author},
+        {"user": {"login": "acme"}, "author_association": "OWNER", "body": review},
     ]
     assert controller_comment_bodies(owner_comments) == []
     assert not head_has_cross_model_review(
@@ -2216,30 +2216,30 @@ def test_controller_writes_review_model_marker_on_approve(
     [
         (
             "local-agent-head",
-            "JoshCLWren",
+            "acme",
             ["factory"],
             None,
             None,
             "Fix behavior\n\nModel: opencode/mimo-v2.6-flash-free",
-            ("opencode-mimo-v2.6-flash-free", "interactive-JoshCLWren"),
+            ("opencode-mimo-v2.6-flash-free", "interactive-acme"),
         ),
         (
             "numbered-factory-branch",
-            "JoshCLWren",
+            "acme",
             ["factory"],
             "github-actions[bot]",
             "github-actions[bot]",
             "Merge branch 'main' into factory/58-3463-catalog-free",
-            ("human", "interactive-JoshCLWren"),
+            ("human", "interactive-acme"),
         ),
         (
             "owner-commit",
-            "JoshCLWren",
+            "acme",
             ["factory"],
-            "JoshCLWren",
+            "acme",
             None,
             "Fix bug",
-            ("human", "interactive-JoshCLWren"),
+            ("human", "interactive-acme"),
         ),
         (
             "contributor-head",
@@ -2281,14 +2281,14 @@ def test_controller_writes_review_model_marker_on_approve(
             "fork-author",
             "intruder",
             ["factory"],
-            "JoshCLWren",
+            "acme",
             None,
             "Fix bug\n\nModel: cursor-grok-4.6",
             None,
         ),
         (
             "foreign-commit",
-            "JoshCLWren",
+            "acme",
             ["factory"],
             "opencode-free-model-factory-51[bot]",
             None,
@@ -2297,7 +2297,7 @@ def test_controller_writes_review_model_marker_on_approve(
         ),
         (
             "not-enrolled",
-            "JoshCLWren",
+            "acme",
             ["unrelated"],
             None,
             None,
@@ -2306,7 +2306,7 @@ def test_controller_writes_review_model_marker_on_approve(
         ),
         (
             "ambiguous-trailers",
-            "JoshCLWren",
+            "acme",
             ["factory"],
             None,
             None,
@@ -2368,7 +2368,7 @@ def test_attest_exact_head_author_repairs_from_worker_record(
     payload = {
         "state": "OPEN",
         "headRefName": "factory/58-3463-catalog-free",
-        "author": {"login": "JoshCLWren"},
+        "author": {"login": "acme"},
         "labels": [{"name": "factory"}],
     }
     sent: list[list[str]] = []
@@ -2406,7 +2406,7 @@ def test_attest_exact_head_author_ignores_owner_stream_contributor_marker(
     payload = {
         "state": "OPEN",
         "headRefName": "factory/58-3463-catalog-free",
-        "author": {"login": "JoshCLWren"},
+        "author": {"login": "acme"},
         "labels": [{"name": "factory"}],
     }
     spoofed = head_contributor_marker(pr=1390, head=REVIEWED_HEAD, worker="58", epoch=1)
@@ -2431,9 +2431,9 @@ def test_attest_exact_head_author_ignores_owner_stream_contributor_marker(
     monkeypatch.setattr(module, "run_gh", lambda args: sent.append(args))
     assert module.attest_exact_head_author(
         pr_number=1390, head=REVIEWED_HEAD, pr=payload
-    ) == ("gpt-6", "interactive-JoshCLWren")
+    ) == ("gpt-6", "interactive-acme")
     assert sent[-1][-1] == agent_model_author_marker(
-        pr=1390, head=REVIEWED_HEAD, model="gpt-6", agent="interactive-JoshCLWren"
+        pr=1390, head=REVIEWED_HEAD, model="gpt-6", agent="interactive-acme"
     )
 
 
@@ -2445,7 +2445,7 @@ def test_attest_exact_head_author_fails_closed_on_conflicting_workers(
     payload = {
         "state": "OPEN",
         "headRefName": "factory/58-3463-catalog-free",
-        "author": {"login": "JoshCLWren"},
+        "author": {"login": "acme"},
         "labels": [{"name": "factory"}],
     }
     monkeypatch.setattr(
@@ -2473,7 +2473,7 @@ def test_author_attestation_counts_as_complete_provenance() -> None:
     """One independent approval authorizes an attested head, like a wrapper head."""
     module = load_review_controller()
     author = agent_model_author_marker(
-        pr=1390, head=REVIEWED_HEAD, model="gpt-6", agent="interactive-JoshCLWren"
+        pr=1390, head=REVIEWED_HEAD, model="gpt-6", agent="interactive-acme"
     )
     _, provenance_complete = module.exact_head_provenance(
         reviewer_comments=[],
@@ -2526,7 +2526,7 @@ def test_handmade_head_is_promotable_by_one_independent_review(
         "headRefOid": REVIEWED_HEAD,
         "headRefName": "local/hand-made-change",
         "body": "Closes #2380",
-        "author": {"login": "JoshCLWren"},
+        "author": {"login": "acme"},
         "labels": [
             {"name": "factory"},
             {"name": "factory:17"},
@@ -2587,9 +2587,9 @@ def test_handmade_head_is_promotable_by_one_independent_review(
     ]
     bodies = [record["body"] for record in store]
     assert agent_model_author_marker(
-        pr=1390, head=REVIEWED_HEAD, model="gpt-6", agent="interactive-JoshCLWren"
+        pr=1390, head=REVIEWED_HEAD, model="gpt-6", agent="interactive-acme"
     ) in bodies
-    assert any(body.startswith("<!-- comic-pile-agent-model-review-v2:") for body in bodies)
+    assert any(body.startswith("<!-- widgets-agent-model-review-v2:") for body in bodies)
     assert head_has_cross_model_review(bodies, pr=1390, head=REVIEWED_HEAD) is True
 
 
@@ -2597,7 +2597,7 @@ def test_exact_head_provenance_ignores_untrusted_streams() -> None:
     """An author marker only counts on the controller-bot stream, never on the owner stream."""
     module = load_review_controller()
     author = agent_model_author_marker(
-        pr=1390, head=REVIEWED_HEAD, model="gpt-6", agent="interactive-JoshCLWren"
+        pr=1390, head=REVIEWED_HEAD, model="gpt-6", agent="interactive-acme"
     )
     _, provenance_complete = module.exact_head_provenance(
         reviewer_comments=[author],
@@ -2755,17 +2755,17 @@ def test_model_trailer_models_reports_distinct_trailers() -> None:
 @pytest.mark.parametrize(
     ("case", "commit_author", "commit_committer", "message", "expected"),
     [
-        ("owner-local-merge", None, None, "Merge main\n\nModel: gpt-6", ("gpt-6", "interactive-JoshCLWren")),
+        ("owner-local-merge", None, None, "Merge main\n\nModel: gpt-6", ("gpt-6", "interactive-acme")),
         (
             "trusted-automation",
             "github-actions[bot]",
             "github-actions[bot]",
             "Sync roster",
-            ("human", "interactive-JoshCLWren"),
+            ("human", "interactive-acme"),
         ),
-        ("owner-commit", "JoshCLWren", "JoshCLWren", "Fix", ("human", "interactive-JoshCLWren")),
+        ("owner-commit", "acme", "acme", "Fix", ("human", "interactive-acme")),
         ("foreign-commit", "opencode-free-model-factory-51[bot]", None, "Fix", None),
-        ("mixed-foreign", "JoshCLWren", "intruder", "Fix", None),
+        ("mixed-foreign", "acme", "intruder", "Fix", None),
         ("ambiguous-trailers", None, None, "Merge\n\nModel: gpt-6\nModel: grok-4.6", None),
     ],
 )
@@ -2778,8 +2778,8 @@ def test_owner_attested_head_identity_is_fail_closed(
 ) -> None:
     """Owner PRs attest only from trusted commit evidence, never a guessed model."""
     result = _review_policy.owner_attested_head_identity(
-        pr_author_login="JoshCLWren",
-        owner_login="JoshCLWren",
+        pr_author_login="acme",
+        owner_login="acme",
         commit_author_login=commit_author,
         commit_committer_login=commit_committer,
         commit_message=message,
@@ -2788,7 +2788,7 @@ def test_owner_attested_head_identity_is_fail_closed(
     assert (
         _review_policy.owner_attested_head_identity(
             pr_author_login="intruder",
-            owner_login="JoshCLWren",
+            owner_login="acme",
             commit_author_login=commit_author,
             commit_committer_login=commit_committer,
             commit_message=message,
@@ -2797,7 +2797,7 @@ def test_owner_attested_head_identity_is_fail_closed(
     ), case
 
 
-def _reconcile_pr(*, author: str = "JoshCLWren", branch: str = "factory/54-3437-z-ai") -> dict[str, Any]:
+def _reconcile_pr(*, author: str = "acme", branch: str = "factory/54-3437-z-ai") -> dict[str, Any]:
     return {
         "state": "OPEN",
         "headRefOid": REVIEWED_HEAD,
@@ -2863,10 +2863,10 @@ def test_reconcile_provenance_attests_wrapperless_factory_head(
         "status": "attested",
         "head": REVIEWED_HEAD,
         "model": "gpt-6",
-        "agent": "interactive-JoshCLWren",
+        "agent": "interactive-acme",
     }
     assert agent_model_author_marker(
-        pr=3747, head=REVIEWED_HEAD, model="gpt-6", agent="interactive-JoshCLWren"
+        pr=3747, head=REVIEWED_HEAD, model="gpt-6", agent="interactive-acme"
     ) in [command[-1] for command in sent]
     assert transitions == [(3747, "factory:unowned", "factory:review")]
 
@@ -2877,7 +2877,7 @@ def test_reconcile_provenance_is_idempotent_for_attested_head(
     """An already-attested head is released to review without a second marker."""
     module = load_review_controller()
     existing = agent_model_author_marker(
-        pr=3747, head=REVIEWED_HEAD, model="gpt-6", agent="interactive-JoshCLWren"
+        pr=3747, head=REVIEWED_HEAD, model="gpt-6", agent="interactive-acme"
     )
     sent, transitions = reconcile_harness(
         monkeypatch,
@@ -2907,7 +2907,7 @@ def test_reconcile_provenance_fails_closed_without_mutation(
         pr=_reconcile_pr(author="intruder"),
         commit={
             "sha": REVIEWED_HEAD,
-            "author": {"login": "JoshCLWren"},
+            "author": {"login": "acme"},
             "commit": {"message": "Fix\n\nModel: gpt-6"},
         },
     )
@@ -2953,7 +2953,7 @@ def test_attestation_is_idempotent_and_never_rewrites_a_recorded_head(
     payload = {
         "state": "OPEN",
         "headRefName": "factory/58-3463-catalog-free",
-        "author": {"login": "JoshCLWren"},
+        "author": {"login": "acme"},
         "labels": [{"name": "factory"}],
     }
     monkeypatch.setattr(module, "model_comment_bodies", lambda _pr: [existing])
@@ -3554,7 +3554,7 @@ def test_declared_dependency_gate_records_one_durable_block_reason(
     # One reason for the same blocker set, not one per drain tick.
     assert len(posted) == 1
     assert (
-        "comic-pile-factory-dependency-block-v1:pr-4024:issue-4010:deps-4008"
+        "widgets-factory-dependency-block-v1:pr-4024:issue-4010:deps-4008"
         in posted[0]
     )
     assert "#4008" in posted[0]

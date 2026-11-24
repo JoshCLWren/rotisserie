@@ -342,7 +342,7 @@ gh() { printf 'gh:%s\\n' "$*"; }
 """
     base = {
         **os.environ,
-        "GITHUB_REPOSITORY": "JoshCLWren/comic-pile",
+        "GITHUB_REPOSITORY": "acme/widgets",
         "API_RESET_EPOCH": str(int(time.time()) + 60),
         "QUOTA_DEFERRED": "true",
         "BUDGET_DEFERRED": "",
@@ -358,7 +358,7 @@ gh() { printf 'gh:%s\\n' "$*"; }
     assert len(commands) == 1
     assert commands[0].startswith(
         "gh:workflow run fixed-model-factory-roster-successor.yml "
-        "--repo JoshCLWren/comic-pile --ref main -f delay_seconds="
+        "--repo acme/widgets --ref main -f delay_seconds="
     )
     assert 60 <= int(commands[0].rsplit("=", 1)[1]) <= 75
     assert "sleep:" not in result.stdout
@@ -416,7 +416,7 @@ gh() { printf 'gh:%s\\n' "$*"; }
 """
     env = {
         **os.environ,
-        "GITHUB_REPOSITORY": "JoshCLWren/comic-pile",
+        "GITHUB_REPOSITORY": "acme/widgets",
         "API_RESET_EPOCH": "",
         "QUOTA_DEFERRED": "",
         "BUDGET_DEFERRED": "",
@@ -430,7 +430,7 @@ gh() { printf 'gh:%s\\n' "$*"; }
     assert "sleep:" not in active.stdout
     assert active.stdout.count(
         "gh:workflow run fixed-model-factory-roster-successor.yml "
-        "--repo JoshCLWren/comic-pile --ref main -f delay_seconds=240"
+        "--repo acme/widgets --ref main -f delay_seconds=240"
     ) == 1
 
     idle = subprocess.run(

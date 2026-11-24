@@ -41,7 +41,7 @@ def test_existing_source_is_idempotent(monkeypatch):
 
     monkeypatch.setattr(reconcile, "_run_model", fail_model)
 
-    result = reconcile._process_source("JoshCLWren/comic-pile", _source(), ["model-a"])
+    result = reconcile._process_source("acme/widgets", _source(), ["model-a"])
 
     assert result["status"] == "already_present"
 
@@ -72,7 +72,7 @@ def test_durable_postcondition_decides_success(monkeypatch, visibility, expected
         lambda repository, source, model: _attempt(0),
     )
 
-    result = reconcile._process_source("JoshCLWren/comic-pile", _source(), ["model-a"])
+    result = reconcile._process_source("acme/widgets", _source(), ["model-a"])
 
     assert result["status"] == expected
 
@@ -100,7 +100,7 @@ def test_false_green_falls_through_to_next_model(monkeypatch):
     monkeypatch.setattr(reconcile, "_run_model", run_model)
 
     result = reconcile._process_source(
-        "JoshCLWren/comic-pile",
+        "acme/widgets",
         _source(),
         ["model-a", "model-b"],
     )
@@ -131,7 +131,7 @@ def test_rate_limit_falls_through_to_next_model(monkeypatch):
     )
 
     result = reconcile._process_source(
-        "JoshCLWren/comic-pile",
+        "acme/widgets",
         _source(),
         ["model-a", "model-b"],
     )
@@ -161,7 +161,7 @@ def test_non_rate_limit_failure_is_not_hidden(monkeypatch):
     monkeypatch.setattr(reconcile, "_run_model", run_model)
 
     result = reconcile._process_source(
-        "JoshCLWren/comic-pile",
+        "acme/widgets",
         _source(),
         ["model-a", "model-b"],
     )
@@ -184,7 +184,7 @@ def test_all_false_green_models_fail(monkeypatch):
     )
 
     result = reconcile._process_source(
-        "JoshCLWren/comic-pile",
+        "acme/widgets",
         _source(),
         ["model-a", "model-b"],
     )
@@ -204,7 +204,7 @@ def test_multiple_prs_are_processed_independently(monkeypatch):
     monkeypatch.setattr(reconcile, "_process_source", process)
 
     results, conflict, unexamined = reconcile.reconcile(
-        "JoshCLWren/comic-pile",
+        "acme/widgets",
         [_source(1), _source(2), _source(3)],
         ["model-a"],
     )
@@ -227,7 +227,7 @@ def test_conflict_stops_reconciliation(monkeypatch):
     monkeypatch.setattr(reconcile, "_process_source", process)
 
     results, conflict, unexamined = reconcile.reconcile(
-        "JoshCLWren/comic-pile",
+        "acme/widgets",
         [_source(1), _source(2), _source(3)],
         ["model-a"],
     )
@@ -241,7 +241,7 @@ def test_conflict_stops_reconciliation(monkeypatch):
 def test_summary_reports_required_backfill_counters():
     """Machine-readable summaries expose every required reconciliation counter."""
     summary = reconcile._summary(
-        "JoshCLWren/comic-pile",
+        "acme/widgets",
         [
             {"pr": 1, "status": "already_present"},
             {"pr": 2, "status": "newly_published"},

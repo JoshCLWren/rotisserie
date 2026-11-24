@@ -3,7 +3,7 @@ const { mkdtempSync, writeFileSync, copyFileSync, rmSync } = require('node:fs');
 const { tmpdir } = require('node:os');
 const { join } = require('node:path');
 const test = require('node:test');
-process.env.GITHUB_REPOSITORY = 'JoshCLWren/comic-pile';
+process.env.GITHUB_REPOSITORY = 'acme/widgets';
 const reconcile = require('./factory-visibility.cjs');
 
 function loadVisibilityFixture({ expected = [], retired = [] } = {}) {
@@ -69,7 +69,7 @@ function contextFor(eventName, payload) {
   return {
     eventName,
     payload,
-    repo: { owner: 'JoshCLWren', repo: 'comic-pile' },
+    repo: { owner: 'acme', repo: 'widgets' },
   };
 }
 
@@ -133,7 +133,7 @@ function githubFor({
       issues: api,
       pulls: {
         listReviews: async () => ({ data: [], headers: {}, status: 200 }),
-        get: async ({ pull_number }) => ({ data: { number: pull_number, state: 'open', body: '', head: { sha: 'a'.repeat(40), ref: 'factory/1-1-x', repo: { full_name: 'JoshCLWren/comic-pile' } } } }),
+        get: async ({ pull_number }) => ({ data: { number: pull_number, state: 'open', body: '', head: { sha: 'a'.repeat(40), ref: 'factory/1-1-x', repo: { full_name: 'acme/widgets' } } } }),
       },
       checks: { listForRef: async () => ({ data: { check_runs: [] } }) },
     },
@@ -179,7 +179,7 @@ test('head-contributor markers resolve roster workers above the old ceiling', ()
     expected: [101],
     retired: [77, 93, 72],
   })._test;
-  const body = '<!-- comic-pile-factory-head-contributor-v1:pr-7:head-' + 'a'.repeat(40) + ':worker-101:epoch-2 -->';
+  const body = '<!-- widgets-factory-head-contributor-v1:pr-7:head-' + 'a'.repeat(40) + ':worker-101:epoch-2 -->';
   assert.equal(workerFrom(body), '101');
   assert.equal(ownerFor(workerFrom(body)), 'factory:101');
   assert.equal(ownerFor('worker-93'), 'factory:unowned');
@@ -411,7 +411,7 @@ test('trusted exact-head factory PASS is labeled approved but never merge-ready'
       comment: {
         author_association: 'OWNER',
         user: { login: 'JoshCLWren' },
-        body: `<!-- comic-pile-factory-review-v2:${'a'.repeat(40)}:pass -->`,
+        body: `<!-- widgets-factory-review-v2:${'a'.repeat(40)}:pass -->`,
       },
     }),
   });
@@ -435,7 +435,7 @@ test('current semantic controller approval adds visibility without changing revi
       comment: {
         author_association: 'NONE',
         user: { login: 'github-actions[bot]' },
-        body: '<!-- comic-pile-factory-semantic-review-v1:pr-44:head-'
+        body: '<!-- widgets-factory-semantic-review-v1:pr-44:head-'
           + head + ':reviewer-64:producer-unknown:verdict-approve -->\n\n'
           + '### Factory semantic review, Factory 64, APPROVE',
       },
@@ -450,7 +450,7 @@ test('current semantic controller approval adds visibility without changing revi
 test('semantic approval cannot be spoofed by wrong head, PR, actor, or prose echo', async () => {
   const head = 'a'.repeat(40);
   const marker = ({ pr = 44, sha = head, verdict = 'approve' } = {}) =>
-    '<!-- comic-pile-factory-semantic-review-v1:pr-' + pr
+    '<!-- widgets-factory-semantic-review-v1:pr-' + pr
     + ':head-' + sha + ':reviewer-82:producer-11:verdict-' + verdict + ' -->';
   for (const { body, association, actor } of [
     { body: marker({ sha: 'b'.repeat(40) }), association: 'OWNER' },
@@ -494,7 +494,7 @@ test('trusted human OWNER semantic approval mints factory:approved for correct h
       comment: {
         author_association: 'OWNER',
         user: { login: 'JoshCLWren' },
-        body: '<!-- comic-pile-factory-semantic-review-v1:pr-44:head-'
+        body: '<!-- widgets-factory-semantic-review-v1:pr-44:head-'
           + head + ':reviewer-82:producer-unknown:verdict-approve -->\n\n'
           + '### Factory semantic review, APPROVE',
       },
@@ -519,7 +519,7 @@ test('semantic review verdict is not an approval on issue-only conversations', a
       comment: {
         author_association: 'OWNER',
         user: { login: 'JoshCLWren' },
-        body: '<!-- comic-pile-factory-semantic-review-v1:pr-44:head-'
+        body: '<!-- widgets-factory-semantic-review-v1:pr-44:head-'
           + 'a'.repeat(40) + ':reviewer-82:producer-11:verdict-approve -->',
       },
     }),
@@ -540,7 +540,7 @@ test('issue comments cannot stamp a review approval onto a non-PR issue', async 
       comment: {
         author_association: 'OWNER',
         user: { login: 'JoshCLWren' },
-        body: `<!-- comic-pile-factory-review-v2:${'a'.repeat(40)}:pass -->`,
+        body: `<!-- widgets-factory-review-v2:${'a'.repeat(40)}:pass -->`,
       },
     }),
   });
@@ -564,7 +564,7 @@ test('stale-head and untrusted PASS comments cannot mint factory:approved', asyn
         comment: {
           author_association: association,
           user: { login: 'not-a-trusted-reviewer' },
-          body: `<!-- comic-pile-factory-review-v2:${head}:pass -->`,
+          body: `<!-- widgets-factory-review-v2:${head}:pass -->`,
         },
       }),
     });
@@ -600,10 +600,10 @@ test('a new PR head invalidates old factory:approved even if an old PASS survive
     github,
     context: contextFor('pull_request_target', {
       action: 'synchronize',
-      repository: { full_name: 'JoshCLWren/comic-pile' },
+      repository: { full_name: 'acme/widgets' },
       pull_request: {
         body: 'Closes #4567',
-        head: { ref: 'factory/99-4567-test', sha: 'b'.repeat(40), repo: { full_name: 'JoshCLWren/comic-pile' } },
+        head: { ref: 'factory/99-4567-test', sha: 'b'.repeat(40), repo: { full_name: 'acme/widgets' } },
         labels: [{ name: 'factory' }],
         number: 4568,
       },
@@ -634,7 +634,7 @@ test('PR progress comments preserve an advanced review stage and local owner', a
       comment: {
         author_association: 'OWNER',
         user: { login: 'JoshCLWren' },
-        body: '<!-- comic-pile-factory-fix-progress-v3:abc:local:123 -->',
+        body: '<!-- widgets-factory-fix-progress-v3:abc:local:123 -->',
       },
     }),
   });
@@ -659,7 +659,7 @@ test('fixed-model progress comments use the durable fixed owner', async () => {
       comment: {
         author_association: 'OWNER',
         user: { login: 'JoshCLWren' },
-        body: `<!-- comic-pile-factory-implement-progress-v3:issue-1089:opencode-free-model-factory-${dynamicWorker}:123 -->`,
+        body: `<!-- widgets-factory-implement-progress-v3:issue-1089:opencode-free-model-factory-${dynamicWorker}:123 -->`,
       },
     }),
   });
@@ -674,7 +674,7 @@ test('PR synchronize events refresh owner and stage from the linked issue', asyn
     labels: ['factory', 'factory:building', 'factory:5'],
     comments: [{
       author_association: 'OWNER',
-      body: '<!-- comic-pile-factory-implement-claim-v3:issue-999:local:123:attempt-1 -->',
+      body: '<!-- widgets-factory-implement-claim-v3:issue-999:local:123:attempt-1 -->',
       created_at: '2026-08-09T12:00:00Z',
       user: { login: 'JoshCLWren' },
     }],
@@ -684,12 +684,12 @@ test('PR synchronize events refresh owner and stage from the linked issue', asyn
     github,
     context: contextFor('pull_request_target', {
       action: 'synchronize',
-      repository: { full_name: 'JoshCLWren/comic-pile' },
+      repository: { full_name: 'acme/widgets' },
       pull_request: {
         body: 'Closes #999',
         head: {
           ref: 'factory/999-atomic-label-reconciliation',
-          repo: { full_name: 'JoshCLWren/comic-pile' },
+          repo: { full_name: 'acme/widgets' },
         },
         labels: [{ name: 'factory' }],
         number: 1000,
@@ -709,7 +709,7 @@ test('PR refresh preserves a roster fixed-model PR-local owner', async () => {
     labels: ['factory', 'factory:review', 'factory:49'],
     comments: [{
       author_association: 'OWNER',
-      body: '<!-- comic-pile-factory-claim-released-v3:issue-1089:opencode-free-model-factory-49:123 -->',
+      body: '<!-- widgets-factory-claim-released-v3:issue-1089:opencode-free-model-factory-49:123 -->',
       created_at: '2026-08-14T14:27:00Z',
       user: { login: 'JoshCLWren' },
     }],
@@ -720,12 +720,12 @@ test('PR refresh preserves a roster fixed-model PR-local owner', async () => {
     github,
     context: contextFor('pull_request_target', {
       action: 'synchronize',
-      repository: { full_name: 'JoshCLWren/comic-pile' },
+      repository: { full_name: 'acme/widgets' },
       pull_request: {
         body: 'Closes #1089',
         head: {
           ref: 'factory/32-1089-omni',
-          repo: { full_name: 'JoshCLWren/comic-pile' },
+          repo: { full_name: 'acme/widgets' },
         },
         labels: [{ name: 'factory' }, { name: 'factory:49' }],
         number: 1202,
@@ -744,7 +744,7 @@ test('released fixed-model PR resolves closing issue instead of worker branch nu
     labels: ['factory', 'factory:review', 'factory:unowned'],
     comments: [{
       author_association: 'OWNER',
-      body: '<!-- comic-pile-factory-claim-released-v3:issue-1089:opencode-free-model-factory-49:123 -->',
+      body: '<!-- widgets-factory-claim-released-v3:issue-1089:opencode-free-model-factory-49:123 -->',
       created_at: '2026-08-14T14:27:00Z',
       user: { login: 'JoshCLWren' },
     }],
@@ -756,12 +756,12 @@ test('released fixed-model PR resolves closing issue instead of worker branch nu
     github,
     context: contextFor('pull_request_target', {
       action: 'synchronize',
-      repository: { full_name: 'JoshCLWren/comic-pile' },
+      repository: { full_name: 'acme/widgets' },
       pull_request: {
         body: 'Closes #1089',
         head: {
           ref: 'factory/32-1089-omni',
-          repo: { full_name: 'JoshCLWren/comic-pile' },
+          repo: { full_name: 'acme/widgets' },
         },
         labels: [{ name: 'factory' }, { name: 'factory:unowned' }],
         number: 1202,
@@ -786,7 +786,7 @@ test('PR refresh preserves one external owner after the linked issue is released
     ],
     comments: [{
       author_association: 'OWNER',
-      body: '<!-- comic-pile-factory-claim-released-v3:issue-1149:chatgpt-factory-2:123 -->',
+      body: '<!-- widgets-factory-claim-released-v3:issue-1149:chatgpt-factory-2:123 -->',
       created_at: '2026-08-13T06:00:00Z',
       user: { login: 'JoshCLWren' },
     }],
@@ -797,12 +797,12 @@ test('PR refresh preserves one external owner after the linked issue is released
     github,
     context: contextFor('pull_request_target', {
       action: 'synchronize',
-      repository: { full_name: 'JoshCLWren/comic-pile' },
+      repository: { full_name: 'acme/widgets' },
       pull_request: {
         body: 'Closes #1149',
         head: {
           ref: 'factory/1149-omniroute',
-          repo: { full_name: 'JoshCLWren/comic-pile' },
+          repo: { full_name: 'acme/widgets' },
         },
         labels: [
           { name: 'factory' },
@@ -834,11 +834,11 @@ test('native APPROVED review from OWNER makes no label API calls', async () => {
     github,
     context: contextFor('pull_request_review', {
       action: 'submitted',
-      repository: { full_name: 'JoshCLWren/comic-pile' },
+      repository: { full_name: 'acme/widgets' },
       pull_request: {
         head: {
           ref: 'factory/43-1386-opencode-free',
-          repo: { full_name: 'JoshCLWren/comic-pile' },
+          repo: { full_name: 'acme/widgets' },
         },
         labels: [{ name: 'factory' }, { name: 'factory:43' }, { name: 'factory:ci' }],
         number: 1390,
@@ -863,11 +863,11 @@ test('native APPROVED review from MEMBER makes no label API calls', async () => 
     github,
     context: contextFor('pull_request_review', {
       action: 'submitted',
-      repository: { full_name: 'JoshCLWren/comic-pile' },
+      repository: { full_name: 'acme/widgets' },
       pull_request: {
         head: {
           ref: 'factory/43-1386-opencode-free',
-          repo: { full_name: 'JoshCLWren/comic-pile' },
+          repo: { full_name: 'acme/widgets' },
         },
         labels: [{ name: 'factory' }, { name: 'factory:43' }, { name: 'factory:ready' }],
         number: 1390,
@@ -892,11 +892,11 @@ test('native APPROVED review from COLLABORATOR makes no label API calls', async 
     github,
     context: contextFor('pull_request_review', {
       action: 'submitted',
-      repository: { full_name: 'JoshCLWren/comic-pile' },
+      repository: { full_name: 'acme/widgets' },
       pull_request: {
         head: {
           ref: 'factory/43-1386-opencode-free',
-          repo: { full_name: 'JoshCLWren/comic-pile' },
+          repo: { full_name: 'acme/widgets' },
         },
         labels: [{ name: 'factory' }, { name: 'factory:43' }, { name: 'factory:review' }],
         number: 1390,
@@ -921,11 +921,11 @@ test('native APPROVED review from github-actions[bot] makes no label API calls',
     github,
     context: contextFor('pull_request_review', {
       action: 'submitted',
-      repository: { full_name: 'JoshCLWren/comic-pile' },
+      repository: { full_name: 'acme/widgets' },
       pull_request: {
         head: {
           ref: 'factory/43-1386-opencode-free',
-          repo: { full_name: 'JoshCLWren/comic-pile' },
+          repo: { full_name: 'acme/widgets' },
         },
         labels: [{ name: 'factory' }, { name: 'factory:43' }, { name: 'factory:ci' }],
         number: 1390,
@@ -950,11 +950,11 @@ test('native APPROVED review from worker App with OWNER association makes no lab
     github,
     context: contextFor('pull_request_review', {
       action: 'submitted',
-      repository: { full_name: 'JoshCLWren/comic-pile' },
+      repository: { full_name: 'acme/widgets' },
       pull_request: {
         head: {
           ref: 'factory/48-3136-opencode-free',
-          repo: { full_name: 'JoshCLWren/comic-pile' },
+          repo: { full_name: 'acme/widgets' },
         },
         labels: [{ name: 'factory' }, { name: 'factory:48' }, { name: 'factory:ready' }],
         number: 3136,
@@ -963,7 +963,7 @@ test('native APPROVED review from worker App with OWNER association makes no lab
         state: 'APPROVED',
         author_association: 'OWNER',
         user: { login: 'MarkCordova[bot]' },
-        performed_via_github_app: { slug: 'mark-cordova-comic-pile', owner: { login: 'JoshCLWren' } },
+        performed_via_github_app: { slug: 'mark-cordova-widgets', owner: { login: 'JoshCLWren' } },
       },
     }),
   });
@@ -980,11 +980,11 @@ test('CHANGES_REQUESTED review still sets factory:changes-requested', async () =
     github,
     context: contextFor('pull_request_review', {
       action: 'submitted',
-      repository: { full_name: 'JoshCLWren/comic-pile' },
+      repository: { full_name: 'acme/widgets' },
       pull_request: {
         head: {
           ref: 'factory/43-1386-opencode-free',
-          repo: { full_name: 'JoshCLWren/comic-pile' },
+          repo: { full_name: 'acme/widgets' },
         },
         labels: [{ name: 'factory' }, { name: 'factory:43' }, { name: 'factory:review' }],
         number: 1390,
@@ -1012,11 +1012,11 @@ test('dismissed review resets to factory:review', async () => {
     github,
     context: contextFor('pull_request_review', {
       action: 'dismissed',
-      repository: { full_name: 'JoshCLWren/comic-pile' },
+      repository: { full_name: 'acme/widgets' },
       pull_request: {
         head: {
           ref: 'factory/43-1386-opencode-free',
-          repo: { full_name: 'JoshCLWren/comic-pile' },
+          repo: { full_name: 'acme/widgets' },
         },
         labels: [{ name: 'factory' }, { name: 'factory:43' }, { name: 'factory:changes-requested' }],
         number: 1390,
@@ -1071,7 +1071,7 @@ function enrollPr(number, extra = {}) {
     draft: false,
     user: { login: 'JoshCLWren' },
     body: '',
-    head: { sha: 'a'.repeat(40), repo: { full_name: 'JoshCLWren/comic-pile' } },
+    head: { sha: 'a'.repeat(40), repo: { full_name: 'acme/widgets' } },
     ...extra,
   };
 }
@@ -1159,7 +1159,7 @@ test('worker GitHub App with OWNER association is NOT trusted for marker reconci
   const workerAppComment = {
     author_association: 'OWNER',
     user: { login: 'mark-cordova[bot]' },
-    body: '<!-- comic-pile-factory-implement-claim-v3:issue-123:mark-cordova:456 -->',
+    body: '<!-- widgets-factory-implement-claim-v3:issue-123:mark-cordova:456 -->',
     performed_via_github_app: { slug: 'mark-cordova' },
   };
   assert.equal(trusted(workerAppComment), false);
@@ -1170,7 +1170,7 @@ test('github-actions[bot] with NONE association IS trusted for marker reconcile'
   const actionsComment = {
     author_association: 'NONE',
     user: { login: 'github-actions[bot]' },
-    body: '<!-- comic-pile-factory-implement-claim-v3:issue-123:local:456 -->',
+    body: '<!-- widgets-factory-implement-claim-v3:issue-123:local:456 -->',
     performed_via_github_app: { slug: 'github-actions' },
   };
   assert.equal(trusted(actionsComment), true);
@@ -1183,7 +1183,7 @@ test('github-actions App slug with a non-actions login and NONE association is N
   const spoof = {
     author_association: 'NONE',
     user: { login: 'not-actions[bot]' },
-    body: '<!-- comic-pile-factory-implement-claim-v3:issue-123:local:456 -->',
+    body: '<!-- widgets-factory-implement-claim-v3:issue-123:local:456 -->',
     performed_via_github_app: { slug: 'github-actions' },
   };
   assert.equal(trusted(spoof), false);
@@ -1194,7 +1194,7 @@ test('github-actions[bot] with NONE and no performed_via_github_app IS trusted',
   const actionsComment = {
     author_association: 'NONE',
     user: { login: 'github-actions[bot]' },
-    body: '<!-- comic-pile-factory-implement-claim-v3:issue-123:local:456 -->',
+    body: '<!-- widgets-factory-implement-claim-v3:issue-123:local:456 -->',
   };
   assert.equal(trusted(actionsComment), true);
 });
@@ -1203,7 +1203,7 @@ test('human OWNER comment with no App IS trusted', () => {
   const humanComment = {
     author_association: 'OWNER',
     user: { login: 'JoshCLWren' },
-    body: '<!-- comic-pile-factory-implement-claim-v3:issue-123:local:456 -->',
+    body: '<!-- widgets-factory-implement-claim-v3:issue-123:local:456 -->',
   };
   assert.equal(trusted(humanComment), true);
   assert.equal(performedViaUntrustedApp(humanComment), false);
@@ -1226,7 +1226,7 @@ test('issue_comment reconcile rejects worker App comment even with OWNER associa
       comment: {
         author_association: 'OWNER',
         user: { login: 'mark-cordova[bot]' },
-        body: '<!-- comic-pile-factory-implement-progress-v3:issue-44:mark-cordova:123 -->',
+        body: '<!-- widgets-factory-implement-progress-v3:issue-44:mark-cordova:123 -->',
         performed_via_github_app: { slug: 'mark-cordova' },
       },
     }),
@@ -1238,12 +1238,12 @@ test('issue_comment reconcile rejects worker App comment even with OWNER associa
 function reviewPayload(review) {
   return contextFor('pull_request_review', {
     action: 'submitted',
-    repository: { full_name: 'JoshCLWren/comic-pile' },
+    repository: { full_name: 'acme/widgets' },
     pull_request: {
       number: 100,
       head: {
         ref: 'factory/49-3154-app-identity',
-        repo: { full_name: 'JoshCLWren/comic-pile' },
+        repo: { full_name: 'acme/widgets' },
       },
       labels: [{ name: 'factory' }, { name: 'factory:review' }, { name: 'factory:unowned' }],
     },
@@ -1321,13 +1321,13 @@ test('enroll review-verdict scan ignores a worker App pass/verdict marker', asyn
     const expectedStage = verdict === 'pass' ? 'factory:ci' : 'factory:changes-requested';
     const workerCalls = [];
     const workerGithub = enrollGithubFor({
-      pulls: [enrollPr(100, { head: { sha: head, repo: { full_name: 'JoshCLWren/comic-pile' } } })],
+      pulls: [enrollPr(100, { head: { sha: head, repo: { full_name: 'acme/widgets' } } })],
       labelsByPr: { 100: ['factory', 'factory:unowned'] },
       comments: [{
         created_at: '2026-01-01T00:00:00Z',
         author_association: 'OWNER',
         user: { login: 'mark-cordova[bot]' },
-        body: `<!-- comic-pile-factory-review-v2:${head}:${verdict} -->`,
+        body: `<!-- widgets-factory-review-v2:${head}:${verdict} -->`,
         performed_via_github_app: { slug: 'mark-cordova' },
       }],
       setLabels: async input => workerCalls.push(input),
@@ -1345,13 +1345,13 @@ test('enroll review-verdict scan ignores a worker App pass/verdict marker', asyn
     // Positive control: the trusted actor's verdict marker is still honored.
     const actionsCalls = [];
     const actionsGithub = enrollGithubFor({
-      pulls: [enrollPr(100, { head: { sha: head, repo: { full_name: 'JoshCLWren/comic-pile' } } })],
+      pulls: [enrollPr(100, { head: { sha: head, repo: { full_name: 'acme/widgets' } } })],
       labelsByPr: { 100: ['factory', 'factory:unowned'] },
       comments: [{
         created_at: '2026-01-01T00:00:00Z',
         author_association: 'NONE',
         user: { login: 'github-actions[bot]' },
-        body: `<!-- comic-pile-factory-review-v2:${head}:${verdict} -->`,
+        body: `<!-- widgets-factory-review-v2:${head}:${verdict} -->`,
         performed_via_github_app: { slug: 'github-actions' },
       }],
       setLabels: async input => actionsCalls.push(input),
@@ -1375,14 +1375,14 @@ test('pull_request_target owner lookup ignores a worker App claim marker', async
     head: {
       ref: `factory/${dynamicWorker}-3131-opencode-free-identity`,
       sha: 'c'.repeat(40),
-      repo: { full_name: 'JoshCLWren/comic-pile' },
+      repo: { full_name: 'acme/widgets' },
     },
   };
   const workerAppComment = {
     created_at: '2026-01-01T00:00:00Z',
     author_association: 'OWNER',
     user: { login: 'mark-cordova[bot]' },
-    body: `<!-- comic-pile-factory-implement-claim-v3:issue-3131:opencode-free-model-factory-${dynamicWorker}:1 -->`,
+    body: `<!-- widgets-factory-implement-claim-v3:issue-3131:opencode-free-model-factory-${dynamicWorker}:1 -->`,
     performed_via_github_app: { slug: 'mark-cordova' },
   };
   const workerCalls = [];
@@ -1395,7 +1395,7 @@ test('pull_request_target owner lookup ignores a worker App claim marker', async
       setLabels: async input => workerCalls.push(input),
     }),
     context: contextFor('pull_request_target', {
-      repository: { full_name: 'JoshCLWren/comic-pile' },
+      repository: { full_name: 'acme/widgets' },
       pull_request: pullRequest,
     }),
   });
@@ -1417,7 +1417,7 @@ test('pull_request_target owner lookup ignores a worker App claim marker', async
       setLabels: async input => actionsCalls.push(input),
     }),
     context: contextFor('pull_request_target', {
-      repository: { full_name: 'JoshCLWren/comic-pile' },
+      repository: { full_name: 'acme/widgets' },
       pull_request: pullRequest,
     }),
   });
@@ -1535,7 +1535,7 @@ test('currentLabels reads are recorded in the request log', async () => {
   assert.equal(log.length, 1);
   assert.equal(
     log[0].endpoint,
-    'repos/JoshCLWren/comic-pile/issues/12/labels?per_page=100&page=1',
+    'repos/acme/widgets/issues/12/labels?per_page=100&page=1',
   );
   assert.equal(log[0].method, 'GET');
 });
@@ -1558,8 +1558,8 @@ test('paged reads record every page request separately', async () => {
   assert.equal(labels.size, 101);
   const log = restRequestLog();
   assert.equal(log.length, 2);
-  assert.equal(log[0].endpoint, 'repos/JoshCLWren/comic-pile/issues/12/labels?per_page=100&page=1');
-  assert.equal(log[1].endpoint, 'repos/JoshCLWren/comic-pile/issues/12/labels?per_page=100&page=2');
+  assert.equal(log[0].endpoint, 'repos/acme/widgets/issues/12/labels?per_page=100&page=1');
+  assert.equal(log[1].endpoint, 'repos/acme/widgets/issues/12/labels?per_page=100&page=2');
 });
 
 test('each retry attempt is recorded, including the failed request', async () => {
@@ -1599,13 +1599,13 @@ test('unlabeled PR event preserves ready parked under a live local lease', async
     github,
     context: contextFor('pull_request_target', {
       action: 'unlabeled',
-      repository: { full_name: 'JoshCLWren/comic-pile' },
+      repository: { full_name: 'acme/widgets' },
       pull_request: {
         body: 'Part of #4853',
         head: {
           ref: 'factory/work-checkpoints/issue-4853/hy4-flash-free/44224727998',
           sha: 'c'.repeat(40),
-          repo: { full_name: 'JoshCLWren/comic-pile' },
+          repo: { full_name: 'acme/widgets' },
         },
         labels: [{ name: 'factory' }, { name: 'factory:local' }, { name: 'factory:ready' }],
         number: 5393,
@@ -1625,13 +1625,13 @@ test('PR synchronize still invalidates ready but keeps the local owner', async (
     github,
     context: contextFor('pull_request_target', {
       action: 'synchronize',
-      repository: { full_name: 'JoshCLWren/comic-pile' },
+      repository: { full_name: 'acme/widgets' },
       pull_request: {
         body: 'Part of #4853',
         head: {
           ref: 'factory/work-checkpoints/issue-4853/hy4-flash-free/44224727998',
           sha: 'd'.repeat(40),
-          repo: { full_name: 'JoshCLWren/comic-pile' },
+          repo: { full_name: 'acme/widgets' },
         },
         labels: [{ name: 'factory' }, { name: 'factory:local' }, { name: 'factory:ready' }],
         number: 5393,
@@ -1658,7 +1658,7 @@ test('off-roster review-claim marker cannot strip a live local lease or ready st
       comment: {
         author_association: 'OWNER',
         user: { login: 'JoshCLWren' },
-        body: '<!-- comic-pile-factory-review-claim-v3:pr-5393:opencode-free-model-factory-74:123 -->',
+        body: '<!-- widgets-factory-review-claim-v3:pr-5393:opencode-free-model-factory-74:123 -->',
       },
     }),
   });
@@ -1678,7 +1678,7 @@ test('explicit trusted release by the local worker still hands off to unowned', 
       comment: {
         author_association: 'OWNER',
         user: { login: 'JoshCLWren' },
-        body: '<!-- comic-pile-factory-claim-released-v3:pr-5393:local:123 -->',
+        body: '<!-- widgets-factory-claim-released-v3:pr-5393:local:123 -->',
       },
     }),
   });
@@ -1700,7 +1700,7 @@ test('release marker from another worker does not strip the local lease', async 
       comment: {
         author_association: 'OWNER',
         user: { login: 'JoshCLWren' },
-        body: '<!-- comic-pile-factory-claim-released-v3:pr-5393:opencode-free-model-factory-75:123 -->',
+        body: '<!-- widgets-factory-claim-released-v3:pr-5393:opencode-free-model-factory-75:123 -->',
       },
     }),
   });

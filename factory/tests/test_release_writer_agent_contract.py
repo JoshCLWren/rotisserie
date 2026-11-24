@@ -164,10 +164,10 @@ def test_release_writer_all_read_helpers_are_get_only(monkeypatch) -> None:
     monkeypatch.setattr(release_writer.urllib.request, "urlopen", make_fake())
 
     # Exercise all four read-only helpers
-    release_writer._recent("JoshCLWren/comic-pile", "1")
-    release_writer._pr("JoshCLWren/comic-pile", "1082")
-    release_writer._files("JoshCLWren/comic-pile", "1082")
-    release_writer._issues("JoshCLWren/comic-pile", "1082")
+    release_writer._recent("acme/widgets", "1")
+    release_writer._pr("acme/widgets", "1082")
+    release_writer._files("acme/widgets", "1082")
+    release_writer._issues("acme/widgets", "1082")
 
 
 def test_release_writer_contract_requires_public_classification_evidence() -> None:

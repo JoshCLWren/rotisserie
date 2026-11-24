@@ -57,4 +57,4 @@ uv run --locked pytest -n auto
 node --test .github/scripts/*.test.cjs scripts/local-factory-acp-review.test.mjs
 ```
 
-The suite runs as the reference adopter in `tests/fixtures/adopter/config.toml`.
+The suite runs as the fake adopter `acme/widgets` from `tests/fixtures/adopter/config.toml`.

@@ -15,7 +15,7 @@ SPEC = importlib.util.spec_from_file_location(
 assert SPEC and SPEC.loader
 handoff = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(handoff)
-REPO = "JoshCLWren/comic-pile"
+REPO = "acme/widgets"
 RUN = "12345"
 HEAD = "a" * 40
 BASE = "b" * 40

@@ -1,6 +1,6 @@
 'use strict';
 
-process.env.GITHUB_REPOSITORY = 'JoshCLWren/comic-pile';
+process.env.GITHUB_REPOSITORY = 'acme/widgets';
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
@@ -26,7 +26,7 @@ function apiStub(overrides = {}) {
   return async endpoint => {
     if (endpoint.endsWith('/installation')) return { id: 456, app_id: 123, account: { login: 'JoshCLWren' }, repository_selection: 'selected', suspended_at: null, permissions: { contents: 'write', pull_requests: 'write', issues: 'write' }, ...overrides };
     if (endpoint.endsWith('/access_tokens')) return { token: 'test-installation-token' };
-    if (endpoint === '/installation/repositories') return { total_count: 1, repositories: [{ full_name: 'JoshCLWren/comic-pile' }] };
+    if (endpoint === '/installation/repositories') return { total_count: 1, repositories: [{ full_name: 'acme/widgets' }] };
     throw new Error(`Unexpected endpoint ${endpoint}`);
   };
 }

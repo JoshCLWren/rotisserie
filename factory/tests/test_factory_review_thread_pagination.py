@@ -88,7 +88,7 @@ cat {data}/$kind
     script.chmod(script.stat().st_mode | stat.S_IEXEC)
     return {
         "PATH": f"{bin_dir}{os.pathsep}{os.environ['PATH']}",
-        "GITHUB_REPOSITORY": "JoshCLWren/comic-pile",
+        "GITHUB_REPOSITORY": "acme/widgets",
     }
 
 
@@ -159,7 +159,7 @@ def blockers_script(wrapper: str) -> str:
 
 def run_blockers(tmp_path: Path, wrapper: str, pages: str | None) -> int:
     env = install_fake_gh(tmp_path, {"count": pages, "reviews": "[]"})
-    script = f"{blockers_script(wrapper)}\nGITHUB_REPOSITORY=JoshCLWren/comic-pile\n"
+    script = f"{blockers_script(wrapper)}\nGITHUB_REPOSITORY=acme/widgets\n"
     script += f"if current_head_review_blockers 42 {HEAD}; then exit 0; else exit 1; fi"
     return run_bash(script, env).returncode
 

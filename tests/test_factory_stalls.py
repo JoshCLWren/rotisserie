@@ -1,4 +1,4 @@
-"""Review deadlocks found by hand on ComicPile (#177): #5688 and #5684."""
+"""Review deadlocks found by hand on an adopter (#177): #5688 and #5684."""
 
 from __future__ import annotations
 

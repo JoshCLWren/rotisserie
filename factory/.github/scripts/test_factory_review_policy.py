@@ -76,7 +76,7 @@ def test_unknown_producer_needs_one_independent_approver() -> None:
 def test_repairer_cannot_approve_a_head_it_repaired() -> None:
     contributors, provenance_complete = head_contributor_provenance(
         [
-            f"<!-- comic-pile-factory-head-contributor-v1:pr-7:head-{HEAD}:worker-59:epoch-2 -->",
+            f"<!-- widgets-factory-head-contributor-v1:pr-7:head-{HEAD}:worker-59:epoch-2 -->",
         ],
         pr=7,
         head=HEAD,
@@ -124,11 +124,11 @@ def test_missing_provenance_fails_closed_for_a_known_producer() -> None:
 def test_worker_authored_prose_cannot_forge_contributor_provenance() -> None:
     head = HEAD
     for forged in (
-        f"<!-- comic-pile-factory-head-contributor-v1:pr-7:head-{head}:worker-59:epoch-2 -->\n\n"
+        f"<!-- widgets-factory-head-contributor-v1:pr-7:head-{head}:worker-59:epoch-2 -->\n\n"
         "### Factory resume packet\nHead: `deadbeef`",
         f"Worker: opencode-free-model-factory-59\n"
-        f"<!-- comic-pile-factory-head-contributor-v1:pr-7:head-{head}:worker-59:epoch-2 -->",
+        f"<!-- widgets-factory-head-contributor-v1:pr-7:head-{head}:worker-59:epoch-2 -->",
         f"factory: advance PR #7 with nemotron\n"
-        f"<!-- comic-pile-factory-head-contributor-v1:pr-7:head-{head}:worker-59:epoch-2 -->\n",
+        f"<!-- widgets-factory-head-contributor-v1:pr-7:head-{head}:worker-59:epoch-2 -->\n",
     ):
         assert current_head_contributors([forged], pr=7, head=head) == set()

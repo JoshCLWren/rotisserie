@@ -15,7 +15,7 @@ from scripts import release_reconcile, release_writer
 
 def _payload() -> dict[str, object]:
     return {
-        "source_repository": "JoshCLWren/comic-pile",
+        "source_repository": "acme/widgets",
         "source_pr_number": 123,
         "source_merge_sha": "a" * 40,
         "merged_at": "2026-10-20T20:00:00Z",
@@ -141,7 +141,7 @@ def test_staging_never_contacts_vercel_or_neon(monkeypatch: pytest.MonkeyPatch, 
     monkeypatch.setattr(release_writer.urllib.request, "urlopen", no_network)
     base = release_writer._api_base()
     source = (
-        base + "/source?source_repository=JoshCLWren%2Fcomic-pile"
+        base + "/source?source_repository=acme%2Fwidgets"
         + "&source_pr_number=123&source_merge_sha=" + "a" * 40
     )
     assert release_writer._request("GET", source)["exists"] is False
@@ -166,13 +166,13 @@ def test_publisher_validates_real_merge_before_database_credentials(monkeypatch:
             title="PR 123",
         ),
     )
-    result = direct._load_validated(candidate, "JoshCLWren/comic-pile", 123)
+    result = direct._load_validated(candidate, "acme/widgets", 123)
     assert result["source_pr_number"] == 123
     bad = _payload()
     bad["source_merge_sha"] = "b" * 40
     candidate.write_text(json.dumps(bad), encoding="utf-8")
     with pytest.raises(direct.ReleaseIdentityConflictError):
-        direct._load_validated(candidate, "JoshCLWren/comic-pile", 123)
+        direct._load_validated(candidate, "acme/widgets", 123)
 
 
 def test_stage_summary_does_not_claim_publication(monkeypatch: pytest.MonkeyPatch) -> None:

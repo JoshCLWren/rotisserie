@@ -1635,8 +1635,8 @@ def test_check_logs_are_summarized_by_their_first_real_failure() -> None:
     from rotisserie.factory_console.service.checks import summarize_log
 
     fmt = (
-        "2026-11-20T17:20:00Z Diff in /home/runner/work/comic-pile/comic-pile/native/roll-service/src/a.rs:162:\n"
-        "2026-11-20T17:20:00Z Diff in /home/runner/work/comic-pile/comic-pile/native/roll-service/src/b.rs:9:\n"
+        "2026-11-20T17:20:00Z Diff in /home/runner/work/widgets/widgets/native/roll-service/src/a.rs:162:\n"
+        "2026-11-20T17:20:00Z Diff in /home/runner/work/widgets/widgets/native/roll-service/src/b.rs:9:\n"
         "##[error]Process completed with exit code 1.\n"
     )
     kind, summary, files = summarize_log(fmt)
@@ -1645,7 +1645,7 @@ def test_check_logs_are_summarized_by_their_first_real_failure() -> None:
     assert files == ("native/roll-service/src/a.rs", "native/roll-service/src/b.rs")
     tests = (
         "test same_path_openapi::tests::checked_in_contract_is_current ... FAILED\n"
-        "error: test failed, to rerun pass `-p comicpile-roll-service --lib`\n"
+        "error: test failed, to rerun pass `-p widgets-roll-service --lib`\n"
     )
     kind, summary, _ = summarize_log(tests)
     assert kind == "tests"

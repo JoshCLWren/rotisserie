@@ -878,7 +878,7 @@ def test_gh_pr_view_counts_as_diff_inspection_evidence(monkeypatch):
     assert result["status"] == "ready"
     assert comments[0]["verdict"] == "approve"
     assert comments[0]["marker"] is not None
-    assert comments[0]["marker"].startswith("<!-- comic-pile-factory-semantic-review-v1:")
+    assert comments[0]["marker"].startswith("<!-- widgets-factory-semantic-review-v1:")
     assert transitions[0]["pr_stage"] == "factory:ready"
 
 
@@ -954,7 +954,7 @@ def test_thousands_of_appended_diff_lines_cannot_evict_semantic_repair_finding()
     "unusable",
     [
         "FACTORY_GATE_BLOCKED",
-        "# comic-pile-factory-authoritative-diff-evidence\ngh pr diff 3200",
+        "# widgets-factory-authoritative-diff-evidence\ngh pr diff 3200",
         "diff --git a/app.py b/app.py\n+++ b/app.py\n+const result = unsafe();",
         "```python\ndef broken():\n    return unsafe()\n```",
         "semantic blockers remain\nthe pr is returning to repair",
@@ -1017,7 +1017,7 @@ def test_review_controller_has_three_repairs_then_cancel_circuit_breaker():
     source = Path(controller.__file__).read_text()
     assert "FACTORY_REPAIR_CYCLE_LIMIT = 3" in source
     assert 'status": "strike-limit-cancelled"' in source
-    assert controller.STRIKE_RESET_MARKER == "comic-pile-factory-strike-reset-v1"
+    assert controller.STRIKE_RESET_MARKER == "widgets-factory-strike-reset-v1"
 
 
 @pytest.mark.parametrize("resolved, decision", [(True, "pass"), (False, "deny")])

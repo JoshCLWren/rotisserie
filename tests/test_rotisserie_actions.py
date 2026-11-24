@@ -10,7 +10,7 @@ ALLOWED_WORKFLOWS = {"ci.yml", "canary-merge.yml"}
 FORBIDDEN_TEXT: tuple[str, ...] = (
     "comic-pile",
     "comic_pile",
-    "joshclwren/comic-pile",
+    "acme/widgets",
     "schedule:",
     "contents: write",
     "issues: write",

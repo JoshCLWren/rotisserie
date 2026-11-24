@@ -46,7 +46,7 @@ def test_large_diff_never_replaces_actionable_review_finding() -> None:
     [
         "FACTORY_GATE_BLOCKED",
         "semantic blockers remain\nthe pr is returning to repair",
-        "# comic-pile-factory-authoritative-diff-evidence\ngh pr diff 3200",
+        "# widgets-factory-authoritative-diff-evidence\ngh pr diff 3200",
         "diff --git a/app.py b/app.py\n+++ b/app.py\n+const result = unsafe();",
         "```python\ndef broken():\n    return unsafe()\n```",
     ],
@@ -77,7 +77,7 @@ def test_factory_60_tool_transcript_is_not_actionable_repair_evidence() -> None:
         "nothing to commit, working tree clean\n"
         "$ git diff HEAD~1 HEAD\n"
         "FACTORY_GATE_NOT_READY\n"
-        "# comic-pile-factory-authoritative-diff-evidence\n"
+        "# widgets-factory-authoritative-diff-evidence\n"
         "gh pr diff 4923\n"
     )
     assert not controller.has_actionable_review_findings(transcript)
@@ -141,10 +141,10 @@ def test_file_listing_counts_as_inspection_for_a_pr_too_large_to_diff() -> None:
     review_log = (
         "Reviewed every changed file; the deletion matches the issue.\nFACTORY_GATE_READY\n"
         + controller.AUTHORITATIVE_DIFF_EVIDENCE
-        + "\ngh api repos/JoshCLWren/comic-pile/pulls/5530/files\n"
+        + "\ngh api repos/acme/widgets/pulls/5530/files\n"
     )
     excerpt = controller.semantic_review_excerpt(review_log)
-    assert "gh api repos/JoshCLWren/comic-pile/pulls/5530/files" in excerpt
+    assert "gh api repos/acme/widgets/pulls/5530/files" in excerpt
     assert controller.DIFF_INSPECTION_RE.search(excerpt)
 
 

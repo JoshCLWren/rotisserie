@@ -53,7 +53,7 @@ import sys
 args = sys.argv[1:]
 if args[:2] == ["run", "list"]:
     print(json.dumps([{"status": "in_progress"}] if os.environ.get("BUSY") else []))
-elif args[:2] == ["api", "repos/example/comic-pile/issues?state=open&labels=factory%3A77&per_page=1"]:
+elif args[:2] == ["api", "repos/example/widgets/issues?state=open&labels=factory%3A77&per_page=1"]:
     print(json.dumps([{"number": 99}] if os.environ.get("LEASED") else []))
 elif args[:2] == ["pr", "list"]:
     print(json.dumps([
@@ -68,7 +68,7 @@ elif args[:2] == ["pr", "list"]:
         {"number": 14, "isDraft": False, "labels": [{"name": "factory:review"}, {"name": "factory:unowned"}],
          "headRefName": "fix/issue-14", "body": "Closes #14."},
     ]))
-elif args[:2] == ["api", "repos/example/comic-pile/pulls/14"]:
+elif args[:2] == ["api", "repos/example/widgets/pulls/14"]:
     print(json.dumps({
         "state": "open", "draft": False, "base": {"ref": "main"},
         "labels": [
@@ -109,7 +109,7 @@ def test_auto_dispatch_respects_busy_gpu_factory_leases_and_fresh_pr_stage(
     env = os.environ.copy()
     env.update({
         "PATH": f"{tmp_path}:{env['PATH']}",
-        "GITHUB_REPOSITORY": "example/comic-pile",
+        "GITHUB_REPOSITORY": "example/widgets",
         "REVIEW_PROVIDER_URL": "https://fake-ollama.invalid",
         "DISPATCH_LOG": str(log),
         **extra,

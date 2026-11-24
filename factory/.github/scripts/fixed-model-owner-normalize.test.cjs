@@ -31,7 +31,7 @@ function harness({ labels, comments = [], branch = 'factory/39-1070-opencode-fre
   };
   const context = {
     payload: { issue: { number: 1230, pull_request: {} } },
-    repo: { owner: 'JoshCLWren', repo: 'comic-pile' },
+    repo: { owner: 'acme', repo: 'widgets' },
   };
   const core = { info: () => {} };
   return { github, context, core, calls };

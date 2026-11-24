@@ -15,10 +15,10 @@ import pytest
 ROOT = Path(__file__).resolve().parents[1]
 WORKFLOW = ROOT / ".github/workflows/factory-issue-pr-state-reconciler.yml"
 BRANCH = "factory/39-1477-opencode-free"
-REPO = "JoshCLWren/comic-pile"
+REPO = "acme/widgets"
 HEAD = "a" * 40
 MARKER = (
-    "<!-- comic-pile-factory-pr-provenance-v1:"
+    "<!-- widgets-factory-pr-provenance-v1:"
     f"pr-1517:issue-1477:opencode-free-model-factory-39:1787060686:{HEAD} -->"
 )
 

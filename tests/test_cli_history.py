@@ -93,11 +93,11 @@ def test_markers_with_fields_keep_them() -> None:
             "__typename": "IssueComment",
             "createdAt": "x",
             "author": {"login": "github-actions"},
-            "body": "<!-- comic-pile-factory-merge-closure-v1:pr-5696:issue-5695 --> Closed",
+            "body": "<!-- widgets-factory-merge-closure-v1:pr-5696:issue-5695 --> Closed",
         }
     )
     assert event is not None
-    assert event["detail"] == "comic-pile-factory-merge-closure-v1 pr-5696:issue-5695"
+    assert event["detail"] == "widgets-factory-merge-closure-v1 pr-5696:issue-5695"
 
 
 def test_local_time_converts_from_utc(monkeypatch: pytest.MonkeyPatch) -> None:

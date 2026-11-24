@@ -1,4 +1,4 @@
-process.env.GITHUB_REPOSITORY = 'JoshCLWren/comic-pile';
+process.env.GITHUB_REPOSITORY = 'acme/widgets';
 const assert = require('node:assert/strict');
 const test = require('node:test');
 const fs = require('node:fs');

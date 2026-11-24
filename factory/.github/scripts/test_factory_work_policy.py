@@ -38,7 +38,7 @@ def pr_no_diff_marker(
     worker: str = "worker",
 ) -> str:
     return (
-        "<!-- comic-pile-factory-claim-released-v3:"
+        "<!-- widgets-factory-claim-released-v3:"
         f"pr-{number}:{worker}:{epoch}:repair-no-persisted-change-handoff"
         f":sha={sha}:stage={stage}:conflicted={int(conflicted)} -->"
     )
@@ -207,7 +207,7 @@ class RetryBudgetTests(unittest.TestCase):
             {
                 "author_association": "OWNER",
                 "body": (
-                    "<!-- comic-pile-factory-claim-released-v3:pr-31:worker:"
+                    "<!-- widgets-factory-claim-released-v3:pr-31:worker:"
                     "1999999999:repair-no-persisted-change-handoff -->"
                 ),
             }
@@ -224,7 +224,7 @@ class RetryBudgetTests(unittest.TestCase):
             {
                 "author_association": "OWNER",
                 "body": (
-                    "<!-- comic-pile-factory-claim-released-v3:pr-31:worker:"
+                    "<!-- widgets-factory-claim-released-v3:pr-31:worker:"
                     f"{expired}:repair-no-persisted-change-handoff -->"
                 ),
             }
@@ -243,7 +243,7 @@ class RetryBudgetTests(unittest.TestCase):
         now = 2_000_000_000
         comments = [
             comment(
-                "<!-- comic-pile-factory-claim-released-v3:pr-31:worker:"
+                "<!-- widgets-factory-claim-released-v3:pr-31:worker:"
                 f"{now - offset}:repair-no-persisted-change-handoff -->"
             )
             for offset in range(FACTORY_NO_DIFF_RETRY_LIMIT)

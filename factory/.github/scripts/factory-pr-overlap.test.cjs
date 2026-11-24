@@ -16,7 +16,7 @@ function select({ files = [[{ filename: 'shared.tsx' }]], issue = '4719', fail =
       elif [[ "$FAIL_FILES" == true ]]; then return 1;
       else printf '%s' "$FILES_JSON"; fi
     }
-    GITHUB_REPOSITORY=JoshCLWren/comic-pile
+    GITHUB_REPOSITORY=acme/widgets
     find_overlapping_factory_pr 4719 factory/97-4719-z-ai
   `], { encoding: 'utf8', env: { ...process.env, FILES_JSON: JSON.stringify(files),
     TEST_ISSUE: issue, FAIL_FILES: String(fail) } });

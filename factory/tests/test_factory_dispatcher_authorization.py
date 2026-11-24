@@ -12,7 +12,7 @@ import pytest
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 CONTROLLER_PATH = REPO_ROOT / ".github" / "scripts" / "factory-work-controller.py"
-REPOSITORY = "JoshCLWren/comic-pile"
+REPOSITORY = "acme/widgets"
 DISPATCHER_WORKFLOW_REF = (
     f"{REPOSITORY}/.github/workflows/fixed-model-factory-dispatch.yml@refs/heads/main"
 )

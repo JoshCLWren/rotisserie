@@ -21,7 +21,7 @@ sys.modules[SPEC.name] = review
 SPEC.loader.exec_module(review)
 
 NOW = datetime(2026, 11, 2, 18, 32, tzinfo=UTC)
-REPO = "JoshCLWren/comic-pile"
+REPO = "acme/widgets"
 
 
 def pr(

@@ -352,7 +352,7 @@ esac
     script.chmod(script.stat().st_mode | stat.S_IEXEC)
     return {
         "PATH": f"{bin_dir}{os.pathsep}{os.environ['PATH']}",
-        "GITHUB_REPOSITORY": "JoshCLWren/comic-pile",
+        "GITHUB_REPOSITORY": "acme/widgets",
         "FACTORY_GREPTILE_OUTCOMES_FILE": str(tmp_path / "outcomes.json"),
     }
 

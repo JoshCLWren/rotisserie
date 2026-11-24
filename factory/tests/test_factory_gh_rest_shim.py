@@ -52,7 +52,7 @@ def _run(tmp_path: Path, *args: str) -> subprocess.CompletedProcess[str]:
     env.update(
         {
             "FACTORY_REAL_GH": str(_fake_gh(tmp_path)),
-            "GITHUB_REPOSITORY": "JoshCLWren/comic-pile",
+            "GITHUB_REPOSITORY": "acme/widgets",
             "FACTORY_ENDPOINT_LOG": str(tmp_path / "factory-requests.txt"),
         }
     )
@@ -83,11 +83,11 @@ if [[ "$1" == pr && "$2" == checks ]]; then
   printf '%s\\n' {checks_shell} >&2
   exit {checks_status}
 fi
-if [[ "$1" == api && "$2" == repos/JoshCLWren/comic-pile/pulls/1390 ]]; then
+if [[ "$1" == api && "$2" == repos/acme/widgets/pulls/1390 ]]; then
   printf '%s\\n' '{{"base":{{"ref":"main"}}}}'
   exit 0
 fi
-if [[ "$1" == api && "$2" == repos/JoshCLWren/comic-pile/branches/main ]]; then
+if [[ "$1" == api && "$2" == repos/acme/widgets/branches/main ]]; then
   printf '%s\\n' '{{"protected":{protected_json}}}'
   exit 0
 fi
@@ -105,7 +105,7 @@ def _run_checks(fake_gh: Path) -> subprocess.CompletedProcess[str]:
     env.update(
         {
             "FACTORY_REAL_GH": str(fake_gh),
-            "GITHUB_REPOSITORY": "JoshCLWren/comic-pile",
+            "GITHUB_REPOSITORY": "acme/widgets",
         }
     )
     return subprocess.run(
@@ -116,7 +116,7 @@ def _run_checks(fake_gh: Path) -> subprocess.CompletedProcess[str]:
             "checks",
             "1390",
             "--repo",
-            "JoshCLWren/comic-pile",
+            "acme/widgets",
             "--required",
         ],
         text=True,

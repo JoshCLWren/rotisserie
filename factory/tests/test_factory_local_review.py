@@ -89,7 +89,7 @@ def test_untrusted_run_cannot_attest(
     """GitHub-authoritative workflow identity is checked before evidence ingestion."""
     module = importer()
     run = {"event": "workflow_dispatch", "head_branch": "main",
-           "actor": {"login": "JoshCLWren"},
+           "actor": {"login": "acme"},
            "path": ".github/workflows/factory-local-review.yml"}
     run[field] = value
     monkeypatch.setenv("GITHUB_ACTIONS", "true")
@@ -117,7 +117,7 @@ def test_live_evidence_is_rechecked_before_attestation(
     monkeypatch.setenv("LOCAL_REVIEW_EVIDENCE", json.dumps(payload))
     monkeypatch.setattr(module.controller, "gh_json", lambda *args, **kwargs: {
         "event": "workflow_dispatch", "head_branch": "main",
-        "actor": {"login": "JoshCLWren"}, "path": ".github/workflows/factory-local-review.yml"})
+        "actor": {"login": "acme"}, "path": ".github/workflows/factory-local-review.yml"})
     calls = 0
 
     def pr_snapshot(*args: object) -> dict[str, object]:

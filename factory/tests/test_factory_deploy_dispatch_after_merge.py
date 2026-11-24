@@ -176,7 +176,7 @@ esac
     env = {
         **os.environ,
         "PATH": f"{bin_dir}{os.pathsep}{os.environ['PATH']}",
-        "GITHUB_REPOSITORY": "JoshCLWren/comic-pile",
+        "GITHUB_REPOSITORY": "acme/widgets",
         "RUNNER_TEMP": str(tmp_path),
         "GH_TOKEN": "test",
     }
@@ -202,7 +202,7 @@ def test_drains_dispatch_one_deploy_after_the_last_merge(tmp_path: Path) -> None
         assert len(dispatches) == 1, (rel, calls)
         assert dispatches[0] > merges[-1], (rel, calls)
         assert (
-            "gh workflow run deploy-production.yml --repo JoshCLWren/comic-pile --ref main -f source=factory-merge"
+            "gh workflow run deploy-production.yml --repo acme/widgets --ref main -f source=factory-merge"
             in calls[dispatches[0]]
         )
         assert "merged 1 PR(s)" in calls[dispatches[0]]
@@ -277,7 +277,7 @@ exit {gh_exit}
 
 
 DISPATCH_LINE = (
-    "gh workflow run deploy-production.yml --repo JoshCLWren/comic-pile --ref main "
+    "gh workflow run deploy-production.yml --repo acme/widgets --ref main "
     "-f source=factory-merge -f reason=test merge"
 )
 
@@ -314,7 +314,7 @@ def test_helper_does_not_supersede_a_queued_manual_redeploy(tmp_path: Path) -> N
     _, out, calls = _run_helper(tmp_path / "queued", 0, run_list="1")
     assert "rc=0" in out and "manual Deploy Production run is already queued" in out
     assert _dispatch_calls(calls) == []
-    assert "gh run list --repo JoshCLWren/comic-pile --workflow deploy-production.yml" in calls
+    assert "gh run list --repo acme/widgets --workflow deploy-production.yml" in calls
     assert "--event workflow_dispatch" in calls
     assert "Deploy Production [source=manual]" in calls
     # No manual run queued, or the lookup failed: dispatch as before.
@@ -347,7 +347,7 @@ jq -r "$expr" {fixture}
         [
             "bash",
             "-c",
-            f"set -Eeuo pipefail; source {HELPER}; factory_pending_manual_deploy_count JoshCLWren/comic-pile",
+            f"set -Eeuo pipefail; source {HELPER}; factory_pending_manual_deploy_count acme/widgets",
         ],
         env=env,
         text=True,

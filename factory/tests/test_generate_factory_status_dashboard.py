@@ -174,7 +174,7 @@ def sample_snapshot() -> dict[str, object]:
                         "kind": "pr",
                         "number": 1950,
                         "title": "Fix dashboard",
-                        "url": "https://github.com/JoshCLWren/comic-pile/pull/1950",
+                        "url": "https://github.com/acme/widgets/pull/1950",
                         "stage": "changes-requested",
                     }
                 ],
@@ -308,7 +308,7 @@ def test_worker_rows_join_runtime_health_merge_credit_and_current_work():
                     "kind": "pr",
                     "number": 1950,
                     "title": "Fix dashboard",
-                    "url": "https://github.com/JoshCLWren/comic-pile/pull/1950",
+                    "url": "https://github.com/acme/widgets/pull/1950",
                     "stage": "review",
                 }
             ]

@@ -1336,7 +1336,7 @@ def test_repair_commits_found_across_compare_pages(setup: LedgerDouble) -> None:
 def test_reservation_walks_one_capture_so_rank_drift_cannot_hold_it(
     setup: LedgerDouble, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Live ComicPile: unrelated review PRs entering above shifted every rank."""
+    """Live adopter: unrelated review PRs entering above shifted every rank."""
     captures: list[frontier.Frontier] = [
         make_frontier(replace(make_offer(), rank=3)),
         make_frontier(replace(make_offer(), rank=5)),

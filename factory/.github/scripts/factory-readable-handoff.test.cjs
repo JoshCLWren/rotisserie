@@ -1,5 +1,5 @@
 // Worker entry points export the marker prefix before these functions run.
-process.env.FACTORY_MARKER_PREFIX = 'comic-pile';
+process.env.FACTORY_MARKER_PREFIX = 'widgets';
 const assert = require('node:assert/strict');
 const { readFileSync } = require('node:fs');
 const { spawnSync } = require('node:child_process');
@@ -66,7 +66,7 @@ function run(extraEnv = {}, { xtrace = false } = {}) {
     # Ambient token for markers must still be the workflow token.
     printf 'ambient:%s\\n' "\$GH_TOKEN" >&2
     # Simulate a trusted marker comment path: never use the App token.
-    gh issue comment 3142 --body '<!-- comic-pile-factory-claim-released-v3:pr-3142:worker:1:reason -->'
+    gh issue comment 3142 --body '<!-- widgets-factory-claim-released-v3:pr-3142:worker:1:reason -->'
   `], { encoding: 'utf8', env });
   let trace = '';
   try { trace = readFileSync(env.TRACE, 'utf8'); } catch { trace = ''; }
@@ -147,7 +147,7 @@ test('trusted marker comments never use the worker App token, even for configure
     FACTORY_WORKER_48_APP_PRIVATE_KEY: 'TEST-ONLY-NOT-A-KEY',
     FACTORY_WORKER_APP_MINT_STUB_TOKEN: 'install-token',
     GH_TOKEN: 'workflow-token',
-    GITHUB_REPOSITORY: 'JoshCLWren/comic-pile',
+    GITHUB_REPOSITORY: 'acme/widgets',
     TRACE: traceFile(),
   });
   const result = spawnSync('bash', ['-c', `
@@ -166,9 +166,9 @@ test('trusted marker comments never use the worker App token, even for configure
         "issue comment")
           printf 'marker-token:%s\\n' "\${GH_TOKEN}" >> "$TRACE"
           return 0 ;;
-        "api repos/JoshCLWren/comic-pile/issues/3135/labels?per_page=100")
+        "api repos/acme/widgets/issues/3135/labels?per_page=100")
           printf '["factory","factory:48"]' ; return 0 ;;
-        "api repos/JoshCLWren/comic-pile/issues/3136/labels?per_page=100")
+        "api repos/acme/widgets/issues/3136/labels?per_page=100")
           printf '[]' ; return 0 ;;
         "api --method") return 0 ;;
       esac
@@ -197,7 +197,7 @@ test('only post_readable_handoff overrides GH_TOKEN with the worker App token', 
   assert.doesNotMatch(worker, /GH_TOKEN="\$token"/);
   for (const line of worker.split('\n')) {
     if (line.includes('post_readable_handoff ')) {
-      assert.doesNotMatch(line, /<!--|comic-pile-factory-/, line);
+      assert.doesNotMatch(line, /<!--|widgets-factory-/, line);
     }
   }
   assert.match(worker, /post_readable_handoff implementation /);

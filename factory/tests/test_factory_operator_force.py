@@ -201,7 +201,7 @@ def test_worker_accepts_a_forced_pull_request_that_is_not_normally_executable(mo
         'labels': [{'name': 'factory:9'}, {'name': 'factory:ci'}], 'mergeable': True,
     })
     monkeypatch.setattr(controller, 'candidate_is_live_executable', lambda _c: False)
-    marker = '<!-- comic-pile-factory-controller-claim-v1:pr-77:9:1795300000:source=operator:action=ci-repair -->'
+    marker = '<!-- widgets-factory-controller-claim-v1:pr-77:9:1795300000:source=operator:action=ci-repair -->'
     monkeypatch.setattr(controller, 'gh_json', lambda argv: [[{'body': marker}]])
     monkeypatch.setattr(controller, 'comment_is_trusted', lambda _c: True)
     assert controller.validate_assignment('9', json.dumps(context)) == context

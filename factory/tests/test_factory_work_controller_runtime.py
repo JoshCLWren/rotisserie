@@ -455,7 +455,7 @@ def test_assign_skips_a_head_the_requesting_worker_contributed_to(
         return {"user": {"login": "github-actions[bot]"}, "author_association": "NONE", "body": body}
 
     marker = (
-        "<!-- comic-pile-factory-head-contributor-v1:"
+        "<!-- widgets-factory-head-contributor-v1:"
         f"pr-3073:head-{head}:worker-59:epoch-1234567890 -->"
     )
     monkeypatch.setattr(controller, "gh_json", lambda *args, **kwargs: [[comment(marker)]])
@@ -1084,7 +1084,7 @@ def test_record_claim_released_uses_v3_marker(
             "--repo",
             controller.REPO,
             "--body",
-            "<!-- comic-pile-factory-claim-released-v3:"
+            "<!-- widgets-factory-claim-released-v3:"
             "pr-2235:opencode-free-model-factory-42:1788641416:smoke-failure -->",
         ]
     ]
@@ -1287,7 +1287,7 @@ def test_release_label_write_updates_run_local_discovery(
         ),
     )
     assert controller.replace_factory_labels(5060, "factory:unowned") is True
-    assert events == ["github-write", "local:JoshCLWren/comic-pile:5060:pr:True"]
+    assert events == ["github-write", "local:acme/widgets:5060:pr:True"]
 
 
 def test_failed_local_discovery_refresh_does_not_undo_github_release(

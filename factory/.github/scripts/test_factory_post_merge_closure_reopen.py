@@ -101,7 +101,7 @@ class FactoryPostMergeClosureReopenTests(ClosureIssueMixin, unittest.TestCase):
         self.assertNotIn("ralph-status:blocked", replaced)
         self.assertIn("factory", replaced)
         self.assertEqual(len(comments), 1)
-        self.assertIn("comic-pile-factory-merge-closure-v1:pr-4034:issue-4017", comments[0])
+        self.assertIn("widgets-factory-merge-closure-v1:pr-4034:issue-4017", comments[0])
 
     def test_repeated_sweep_does_not_repeat_closure_comment(self) -> None:
         """A sweep that re-visits an already-closed issue does not repost the closure comment (G3)."""

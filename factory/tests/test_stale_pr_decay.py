@@ -183,7 +183,7 @@ def test_build_stale_expiration_marker():
     """Marker contains all required fields."""
     baseline = {"sample_size": 50, "formula": "2x_p90", "threshold_seconds": 23200}
     marker = build_stale_expiration_marker(1, 100, 30000, baseline)
-    assert "comic-pile-factory-stale-expiration-v1" in marker
+    assert "widgets-factory-stale-expiration-v1" in marker
     assert "pr-1" in marker
     assert "issue-100" in marker
     assert "age-30000" in marker
@@ -194,7 +194,7 @@ def test_build_stale_expiration_marker():
 
 def test_parse_stale_marker():
     """Parsing a marker returns the correct fields."""
-    body = "<!-- comic-pile-factory-stale-expiration-v1:pr-5:issue-42:age-30000:sample-50:formula-2x_p90:threshold-23200 -->"
+    body = "<!-- widgets-factory-stale-expiration-v1:pr-5:issue-42:age-30000:sample-50:formula-2x_p90:threshold-23200 -->"
     marker = parse_stale_marker(body)
     assert marker is not None
     assert marker["pr"] == 5
@@ -318,7 +318,7 @@ def test_build_stale_expiration_marker_fields():
         "threshold_seconds": 82800,
     }
     marker = build_stale_expiration_marker(42, 100, 90000, baseline)
-    assert "comic-pile-factory-stale-expiration-v1:pr-42:issue-100" in marker
+    assert "widgets-factory-stale-expiration-v1:pr-42:issue-100" in marker
     assert "age-90000" in marker
     assert "sample-100" in marker
     assert "formula-2x_p90" in marker
@@ -426,7 +426,7 @@ def test_get_staleness_baseline_with_non_factory_prs():
 
 def test_parse_stale_marker_partial():
     """Partial marker text still parses correctly."""
-    body = "Some text <!-- comic-pile-factory-stale-expiration-v1:pr-7:issue-8:age-100:sample-50:formula-2x_p90:threshold-23200 --> more text"
+    body = "Some text <!-- widgets-factory-stale-expiration-v1:pr-7:issue-8:age-100:sample-50:formula-2x_p90:threshold-23200 --> more text"
     marker = parse_stale_marker(body)
     assert marker is not None
     assert marker["pr"] == 7
