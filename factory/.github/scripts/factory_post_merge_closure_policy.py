@@ -8,7 +8,7 @@ import sys
 from collections.abc import Iterable, Mapping
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from factory_adopter import MARKER_PREFIX
+from factory_adopter import MARKER_PREFIX, reserved_issues
 
 _eligibility_dir = Path(__file__).resolve().parent
 if not (_eligibility_dir / 'factory_eligibility.py').is_file():
@@ -16,7 +16,7 @@ if not (_eligibility_dir / 'factory_eligibility.py').is_file():
 sys.path.insert(0, str(_eligibility_dir))
 eligibility = importlib.import_module('factory_eligibility')
 
-PROTECTED_ISSUES = frozenset({679, 1093, 1109})
+PROTECTED_ISSUES = reserved_issues()
 
 FACTORY_LABEL = "factory"
 DONE_STATUS_LABEL = "ralph-status:done"

@@ -1,4 +1,4 @@
-"""Demand-driven capacity allocation for ComicPile factories."""
+"""Demand-driven capacity allocation for factory workers."""
 from __future__ import annotations
 
 import math

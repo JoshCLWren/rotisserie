@@ -189,7 +189,7 @@ def test_dashboard_surfaces_operational_state_and_worker_scoreboard():
     """Render fleet health, throughput, allocator state, and worker quality together."""
     rendered = dashboard.render_dashboard(sample_snapshot())
 
-    assert "ComicPile Factory" in rendered
+    assert "acme/widgets factory" in rendered
     assert "Working" in rendered
     assert "75%" in rendered
     assert "Changes requested" in rendered

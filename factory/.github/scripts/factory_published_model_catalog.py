@@ -93,7 +93,7 @@ def published_catalog(source: str, *, timeout: float = 20) -> dict[str, Any]:
         raise ValueError(f"no published catalog contract for {source}")
     request = urllib.request.Request(
         url,
-        headers={"Accept": "application/json", "User-Agent": "ComicPile-factory-catalog/1"},
+        headers={"Accept": "application/json", "User-Agent": "rotisserie-factory-catalog/1"},
     )
     try:
         with urllib.request.urlopen(request, timeout=timeout) as response:

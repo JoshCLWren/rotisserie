@@ -282,8 +282,8 @@ choose_issue() {
     [[ -n "$candidate" ]] || continue
     issue_has_open_factory_pr "$candidate" && continue
     printf '%s\n' "$candidate"
-  done < <(gh "${args[@]}" | jq -r --arg owner_re "$OWNER_RE" '
-    map(select(.number != 679 and .number != 1093 and .number != 1109))
+  done < <(gh "${args[@]}" | jq -r --arg owner_re "$OWNER_RE" --argjson reserved "$(python3 "$(dirname "${BASH_SOURCE[0]}")/factory_adopter.py" reserved-issues 2>/dev/null || python3 .github/scripts/factory_adopter.py reserved-issues)" '
+    map(select(.number as $n | $reserved | index($n) | not))
     | map(select((([.labels[].name | select(test($owner_re) and . != "factory:unowned")] | length) == 0)))
     | sort_by(.createdAt) | reverse | .[].number')
 }
@@ -517,7 +517,7 @@ run_agent() {
     # Do not toggle errexit: callers capture this status under `set +e`.
     bash .github/scripts/kilo-auto-factory-run.sh \
       "$timeout_seconds" \
-      "ComicPile Factory ${WORKER} · ${DISPLAY}" \
+      "Factory ${WORKER} · ${DISPLAY}" \
       "$prompt" \
       "/tmp/opencode-factory-${WORKER}.log" || status=$?
     return "${status:-0}"
@@ -956,7 +956,7 @@ _persist_issue_pr_untraced() {
   pr="$(gh pr list --state open --head "$branch" --json number --jq '.[0].number // empty')"
   if [[ -z "$pr" ]]; then
     title="$(gh issue view "$number" --json title --jq .title)"
-    body="$(printf 'Closes #%s.\n\nModel: %s\nSource: %s\nWorker: %s\n\nProduced by fixed-model Factory %s (%s). Normal ComicPile exact-head factory merge gates apply.\n' \
+    body="$(printf 'Closes #%s.\n\nModel: %s\nSource: %s\nWorker: %s\n\nProduced by fixed-model Factory %s (%s). Normal exact-head factory merge gates apply.\n' \
       "$number" "$MODEL" "$SOURCE" "$WORKER_ID" "$WORKER" "$DISPLAY")"
     # PR creation must use the same actor as the push: the worker's App
     # installation token when configured, else PR_REBASE_TOKEN. The workflow token stays github-actions[bot] for

@@ -2,7 +2,7 @@
 
 This is the single canonical home for the deterministic rule that decides
 whether the approvals attested against one exact revision satisfy independent
-review. It ports the shared semantics ComicPile keeps in
+review. It ports the shared semantics the factory runtime keeps in
 ``.github/scripts/factory_review_policy.py`` (``head_has_authorized_approval``
 and the head-contributor provenance it consumes) into Rotisserie's domain, but
 it owns only the *rule*: it never parses GitHub payloads, HTML markers,

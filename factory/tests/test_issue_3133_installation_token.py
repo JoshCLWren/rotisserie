@@ -167,7 +167,7 @@ class Worker48InstallationTokenTest(unittest.TestCase):
         self.assertEqual(entry["display_name"], "Mark Cordova")
         self.assertEqual(entry["app_id"], 5275306)
         self.assertEqual(entry["installation_id"], 170306933)
-        self.assertIn("Autonomous ComicPile Factory worker", entry["profile"])
+        self.assertIn("Autonomous factory worker", entry["profile"])
 
     def test_worker_app_is_not_a_trusted_marker_author(self) -> None:
         """Worker 48's App can push/create PRs but is never a trusted marker author."""

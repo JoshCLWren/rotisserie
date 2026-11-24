@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Shared executable-eligibility semantics for ComicPile work selectors.
+"""Shared executable-eligibility semantics for factory work selectors.
 
 This module is the single canonical home for the pure eligibility rules used
 by both work-selection paths:

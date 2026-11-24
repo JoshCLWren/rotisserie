@@ -10,6 +10,7 @@ import base64
 import io
 import json
 import os
+import re
 import subprocess
 import zipfile
 from datetime import UTC, datetime, timedelta
@@ -17,8 +18,10 @@ from typing import Any
 
 from scripts.publish_factory_quota import sanitize
 
-SOURCE = "JoshCLWren/comic-pile"
-DESTINATION = "JoshCLWren/JoshCLWren.github.io"
+SOURCE = os.environ.get("FACTORY_QUOTA_SOURCE_REPOSITORY", "")
+DESTINATION = os.environ.get("FACTORY_QUOTA_PUBLISH_REPOSITORY", "")
+PUBLIC_ALIAS = "factory-actions"
+SLUG = re.compile(r"[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+")
 ARTIFACT_NAME = "factory-api-quota"
 MAX_ARTIFACTS = 26
 MAX_OBSERVATION_BYTES = 32768
@@ -82,7 +85,7 @@ def observations_from_artifacts(now: datetime) -> list[dict[str, Any]]:
         if not now - timedelta(hours=24) <= timestamp <= now + timedelta(minutes=5):
             continue
         # Refuse anything other than explicitly identified observation sources.
-        if sample.get("public_alias") != "factory-comicpile-actions":
+        if sample.get("public_alias") != PUBLIC_ALIAS:
             continue
         observations.append(sample)
     return observations
@@ -133,6 +136,10 @@ def aggregate(samples: list[dict[str, Any]], now: datetime) -> dict[str, Any]:
 def main() -> None:
     if not os.environ.get("FACTORY_SOURCE_TOKEN") or not os.environ.get("FACTORY_PUBLISH_TOKEN"):
         raise SystemExit("Missing separate scoped factory observation and publishing tokens")
+    if not (SLUG.fullmatch(SOURCE) and SLUG.fullmatch(DESTINATION)):
+        raise SystemExit(
+            "Set FACTORY_QUOTA_SOURCE_REPOSITORY and FACTORY_QUOTA_PUBLISH_REPOSITORY to OWNER/NAME"
+        )
     now = datetime.now(UTC)
     payload = aggregate(observations_from_artifacts(now), now)
     path = f"repos/{DESTINATION}/contents/factory-health/data.json"

@@ -96,7 +96,6 @@
 .github/scripts/factory_work_policy_backlog.py
 .github/scripts/factory_work_policy_base.py
 .github/scripts/factory_work_policy_candidates.py
-.github/scripts/factory_work_policy_latticery_ref.py
 .github/scripts/factory_work_policy_priority.py
 .github/scripts/factory_worker_github_app.py
 .github/scripts/factory_worker_slots.py
@@ -136,7 +135,6 @@ docs/ROTISSERIE_ADOPTER.md
 docs/WORKER_APP_PROVISIONING.md
 scripts/factory-status.py
 scripts/factory_eligibility.py
-scripts/issue-sweep-loop.sh
 scripts/local-factory-acp-review.mjs
 scripts/next_task.py
 scripts/opencode-factory-heartbeat.sh
@@ -146,10 +144,8 @@ scripts/opencode-model-catalog.sh
 scripts/opencode-model-manifest.sh
 scripts/opencode-model-scout.sh
 scripts/opencode-permission-setup.sh
-scripts/opencode_pipeline.sh
 scripts/release_neon_publish.py
 scripts/release_reconcile.py
 scripts/release_writer.py
-scripts/run_opencode_issues.sh
 scripts/select_fcm_nvidia_model.py
 scripts/sync_public_factory_snapshot.py

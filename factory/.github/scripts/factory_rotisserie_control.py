@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Apply a Rotisserie adoption transition to ComicPile's bounded lane control."""
+"""Apply a Rotisserie adoption transition to the adopter's bounded lane control."""
 from __future__ import annotations
 
 import argparse

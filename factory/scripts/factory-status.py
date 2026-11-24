@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Read-only, local ComicPile factory health. Never assigns workers or changes state."""
+"""Read-only, local factory health. Never assigns workers or changes state."""
 
 from __future__ import annotations
 
@@ -60,7 +60,7 @@ def public_snapshot(repo: str) -> tuple[dict[str, Any] | None, str | None]:
     """Display-only evidence, never used to infer live worker delivery."""
     request = Request(
         f"https://raw.githubusercontent.com/{repo}/factory-status-live/index.html",
-        headers={"User-Agent": "comic-pile-factory-status/1", "Cache-Control": "no-cache"},
+        headers={"User-Agent": "rotisserie-factory-status/1", "Cache-Control": "no-cache"},
     )
     try:
         with urlopen(request, timeout=7) as response:
@@ -239,7 +239,7 @@ def render(data: dict[str, Any]) -> str:
     successes = sum(r.get("conclusion") == "success" for r in ended)
     failures = sum(r.get("conclusion") in ("failure", "timed_out", "cancelled") for r in ended)
     lines = [
-        f"ComicPile factory | last {data['minutes']}m | "
+        f"Factory | last {data['minutes']}m | "
         f"{datetime.fromisoformat(data['now']).astimezone():%Y-%m-%d %H:%M %Z}",
         f"VERDICT: {data['verdict']}",
         "",

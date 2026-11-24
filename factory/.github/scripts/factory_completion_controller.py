@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Continuously drain ComicPile completion-stage PRs with healthy fixed workers."""
+"""Continuously drain completion-stage PRs with healthy fixed workers."""
 from __future__ import annotations
 
 import argparse

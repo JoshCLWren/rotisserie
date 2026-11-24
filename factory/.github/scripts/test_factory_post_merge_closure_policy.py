@@ -132,10 +132,8 @@ class FactoryPostMergeClosurePolicyTests(NoPersonReopenMixin, unittest.TestCase)
         self.assertFalse(issue_is_quiescent(["factory", "ralph-status:blocked"]))
 
     def test_protected_issues_are_never_closed(self) -> None:
-        """Operational registry issues stay outside closure authority."""
-        self.assertIn(1093, PROTECTED_ISSUES)
-        self.assertIn(679, PROTECTED_ISSUES)
-        self.assertIn(1109, PROTECTED_ISSUES)
+        """The adopter's reserved issues stay outside closure authority."""
+        self.assertEqual(PROTECTED_ISSUES, frozenset({9991, 9992}))
 
     def test_closure_comment_embeds_canonical_marker(self) -> None:
         """The marker identifies both the PR and the issue durably."""

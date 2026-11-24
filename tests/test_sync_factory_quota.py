@@ -12,7 +12,7 @@ def observation(time: str, remaining: int) -> dict[str, Any]:
     return {
         "observed_at": time,
         "credential_kind": "github-actions-installation",
-        "public_alias": "factory-comicpile-actions",
+        "public_alias": "factory-actions",
         "resources": {
             "core": {
                 "limit": 5000,

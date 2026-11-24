@@ -67,7 +67,7 @@ def _parse_timestamp(value: str) -> datetime:
 def _github_request(url: str) -> object:
     headers = {
         "Accept": "application/vnd.github+json",
-        "User-Agent": "ComicPile-release-reconcile",
+        "User-Agent": "rotisserie-release-reconcile",
         "X-GitHub-Api-Version": "2022-11-28",
     }
     token = os.getenv("GH_TOKEN", "").strip()
@@ -271,7 +271,7 @@ def _run_model(
         "release-writer",
         "--auto",
         "--title",
-        f"ComicPile release writer PR #{source.number}",
+        f"Release writer PR #{source.number}",
         _prompt(repository, source),
     ]
     result = subprocess.run(

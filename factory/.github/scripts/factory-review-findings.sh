@@ -475,10 +475,10 @@ factory_greptile_reply_body() {
     subject=" for the Greptile summary finding \"${title}\""
   fi
   if [[ "$outcome" == fixed ]]; then
-    printf '**Fixed**%s in `%s` by ComicPile Factory %s.\n\n%s\n\n<!-- %s:%s:%s:%s:%s -->\n' \
+    printf '**Fixed**%s in `%s` by Factory %s.\n\n%s\n\n<!-- %s:%s:%s:%s:%s -->\n' \
       "$subject" "$commit" "${WORKER:-agent}" "$safe" "$FACTORY_GREPTILE_OUTCOME_MARKER" "$thread" "$outcome" "$head" "$digest"
   else
-    printf '**Rebuttal**%s (no code change) by ComicPile Factory %s at head `%s`.\n\n%s\n\n<!-- %s:%s:%s:%s:%s -->\n' \
+    printf '**Rebuttal**%s (no code change) by Factory %s at head `%s`.\n\n%s\n\n<!-- %s:%s:%s:%s:%s -->\n' \
       "$subject" "${WORKER:-agent}" "$head" "$safe" "$FACTORY_GREPTILE_OUTCOME_MARKER" "$thread" "$outcome" "$head" "$digest"
   fi
 }

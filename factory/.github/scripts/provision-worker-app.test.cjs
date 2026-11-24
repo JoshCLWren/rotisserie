@@ -37,7 +37,7 @@ test('manifest scopes the pilot to its persisted name and readable handoff permi
   assert.equal(value.public, false);
   assert.equal(value.hook_attributes, undefined);
   assert.deepEqual(value.default_permissions, { contents: 'write', pull_requests: 'write', issues: 'write', metadata: 'read' });
-  assert.match(value.description, /Autonomous ComicPile Factory worker/);
+  assert.match(value.description, /Autonomous factory worker/);
   assert.equal(value.redirect_url, 'http://127.0.0.1:8765/callback');
 });
 

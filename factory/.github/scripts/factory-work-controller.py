@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Deterministic GitHub assignment and lease reconciliation for ComicPile."""
+"""Deterministic GitHub assignment and lease reconciliation for the adopter."""
 from __future__ import annotations
 import argparse
 import json

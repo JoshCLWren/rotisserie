@@ -130,3 +130,20 @@ def test_acceptance_report_identity_and_pass_synonyms_are_normalized() -> None:
     assert acc.normalize_report(None, mission) is None
     text = "review\n" + acc.PREFIX + "{}\nFACTORY_GATE_READY"
     assert acc.report_from_text(acc.replace_report_line(text, fixed)) == fixed
+
+
+def test_reserved_issues_default_to_none(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    monkeypatch.setenv("ROTISSERIE_CONFIG", str(write_config(tmp_path, '[repository]\nowner = "a"\nname = "b"\n')))
+    assert factory_adopter.reserved_issues() == frozenset()
+
+
+def test_reserved_issues_come_from_the_adopter_config(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    monkeypatch.setenv("ROTISSERIE_CONFIG", str(write_config(tmp_path, "[issues]\nreserved = [679, 1093]\n")))
+    assert factory_adopter.reserved_issues() == frozenset({679, 1093})
+
+
+@pytest.mark.parametrize("value", ['"679"', "[0]", '["679"]'])
+def test_invalid_reserved_issues_fail_loudly(monkeypatch: pytest.MonkeyPatch, tmp_path: Path, value: str) -> None:
+    monkeypatch.setenv("ROTISSERIE_CONFIG", str(write_config(tmp_path, f"[issues]\nreserved = {value}\n")))
+    with pytest.raises(factory_adopter.AdopterConfigError):
+        factory_adopter.reserved_issues()

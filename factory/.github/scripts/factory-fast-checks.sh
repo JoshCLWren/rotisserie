@@ -303,7 +303,7 @@ factory_run_fast_checks() {
   # When native routing or Rust handlers change, verify the real Vercel
   # rewrite, HTTP-method registration and POST/PATCH write-path guards.
   # Only the contract tests the repository still has: an adopter that removed
-  # them (Comic Pile retired its Python app in #5641) must not fail every Rust
+  # them (an adopter that retired its Python app) must not fail every Rust
   # worker on "file not found".
   if (( rust_project || rust_ingress )); then
     local ingress_tests=() candidate

@@ -260,7 +260,7 @@ run_agent() {
 
   bash "$TRUSTED_KILO_HELPER" \
     "$timeout_seconds" \
-    "ComicPile Factory ${WORKER} · ${DISPLAY}" \
+    "Factory ${WORKER} · ${DISPLAY}" \
     "$prompt" \
     "/tmp/opencode-factory-${WORKER}.log" || status=$?
   return "$status"

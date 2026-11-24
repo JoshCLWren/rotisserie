@@ -2,7 +2,7 @@
 
 This is the single canonical home for the deterministic rules that decide
 whether one work node may enter autonomous implementation. It ports the shared
-semantics ComicPile keeps in ``scripts/factory_eligibility.py`` into Rotisserie's
+semantics the factory runtime keeps in ``scripts/factory_eligibility.py`` into Rotisserie's
 domain, but it owns only the *rules*: it never parses GitHub payloads, labels,
 HTML markers, issue bodies, or any other host- or product-specific encoding.
 

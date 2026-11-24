@@ -106,7 +106,7 @@ function escaped(value) {
 const summary = [
   '## FCM provider credential diagnostic',
   '',
-  'Mode: **' + scope + '**. Uses FCM catalog candidates, not a model roster in ComicPile.',
+  'Mode: **' + scope + '**. Uses FCM catalog candidates, not a model roster in the repository.',
   'A 2xx inference response is **not** proof that the model can edit code or use tools.',
   '',
   '| Provider | Result | Models checked | First successful model |',

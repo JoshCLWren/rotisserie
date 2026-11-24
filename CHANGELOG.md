@@ -65,11 +65,24 @@ such change must be called out here and in its release notes.
   inventory (`MIGRATION_INVENTORY.md`), the inventory test and the 2026-10
   drift note. Git history keeps them; `MIGRATION.md` names the last commit
   that has them.
+- `factory/scripts/opencode_pipeline.sh`, `run_opencode_issues.sh` and
+  `issue-sweep-loop.sh`: one product's local pipelines and issue lists.
+- `factory_work_policy_latticery_ref.py`, a retired extraction reference.
 - `factory/docs/migration/comic-pile-*`: copy-time migration evidence that
   nothing reads. Git history keeps it.
 
 ### Changed
 
+- Issues the factory never claims or closes come from `[issues] reserved` in
+  `.rotisserie/config.toml` (default none) instead of a hard-coded list.
+- The hosted dashboard's sign-in service comes from `[dashboard] auth_url`
+  (or `build_hosted_control_room.py --auth-url`); without it the dashboard is
+  read-only.
+- `scripts/sync_factory_quota.py` requires `FACTORY_QUOTA_SOURCE_REPOSITORY`
+  and `FACTORY_QUOTA_PUBLISH_REPOSITORY`. The quota observer's public alias
+  is `factory-actions`.
+- Labels, commit authors, PR titles and dashboards say "Factory N" and use
+  the repository name instead of a product name.
 - Factory comment markers derive their prefix from the adopter repository name
   (`factory_adopter.marker_prefix()`, mirrored in `factory-visibility.cjs` and
   the shell workers) instead of a hard-coded product prefix. `comic-pile`

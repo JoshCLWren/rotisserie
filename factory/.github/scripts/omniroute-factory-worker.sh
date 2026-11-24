@@ -147,8 +147,8 @@ choose_issue() {
   local args=(issue list --state open --limit 300 --json number,labels,createdAt)
   local label
   for label in "${labels[@]}"; do args+=(--label "$label"); done
-  gh "${args[@]}" | jq -r --arg owner_re "$OWNER_RE" '
-    map(select(.number != 679 and .number != 1093 and .number != 1109))
+  gh "${args[@]}" | jq -r --arg owner_re "$OWNER_RE" --argjson reserved "$(python3 "$(dirname "${BASH_SOURCE[0]}")/factory_adopter.py" reserved-issues 2>/dev/null || python3 .github/scripts/factory_adopter.py reserved-issues)" '
+    map(select(.number as $n | $reserved | index($n) | not))
     | map(select((([.labels[].name | select(test($owner_re) and . != "factory:unowned")] | length) == 0)))
     | sort_by(.createdAt) | reverse | .[].number'
 }
@@ -264,11 +264,11 @@ run_agent() {
     target="issue #${number}"
     mission="Implement the full closure-critical acceptance contract for this issue with code and focused tests. Do not stop at planning or optional polish."
   fi
-  prompt="Read AGENTS.md first and follow its instructions, including any policy documents it names. Follow normal ComicPile product-first factory policy and ownership rules.  Edit only the assigned target, run focused validation, and use GitHub for review context. Do not commit or push; the wrapper persists changes. OmniRoute may switch upstream models, providers, or routes within the configured policy; do not bypass the gateway or request unconfigured capacity. Do not enable auto-merge, push main, touch production databases, or alter automation schedules. Run context: Worker: ${WORKER}; route: ${MODEL}; gateway: ${PROVIDER}; target: ${target}. ${mission}"
+  prompt="Read AGENTS.md first and follow its instructions, including any policy documents it names. Follow normal product-first factory policy and ownership rules.  Edit only the assigned target, run focused validation, and use GitHub for review context. Do not commit or push; the wrapper persists changes. OmniRoute may switch upstream models, providers, or routes within the configured policy; do not bypass the gateway or request unconfigured capacity. Do not enable auto-merge, push main, touch production databases, or alter automation schedules. Run context: Worker: ${WORKER}; route: ${MODEL}; gateway: ${PROVIDER}; target: ${target}. ${mission}"
   # OpenCode 2 rejects `opencode run --dir`; run from the workspace instead.
   ( cd "$GITHUB_WORKSPACE" && exec timeout --signal=TERM --kill-after=30s "${timeout_seconds}s" \
     opencode run -m "omniroute/${MODEL}" --agent build --auto \
-    --title "ComicPile OmniRoute Factory ${WORKER} · ${CALL_SIGN}" "$prompt" \
+    --title "OmniRoute Factory ${WORKER} · ${CALL_SIGN}" "$prompt" \
   ) 2>&1 | tee "/tmp/opencode-factory-${WORKER}.log"
   status=${PIPESTATUS[0]}
   return "$status"
@@ -281,7 +281,7 @@ smoke_agent() {
   set +e
   ( cd "$GITHUB_WORKSPACE" && exec timeout --signal=TERM --kill-after=10s 180s \
     opencode run -m "omniroute/${MODEL}" --agent build \
-    --title "ComicPile OmniRoute Factory ${WORKER} smoke" \
+    --title "OmniRoute Factory ${WORKER} smoke" \
     'Reply with exactly OMNIROUTE_OPENCODE_OK. Do not edit files, run commands, or use tools.' \
   ) 2>&1 | tee "/tmp/opencode-factory-${WORKER}.log"
   status=${PIPESTATUS[0]}
@@ -335,7 +335,7 @@ persist_issue_pr() {
   pr="$(gh pr list --state open --head "$branch" --json number --jq '.[0].number // empty')"
   if [[ -z "$pr" ]]; then
     title="$(gh issue view "$number" --json title --jq .title)"
-    body="$(printf 'Closes #%s.\n\nModel: %s\nProvider: %s\nWorker: %s\n\nProduced by Factory %s · %s through OmniRoute. Normal ComicPile exact-head factory merge gates apply.\n' "$number" "$MODEL" "$PROVIDER" "$WORKER_ID" "$WORKER" "$CALL_SIGN")"
+    body="$(printf 'Closes #%s.\n\nModel: %s\nProvider: %s\nWorker: %s\n\nProduced by Factory %s · %s through OmniRoute. Normal exact-head factory merge gates apply.\n' "$number" "$MODEL" "$PROVIDER" "$WORKER_ID" "$WORKER" "$CALL_SIGN")"
     gh pr create --base main --head "$branch" --title "$title" \
       --body "$body" >/tmp/factory-pr-url
     pr="$(gh pr list --state open --head "$branch" --json number --jq '.[0].number')"

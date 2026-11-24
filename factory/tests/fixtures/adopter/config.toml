@@ -4,3 +4,6 @@ schema_version = 1
 host = "github.com"
 owner = "acme"
 name = "widgets"
+
+[issues]
+reserved = [9991, 9992]

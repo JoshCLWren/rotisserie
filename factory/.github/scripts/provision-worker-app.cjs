@@ -15,7 +15,7 @@ if (!/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(REPO)) {
 }
 const ROOT = path.resolve(__dirname, '../..');
 const MAPPING = path.join(ROOT, '.github/factory-worker-github-apps.json');
-const DEFAULT_DIR = path.join(os.homedir(), '.local/state/comic-pile/worker-app-48');
+const DEFAULT_DIR = path.join(os.homedir(), '.local/state', REPO.split('/')[1], 'worker-app-48');
 
 function savePrivate(file, value) {
   fs.mkdirSync(path.dirname(file), { recursive: true, mode: 0o700 });
@@ -51,7 +51,7 @@ async function api(endpoint, { token, body, fetcher = fetch } = {}) {
     headers: {
       Accept: 'application/vnd.github+json',
       'X-GitHub-Api-Version': '2022-11-28',
-      'User-Agent': 'comic-pile-owner-provisioning',
+      'User-Agent': 'rotisserie-owner-provisioning',
       ...(token ? { Authorization: `Bearer ${token}` } : {}),
     },
     ...(body === undefined ? {} : { body: JSON.stringify(body) }),
@@ -94,7 +94,7 @@ async function finish(credentials, { runner = spawnSync, request = api, mappingF
       installation.permissions?.contents !== 'write' ||
       installation.permissions?.pull_requests !== 'write' ||
       installation.permissions?.issues !== 'write') {
-    throw new Error('Install this worker App on only the comic-pile repository, then retry');
+    throw new Error(`Install this worker App on only the ${REPO} repository, then retry`);
   }
   const minted = await request(`/app/installations/${installation.id}/access_tokens`, {
     token: jwt, body: {},
@@ -151,7 +151,7 @@ function serverFor({ stateFile, credentialsFile, entry, base, request = api }) {
         respond(200, `<p>App registered. Continue installation.</p><a href="https://github.com/apps/${escapeHtml(credentials.slug)}/installations/new">Install worker 48 App</a>`);
       } else {
         const action = `https://github.com/settings/apps/new?state=${state.nonce}`;
-        respond(200, `<p>${escapeHtml(entry.display_name)} — autonomous ComicPile Factory worker.</p><form method="post" action="${action}"><input type="hidden" name="manifest" value="${escapeHtml(JSON.stringify(manifest(entry, base)))}"><button type="submit">Register worker 48 App</button></form>`);
+        respond(200, `<p>${escapeHtml(entry.display_name)} — autonomous factory worker.</p><form method="post" action="${action}"><input type="hidden" name="manifest" value="${escapeHtml(JSON.stringify(manifest(entry, base)))}"><button type="submit">Register worker 48 App</button></form>`);
       }
       return;
     }

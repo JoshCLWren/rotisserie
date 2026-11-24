@@ -13,7 +13,7 @@ from factory_review_policy import (
     TRUSTED_MARKER_APP_SLUGS,
     producer_worker_from_pr as producer_worker_from_values,
 )
-from factory_adopter import MARKER_PREFIX
+from factory_adopter import MARKER_PREFIX, reserved_issues
 
 # factory_eligibility lives in scripts/ (the shared home for both selectors).
 # Resolve it relative to this file and load it explicitly so the module
@@ -30,7 +30,7 @@ _eligibility_dir = (
 sys.path.insert(0, str(_eligibility_dir))
 eligibility = importlib.import_module("factory_eligibility")
 
-NON_EXECUTABLE_ISSUES = {679, 1093, 1109}
+NON_EXECUTABLE_ISSUES = set(reserved_issues())
 MANUAL_ONLY_MARKER = '<!-- factory-execution:manual-only -->'
 
 OWNER_RE = re.compile(r'^factory:(?:unowned|local|[1-9][0-9]*)$')

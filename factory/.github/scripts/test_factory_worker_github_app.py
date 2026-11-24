@@ -65,7 +65,7 @@ class BootstrapTest(unittest.TestCase):
         self.assertEqual(entry["app_id"], 5275306)
         self.assertEqual(entry["app_login"], "mark-cordova[bot]")
         self.assertEqual(entry["installation_id"], 170306933)
-        self.assertIn("Autonomous ComicPile Factory worker", entry["profile"])
+        self.assertIn("Autonomous factory worker", entry["profile"])
         blob = json.dumps(mapping)
         self.assertNotIn('"46"', blob)
         self.assertNotIn('"72"', blob)

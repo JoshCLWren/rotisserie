@@ -1,5 +1,5 @@
 {
-  "schema": "comic-pile-factory-worker-github-app-v1",
+  "schema": "factory-worker-github-app-v1",
   "provenance_key": "worker",
   "notes": "Bootstrap names once. Do not re-roll on later reads. Placeholders stay null until Josh creates the GitHub App. This file is worker 48 only.",
   "faker": {
@@ -20,7 +20,7 @@
       "app_id_secret": "FACTORY_WORKER_48_APP_ID",
       "installation_id_secret": "FACTORY_WORKER_48_INSTALLATION_ID",
       "private_key_secret": "FACTORY_WORKER_48_APP_PRIVATE_KEY",
-      "profile": "Autonomous ComicPile Factory worker. This GitHub App is the visible push and pull-request identity for durable factory worker 48 only. It is not a trusted factory-marker author. Trusted marker comments stay on github-actions[bot]. Model and worker number stay in human-readable pull request text."
+      "profile": "Autonomous factory worker. This GitHub App is the visible push and pull-request identity for durable factory worker 48 only. It is not a trusted factory-marker author. Trusted marker comments stay on github-actions[bot]. Model and worker number stay in human-readable pull request text."
     }
   }
 }

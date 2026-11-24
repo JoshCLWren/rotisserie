@@ -67,7 +67,7 @@ MODEL_SCOPED_PROVIDERS = {"omniroute-free"}
 # These are virtual intent routes, not backing models. Their executable health
 # is established by the bounded OpenCode smoke at the execution boundary. They
 # must never be suppressed because a concrete backing model lacks historical
-# health evidence in ComicPile.
+# health evidence in the adopter.
 NATIVE_OMNIROUTE_ROUTES = {"auto/coding:free", "auto/reasoning:free"}
 
 
@@ -383,7 +383,7 @@ def select_candidate(
     evidence_override: Mapping[tuple[str, str], AttemptEvidence] | None = None,
 ) -> Selection:
     """Prefer executable candidates while preserving native OmniRoute intents."""
-    # Native OmniRoute intents are the execution boundary. ComicPile must not
+    # Native OmniRoute intents are the execution boundary. The factory must not
     # inspect or veto the concrete free model/provider selected behind them.
     # Their executable capacity is proven immediately afterward by the bounded
     # OpenCode smoke, which provides better evidence than stale backing-model
@@ -394,7 +394,7 @@ def select_candidate(
         if (value := _native_omniroute_candidate(candidate)) is not None
     )
     if native and preferred_provider in {None, "omniroute-free"}:
-        # Carry the already-resolved native intent. ComicPile must not pick
+        # Carry the already-resolved native intent. The factory must not pick
         # among intent lanes or backing models by worker identity.
         selected = native[0]
         ranking_note = (

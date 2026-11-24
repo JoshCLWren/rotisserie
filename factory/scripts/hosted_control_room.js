@@ -1,6 +1,6 @@
 /* Hosted adapter for the canonical Rotisserie web_ui.html.
  * The public dashboard contains no GitHub credentials. GitHub OAuth runs
- * through ComicPile Rust; Rotisserie keeps all factory operation safeguards.
+ * through the adopter sign-in service; Rotisserie keeps all factory operation safeguards.
  */
 "use strict";
 (function () {
@@ -151,10 +151,11 @@
     );
   }
 
-  // GitHub performs the interactive sign-in. ComicPile's existing Rust
-  // service exchanges the code and issues a short-lived dashboard session.
-  // The browser never receives a GitHub personal or OAuth access token.
-  const AUTH_BASE = "https://comic-pile.vercel.app/api/v2/factory/github";
+  // GitHub performs the interactive sign-in. The adopter's sign-in service
+  // ([dashboard] auth_url) exchanges the code and issues a short-lived
+  // dashboard session. The browser never receives a GitHub personal or OAuth
+  // access token. Without a service the dashboard stays read-only.
+  const AUTH_BASE = "__AUTH_BASE__";
   const SESSION_KEY = "rotisserie-github-admin-session";
   let session = null;
   let identity = null;
@@ -202,6 +203,10 @@
 
   function connect() {
     if (session) return disconnect();
+    if (!AUTH_BASE) {
+      document.getElementById("github-identity").textContent = "Sign-in is not configured.";
+      return;
+    }
     location.assign(AUTH_BASE + "/start");
   }
 

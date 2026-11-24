@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Post-merge issue closure for ComicPile factory merge automation.
+"""Post-merge issue closure for factory merge automation.
 
 Factory PRs are created, pushed, and merged with the Actions ``GITHUB_TOKEN``
 inside workflow runs. GitHub never triggers workflows from its own token, so
