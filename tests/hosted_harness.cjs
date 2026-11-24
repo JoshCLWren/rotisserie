@@ -32,7 +32,10 @@ function environment(service) {
       if (href.includes("factory-status-snapshot.json")) {
         return json(200, {generated_at: new Date().toISOString(), workers: []});
       }
-      return json(200, {models: [{source: "opencode-free", model: "old-model", windows: {}}]});
+      return json(200, {
+        models: [{source: "opencode-free", model: "old-model", windows: {}}],
+        db_usage: {status: "warn", label: "not in use yet", reasons: ["rows_read projected at 80%"]}
+      });
     }
     if (!href.startsWith(AUTH)) throw Error("unexpected fetch " + href);
     const path = href.slice(AUTH.length);
@@ -143,6 +146,8 @@ async function main() {
   out.signedOutStatus = await settle(request("/api/status"));
   out.signedOutModels = await settle(request("/api/models?provider=opencode-go"));
   out.signedOutWrite = await settle(request("/api/command", {operation: "unstick"}));
+  out.signedOutDbUsage = await settle(request("/api/db-usage"));
+  out.signedOutDoctor = await settle(request("/api/doctor"));
   out.signedOutIdentity = env.elements["github-identity"].textContent;
   out.signedOutCalls = service.calls;
 

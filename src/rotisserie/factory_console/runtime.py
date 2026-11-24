@@ -38,6 +38,7 @@ RUNTIME_MODULES = (
     "factory_label_policy",
     "factory_adopter",
     "factory_billing_pool",
+    "factory_turso_usage",
 )
 
 # Every file the wheel must carry, keyed by module name, with its checkout path.

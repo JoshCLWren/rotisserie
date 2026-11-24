@@ -13,6 +13,10 @@ on:
     secrets:
       NEON_API_KEY:
         required: false
+      FACTORY_TURSO_API_TOKEN:
+        required: false
+      FACTORY_TURSO_URL:
+        required: false
 
 permissions:
   contents: read
@@ -94,6 +98,12 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           MODE: ${{ inputs.mode }}
           TARGETS: ${{ inputs.targets }}
+          # The Turso Platform API token reaches only the db-usage read.
+          FACTORY_TURSO_API_TOKEN: ${{ inputs.mode == 'db-usage' && secrets.FACTORY_TURSO_API_TOKEN || '' }}
+          FACTORY_TURSO_URL: ${{ inputs.mode == 'db-usage' && secrets.FACTORY_TURSO_URL || '' }}
+          FACTORY_TURSO_ORG: ${{ vars.FACTORY_TURSO_ORG }}
+          FACTORY_TURSO_DATABASE: ${{ vars.FACTORY_TURSO_DATABASE }}
+          FACTORY_NEON_CONFIGURED: ${{ vars.NEON_PROJECT_ID != '' }}
         run: |
           set -Eeuo pipefail
           test -f .rotisserie/runtime/pyproject.toml
@@ -113,6 +123,8 @@ jobs:
                   args=(factory leases "${wanted[@]}") ;;
                 # One bounded read-only Neon query; publishes per-item counts only.
                 estimate-history) args=(factory estimate-history) ;;
+                # Turso usage API only; publishes counts, never the token or URL.
+                db-usage) args=(factory db-usage --live) ;;
                 *) args=(factory labels) ;;
               esac ;;
             *)

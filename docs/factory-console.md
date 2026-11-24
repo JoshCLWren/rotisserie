@@ -649,6 +649,7 @@ found by hand. It exits 4 when any check fails.
 | Check | Fails when |
 |---|---|
 | reliability snapshot | `factory-stats.json` was never published, or is over an hour old |
+| database usage | the published Turso usage is critical (fail) or warn, or over an hour old (warn); it reads `db_usage` from the same `factory-stats.json`, never the Turso API |
 | dashboard publisher | the last `factory-status-pages.yml` run failed; names the step and error |
 | scheduler | no scheduler run in 20 minutes |
 | rotisserie intake | the intake decision cannot be made, so no fresh issue is admitted |
@@ -662,6 +663,51 @@ A check that cannot reach GitHub says so instead of failing.
 15-minute schedule can lag by hours), and dispatching product CI on an
 unverified main. That re-reads main first, so it never stacks a second run.
 Without `--fix` it only says a repair is available.
+
+### Turso usage and the free plan
+
+The factory moves its state to Turso's free plan (#253). The free plan allows
+5 GB storage, 500 M rows read and 10 M rows written per month, and 3 GB of
+sync. Row reads count scanned rows. When any quota is exceeded, every database
+in the organization answers `BLOCKED` until the month resets. Turso counts
+usage per calendar month. The exact reset hour is unverified, so Rotisserie
+shows the start of the next UTC month.
+
+```bash
+rotisserie factory db-usage                # last value the status page published
+rotisserie factory db-usage --via github   # fresh read in the label claim workflow
+rotisserie factory db-usage --live --json  # Turso API; trusted jobs with the token only
+```
+
+The status page job runs `.github/scripts/factory_turso_usage.py` with the
+`FACTORY_TURSO_API_TOKEN` (Platform API token) and `FACTORY_TURSO_URL` secrets.
+It adds the result to `factory-stats.json` as `db_usage`. The organization
+and database names come from the URL (`{database}-{organization}.<region>.turso.io`,
+split at the last hyphen). Set the `FACTORY_TURSO_ORG` or
+`FACTORY_TURSO_DATABASE` repository variable when a name contains a hyphen at
+the split. The published value holds counts, status and dates only.
+
+| Status | When |
+|---|---|
+| `ok` | nothing below |
+| `warn` | any allowance projected over 70% at month end, the factory database projected over the owner targets (50 M reads, 1 M writes, 250 MB storage), or overages enabled |
+| `critical` | any allowance over 90% used now, or Turso reports blocked reads or writes |
+| `not_configured` | the token or URL secret is missing |
+| `error` | the Turso API could not be read |
+
+Projections are a straight line from the month so far to month end, from at
+least one elapsed day. Storage is compared as it stands. Allowances come from
+the organization's plan quotas (`/plans`), or the documented free plan when
+those are missing. Until the cutover (D4) removes `NEON_PROJECT_ID`, every
+view labels the usage "not in use yet".
+
+`pause_new_claims(report, error)` in `factory_turso_usage.py` returns a pause
+when the status is critical or a database error says `BLOCKED`. The Turso
+persistence code calls it before a new claim. Nothing on the Neon path calls
+it. Unknown, stale or unconfigured usage never pauses.
+
+Both control rooms show it on the Diagnostics page (Database usage). The
+hosted page serves it from the published snapshot without sign-in.
 
 ### Serialized merges
 
