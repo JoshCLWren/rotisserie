@@ -34,13 +34,13 @@ RUNTIME_MODULES = (
     "factory_main_health",
     "factory_review_policy",
     "factory_label_policy",
+    "factory_adopter",
 )
 
 # Every file the wheel must carry, keyed by module name, with its checkout path.
 # The entries after the comprehension are not loaded by name; the modules above import them.
 RUNTIME_SOURCES = {
     **{name: f"factory/.github/scripts/{name}.py" for name in RUNTIME_MODULES},
-    "factory_adopter": "factory/.github/scripts/factory_adopter.py",
     "factory_work_policy_assignment": "factory/.github/scripts/factory_work_policy_assignment.py",
     "factory_work_policy_backlog": "factory/.github/scripts/factory_work_policy_backlog.py",
     "factory_work_policy_base": "factory/.github/scripts/factory_work_policy_base.py",
@@ -67,6 +67,26 @@ def runtime_directory() -> Path:
     raise RuntimeUnavailableError(
         "This Rotisserie installation is missing its factory runtime files; reinstall it."
     )
+
+
+_BOUND_PREFIX: dict[str, str] = {}
+
+
+def bind_repository(repository: str) -> None:
+    """Derive the runtime modules' comment-marker prefix from the target repository.
+
+    An operator's own FACTORY_MARKER_PREFIX wins, as it does in a workflow.
+    """
+    current = os.environ.get("FACTORY_MARKER_PREFIX")
+    if current is not None and current != _BOUND_PREFIX.get("value"):
+        return
+    prefix = str(module("factory_adopter").marker_prefix(repository))
+    if prefix == current:
+        return
+    os.environ["FACTORY_MARKER_PREFIX"] = _BOUND_PREFIX["value"] = prefix
+    module.cache_clear()
+    for name in RUNTIME_SOURCES:
+        sys.modules.pop(name, None)
 
 
 @functools.cache

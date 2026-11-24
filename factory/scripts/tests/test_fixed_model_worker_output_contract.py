@@ -93,7 +93,7 @@ def test_stage_trusted_guard_keeps_tmp_fallback_in_production() -> None:
     body = _function_body('stage_trusted_guard')
 
     assert re.search(r'TRUSTED_GUARD="\$\{TRUSTED_GUARD:-\}"', body)
-    assert re.search(r'mktemp /tmp/comic-pile-fixed-model-guard\.XXXXXX\.py', body)
+    assert re.search(r'mktemp /tmp/factory-fixed-model-guard\.XXXXXX\.py', body)
     assert 'cp .github/scripts/fixed-model-guard.py "$TRUSTED_GUARD"' in body
 
 

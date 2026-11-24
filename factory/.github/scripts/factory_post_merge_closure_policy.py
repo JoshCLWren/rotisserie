@@ -8,6 +8,7 @@ import sys
 from collections.abc import Iterable, Mapping
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
+from factory_adopter import MARKER_PREFIX
 
 _eligibility_dir = Path(__file__).resolve().parent
 if not (_eligibility_dir / 'factory_eligibility.py').is_file():
@@ -66,8 +67,8 @@ BLOCKED_STATUS_LABELS = frozenset({"ralph-status:blocked"})
 RALPH_STATUS_RE = re.compile(r"^ralph-status:")
 
 BRANCH_ISSUE_RE = re.compile(r"^factory/[0-9]+-(?P<issue>[0-9]+)-")
-MERGE_CLOSURE_MARKER = "comic-pile-factory-merge-closure-v1"
-UNREADABLE_WARNING_MARKER = "comic-pile-factory-dependency-unreadable-v1"
+MERGE_CLOSURE_MARKER = f"{MARKER_PREFIX}-factory-merge-closure-v1"
+UNREADABLE_WARNING_MARKER = f"{MARKER_PREFIX}-factory-dependency-unreadable-v1"
 SWEEP_MAX_AGE_HOURS = 26
 
 

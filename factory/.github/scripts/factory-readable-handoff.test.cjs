@@ -1,3 +1,5 @@
+// Worker entry points export the marker prefix before these functions run.
+process.env.FACTORY_MARKER_PREFIX = 'comic-pile';
 const assert = require('node:assert/strict');
 const { readFileSync } = require('node:fs');
 const { spawnSync } = require('node:child_process');

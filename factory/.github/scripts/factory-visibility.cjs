@@ -7,6 +7,13 @@ const {
   expectedWorkers: EXPECTED_WORKER_IDS,
   retiredWorkers: RETIRED_WORKER_IDS,
 } = loadExpectedWorkerIds();
+function markerPrefix(env = process.env) { // Mirrors factory_adopter.marker_prefix().
+  const prefix = (env.FACTORY_MARKER_PREFIX || '').trim() || (env.GITHUB_REPOSITORY || '').split('/').pop()
+    .toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
+  if (/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(prefix)) return prefix;
+  throw new Error(`invalid factory marker prefix ${JSON.stringify(prefix)}: set GITHUB_REPOSITORY`);
+}
+const MARKER_PREFIX = markerPrefix();
 
 const SCHEDULED_OWNER_LABELS = SCHEDULED_WORKER_IDS.map((id) => `factory:${id}`);
 const FIXED_MODEL_OWNER_LABELS = [...EXPECTED_WORKER_IDS]
@@ -316,7 +323,7 @@ function clearRestRequestLog() {
 const GREPTILE_ACK_RE = /^(you['\u2019]?re (absolutely |totally )?right|you are (absolutely |totally )?right|(that|this) (addresses|resolves|answers|fixes|clears up|handles)|good (catch|point|call)|makes sense|fair (point|enough)|agreed|confirmed)/i;
 const GREPTILE_ACK_CONTRAST_RE = /\b(but|however|although|though|still|remains?|not)\b|n['\u2019]t\b/i;
 const GITHUB_ACTIONS_LOGIN_RE = /^github-actions(\[bot\])?$/;
-const GREPTILE_OUTCOME_MARKER = 'comic-pile-factory-greptile-outcome-v1';
+const GREPTILE_OUTCOME_MARKER = `${MARKER_PREFIX}-factory-greptile-outcome-v1`;
 const RECENT_COMMENT_WINDOW = 20;
 
 function isGreptileLogin(login) {
@@ -629,11 +636,11 @@ async function livePullRequestHead(github, context, number) {
 
 function workerFrom(body) {
   for (const pattern of [
-    /comic-pile-factory-implement-(?:claim|progress)-v\d+:issue-\d+:([^:\s>]+):/,
-    /comic-pile-factory-review-claim-v\d+:[^:\s>]+:([^:\s>]+):/,
-    /comic-pile-factory-fix-(?:claim|progress)-v\d+:[^:\s>]+:([^:\s>]+):/,
-    /comic-pile-factory-claim-released-v\d+:[^:\s>]+:([^:\s>]+):/,
-    /comic-pile-factory-head-contributor-v\d+:[^:\s>]+:[^:\s>]+:worker-(\d+):/,
+    new RegExp(String.raw`${MARKER_PREFIX}-factory-implement-(?:claim|progress)-v\d+:issue-\d+:([^:\s>]+):`),
+    new RegExp(String.raw`${MARKER_PREFIX}-factory-review-claim-v\d+:[^:\s>]+:([^:\s>]+):`),
+    new RegExp(String.raw`${MARKER_PREFIX}-factory-fix-(?:claim|progress)-v\d+:[^:\s>]+:([^:\s>]+):`),
+    new RegExp(String.raw`${MARKER_PREFIX}-factory-claim-released-v\d+:[^:\s>]+:([^:\s>]+):`),
+    new RegExp(String.raw`${MARKER_PREFIX}-factory-head-contributor-v\d+:[^:\s>]+:[^:\s>]+:worker-(\d+):`),
   ]) {
     const match = body.match(pattern);
     if (match) return match[1];
@@ -711,17 +718,12 @@ function preserveLiveLocalLease(
 }
 
 function stageFrom(body) {
-  if (/comic-pile-factory-needs-human-v\d+:/.test(body)) return 'factory:blocked';
-  if (/comic-pile-factory-ready-v\d+:/.test(body)) return 'factory:ready';
-  if (/comic-pile-factory-review-v\d+:[^:\s>]+:changes-required/.test(body)) {
-    return 'factory:changes-requested';
-  }
-  if (/comic-pile-factory-review-v\d+:[^:\s>]+:pass/.test(body)) return 'factory:ci';
-  if (/comic-pile-factory-review-claim-v\d+:/.test(body)) return 'factory:review';
-  if (
-    /comic-pile-factory-implement-(?:claim|progress)-v\d+:/.test(body)
-    || /comic-pile-factory-fix-(?:claim|progress)-v\d+:/.test(body)
-  ) return 'factory:building';
+  if (new RegExp(String.raw`${MARKER_PREFIX}-factory-needs-human-v\d+:`).test(body)) return 'factory:blocked';
+  if (new RegExp(String.raw`${MARKER_PREFIX}-factory-ready-v\d+:`).test(body)) return 'factory:ready';
+  if (new RegExp(String.raw`${MARKER_PREFIX}-factory-review-v\d+:[^:\s>]+:changes-required`).test(body)) return 'factory:changes-requested';
+  if (new RegExp(String.raw`${MARKER_PREFIX}-factory-review-v\d+:[^:\s>]+:pass`).test(body)) return 'factory:ci';
+  if (new RegExp(String.raw`${MARKER_PREFIX}-factory-review-claim-v\d+:`).test(body)) return 'factory:review';
+  if (new RegExp(String.raw`${MARKER_PREFIX}-factory-(?:implement|fix)-(?:claim|progress)-v\d+:`).test(body)) return 'factory:building';
   return null;
 }
 
@@ -946,7 +948,7 @@ async function ownerFromLinkedIssue(github, context, pullRequest) {
   for (const comment of comments) {
     if (!trusted(comment)) continue;
     const body = comment.body || '';
-    if (/comic-pile-factory-claim-released-v\d+:/.test(body)) return 'factory:unowned';
+    if (new RegExp(String.raw`${MARKER_PREFIX}-factory-claim-released-v\d+:`).test(body)) return 'factory:unowned';
     const worker = workerFrom(body);
     if (worker) return ownerFor(worker);
   }
@@ -1090,7 +1092,7 @@ async function reconcileMissingPrLabels({ github, context, openPullRequests = nu
       )) {
         if (!trusted(comment)) continue;
         const match = (comment.body || '').match(
-          /comic-pile-factory-review-v\d+:([a-f0-9]{40}):(pass|changes-required)/,
+          new RegExp(String.raw`${MARKER_PREFIX}-factory-review-v\d+:([a-f0-9]{40}):(pass|changes-required)`),
         );
         if (match?.[1] !== pr.head.sha) continue;
         stage = match[2] === 'pass' ? 'factory:ci' : 'factory:changes-requested';
@@ -1135,12 +1137,12 @@ async function reconcile({ github, context }) {
   if (context.eventName === 'issue_comment') {
     const comment = context.payload.comment;
     const body = comment?.body || '';
-    if (!body.includes('comic-pile-factory-')) return;
+    if (!body.includes(`${MARKER_PREFIX}-factory-`)) return;
     if (!trusted(comment)) return;
 
     const number = context.payload.issue.number;
     const current = await currentLabels(github, context, number);
-    const released = /comic-pile-factory-claim-released-v\d+:/.test(body);
+    const released = new RegExp(String.raw`${MARKER_PREFIX}-factory-claim-released-v\d+:`).test(body);
     const worker = workerFrom(body);
     const currentOwner = [...current].find(isOwnerLabel) || null;
     const currentStage = STAGE_LABELS.find(label => current.has(label));
@@ -1151,11 +1153,9 @@ async function reconcile({ github, context }) {
     // Neither format supplies merge authority or a GitHub APPROVED review.
     const firstLine = body.split(/\r?\n/, 1)[0];
     const semanticVerdict = firstLine.match(
-      /^<!-- comic-pile-factory-semantic-review-v1:pr-(\d+):head-([a-f0-9]{40}):reviewer-(\d+):producer-(\d+|unknown):verdict-(approve|repair|reject|obsolete|duplicate|superseded|delivered) -->$/,
+      new RegExp(String.raw`^<!-- ${MARKER_PREFIX}-factory-semantic-review-v1:pr-(\d+):head-([a-f0-9]{40}):reviewer-(\d+):producer-(\d+|unknown):verdict-(approve|repair|reject|obsolete|duplicate|superseded|delivered) -->$`),
     );
-    const legacyVerdict = body.match(
-      /<!-- comic-pile-factory-review-v\d+:([a-f0-9]{40}):(pass|changes-required) -->/,
-    );
+    const legacyVerdict = body.match(new RegExp(String.raw`<!-- ${MARKER_PREFIX}-factory-review-v\d+:([a-f0-9]{40}):(pass|changes-required) -->`));
     if (semanticVerdict || legacyVerdict) {
       if (!context.payload.issue.pull_request) return;
       if (semanticVerdict && Number(semanticVerdict[1]) !== number) return;
@@ -1205,7 +1205,7 @@ async function reconcile({ github, context }) {
       sameRepo
       && (
         pullRequest.head.ref.startsWith('factory/')
-        || (pullRequest.body || '').includes('comic-pile-factory-')
+        || (pullRequest.body || '').includes(`${MARKER_PREFIX}-factory-`)
       )
     );
     if (!isFactory) return;
@@ -1270,7 +1270,7 @@ async function reconcile({ github, context }) {
 module.exports = reconcile;
 module.exports.reconcileMissingPrLabels = reconcileMissingPrLabels;
 module.exports._test = {
-  durablePrOwner,
+  durablePrOwner, markerPrefix,
   preserveLiveLocalLease,
   LOCAL_OWNER_LABEL,
   READY_STAGE_LABEL,

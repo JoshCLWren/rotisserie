@@ -17,7 +17,7 @@ install_factory_rest_gh() {
   # Keep a real gh resolved by an outer step: PATH may already start with the
   # usage-meter shim, and re-resolving here would point the meter at itself.
   real_gh="${FACTORY_REAL_GH:-$(command -v gh)}"
-  shim_dir="$(mktemp -d /tmp/comic-pile-factory-gh.XXXXXX)"
+  shim_dir="$(mktemp -d /tmp/factory-gh.XXXXXX)"
   cp .github/scripts/factory-gh-rest-shim.sh "$shim_dir/gh"
   chmod +x "$shim_dir/gh"
   export FACTORY_REAL_GH="$real_gh"
@@ -162,7 +162,7 @@ stage_trusted_kilo_helper() {
   [[ "$SOURCE" == 'kilo-auto' ]] || return 0
   TRUSTED_KILO_HELPER="${TRUSTED_KILO_HELPER:-}"
   if [[ -z "$TRUSTED_KILO_HELPER" ]]; then
-    TRUSTED_KILO_HELPER="$(mktemp /tmp/comic-pile-kilo-auto-run.XXXXXX.sh)"
+    TRUSTED_KILO_HELPER="$(mktemp /tmp/factory-kilo-auto-run.XXXXXX.sh)"
   fi
   if [[ -z "${KILO_SERVED_MODELS_FILE:-}" ]]; then
     KILO_SERVED_MODELS_FILE="$(mktemp "${RUNNER_TEMP:-/tmp}/kilo-served-models.XXXXXX")"
@@ -185,7 +185,7 @@ stage_trusted_review_controller() {
   # contributor provenance.
   [[ -z "${TRUSTED_REVIEW_CONTROLLER:-}" ]] || return 0
   local trusted_dir
-  trusted_dir="$(mktemp -d /tmp/comic-pile-review-controller.XXXXXX)"
+  trusted_dir="$(mktemp -d /tmp/factory-review-controller.XXXXXX)"
   cp .github/scripts/factory-review-controller.py "$trusted_dir/factory-review-controller.py"
   cp .github/scripts/factory_adopter.py "$trusted_dir/factory_adopter.py"
   cp .github/scripts/factory_review_policy.py "$trusted_dir/factory_review_policy.py"
@@ -215,8 +215,8 @@ stage_trusted_checkpoint_helper() {
   TRUSTED_WORK_CHECKPOINT="$(mktemp "${RUNNER_TEMP:-/tmp}/factory-work-checkpoint.XXXXXXXX")"
   cp .github/scripts/factory-work-checkpoint.sh "$TRUSTED_WORK_CHECKPOINT"
   chmod +x "$TRUSTED_WORK_CHECKPOINT"
-  TRUSTED_CHECKPOINT_HANDOFF="$(mktemp "${RUNNER_TEMP:-/tmp}/factory-checkpoint-handoff.XXXXXXXX.py")"
-  cp .github/scripts/factory_checkpoint_handoff.py "$TRUSTED_CHECKPOINT_HANDOFF"
+  TRUSTED_CHECKPOINT_HANDOFF="$(mktemp -d "${RUNNER_TEMP:-/tmp}/factory-checkpoint-handoff.XXXXXXXX")/factory_checkpoint_handoff.py"
+  cp .github/scripts/factory_checkpoint_handoff.py .github/scripts/factory_adopter.py "$(dirname "$TRUSTED_CHECKPOINT_HANDOFF")/"
   export TRUSTED_CHECKPOINT_HANDOFF
 }
 
@@ -338,7 +338,7 @@ review_snapshot_failure_reason() {
 
 # Record a wrapper-gate downgrade in the review log the controller excerpts.
 append_wrapper_gate_reason() {
-  printf '\n# comic-pile-factory-wrapper-gate\nThe trusted wrapper downgraded this approval to repair: %s\n' "$1" >> "$sanitized_review_log"
+  printf '\n# %s-factory-wrapper-gate\nThe trusted wrapper downgraded this approval to repair: %s\n' "${FACTORY_MARKER_PREFIX:?}" "$1" >> "$sanitized_review_log"
 }
 
 read_trusted_completion_decision() {
@@ -349,11 +349,11 @@ read_trusted_completion_decision() {
     log "unable to read lease provenance for PR #${pr}; using generic PR mission"
     return 0
   fi
-  parsed="$(jq -sr --arg worker "$worker" '
+  parsed="$(jq -sr --arg worker "$worker" --arg prefix "${FACTORY_MARKER_PREFIX:?}" '
     [ .[][]?
       | select(.performed_via_github_app.slug == "github-actions")
       | .body
-      | capture("comic-pile-factory-controller-claim-v1:pr-(?<pr>[0-9]+):(?<worker>[0-9]+):(?<epoch>[0-9]+)(?::source=(?<source>[a-z-]+))?(?::action=(?<action>[a-z-]+))?(?::head=(?<head>[0-9a-f]{7,40}))?")
+      | capture($prefix + "-factory-controller-claim-v1:pr-(?<pr>[0-9]+):(?<worker>[0-9]+):(?<epoch>[0-9]+)(?::source=(?<source>[a-z-]+))?(?::action=(?<action>[a-z-]+))?(?::head=(?<head>[0-9a-f]{7,40}))?")
       | select(.worker == $worker)
     ] | last // empty | [.action // "", .head // ""] | @tsv
   ' <<< "$payload" 2>/dev/null)" || true
@@ -973,7 +973,7 @@ if [[ -z "$diff_evidence" ]]; then
   exit 2
 fi
 {
-  printf '\n# comic-pile-factory-authoritative-diff-evidence\n'
+  printf '\n# %s-factory-authoritative-diff-evidence\n' "${FACTORY_MARKER_PREFIX:?}"
   printf '%s\n' "$diff_evidence"
 } >> "$sanitized_review_log"
 # Retain the terminal token for diagnostics; the merge controller remains the
@@ -1089,7 +1089,7 @@ if [[ -z "$verdict" ]]; then
 
   diagnostic="$(mktemp /tmp/factory-semantic-diagnostic.XXXXXX.md)"
   {
-    printf '<!-- comic-pile-factory-semantic-diagnostic:v1 -->\n'
+    printf '<!-- %s-factory-semantic-diagnostic:v1 -->\n' "${FACTORY_MARKER_PREFIX:?}"
     printf '### Factory semantic review diagnostic\n\n'
     printf 'Status: `%s`  \n' "$semantic_status"
     printf 'Factory: `%s`  \n' "$WORKER"

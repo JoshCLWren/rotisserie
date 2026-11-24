@@ -13,7 +13,7 @@ from rotisserie.factory_console.service import doctor, stalls
 REPO = "acme/widgets"
 HEAD = "b" * 40
 VERDICT = (
-    "<!-- comic-pile-factory-semantic-review-v1:pr-44:head-"
+    "<!-- widgets-factory-semantic-review-v1:pr-44:head-"
     + HEAD
     + ":reviewer-123:producer-unknown:verdict-{verdict} -->\n\n"
     "### Factory semantic review · Factory 123 · REPAIR\n\n"

@@ -19,7 +19,7 @@ FACTORY_GREPTILE_LOGIN_RE='^greptile-apps(\[bot\])?$'
 FACTORY_REVIEW_FINDINGS_BODY_LIMIT="${FACTORY_REVIEW_FINDINGS_BODY_LIMIT:-6000}"
 FACTORY_REVIEW_FINDINGS_PROMPT_LIMIT="${FACTORY_REVIEW_FINDINGS_PROMPT_LIMIT:-60000}"
 FACTORY_GREPTILE_OUTCOMES_BASENAME='.factory-greptile-outcomes.json'
-FACTORY_GREPTILE_OUTCOME_MARKER='comic-pile-factory-greptile-outcome-v1'
+FACTORY_GREPTILE_OUTCOME_MARKER="${FACTORY_MARKER_PREFIX:=$(python3 "$(dirname "${BASH_SOURCE[0]}")/factory_adopter.py" marker-prefix 2>/dev/null || python3 .github/scripts/factory_adopter.py marker-prefix)}-factory-greptile-outcome-v1"
 
 # Open-thread rule, shared with factory-visibility.cjs (keep them identical;
 # see docs/FACTORY_GITHUB_VISIBILITY.md "Open Greptile findings"). A review
@@ -468,10 +468,10 @@ factory_greptile_reply_body() {
   local outcome="$1" text="$2" commit="$3" head="$4" thread="$5" title="${6:-}" safe digest subject=''
   # sed, not ${var//}: bash 5.2 patsub_replacement treats & specially.
   safe="$(printf '%s' "$text" | sed -e 's/<!--/\&lt;!--/g' -e 's/-->/--\&gt;/g' \
-    -e 's/comic-pile-factory-/comic-pile-factory‑/g')"
+    -e "s/${FACTORY_MARKER_PREFIX:?}-factory-/${FACTORY_MARKER_PREFIX}-factory‑/g")"
   digest="$(factory_greptile_outcome_digest "$text")"
   if [[ "$thread" == GREPTILE_SUMMARY_* ]]; then
-    title="$(printf '%s' "$title" | sed -e 's/<!--/\&lt;!--/g' -e 's/-->/--\&gt;/g' -e 's/comic-pile-factory-/comic-pile-factory‑/g')"
+    title="$(printf '%s' "$title" | sed -e 's/<!--/\&lt;!--/g' -e 's/-->/--\&gt;/g' -e "s/${FACTORY_MARKER_PREFIX:?}-factory-/${FACTORY_MARKER_PREFIX}-factory‑/g")"
     subject=" for the Greptile summary finding \"${title}\""
   fi
   if [[ "$outcome" == fixed ]]; then

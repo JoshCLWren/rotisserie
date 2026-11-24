@@ -23,7 +23,7 @@ from urllib.parse import quote
 import zipfile
 
 from factory_worker_slots import resolve
-from factory_adopter import repository
+from factory_adopter import MARKER_PREFIX, repository
 
 REPO = repository()
 EXECUTION_PATH = ".github/workflows/factory-fork-execution.yml"
@@ -31,7 +31,7 @@ EXECUTION_WORKFLOW = "Factory Fork Execution"
 SHA_RE = re.compile(r"[a-f0-9]{40}\Z")
 TITLE_RE = re.compile(r"Factory (\d+) · fork repair · PR (\d+) · ([a-f0-9]{32})\Z")
 RECEIPT_RE = re.compile(
-    r"<!-- comic-pile-factory-fork-dispatch-v1:pr-(\d+):head-([a-f0-9]{40}):"
+    rf"<!-- {MARKER_PREFIX}-factory-fork-dispatch-v1:pr-(\d+):head-([a-f0-9]{{40}}):"
     r"worker-(\d+):nonce-([a-f0-9]{32}) -->\Z"
 )
 MAX_ARTIFACT_BYTES = 32 * 1024 * 1024
@@ -213,11 +213,11 @@ def _dispatch(pr: int, head: str, worker: str) -> dict[str, str]:
         raise ValueError("fork repair requires ordinary maintainer edit access")
     nonce = secrets.token_hex(16)
     receipt = (
-        f"<!-- comic-pile-factory-fork-dispatch-v1:pr-{pr}:head-{head}:"
+        f"<!-- {MARKER_PREFIX}-factory-fork-dispatch-v1:pr-{pr}:head-{head}:"
         f"worker-{worker}:nonce-{nonce} -->"
     )
     _post(pr, receipt)
-    _post(pr, f"<!-- comic-pile-factory-fix-claim-v3:{head}:opencode-free-model-factory-{worker}:{int(time.time())}:attempt-1 -->")
+    _post(pr, f"<!-- {MARKER_PREFIX}-factory-fix-claim-v3:{head}:opencode-free-model-factory-{worker}:{int(time.time())}:attempt-1 -->")
     _run([
         "gh", "workflow", "run", "factory-fork-execution.yml", "--repo", REPO, "--ref", "main",
         "-f", f"pr={pr}", "-f", f"head={head}", "-f", f"worker={worker}", "-f", f"nonce={nonce}",
@@ -488,7 +488,7 @@ def _persist(run_id: int) -> dict[str, object]:
     pr, worker, nonce = _validate_run(run, workflow)
     comments = _comments(pr)
     expected = _receipt(comments, pr, worker, nonce)
-    completed = f"<!-- comic-pile-factory-fork-completed-v1:nonce-{nonce}:"
+    completed = f"<!-- {MARKER_PREFIX}-factory-fork-completed-v1:nonce-{nonce}:"
     if any(_trusted_receipt(row) and str(row.get("body") or "").startswith(completed) for row in comments):
         return {"status": "already-completed", "pr": pr}
     info = _read_pr(pr)
@@ -563,7 +563,7 @@ def _mark_completed(pr: int, nonce: str, head: str, status: str) -> None:
     be marked handled so ``_reconcile`` does not process them again on every
     sweep and release a newer repair that reused the same worker and head.
     """
-    completed = f"<!-- comic-pile-factory-fork-completed-v1:nonce-{nonce}:"
+    completed = f"<!-- {MARKER_PREFIX}-factory-fork-completed-v1:nonce-{nonce}:"
     _post(pr, f"{completed}head-{head}:result-{status} -->")
 
 
@@ -579,7 +579,7 @@ def _release_failure(pr: int, worker: str, head: str, reason: str, nonce: str) -
         _set_state(pr, worker, "factory:review")
         return
     conflicted = int(info.get("mergeable") is False)
-    _post(pr, f"<!-- comic-pile-factory-claim-released-v3:pr-{pr}:opencode-free-model-factory-{worker}:"
+    _post(pr, f"<!-- {MARKER_PREFIX}-factory-claim-released-v3:pr-{pr}:opencode-free-model-factory-{worker}:"
           f"{int(time.time())}:{reason}:sha={head}:stage=factory:changes-requested:conflicted={conflicted} -->")
     _set_state(pr, worker, "factory:changes-requested")
 

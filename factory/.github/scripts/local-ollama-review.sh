@@ -1,5 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
+FACTORY_MARKER_PREFIX="${FACTORY_MARKER_PREFIX:-$(python3 .github/scripts/factory_adopter.py marker-prefix)}"
+export FACTORY_MARKER_PREFIX
 
 # Trusted provider-backed review. Inference may come from Ollama or another
 # OpenAI-compatible provider, but only the controller's github-actions[bot]
@@ -164,7 +166,7 @@ if verdict == "APPROVE":
 log = (
     f"### Factory semantic review · Factory 77 · {verdict}\n"
     f"Exact head {head}.\n{reason}\n"
-    f"# comic-pile-factory-authoritative-diff-evidence\ngh pr diff {pr}\n"
+    f"# {os.environ['FACTORY_MARKER_PREFIX']}-factory-authoritative-diff-evidence\ngh pr diff {pr}\n"
 )
 if verdict == "APPROVE":
     log += "FACTORY_ACCEPTANCE_V1=" + json.dumps(report, separators=(",", ":")) + "\n"
@@ -204,7 +206,7 @@ controller_verdict=approve
 # Only the trusted controller posts the review attestation as github-actions[bot].
 gh pr edit "$PR" --add-label "factory:review,factory:77" >/dev/null 2>&1 || true
 epoch="$(date +%s)"
-echo "<!-- comic-pile-factory-review-claim-v2:pr-${PR}:opencode-free-model-factory-77:${epoch} -->" > /tmp/claim.txt
+echo "<!-- ${FACTORY_MARKER_PREFIX:?}-factory-review-claim-v2:pr-${PR}:opencode-free-model-factory-77:${epoch} -->" > /tmp/claim.txt
 gh issue comment "$PR" --body-file /tmp/claim.txt >/dev/null
 # The controller alone authorizes readiness. A model verdict or an existing
 # factory:approved label must never trigger a merge on its own.

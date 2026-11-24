@@ -66,6 +66,14 @@ such change must be called out here and in its release notes.
   drift note. Git history keeps them; `MIGRATION.md` names the last commit
   that has them.
 
+### Changed
+
+- Factory comment markers derive their prefix from the adopter repository name
+  (`factory_adopter.marker_prefix()`, mirrored in `factory-visibility.cjs` and
+  the shell workers) instead of a hard-coded product prefix. `comic-pile`
+  still produces its existing markers. `FACTORY_MARKER_PREFIX` overrides the
+  prefix. `rotisserie factory` derives it from `--repo`.
+
 ### Fixed
 
 - An expired factory lease no longer blocks an outside claim on its item. The

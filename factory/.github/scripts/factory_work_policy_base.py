@@ -13,6 +13,7 @@ from factory_review_policy import (
     TRUSTED_MARKER_APP_SLUGS,
     producer_worker_from_pr as producer_worker_from_values,
 )
+from factory_adopter import MARKER_PREFIX
 
 # factory_eligibility lives in scripts/ (the shared home for both selectors).
 # Resolve it relative to this file and load it explicitly so the module
@@ -46,7 +47,7 @@ TRUSTED_ASSOCIATIONS = {'OWNER', 'MEMBER', 'COLLABORATOR'}
 TRUSTED_FACTORY_APP_SLUGS = set(TRUSTED_MARKER_APP_SLUGS)
 REQUIRED_CHECK_FAILURE_STATES = frozenset({'CANCELLED', 'ERROR', 'FAILURE', 'STALE', 'STARTUP_FAILURE', 'TIMED_OUT'})
 NO_DIFF_ATTEMPT_RE = re.compile(
-    r'<!--\s*comic-pile-factory-claim-released-v3:'
+    rf'<!--\s*{MARKER_PREFIX}-factory-claim-released-v3:'
     r'(?P<kind>issue|pr)-(?P<number>\d+):(?P<worker>[^:>\s]+):(?P<epoch>\d{10}):'
     r'(?P<reason>(?:repair-)?no-persisted-change-handoff|transient-model-interruption|'
     r'review-agent-failed|controller-assignment-read-failed|semantic-review-head-read-failed|'
@@ -102,7 +103,7 @@ FACTORY_REVIEW_BACKLOG_LIMIT = env_positive_int('FACTORY_REVIEW_BACKLOG_LIMIT', 
 # A trusted retirement handoff resets prior *issue* no-diff suppression only.
 # The exhausted PR head's retry history remains intact for the closure decision.
 NO_PROGRESS_RETIRE_RE = re.compile(
-    r'<!--\s*comic-pile-factory-no-progress-retired-v1:'
+    rf'<!--\s*{MARKER_PREFIX}-factory-no-progress-retired-v1:'
     r'issue-(?P<issue>\d+):pr-\d+:sha-[0-9a-f]{40}:epoch-(?P<epoch>\d{10})\s*-->'
 )
 

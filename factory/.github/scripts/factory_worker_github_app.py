@@ -22,6 +22,7 @@ import urllib.request
 from collections.abc import Mapping
 from pathlib import Path
 from typing import Any
+from factory_adopter import marker_prefix
 
 PILOT_WORKER = "48"
 FAKER_VERSION = "40.40.0"
@@ -226,7 +227,7 @@ def mint_installation_token(
         headers={
             "Authorization": f"Bearer {jwt}",
             "Accept": "application/vnd.github+json",
-            "User-Agent": "comic-pile-factory-worker-app",
+            "User-Agent": "rotisserie-factory-worker-app",
             "X-GitHub-Api-Version": "2022-11-28",
         },
     )
@@ -262,7 +263,7 @@ def resolve_push_credential(env: Mapping[str, str] | None = None) -> tuple[str, 
 
 
 HANDOFF_KINDS = ("implementation", "repair", "review")
-_MARKER_FRAGMENTS = ("<!--", "-->", "comic-pile-factory-", "free-model-factory-owner")
+_MARKER_FRAGMENTS = ("<!--", "-->", "free-model-factory-owner")
 
 
 def handoff_decision(
@@ -310,10 +311,11 @@ def sanitize_handoff_text(text: str) -> str:
         end = cleaned.find("-->", start)
         cleaned = cleaned[:start] + (cleaned[end + 3 :] if end != -1 else "")
     cleaned = cleaned.replace("-->", "")
+    fragments = (*_MARKER_FRAGMENTS, f"{marker_prefix()}-factory-")
     lines = [
         line
         for line in cleaned.splitlines()
-        if not any(fragment in line for fragment in _MARKER_FRAGMENTS)
+        if not any(fragment in line for fragment in fragments)
     ]
     return "\n".join(lines).strip()
 

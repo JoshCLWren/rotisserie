@@ -651,7 +651,7 @@ def test_repair_handoff_returns_pr_to_review_like_a_worker(
     )
     assert result["handoff_recorded"] is True
     assert github.comments == [
-        f"<!-- comic-pile-agent-model-author-v1:pr-88:head-{'b' * 40}:"
+        f"<!-- widgets-agent-model-author-v1:pr-88:head-{'b' * 40}:"
         "model-gpt-5.2:agent-external-codebuff -->"
     ]
     assert sorted(github.review_labels) == [
@@ -1051,7 +1051,7 @@ def test_every_handoff_needs_the_bridge_author_record(
     )
     assert done["handoff_recorded"] is True
     assert github.comments == [
-        f"<!-- comic-pile-agent-model-author-v1:pr-88:head-{'a' * 40}:"
+        f"<!-- widgets-agent-model-author-v1:pr-88:head-{'a' * 40}:"
         "model-gpt-5.2:agent-external-codebuff -->"
     ]
 
@@ -1194,9 +1194,9 @@ def test_every_delivered_model_is_recorded(setup: LedgerDouble) -> None:
         evidence=f"https://github.com/{REPO}/pull/88",
     )
     assert github.comments == [
-        f"<!-- comic-pile-agent-model-author-v1:pr-88:head-{'d' * 40}:"
+        f"<!-- widgets-agent-model-author-v1:pr-88:head-{'d' * 40}:"
         "model-deepseek-v4:agent-external-codebuff -->",
-        f"<!-- comic-pile-agent-model-author-v1:pr-88:head-{'b' * 40}:"
+        f"<!-- widgets-agent-model-author-v1:pr-88:head-{'b' * 40}:"
         "model-gpt-5.2:agent-external-codebuff -->",
     ]
 

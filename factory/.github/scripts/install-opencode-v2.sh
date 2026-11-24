@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Resolve the latest OpenCode 2 from the official npm channel at execution time.
 set -Eeuo pipefail
-root="${RUNNER_TEMP:-/tmp}/comic-pile-opencode-v2"
+root="${RUNNER_TEMP:-/tmp}/factory-opencode-v2"
 # The npm dist-tag can advance before platform-specific binaries are published.
 # A missing @opencode/cli-linux-x64 tarball used to stop every reviewer before
 # execution. Try recent published v2 releases in order and require a real CLI.
@@ -52,7 +52,7 @@ cat > "$HOME/.config/opencode/opencode.json" <<'JSON'
     "opencode-go": {
       "models": {
         "crouton-alpha-free": {
-          "body": {"safety_identifier": "comic-pile-factory"}
+          "body": {"safety_identifier": "rotisserie-factory"}
         }
       }
     }

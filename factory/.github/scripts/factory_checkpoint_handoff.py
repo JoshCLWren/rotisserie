@@ -5,7 +5,6 @@ This trusted-main controller reads GitHub objects as data. It never checks out o
 executes checkpoint source, changes an assigned PR head, or grants review approval.
 """
 from __future__ import annotations
-
 import argparse
 import json
 import os
@@ -14,6 +13,7 @@ import subprocess
 import sys
 from pathlib import Path
 from urllib.parse import quote
+from factory_adopter import MARKER_PREFIX
 
 PREFIX = "factory/work-checkpoints/"
 SHA = re.compile(r"[a-f0-9]{40}")
@@ -419,7 +419,7 @@ def record_producer(repo: str, pr: dict, saved: dict) -> None:
     if head != saved["head"] or saved.get("resumed"):
         return  # An ordinary later commit belongs to its actual later producer.
     comments = pages(f"repos/{repo}/issues/{pr['number']}/comments")
-    needle = (f"<!-- comic-pile-factory-head-contributor-v1:pr-{pr['number']}:"
+    needle = (f"<!-- {MARKER_PREFIX}-factory-head-contributor-v1:pr-{pr['number']}:"
               f"head-{head}:worker-{saved['worker']}:epoch-")
     if any(comment.get("user", {}).get("login") == "github-actions[bot]"
            and comment.get("body", "").startswith(needle) for comment in comments):

@@ -16,7 +16,7 @@ from pathlib import Path
 from typing import Any, Literal, TypedDict, cast
 
 sys.path.insert(0, os.path.dirname(__file__))
-from factory_adopter import repository  # noqa: E402
+from factory_adopter import MARKER_PREFIX, repository  # noqa: E402
 
 issue_acceptance = importlib.import_module("factory_issue_acceptance")
 implementation_delivery = importlib.import_module("factory_implementation_delivery")
@@ -73,7 +73,7 @@ DIFF_INSPECTION_RE = re.compile(
     r"|git (?:diff|show|log -p)"
     r"|gh pr view\b"
     r"|gh api[^\n]{0,100}/pulls/\d+/(?:files|commits)\b"
-    r"|comic-pile-factory-authoritative-diff-evidence"
+    rf"|{MARKER_PREFIX}-factory-authoritative-diff-evidence"
     r"|diff --git "
     r"|\+\+\+ b/"
     r")"
@@ -117,8 +117,8 @@ NO_REQUIRED_CHECKS_REASON = (
     "no required checks reported at this head; merge is blocked until CI runs and passes"
 )
 FACTORY_REPAIR_CYCLE_LIMIT = 3
-STRIKE_RESET_MARKER = "comic-pile-factory-strike-reset-v1"
-DEPENDENCY_BLOCK_MARKER_PREFIX = "comic-pile-factory-dependency-block-v1"
+STRIKE_RESET_MARKER = f"{MARKER_PREFIX}-factory-strike-reset-v1"
+DEPENDENCY_BLOCK_MARKER_PREFIX = f"{MARKER_PREFIX}-factory-dependency-block-v1"
 
 GateDecision = Literal["pass", "retry", "deny"]
 
@@ -803,7 +803,7 @@ def attest_exact_head_author(
     return model, agent
 
 
-RECONCILIATION_MARKER_PREFIX = "comic-pile-factory-provenance-reconciliation-v1"
+RECONCILIATION_MARKER_PREFIX = f"{MARKER_PREFIX}-factory-provenance-reconciliation-v1"
 
 
 def reconciliation_marker(*, pr: int, head: str, model: str, agent: str) -> str:
@@ -2292,7 +2292,7 @@ def handle_review(
         
         # Record terminal reason marker for future reconciliation
         terminal_marker = (
-            f"<!-- comic-pile-factory-terminal-state-v1:"
+            f"<!-- {MARKER_PREFIX}-factory-terminal-state-v1:"
             f"pr-{pr_number}:head-{reviewed_head}:"
             f"verdict-{verdict}:reason-{reason_messages[verdict]} -->"
         )
@@ -2590,7 +2590,7 @@ def reconcile_terminal_pr(pr_number: int) -> dict[str, Any]:
         
         # Record durable terminal reason marker
         terminal_marker = (
-            f"<!-- comic-pile-factory-terminal-state-v1:"
+            f"<!-- {MARKER_PREFIX}-factory-terminal-state-v1:"
             f"pr-{pr_number}:head-{current_head}:"
             f"verdict-{terminal_verdict}:reason-{terminal_reason} -->"
         )

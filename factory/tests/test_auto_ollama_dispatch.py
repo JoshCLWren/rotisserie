@@ -116,7 +116,7 @@ def test_auto_dispatch_respects_busy_gpu_factory_leases_and_fresh_pr_stage(
     })
     scripts = tmp_path / "work" / ".github" / "scripts"
     scripts.mkdir(parents=True)
-    for name in ("local_review_contract.py", "factory_issue_acceptance.py"):
+    for name in ("local_review_contract.py", "factory_issue_acceptance.py", "factory_adopter.py"):
         shutil.copy(ROOT / ".github" / "scripts" / name, scripts / name)
     (scripts / "factory_state_ledger.py").write_text(
         "import os\n"

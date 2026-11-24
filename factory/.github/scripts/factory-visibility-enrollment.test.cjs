@@ -2,9 +2,9 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
 const test = require('node:test');
+process.env.GITHUB_REPOSITORY = 'JoshCLWren/comic-pile';
 const visibility = require('./factory-visibility.cjs');
-const { reconcileMissingPrLabels } = visibility;
-const { BLOCKED_LABELS, hasManualOnlyDirective } = visibility._test;
+const { reconcileMissingPrLabels, _test: { BLOCKED_LABELS, hasManualOnlyDirective } } = visibility;
 
 const sha = 'a'.repeat(40);
 const MANUAL_ONLY = '<!-- factory-execution:manual-only -->';

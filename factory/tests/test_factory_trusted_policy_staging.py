@@ -22,7 +22,7 @@ def test_staged_worker_policy_imports_only_pinned_eligibility(tmp_path: Path) ->
 
     staged = tmp_path / "trusted"
     staged.mkdir()
-    for name in ("factory_work_policy.py", "factory_review_policy.py", *WORK_POLICY_SIBLINGS):
+    for name in ("factory_work_policy.py", "factory_review_policy.py", "factory_adopter.py", *WORK_POLICY_SIBLINGS):
         shutil.copy2(ROOT / ".github/scripts" / name, staged / name)
     shutil.copy2(ROOT / "scripts/factory_eligibility.py", staged / "factory_eligibility.py")
 

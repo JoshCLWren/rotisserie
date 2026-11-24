@@ -100,7 +100,7 @@ def test_trusted_ollama_review_preserves_numbered_diff_inspection_proof() -> Non
     """Provider-backed review must preserve the exact PR-scoped diff command."""
     reviewer = (SCRIPTS / "local-ollama-review.sh").read_text()
     assert 'gh_retry gh pr diff "$PR" > /tmp/p.patch' in reviewer
-    assert 'f"# comic-pile-factory-authoritative-diff-evidence\\ngh pr diff {pr}\\n"' in reviewer
+    assert 'f"# {os.environ[\'FACTORY_MARKER_PREFIX\']}-factory-authoritative-diff-evidence\\ngh pr diff {pr}\\n"' in reviewer
 
     controller = load_controller()
     excerpt = controller.semantic_review_excerpt(
@@ -133,7 +133,7 @@ def test_worker_proves_diff_inspection_without_append_of_diff_hunks() -> None:
     worker = (SCRIPTS / "free-model-factory-worker.sh").read_text()
     assert 'if gh pr diff "$NUMBER" >/dev/null; then' in worker
     assert 'gh pr diff "$NUMBER" 2>/dev/null | head -n 4000' not in worker
-    assert "# comic-pile-factory-authoritative-diff-evidence" in worker
+    assert "printf '\\n# %s-factory-authoritative-diff-evidence\\n' \"${FACTORY_MARKER_PREFIX:?}\"" in worker
 
 
 def test_file_listing_counts_as_inspection_for_a_pr_too_large_to_diff() -> None:

@@ -80,6 +80,7 @@ def main(
         explicit = getattr(arguments, "repo", None) or getattr(arguments, "repository", None)
         repo = find_repository(explicit, values, Path.cwd())
         github = GitHub(repo, executable=executable)
+        runtime.bind_repository(repo)
         input_stream = stdin or sys.stdin
         interactive = console.interactive and input_stream.isatty() and not json_mode
         context = Context(

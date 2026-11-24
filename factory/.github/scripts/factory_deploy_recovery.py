@@ -11,6 +11,7 @@ import tempfile
 from pathlib import Path
 from collections.abc import Mapping, Sequence
 from datetime import datetime
+from factory_adopter import MARKER_PREFIX
 
 DEPLOY_JOB_NAME = "Migrate Neon and deploy exact main SHA"
 RED_CONCLUSIONS = frozenset({"failure", "timed_out", "startup_failure"})
@@ -61,7 +62,7 @@ def latest_attempted_deploy_run(
             return run
     return None
 
-MARKER = "<!-- comic-pile-deploy-recovery:v1 -->"
+MARKER = f"<!-- {MARKER_PREFIX}-deploy-recovery:v1 -->"
 TITLE = "Production deployment failed: repair release"
 SMOKES = frozenset(
     {"Smoke production Rust health", "Smoke production rejected login on the Rust runtime"}

@@ -1,3 +1,4 @@
+process.env.GITHUB_REPOSITORY = 'JoshCLWren/comic-pile';
 const assert = require('node:assert/strict');
 const test = require('node:test');
 const fs = require('node:fs');

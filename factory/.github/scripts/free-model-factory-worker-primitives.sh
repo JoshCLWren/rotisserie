@@ -67,7 +67,7 @@ stage_trusted_guard() {
   # branch copy of fixed-model-guard.py can never downgrade the decision.
   TRUSTED_GUARD="${TRUSTED_GUARD:-}"
   if [[ -z "$TRUSTED_GUARD" ]]; then
-    TRUSTED_GUARD="$(mktemp /tmp/comic-pile-fixed-model-guard.XXXXXX.py)"
+    TRUSTED_GUARD="$(mktemp /tmp/factory-fixed-model-guard.XXXXXX.py)"
   fi
   cp .github/scripts/fixed-model-guard.py "$TRUSTED_GUARD"
   chmod +x "$TRUSTED_GUARD"
@@ -163,7 +163,7 @@ release_target() {
       fi
     fi
   fi
-  marker="<!-- comic-pile-factory-claim-released-v3:${target_kind}-${number}:${WORKER_ID}:${epoch}:${reason}${generation} -->"
+  marker="<!-- ${FACTORY_MARKER_PREFIX:?}-factory-claim-released-v3:${target_kind}-${number}:${WORKER_ID}:${epoch}:${reason}${generation} -->"
   if (( bounded )); then
     if ! gh issue comment "$number" --body "$marker" >/dev/null 2>&1; then
       FACTORY_RETAIN_LEASE_ON_EXIT=1
@@ -313,7 +313,7 @@ claim_issue() {
   gh api --method PUT "repos/${GITHUB_REPOSITORY}/issues/${number}/labels" \
     --input - <<< "{\"labels\":${target}}" >/dev/null
   epoch="$(date +%s)"
-  marker="<!-- comic-pile-factory-implement-claim-v3:issue-${number}:${WORKER_ID}:${epoch}:attempt-1 -->"
+  marker="<!-- ${FACTORY_MARKER_PREFIX:?}-factory-implement-claim-v3:issue-${number}:${WORKER_ID}:${epoch}:attempt-1 -->"
   gh issue comment "$number" --body "$marker" >/dev/null 2>&1 || true
 }
 
@@ -345,7 +345,7 @@ record_pr_provenance() {
   fi
   head="$(git rev-parse HEAD)"
   epoch="$(date +%s)"
-  marker="<!-- comic-pile-factory-pr-provenance-v1:pr-${pr}:issue-${issue}:${WORKER_ID}:${epoch}:${head} -->"
+  marker="<!-- ${FACTORY_MARKER_PREFIX:?}-factory-pr-provenance-v1:pr-${pr}:issue-${issue}:${WORKER_ID}:${epoch}:${head} -->"
   if ! gh issue comment "$pr" --body "$marker" >/dev/null 2>&1; then
     log "unable to persist provenance for PR #${pr}; refusing handoff" >&2
     return 1
@@ -359,7 +359,7 @@ stage_trusted_review_controller() {
   # branch. A stale PR-branch copy must never be able to record provenance.
   if [[ -z "${TRUSTED_REVIEW_CONTROLLER:-}" ]]; then
     local trusted_dir
-    trusted_dir="$(mktemp -d "${RUNNER_TEMP:-/tmp}/comic-pile-review-controller.XXXXXX")"
+    trusted_dir="$(mktemp -d "${RUNNER_TEMP:-/tmp}/factory-review-controller.XXXXXX")"
     cp .github/scripts/factory-review-controller.py "$trusted_dir/factory-review-controller.py"
     cp .github/scripts/factory_adopter.py "$trusted_dir/factory_adopter.py"
     cp .github/scripts/factory_review_policy.py "$trusted_dir/factory_review_policy.py"
@@ -713,8 +713,8 @@ stage_trusted_worker_app_helper() {
   [[ -z "${TRUSTED_WORKER_APP_HELPER:-}" ]] || return 0
   [[ -f .github/scripts/factory_worker_github_app.py ]] || return 0
   local trusted_dir
-  trusted_dir="$(mktemp -d "${RUNNER_TEMP:-/tmp}/comic-pile-worker-app.XXXXXX")"
-  cp .github/scripts/factory_worker_github_app.py "$trusted_dir/factory_worker_github_app.py"
+  trusted_dir="$(mktemp -d "${RUNNER_TEMP:-/tmp}/factory-worker-app.XXXXXX")"
+  cp .github/scripts/factory_worker_github_app.py .github/scripts/factory_adopter.py "$trusted_dir/"
   if [[ -f .github/factory-worker-github-apps.json ]]; then
     cp .github/factory-worker-github-apps.json "$trusted_dir/factory-worker-github-apps.json"
     TRUSTED_WORKER_APP_MAPPING="$trusted_dir/factory-worker-github-apps.json"

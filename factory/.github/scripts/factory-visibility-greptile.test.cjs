@@ -2,7 +2,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
 const test = require('node:test');
-
+process.env.GITHUB_REPOSITORY = 'JoshCLWren/comic-pile';
 const reconcile = require('./factory-visibility.cjs');
 const {
   trusted,

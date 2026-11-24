@@ -3,7 +3,7 @@ const { mkdtempSync, writeFileSync, copyFileSync, rmSync } = require('node:fs');
 const { tmpdir } = require('node:os');
 const { join } = require('node:path');
 const test = require('node:test');
-
+process.env.GITHUB_REPOSITORY = 'JoshCLWren/comic-pile';
 const reconcile = require('./factory-visibility.cjs');
 
 function loadVisibilityFixture({ expected = [], retired = [] } = {}) {

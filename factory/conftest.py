@@ -15,6 +15,12 @@ REFERENCE_ADOPTER = FACTORY_ROOT / "tests" / "fixtures" / "adopter" / "config.to
 os.environ["ROTISSERIE_FACTORY_ROOT"] = str(FACTORY_ROOT)
 os.environ["ROTISSERIE_CONFIG"] = str(REFERENCE_ADOPTER)
 os.environ["GITHUB_REPOSITORY"] = "JoshCLWren/comic-pile"
+# Worker entry points export the prefix before sourcing helpers; tests that
+# run one extracted shell function rely on the same export.
+os.environ.pop("FACTORY_MARKER_PREFIX", None)
+import factory_adopter  # noqa: E402
+
+os.environ["FACTORY_MARKER_PREFIX"] = factory_adopter.marker_prefix()
 
 # A test that misses a stub must fail, never act on the real repository with
 # the developer's stored gh login.

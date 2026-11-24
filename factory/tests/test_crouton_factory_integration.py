@@ -21,7 +21,7 @@ def test_crouton_installer_sets_valid_model_scoped_safety_identifier() -> None:
 
     assert config["providers"]["opencode-go"]["models"] == {
         "crouton-alpha-free": {
-            "body": {"safety_identifier": "comic-pile-factory"},
+            "body": {"safety_identifier": "rotisserie-factory"},
         },
     }
     assert config["permissions"]

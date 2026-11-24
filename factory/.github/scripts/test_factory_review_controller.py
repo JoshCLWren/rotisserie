@@ -1017,7 +1017,7 @@ def test_review_controller_has_three_repairs_then_cancel_circuit_breaker():
     source = Path(controller.__file__).read_text()
     assert "FACTORY_REPAIR_CYCLE_LIMIT = 3" in source
     assert 'status": "strike-limit-cancelled"' in source
-    assert "comic-pile-factory-strike-reset-v1" in source
+    assert controller.STRIKE_RESET_MARKER == "comic-pile-factory-strike-reset-v1"
 
 
 @pytest.mark.parametrize("resolved, decision", [(True, "pass"), (False, "deny")])
