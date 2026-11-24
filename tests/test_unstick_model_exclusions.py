@@ -28,7 +28,7 @@ from test_factory_console import (  # type: ignore[import-not-found]
 )
 
 from rotisserie import cli
-from rotisserie.factory_console import commands, runtime
+from rotisserie.factory_console import commands
 from rotisserie.factory_console.service.unstick import Assignment, Task, _assign
 
 __all__ = ["fake", "live_catalog"]
@@ -53,19 +53,17 @@ def plan(fake: FakeGitHub, *argv: str) -> tuple[int, dict[str, Any], str]:
     return code, json.loads(out)["plan"], text
 
 
-def authored_by(fake: FakeGitHub, pr: int, *models: str) -> None:
-    policy = runtime.module("factory_review_policy")
-    fake.routes[rf"issues/{pr}/comments"] = [
-        [
-            {
-                "user": {"login": "github-actions[bot]"},
-                "body": policy.agent_model_author_marker(
-                    pr=pr, head=f"{index:040x}", model=model, agent="1"
-                ),
-            }
-            for index, model in enumerate(models, 1)
-        ]
-    ]
+def authored_by(monkeypatch: pytest.MonkeyPatch, pr: int, *models: str) -> None:
+    """The shared rule names these models as the current head's authors of PR ``pr``."""
+    from rotisserie.factory_console.service import review
+
+    heads = {pr: models}
+
+    def excluded(github: Any, number: int, **_: Any) -> review.Excluded:
+        found = heads.get(number, ())
+        return review.Excluded(number, "h", found, "", "test", "head author")
+
+    monkeypatch.setattr(review, "excluded_models", excluded)
 
 
 def test_a_healthy_model_the_worker_excludes_is_never_pinned(fake: FakeGitHub) -> None:
@@ -131,10 +129,12 @@ def test_a_cooling_credit_pool_lets_the_worker_pick_its_free_model(fake: FakeGit
     assert {item["model"] for item in found["assignments"]} == {"auto"}
 
 
-def test_a_review_skips_models_that_authored_the_pr(fake: FakeGitHub) -> None:
+def test_a_review_skips_models_that_authored_the_pr(
+    fake: FakeGitHub, monkeypatch: pytest.MonkeyPatch
+) -> None:
     unstick_routes(fake, FULL_BACKLOG)
     fake.routes["contents/factory-stats.json"] = snapshot()
-    authored_by(fake, 301, BEST)
+    authored_by(monkeypatch, 301, BEST)
     _, found, text = plan(fake)
     models = {item["task"]["target"]: item["model"] for item in found["assignments"]}
     assert models["pr:301"] == NEXT
@@ -142,10 +142,12 @@ def test_a_review_skips_models_that_authored_the_pr(fake: FakeGitHub) -> None:
     assert f"skipped {BEST}: authored this PR" in text
 
 
-def test_a_review_every_model_wrote_is_not_started(fake: FakeGitHub) -> None:
+def test_a_review_every_model_wrote_is_not_started(
+    fake: FakeGitHub, monkeypatch: pytest.MonkeyPatch
+) -> None:
     unstick_routes(fake, FULL_BACKLOG)
     fake.routes["contents/factory-stats.json"] = snapshot()
-    authored_by(fake, 301, BEST, NEXT)
+    authored_by(monkeypatch, 301, BEST, NEXT)
     _, found, text = plan(fake)
     assert "pr:301" not in [item["task"]["target"] for item in found["assignments"]]
     assert [reason["prs"] for reason in found["no_model"]] == [[301]]
@@ -153,10 +155,12 @@ def test_a_review_every_model_wrote_is_not_started(fake: FakeGitHub) -> None:
     assert "pr:301: not started: every available model authored this PR" in text
 
 
-def test_a_repair_may_run_on_a_model_that_wrote_the_pr(fake: FakeGitHub) -> None:
+def test_a_repair_may_run_on_a_model_that_wrote_the_pr(
+    fake: FakeGitHub, monkeypatch: pytest.MonkeyPatch
+) -> None:
     unstick_routes(fake, FULL_BACKLOG)
     fake.routes["contents/factory-stats.json"] = snapshot()
-    authored_by(fake, 302, BEST, NEXT)
+    authored_by(monkeypatch, 302, BEST, NEXT)
     _, found, _ = plan(fake)
     models = {item["task"]["target"]: item["model"] for item in found["assignments"]}
     assert models["pr:302"] == BEST
