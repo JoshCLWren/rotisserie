@@ -95,6 +95,12 @@
 .github/scripts/factory_state_ledger_workers.py
 .github/scripts/factory_state_metrics.py
 .github/scripts/factory_state_operations.py
+.github/scripts/factory_state_operations_backoff.py
+.github/scripts/factory_state_operations_capacity.py
+.github/scripts/factory_state_operations_core.py
+.github/scripts/factory_state_operations_exports.py
+.github/scripts/factory_state_operations_reliability.py
+.github/scripts/factory_state_operations_runtime.py
 .github/scripts/factory_work_policy.py
 .github/scripts/factory_work_policy_assignment.py
 .github/scripts/factory_work_policy_backlog.py

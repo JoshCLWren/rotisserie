@@ -1,7 +1,6 @@
 """Focused contract tests for Neon factory operational state.
 
-No external connections. Production Neon evidence is verified separately.
-"""
+No external connections. Production Neon evidence is verified separately."""
 from __future__ import annotations
 
 import asyncio
@@ -20,6 +19,7 @@ spec = importlib.util.spec_from_file_location("factory_state_operations", ROOT /
 assert spec is not None and spec.loader is not None
 operations = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(operations)
+core = importlib.import_module("factory_state_operations_core")
 
 REPO = "acme/widgets"
 
@@ -76,7 +76,7 @@ def test_missing_model_is_suppressed_but_unrelated_provider_is_available():
         "source": "nvidia", "model": "nvidia/expired",
         "status": "unavailable", "cooldown_until": future,
     }])
-    with patch.object(operations, "_roster", return_value={
+    with patch.object(core, "_roster", return_value={
         "41": ("nvidia", "nvidia/expired"),
         "42": ("opencode-free", "oc/big-pickle"),
     }):
@@ -91,7 +91,7 @@ def test_expired_model_cooldown_is_eligible_for_a_new_probe():
         "source": "nvidia", "model": "nvidia/expired",
         "status": "unavailable", "cooldown_until": past,
     }])
-    with patch.object(operations, "_roster", return_value={
+    with patch.object(core, "_roster", return_value={
         "41": ("nvidia", "nvidia/expired"),
     }):
         kept, denied = run(operations._eligibility(db, REPO, ["41"]))
@@ -119,7 +119,7 @@ def test_legacy_provider_quota_does_not_suppress_other_models_or_sources():
                   "daily_limit": None, "usage_day": datetime.now(UTC).date(),
                   "daily_used": 0}],
     )
-    with patch.object(operations, "_roster", return_value={
+    with patch.object(core, "_roster", return_value={
         "41": ("nvidia", "nvidia/a"),
         "42": ("nvidia", "nvidia/b"),
         "43": ("opencode-free", "oc/big-pickle"),
@@ -138,7 +138,7 @@ def test_model_failure_budget_does_not_cool_other_models_of_provider():
             "concurrency_limit": None, "daily_limit": None,
             "usage_day": datetime.now(UTC).date(), "daily_used": 0,
         }])
-        with patch.object(operations, "_roster", return_value={
+        with patch.object(core, "_roster", return_value={
             "41": ("nvidia", "synthetic/failed"),
             "42": ("nvidia", "synthetic/other"),
         }):
@@ -155,7 +155,7 @@ def test_provider_concurrency_limit_does_not_invent_unconfigured_caps():
         }],
         reservations=[{"source": "nvidia", "n": 1}],
     )
-    with patch.object(operations, "_roster", return_value={
+    with patch.object(core, "_roster", return_value={
         "41": ("nvidia", "nvidia/a"),
         "43": ("opencode-free", "oc/big-pickle"),
     }):
@@ -170,7 +170,7 @@ def test_daily_usage_reads_neon_assignments_not_github_history():
         {"worker": "42", "source": "opencode-free"},
         {"worker": "41", "source": "nvidia"}
     ])
-    with patch.object(operations, "_roster", return_value={
+    with patch.object(core, "_roster", return_value={
         "41": ("nvidia", "nvidia/a"),
         "42": ("opencode-free", "oc/big-pickle"),
     }):
@@ -194,7 +194,7 @@ def test_worker_ranking_preserves_source_diversity():
         {"worker": "41", "attempts": 10, "productive": 1},
         {"worker": "42", "attempts": 10, "productive": 7},
     ])
-    with patch.object(operations, "_roster", return_value={
+    with patch.object(core, "_roster", return_value={
         "41": ("nvidia", "nvidia/a"),
         "42": ("nvidia", "nvidia/b"),
         "43": ("opencode-free", "oc/big-pickle"),
@@ -251,7 +251,7 @@ def test_missing_marker_id_never_reads_obsolete_body_cache():
         async def execute(self, statement, *args):
             raise AssertionError("missing IDs do not create unverifiable locators")
 
-    with patch.object(operations, "_roster", return_value={
+    with patch.object(core, "_roster", return_value={
         "111": ("opencode-free", "glm-5.3-flash-free"),
     }):
         record = run(operations._export_model_exclusions(SnapshotDB(), REPO, "111"))
@@ -275,7 +275,7 @@ def test_model_exclusions_never_export_registry_comment_locators():
             raise AssertionError("exclusion export must not write")
 
     db = ReadOnlyDB()
-    with patch.object(operations, "_roster", return_value={
+    with patch.object(core, "_roster", return_value={
         "111": ("opencode-free", "glm-5.3-flash-free"),
     }):
         result = run(operations._export_model_exclusions(db, REPO, "111"))
@@ -339,7 +339,7 @@ def test_legacy_suspension_no_longer_excludes_worker():
                      "streak": 14, "suspended": True, "next_retry_at": None}],
         "expires_at": datetime.now(UTC) + timedelta(days=90),
     }])
-    with patch.object(operations, "_roster", return_value={
+    with patch.object(core, "_roster", return_value={
         "139": ("vercel-ai-gateway", "reflection/beam-free"),
         "41": ("kilo-auto", "kilo-auto/free"),
     }):
@@ -430,7 +430,7 @@ def test_shared_model_fibonacci_backoff_blocks_both_workers_not_other_models():
         "expires_at": now + timedelta(days=90),
     }]
     db = FakeConnection(model_backoffs=model_state)
-    with patch.object(operations, "_roster", return_value={
+    with patch.object(core, "_roster", return_value={
         "46": ("kilo-auto", "kilo-auto/free"),
         "98": ("kilo-auto", "kilo-auto/free"),
         "41": ("opencode-free", "other-free"),
@@ -592,7 +592,7 @@ def test_catalog_slot_model_failure_does_not_suppress_other_models():
                      "next_retry_at": future.isoformat()}],
         "expires_at": future,
     }])
-    with patch.object(operations, "_roster", return_value={
+    with patch.object(core, "_roster", return_value={
         "501": ("openrouter-free", ""),
     }):
         kept, denied = run(operations._eligibility(db, REPO, ["501"]))
@@ -624,7 +624,7 @@ def test_worker_provider_model_backoffs_remain_independent() -> None:
         "expires_at": future,
     }
     db = FakeConnection(backoffs=[row])
-    with patch.object(operations, "_roster", return_value={
+    with patch.object(core, "_roster", return_value={
         worker: ("nvidia", "@catalog"),
     }):
         kept, rejected = run(operations._eligibility(db, REPO, [worker]))
@@ -642,7 +642,7 @@ def test_proven_account_cooldown_blocks_only_its_provider() -> None:
         "expires_at": future,
     }
     db = FakeConnection(backoffs=[row])
-    with patch.object(operations, "_roster", return_value={
+    with patch.object(core, "_roster", return_value={
         "41": ("nvidia", "@catalog"),
         "42": ("requesty", "@catalog"),
     }):
@@ -666,7 +666,7 @@ def test_fleet_admission_does_not_double_book_capped_provider() -> None:
             ]
 
     with (
-        patch.object(operations, "_roster", return_value={"41": ("nvidia", "@catalog")}),
+        patch.object(core, "_roster", return_value={"41": ("nvidia", "@catalog")}),
         patch.object(factory_source_budget, "load_budgets", return_value={"cloudflare-workers-ai": 1}),
     ):
         allowed = run(operations._export_fleet_failover_sources(
@@ -719,7 +719,7 @@ def test_legacy_account_refusal_only_backs_off_the_exact_model(monkeypatch):
     db = FakeConnection(model_backoffs=[model_row])
     exclusions = run(operations._export_model_exclusions(db, REPO))
     assert exclusions == {refused_source: [refused_model]}
-    with patch.object(operations, "_roster", return_value={
+    with patch.object(core, "_roster", return_value={
         "41": (refused_source, "@catalog"), "42": (terminal_source, "@catalog"),
     }):
         kept, rejected = run(operations._eligibility(db, REPO, ["41", "42"]))

@@ -18,6 +18,7 @@ spec = importlib.util.spec_from_file_location(
 assert spec is not None and spec.loader is not None
 ops = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(ops)
+core = importlib.import_module("factory_state_operations_core")
 
 WORKER = "1327811785100"
 MODEL = "hy4-flash-free"
@@ -68,7 +69,7 @@ class FakeConn:
 
 @pytest.fixture(autouse=True)
 def roster(monkeypatch):
-    monkeypatch.setattr(ops, "_roster",
+    monkeypatch.setattr(core, "_roster",
                         lambda: {WORKER: ("opencode-free", "")})
 
 
