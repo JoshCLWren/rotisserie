@@ -117,7 +117,7 @@ class Provider:
     """One factory provider integration, in operator vocabulary."""
 
     key: str  # what the operator types and the dispatcher accepts
-    source: str  # the factory's internal source key (worker identities, Neon)
+    source: str  # the factory's internal source key (worker identities, the store)
     name: str
     model_prefix: str  # exact model IDs for this provider start with this
     secrets: tuple[str, ...]  # GitHub secret names it needs; empty means none

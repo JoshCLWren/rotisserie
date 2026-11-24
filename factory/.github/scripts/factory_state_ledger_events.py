@@ -1,142 +1,16 @@
-"""Idempotent trusted lifecycle events and the trusted job-log outcome refinements."""
+"""Trusted job-log outcome refinements: exact smoke, failover and quota evidence for the store."""
 from __future__ import annotations
 
-import asyncio
 import json
 import re
 from typing import Any
-
-from factory_state_metrics import connect as measured_connect
-
-from factory_state_cache import _dsn
-from factory_work_policy import FIXED_LEASE_TTL_SECONDS
-from factory_state_ledger_core import LEASE_PREFIX, _keys, enabled
-
-
-async def _events(repo: str, entries: list[dict[str, Any]]) -> int:
-
-    conn = await measured_connect(dsn=_dsn(), timeout=8, command_timeout=8)
-    inserted = 0
-    # Large failover sessions can contain hundreds of attempts. Batch their
-    # immutable observations instead of making two Neon round trips per model.
-    model_attempts = [entry for entry in entries if entry["event_type"] == "model_attempt"]
-    lifecycle = [entry for entry in entries if entry["event_type"] != "model_attempt"]
-    try:
-        async with conn.transaction():
-            await conn.execute("SELECT pg_advisory_xact_lock(hashtextextended($1, 0))", LEASE_PREFIX + repo)
-            for entry in lifecycle:
-                # One round trip: the repository lock above serializes writers.
-                added = await conn.fetchval(
-                    """INSERT INTO public.factory_state_events
-                       (source,event_type,subject_type,subject_number,detail)
-                       SELECT 'github-actions',$1,'worker',$2,$3::jsonb
-                        WHERE NOT EXISTS (
-                            SELECT 1 FROM public.factory_state_events
-                             WHERE source='github-actions'
-                               AND detail->>'event_id'=$4)
-                       RETURNING id""",
-                    entry["event_type"], int(entry["worker"]), json.dumps({**entry, "repo": repo}),
-                    entry["event_id"],
-                )
-                if added is None:
-                    continue
-                inserted += 1
-                # 'running' is an initial status marker, not a periodic
-                # liveness check. A terminal success/failure never renews.
-                if entry["event_type"] == "worker_started":
-                    worker_key = _keys(repo, entry["worker"], [])[0]
-                    row = await conn.fetchrow(
-                        """SELECT payload FROM public.factory_state_kv
-                           WHERE cache_key=$1 AND expires_at>now()""",
-                        worker_key,
-                    )
-                    if row:
-                        payload = row["payload"]
-                        if isinstance(payload, str):
-                            payload = json.loads(payload)
-                        token = payload[0]["claim_id"]
-                        await conn.execute(
-                            """UPDATE public.factory_provider_reservation
-                               SET expires_at=greatest(expires_at,now()+$2::int * interval '1 second')
-                               WHERE claim_id=$1::uuid""", token, FIXED_LEASE_TTL_SECONDS,
-                        )
-                        await conn.execute(
-                            """UPDATE public.factory_state_kv SET
-                                 expires_at=greatest(expires_at,now()+$3::int * interval '1 second'),
-                                 updated_at=now()
-                               WHERE cache_key=$1 AND payload->0->>'claim_id'=$2""",
-                            worker_key, token, FIXED_LEASE_TTL_SECONDS,
-                        )
-                        await conn.execute(
-                            """UPDATE public.factory_state_kv SET
-                                 expires_at=greatest(expires_at,now()+$3::int * interval '1 second'),
-                                 updated_at=now()
-                               WHERE cache_key LIKE $1
-                                 AND payload->0->>'claim_id'=$2""",
-                            f"{LEASE_PREFIX}{repo}:target:%", token, FIXED_LEASE_TTL_SECONDS,
-                        )
-            if model_attempts:
-                records = [{**entry, "repo": repo} for entry in model_attempts]
-                event_ids = [entry["event_id"] for entry in records]
-                added = await conn.fetch(
-                    """WITH incoming AS (
-                           SELECT value AS detail FROM jsonb_array_elements($1::jsonb)
-                       ), already AS (
-                           SELECT detail->>'event_id' AS event_id
-                             FROM public.factory_state_events
-                            WHERE source='github-actions'
-                              AND detail->>'event_id' = ANY($2::text[])
-                       )
-                       INSERT INTO public.factory_state_events
-                           (source,event_type,subject_type,subject_number,detail)
-                       SELECT 'github-actions','model_attempt','worker',
-                              (incoming.detail->>'worker')::bigint, incoming.detail
-                         FROM incoming
-                        WHERE NOT EXISTS (
-                            SELECT 1 FROM already
-                             WHERE already.event_id=incoming.detail->>'event_id'
-                        )
-                       RETURNING id""",
-                    json.dumps(records), event_ids,
-                )
-                inserted += len(added)
-        return inserted
-    finally:
-        await conn.close()
-
-
-def recorded_runtime_runs(repo: str, run_ids: list[str]) -> set[str]:
-    """Return the Entry run IDs that already have a terminal runtime outcome.
-
-    The deferred outcome reconciler uses this to avoid re-projecting a run
-    (model-health streaks are not idempotent per run).
-    """
-    if not enabled() or not run_ids:
-        return set()
-    if any(not run_id.isdecimal() for run_id in run_ids):
-        raise ValueError("invalid run ID")
-
-    async def _read() -> set[str]:
-        conn = await measured_connect(dsn=_dsn(), timeout=8, command_timeout=8)
-        try:
-            rows = await conn.fetch(
-                """SELECT detail->>'run_id' AS run_id FROM public.factory_state_events
-                   WHERE source='github-actions' AND detail->>'repo'=$1
-                     AND detail->>'event_id' = ANY($2::text[])""",
-                repo, [f"runtime:{run_id}" for run_id in run_ids],
-            )
-            return {str(row["run_id"]) for row in rows}
-        finally:
-            await conn.close()
-
-    return asyncio.run(_read())
 
 
 def refine_trusted_dynamic_models(outcome: dict[str, Any], job_log: str) -> dict[str, Any]:
     """Persist *all* exact free-model smoke failures, even after a later success.
 
     Only timestamped output of the executed Actions smoke step qualifies.
-    The model runner cannot create privileged Neon records itself.
+    The model runner cannot create privileged store records itself.
     """
     if (outcome.get("source") != "opencode-free"
             or outcome.get("persisted_work") not in (True, False)):
@@ -343,7 +217,7 @@ def refine_trusted_smoke_timeout(outcome: dict[str, Any], job_log: str) -> dict[
                     "detail": "actual final OpenCode smoke selector is unavailable or deprecated",
                 }
     # A trusted NVIDIA 410 has an irreversible provider meaning. Preserve its
-    # retirement in Neon, rather than retrying a known-gone model after 6h.
+    # retirement in the store, rather than retrying a known-gone model after 6h.
     if (outcome.get("source") == "nvidia"
             and outcome.get("outcome_class") in {"unknown_failure", "model_unavailable"}
             and outcome.get("model")):

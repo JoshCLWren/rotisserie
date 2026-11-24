@@ -2,10 +2,10 @@
 
 from __future__ import annotations
 
-import asyncio
 import importlib.util
 import json
 import subprocess
+import uuid
 import sys
 from pathlib import Path
 
@@ -30,7 +30,7 @@ CATALOG = {
 
 
 def _classify(tmp_path: Path, text: str, status: int = 1) -> str:
-    worker = f"pool-test-{tmp_path.name}"
+    worker = f"pool-test-{uuid.uuid4().hex[:12]}"
     log = Path(f"/tmp/opencode-factory-{worker}.log")
     outcome = tmp_path / "outcome"
     log.write_text(text)
@@ -191,26 +191,17 @@ def _marker(worker: str, model: str, outcome: str, scope: str) -> str:
     )
 
 
-def test_pool_scope_survives_the_trusted_persistence_round_trip(monkeypatch) -> None:
+def test_pool_scope_survives_the_trusted_persistence_round_trip(tmp_path, monkeypatch) -> None:
+    import factory_state_operations as operations
+    import factory_turso_operations
     from factory_model_attempt_events import model_attempt_events
     from factory_state_ledger import refine_trusted_failover_models
 
-    spec = importlib.util.spec_from_file_location(
-        "factory_state_operations_pool", SCRIPTS / "factory_state_operations.py"
-    )
-    assert spec is not None and spec.loader is not None
-    operations = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(operations)
-    neon_spec = importlib.util.spec_from_file_location(
-        "neon_operations_harness", ROOT / "tests" / "test_factory_neon_operations.py"
-    )
-    assert neon_spec is not None and neon_spec.loader is not None
-    harness = importlib.util.module_from_spec(neon_spec)
-    neon_spec.loader.exec_module(harness)
+    from tests import turso_support as support
 
     monkeypatch.setenv("FACTORY_SLOTS_PER_PROVIDER", "1")
     monkeypatch.delenv("FACTORY_SLOT_PROVIDER_SOURCES", raising=False)
-    worker, (terminal_source, _) = sorted(operations._roster().items())[0]
+    worker, (terminal_source, _) = sorted(factory_turso_operations.roster().items())[0]
     log = _marker(worker, "synthetic/paid", "provider_quota", "pool") + _marker(
         worker, "synthetic/forged", "provider_failure", "pool"
     )
@@ -257,16 +248,17 @@ def test_pool_scope_survives_the_trusted_persistence_round_trip(monkeypatch) -> 
     events = model_attempt_events("45300344438", outcome, attempt + log)
     assert [event["outcome_class"] for event in events] == ["provider_quota"]
 
-    conn = harness.RuntimeConn()
-    assert asyncio.run(operations.project_runtime(conn, "acme/widgets", 4001, refined)) is True
-    record = conn.kv["factory-credit-pool-v1:acme/widgets:source:orcarouter"][0]
-    assert record["scope"] == "pool" and "streak" not in record
-    assert record["next_retry_at"] is not None
-    assert not any(k.startswith("factory-model-backoff-v1:") for k in conn.kv)
-    assert "factory-provider-backoff-v1:acme/widgets:source:orcarouter" not in conn.kv
-    assert not any(
-        k.endswith("synthetic/zero") or k.endswith("synthetic/unpriced") for k in conn.kv
-    )
+    with support.bound("file", tmp_path / "state.sqlite", monkeypatch) as (db, repo):
+        assert operations.record_runtime(repo, 4001, refined) is True
+        rows = db.read("SELECT * FROM factory_backoff WHERE repo = :r", {"r": repo})
+    keys = {row["backoff_key"]: row for row in rows}
+    pool = keys[f"factory-credit-pool-v1:{repo}:source:orcarouter"]
+    record = json.loads(pool["detail"])
+    assert record["scope"] == "pool" and pool["streak"] == 0
+    assert pool["next_retry_at"] is not None
+    assert not any(k.startswith("factory-model-backoff-v1:") for k in keys)
+    assert f"factory-provider-backoff-v1:{repo}:source:orcarouter" not in keys
+    assert not any(k.endswith("synthetic/zero") or k.endswith("synthetic/unpriced") for k in keys)
 
 
 def test_terminal_classifier_scopes_out_of_credits_to_the_last_candidate() -> None:

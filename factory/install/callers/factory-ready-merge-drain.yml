@@ -20,6 +20,7 @@ jobs:
   rotisserie:
     uses: JoshCLWren/rotisserie/.github/workflows/factory-ready-merge-drain.yml@main
     secrets:
-      NEON_API_KEY: ${{ secrets.NEON_API_KEY }}
+      FACTORY_TURSO_TOKEN: ${{ secrets.FACTORY_TURSO_TOKEN }}
+      FACTORY_TURSO_URL: ${{ secrets.FACTORY_TURSO_URL }}
       OPENROUTER_JEV_API_KEY: ${{ secrets.OPENROUTER_JEV_API_KEY }}
       PR_REBASE_TOKEN: ${{ secrets.PR_REBASE_TOKEN }}

@@ -65,6 +65,7 @@ def acquire_slot(
     _validate(worker, number, slots, ttl, distinct)
     if not core.enabled():
         return {"status": "conflict", "reason": "ledger_disabled"}
+    core.refuse_if_paused()
     db = core.store()
     worker_key = _keys(repo, worker, [])[0]
     for _ in range(ATTEMPTS):

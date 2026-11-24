@@ -406,7 +406,7 @@ def sync(github: GitHub, item: Sync) -> Synced:
 
     GitHub refuses the update when the head moved (a worker pushed) or the merge
     conflicts; either way nothing changes and the reason is reported. This is
-    the shared ``factory_branch_sync`` path: a Neon lease where Neon is
+    the shared ``factory_branch_sync`` path: a store lease where the factory store is
     reachable, otherwise owner labels (and the result says so).
     """
     from rotisserie.factory_console.service import sync as branch_sync

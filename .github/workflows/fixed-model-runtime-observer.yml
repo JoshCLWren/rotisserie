@@ -2,10 +2,19 @@ name: Fixed Model Runtime Observer
 on:
   workflow_call:
     secrets:
+      FACTORY_TURSO_URL:
+        required: false
+      FACTORY_TURSO_TOKEN:
+        required: false
+      # Kept until every adopter re-runs the installer: a caller that still
+      # passes it keeps the store required, so the job fails closed.
       NEON_API_KEY:
         required: false
 
 env:
+  # The store is required wherever the adopter configured one; missing
+  # credentials then fail the job instead of running without coordination.
+  FACTORY_STATE_REQUIRED: ${{ secrets.FACTORY_TURSO_URL != '' || secrets.NEON_API_KEY != '' }}
   # Operator settings (rotisserie factory settings) reach every factory script.
   FACTORY_REPO_VARS: >-
     {"FACTORY_SLOTS_PER_PROVIDER": "${{ vars.FACTORY_SLOTS_PER_PROVIDER }}", "FACTORY_PR_WIP_LIMIT": "${{ vars.FACTORY_PR_WIP_LIMIT }}", "FACTORY_REVIEW_BACKLOG_LIMIT": "${{ vars.FACTORY_REVIEW_BACKLOG_LIMIT }}", "FACTORY_OMNIROUTE_FREE_ENTRY_CAP": "${{ vars.FACTORY_OMNIROUTE_FREE_ENTRY_CAP }}", "FACTORY_NO_DIFF_RETRY_LIMIT": "${{ vars.FACTORY_NO_DIFF_RETRY_LIMIT }}", "FACTORY_NO_DIFF_RETRY_RESET_SECONDS": "${{ vars.FACTORY_NO_DIFF_RETRY_RESET_SECONDS }}", "FACTORY_REVIEW_FAILURE_COOLDOWN_SECONDS": "${{ vars.FACTORY_REVIEW_FAILURE_COOLDOWN_SECONDS }}", "FACTORY_FIXED_LEASE_TTL_SECONDS": "${{ vars.FACTORY_FIXED_LEASE_TTL_SECONDS }}", "FACTORY_LOCAL_LEASE_TTL_SECONDS": "${{ vars.FACTORY_LOCAL_LEASE_TTL_SECONDS }}", "FACTORY_PRIORITY_ORDER": "${{ vars.FACTORY_PRIORITY_ORDER }}", "FACTORY_DISABLED_PROVIDERS": "${{ vars.FACTORY_DISABLED_PROVIDERS }}", "FACTORY_DISABLED_MODELS": "${{ vars.FACTORY_DISABLED_MODELS }}", "FACTORY_INCIDENTS": "${{ vars.FACTORY_INCIDENTS }}"}
@@ -105,12 +114,12 @@ jobs:
           echo 'publish=true' >> "$GITHUB_OUTPUT"
           cat "$RUNNER_TEMP/runtime-outcome.json"
 
-      - name: Configure shared Neon factory registry cache
+      - name: Configure the factory store
         if: steps.runtime.outputs.publish == 'true'
-        uses: ./.github/actions/factory-state-cache
+        uses: ./.github/actions/factory-store
         with:
-          neon-api-key: ${{ secrets.NEON_API_KEY }}
-          neon-project-id: ${{ vars.NEON_PROJECT_ID }}
+          url: ${{ secrets.FACTORY_TURSO_URL }}
+          token: ${{ secrets.FACTORY_TURSO_TOKEN }}
 
       - name: Summarize observed worker outcome
         if: steps.runtime.outputs.publish == 'true'
@@ -118,7 +127,7 @@ jobs:
         run: |
           set -Eeuo pipefail
           # Visibility only. Issue #1093 is retired as a registry: the trusted
-          # job log and the Neon write below are the authoritative record.
+          # job log and the store write below are the authoritative record.
           data="$RUNNER_TEMP/runtime-outcome.json"
           {
             echo "### Observed factory worker outcome"
@@ -128,7 +137,7 @@ jobs:
             echo "PR: \`$(jq -r '.delivery_pr // "none"' "$data")\`"
           } >> "$GITHUB_STEP_SUMMARY"
 
-      - name: Persist classified worker completion in Neon
+      - name: Persist classified worker completion in the factory store
         if: always() && steps.runtime.outputs.publish == 'true'
         shell: bash
         run: |
@@ -136,3 +145,6 @@ jobs:
           python3 .github/scripts/factory_state_ledger.py runtime-outcome \
             --repo "$GITHUB_REPOSITORY" --run-id "$RUN_ID" \
             --file "$RUNNER_TEMP/runtime-outcome.json"
+      - name: Remove the factory store token
+        if: always()
+        run: rm -f "$RUNNER_TEMP/factory-store-token"

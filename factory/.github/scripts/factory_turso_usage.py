@@ -295,9 +295,9 @@ def _read_usage(
 def from_env(
     env: Mapping[str, str], *, now: datetime | None = None, fetch: Fetch | None = None
 ) -> dict[str, Any]:
-    """One trusted read. Turso is in use only once the workflow says Neon is gone (D4)."""
+    """One trusted read. Turso is in use wherever the workflow has the store URL."""
     moment = now or datetime.now(UTC)
-    in_use = env.get("FACTORY_NEON_CONFIGURED", "").lower() == "false"
+    in_use = bool(env.get("FACTORY_TURSO_URL", ""))
     token = env.get("FACTORY_TURSO_API_TOKEN", "")
     url = env.get("FACTORY_TURSO_URL", "")
     missing = [

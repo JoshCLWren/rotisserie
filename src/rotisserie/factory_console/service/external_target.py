@@ -2,7 +2,7 @@
 
 A person who names the item decides the priority. Factory intake rules
 (capacity, backpressure, ranking, "offered now") never apply here. Only an
-active Neon lease on the item, held by someone else, refuses the claim.
+active store lease on the item, held by someone else, refuses the claim.
 """
 
 from __future__ import annotations

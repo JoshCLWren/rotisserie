@@ -126,7 +126,7 @@ def test_stale_lease_is_still_held_until_liveness_proved() -> None:
     )
     assert result.offers[0].status == "held"
     assert result.offers[0].lease == stale
-    assert "unreconciled Neon lease" in " ".join(result.offers[0].hold_reasons)
+    assert "unreconciled store lease" in " ".join(result.offers[0].hold_reasons)
 
 
 def test_linked_issue_claim_blocks_pr_review() -> None:

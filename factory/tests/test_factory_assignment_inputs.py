@@ -98,7 +98,7 @@ def test_trusted_validation_and_health_outputs_are_under_worker_lock():
     assert factory['needs'] == 'validate_assignment'
     assert preparation['outputs']['exclusions'] == '${{ steps.prepare.outputs.exclusions }}'
     assert 'NEON_API_KEY' not in json.dumps(factory)
-    assert 'FACTORY_STATE_DSN_FILE' not in json.dumps(factory)
+    assert 'FACTORY_TURSO_TOKEN_FILE' not in json.dumps(factory)
     assert 'validate-assignment' in json.dumps(preparation)
 
 

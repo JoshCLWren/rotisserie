@@ -14,8 +14,6 @@ from __future__ import annotations
 from collections.abc import Callable, Mapping
 from typing import Any
 
-import factory_state_operations_core as core
-
 CatalogReader = Callable[[str], Mapping[str, Any]]
 
 
@@ -49,7 +47,9 @@ def drop_exhausted_slots(
 ) -> tuple[list[str], list[str]]:
     from factory_published_model_catalog import PUBLIC_CATALOGS, published_catalog
 
-    roster = core._roster()
+    import factory_turso_operations as operations
+
+    roster = operations.roster()
     wanted = {
         roster[w][0]
         for w in workers

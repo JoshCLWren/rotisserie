@@ -114,7 +114,7 @@ def rotisserie_issue_intake(issues: list[dict[str, Any]], prs: list[dict[str, An
     A deliberate operator-forced worker can bypass *soft* WIP/review-backlog
     pressure in the portable Rotisserie decision, but the same snapshot still
     enforces human boundaries, incomplete dependencies and existing changes.
-    This does not bypass live GitHub or Neon claim checks.
+    This does not bypass live GitHub or store claim checks.
     """
     try:
         control = json.loads(ROTISSERIE_CONTROL_PATH.read_text(encoding="utf-8"))
@@ -269,7 +269,7 @@ def replace_factory_labels(
 def issue_has_open_blocker(number: int, *, live: bool = False) -> bool:
     """Return whether an issue has an open dependency blocker.
 
-    Ranking reads can use a bounded Neon snapshot. Actual issue assignment
+    Ranking reads can use a bounded store snapshot. Actual issue assignment
     explicitly rechecks the authoritative GitHub dependency list immediately
     before claiming a transactional lease, bypassing the discovery cache.
     """
@@ -521,27 +521,28 @@ def assign_candidate(
         if not target_still_unowned(number):
             return False
     # The ranked snapshot may have been taken before a CI run started. Do not
-    # allocate a Neon lease to a PR that is currently waiting on CI.
+    # allocate a store lease to a PR that is currently waiting on CI.
     if candidate.kind == 'pr' and candidate.stage in STAGE_LABELS:
         if not candidate_is_live_executable(candidate):
             return False
     if candidate.kind == 'issue' and issue_has_open_blocker(candidate.number, live=True):
         # A fresh dependency was added after ranking; never convert an
-        # advisory Neon cache hit into a blocked GitHub lease mutation.
+        # advisory store cache hit into a blocked GitHub lease mutation.
         return False
 
     if worker_has_active_lease(worker):
         return False
 
     # Acquire one atomic worker + issue/PR reservation before mutating GitHub.
-    # GitHub live checks remain required; a Neon conflict never grants a claim.
+    # GitHub live checks remain required; a store conflict never grants a claim.
     try:
         claim_token = acquire_lease(
             REPO, worker, numbers, FIXED_LEASE_TTL_SECONDS,
             external_wip_seen=EXTERNAL_WIP_SEEN if candidate.kind == 'issue' else None,
         )
     except Exception as exc:
-        print(f'[factory-controller] Neon lease unavailable; refusing duplicate-risk assignment ({type(exc).__name__})', file=sys.stderr)
+        paused = type(exc).__name__ in ('ClaimsPaused', 'StoreBlocked')
+        print(f'[factory-controller] New claims paused: {exc}' if paused else f'[factory-controller] Factory store unavailable; refusing duplicate-risk assignment ({type(exc).__name__})', file=sys.stderr)
         return False
     if claim_token is None:
         return False
@@ -556,14 +557,14 @@ def assign_candidate(
                 except Exception:
                     pass
         finally:
-            # A failed GitHub write must not strand the Neon claim.
+            # A failed GitHub write must not strand the store claim.
             try:
                 release_lease(REPO, worker, claim_token, 'claim-rollback')
             except Exception as exc:
-                print(f'[factory-controller] Neon claim rollback failed ({type(exc).__name__})', file=sys.stderr)
+                print(f'[factory-controller] store claim rollback failed ({type(exc).__name__})', file=sys.stderr)
     claimed: list[int] = []
     try:
-        # Close the race between the first check and the Neon reservation.
+        # Close the race between the first check and the store reservation.
         # A newly queued CI run must release the reservation before labels,
         # comments, or model execution are written to GitHub.
         if candidate.kind == 'pr' and candidate.stage in STAGE_LABELS:
@@ -747,7 +748,7 @@ def recent_factory_comments(
     if target_pr is not None and target_pr <= 0:
         raise ValueError("target_pr must be a positive PR number")
     def fetch_pages(since_epoch: int) -> tuple[list[dict[str, object]], int]:
-        # Round *down* to share the same Neon GET key across near-simultaneous
+        # Round *down* to share the same store GET key across near-simultaneous
         # dispatchers. The extra comments are a safe superset; retry-window
         # filtering still uses the original now_epoch.
         since = datetime.fromtimestamp(since_epoch - since_epoch % 60, tz=timezone.utc).isoformat().replace('+00:00', 'Z')
@@ -1041,7 +1042,7 @@ def paired_owned_targets(
 
 
 def _label_outlived_claim(worker: str, number: int) -> bool:
-    """Return True only when Neon proves the worker holds no claim on the target."""
+    """Return True only when the factory store proves the worker holds no claim on the target."""
     if not ledger_enabled():
         return False
     try:
@@ -1076,7 +1077,7 @@ def reconcile_stale_leases(now_epoch: int | None = None) -> list[int]:
     try:
         renew_verified_workers(REPO, [str(worker) for worker in active])
     except Exception as exc:
-        print(f'[factory-controller] verified Neon renewal deferred ({type(exc).__name__})', file=sys.stderr)
+        print(f'[factory-controller] verified store renewal deferred ({type(exc).__name__})', file=sys.stderr)
     issue_items, pr_items = list_issues(), list_prs()
     targets = {
         int(item["number"]): item
@@ -1096,7 +1097,7 @@ def reconcile_stale_leases(now_epoch: int | None = None) -> list[int]:
             continue
         paired_number = pairs.get(number)
         if fixed_owner and _label_outlived_claim(fixed_owner.group('worker'), number):
-            # Assignment claims Neon before labelling and every release clears
+            # Assignment claims the factory store before labelling and every release clears
             # labels first, so a label with no claim is a failed release.
             if replace_factory_labels(
                 number,
@@ -1107,7 +1108,7 @@ def reconcile_stale_leases(now_epoch: int | None = None) -> list[int]:
             ):
                 released.append(number)
                 print(
-                    f'[factory-controller] released {owner} label on #{number}: no Neon claim',
+                    f'[factory-controller] released {owner} label on #{number}: no store claim',
                     file=sys.stderr,
                 )
             continue
@@ -1176,14 +1177,14 @@ def reconcile_stale_leases(now_epoch: int | None = None) -> list[int]:
         token, claim_numbers = snapshot
         try:
             # Every target of the original token must have relinquished its
-            # label. A newer Neon claim never matches this captured token.
+            # label. A newer store claim never matches this captured token.
             if all(
                 not target_owned_by(number, f'factory:{worker_id}')
                 for number in claim_numbers
             ):
                 release_lease(REPO, worker_id, token, 'stale-lease-reconciled')
         except Exception as exc:
-            print(f'[factory-controller] stale Neon release deferred ({type(exc).__name__})', file=sys.stderr)
+            print(f'[factory-controller] stale store release deferred ({type(exc).__name__})', file=sys.stderr)
     return released
 
 
@@ -1324,12 +1325,12 @@ def runtime_quota_block_reason(worker: str) -> str | None:
     # Share availability/cooldowns instead of reparsing thousands of comments
     # for every worker. On DB outage, retain the old trusted evidence path.
     try:
-        from factory_state_operations import enabled as neon_enabled, filter_workers
-        if neon_enabled():
+        from factory_state_operations import enabled as store_enabled, filter_workers
+        if store_enabled():
             allowed, blocked = filter_workers(REPO, [worker])
             return None if allowed else "; ".join(blocked)
     except Exception as exc:
-        print(f"[factory-controller] Neon health unavailable: {type(exc).__name__}", file=sys.stderr)
+        print(f"[factory-controller] store health unavailable: {type(exc).__name__}", file=sys.stderr)
     # Provider status is mandatory; an outage is not permission to spend.
     return f"Factory {worker} deferred: shared provider health unavailable"
 
@@ -1549,7 +1550,7 @@ def assign_from_pool(worker: str, kinds: tuple[str, ...] | None = None,
                 print(f"[factory-controller] exact-head retry cooling: {sorted(cooling)}", file=sys.stderr)
                 candidates = [c for c in candidates if c.number not in cooling]
         except Exception as exc:
-            print(f"[factory-controller] Neon retry read deferred ({type(exc).__name__})", file=sys.stderr)
+            print(f"[factory-controller] store retry read deferred ({type(exc).__name__})", file=sys.stderr)
     candidates = order_candidates_for_worker(
         resolve_review_head_contributors(candidates, prs), worker
     )
@@ -1743,16 +1744,12 @@ def log_completion_result(
 
 
 def _active_claim(worker: str, number: int, claim_id: object = '') -> tuple[str, list[int]] | None:
-    """Without Neon the GitHub owner label is the lease; the caller checks it.
+    """Without the factory store the GitHub owner label is the lease; the caller checks it.
 
-    A handoff that carries a claim ID was issued through Neon and is always
-    checked against Neon.
+    A handoff that carries a claim ID was issued through the factory store and is always
+    checked against the factory store.
     """
-    if (
-        not claim_id
-        and not ledger_enabled()
-        and os.environ.get('FACTORY_NEON_LEASE_REQUIRED') != 'true'
-    ):
+    if not claim_id and not ledger_enabled() and os.environ.get('FACTORY_STATE_REQUIRED') != 'true':
         return '', [number]
     return worker_claim(REPO, worker, active_only=True)
 
@@ -1887,7 +1884,7 @@ def _retry_transient_github[T](operation: Callable[[], T]) -> T:
 
 
 def release_worker(worker: str, reason: str = 'controller-release', *, details=None, expected_claim: str = '') -> list[int]:
-    """Release an exiting worker's exact Neon claim, never a later assignment.
+    """Release an exiting worker's exact store claim, never a later assignment.
 
     Trusted pre/post-session cleanup uses the original transactional claim as
     the target inventory; a potentially stale issue/PR projection is not an
@@ -1899,7 +1896,7 @@ def release_worker(worker: str, reason: str = 'controller-release', *, details=N
     try:
         original_claim = worker_claim(REPO, worker)
     except Exception as exc:
-        print(f'[factory-controller] Neon release snapshot unavailable ({type(exc).__name__})', file=sys.stderr)
+        print(f'[factory-controller] store release snapshot unavailable ({type(exc).__name__})', file=sys.stderr)
         if trusted_exit:
             raise
         original_claim = None
@@ -1926,7 +1923,7 @@ def release_worker(worker: str, reason: str = 'controller-release', *, details=N
             token, claim_numbers = original_claim
             for number in sorted(set(claim_numbers)):
                 try:
-                    # authoritative GitHub, not Neon discovery
+                    # authoritative GitHub, not store discovery
                     current = _retry_transient_github(lambda n=number: target_json(n))
                     active_owners = {
                         label['name'] for label in current.get('labels', [])
@@ -1972,7 +1969,7 @@ def release_worker(worker: str, reason: str = 'controller-release', *, details=N
             ]
             if labels_pending and not deferred and len(labels_pending) == len(failed):
                 # GitHub stayed unavailable after bounded retries. The worker
-                # has exited, so discharge its exact Neon claim anyway rather
+                # has exited, so discharge its exact store claim anyway rather
                 # than holding capacity until the TTL. Labels left on these
                 # targets keep the worker busy for dispatch (GitHub ownership
                 # is checked separately) until stale-lease reconciliation runs.
@@ -2405,9 +2402,9 @@ def forced_target_candidate(kind: str, number: int, requested_action: str = 'adv
 
 
 def assign_forced_target(worker: str, target: tuple[str, int], requested_action: str = 'advance') -> Candidate | None:
-    """Claim an operator-chosen item for one worker through the Neon ledger.
+    """Claim an operator-chosen item for one worker through the store ledger.
 
-    The atomic Neon reservation still prevents two workers from owning the
+    The atomic store reservation still prevents two workers from owning the
     same item. Returns None when this worker could not be reserved.
     """
     candidate, action, stage = forced_target_candidate(target[0], target[1], requested_action)
@@ -2418,7 +2415,7 @@ def assign_forced_target(worker: str, target: tuple[str, int], requested_action:
     if candidate.kind == 'pr' and candidate.linked_issue is not None:
         numbers.insert(0, candidate.linked_issue)
     try:
-        token = acquire_lease(REPO, worker, numbers, FIXED_LEASE_TTL_SECONDS)
+        token = acquire_lease(REPO, worker, numbers, FIXED_LEASE_TTL_SECONDS, explicit=True)
     except Exception as exc:
         raise RuntimeError(f'Claim database unavailable ({type(exc).__name__}); nothing was started.') from None
     if token is None:
@@ -2451,7 +2448,7 @@ def assign_forced_target(worker: str, target: tuple[str, int], requested_action:
         try:
             release_lease(REPO, worker, token, 'operator-claim-rollback')
         except Exception as exc:
-            print(f'[factory-controller] Neon claim rollback failed ({type(exc).__name__})', file=sys.stderr)
+            print(f'[factory-controller] store claim rollback failed ({type(exc).__name__})', file=sys.stderr)
         raise
     print(f'[factory-controller] operator force: claimed {candidate.kind} #{candidate.number} '
           f'action={action} for Factory {worker}', file=sys.stderr)
@@ -2857,7 +2854,7 @@ def main() -> int:
     released = release_worker(args.worker, reason=args.reason, details=outcome, expected_claim=args.claim_id)
     print(json.dumps(outcome if outcome else {'released': released}))
     # A live, actionable claim must never make a cleanup job green.
-    # labels_pending: the Neon claim is discharged but GitHub labels still need
+    # labels_pending: the store claim is discharged but GitHub labels still need
     # stale-lease reconciliation; keep the job red so the gap stays visible.
     return 1 if outcome.get('status') in ('failed', 'deferred', 'missing_claim', 'labels_pending') else 0
 

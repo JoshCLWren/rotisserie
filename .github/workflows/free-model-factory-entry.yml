@@ -39,6 +39,12 @@ on:
         required: false
       MISTRAL_API_KEY:
         required: false
+      FACTORY_TURSO_URL:
+        required: false
+      FACTORY_TURSO_TOKEN:
+        required: false
+      # Kept until every adopter re-runs the installer: a caller that still
+      # passes it keeps the store required, so the job fails closed.
       NEON_API_KEY:
         required: false
       NVIDIA_API_KEY:
@@ -73,6 +79,9 @@ on:
         required: false
 
 env:
+  # The store is required wherever the adopter configured one; missing
+  # credentials then fail the job instead of running without coordination.
+  FACTORY_STATE_REQUIRED: ${{ secrets.FACTORY_TURSO_URL != '' || secrets.NEON_API_KEY != '' }}
   # Operator settings (rotisserie factory settings) reach every factory script.
   FACTORY_REPO_VARS: >-
     {"FACTORY_SLOTS_PER_PROVIDER": "${{ vars.FACTORY_SLOTS_PER_PROVIDER }}", "FACTORY_PR_WIP_LIMIT": "${{ vars.FACTORY_PR_WIP_LIMIT }}", "FACTORY_REVIEW_BACKLOG_LIMIT": "${{ vars.FACTORY_REVIEW_BACKLOG_LIMIT }}", "FACTORY_OMNIROUTE_FREE_ENTRY_CAP": "${{ vars.FACTORY_OMNIROUTE_FREE_ENTRY_CAP }}", "FACTORY_NO_DIFF_RETRY_LIMIT": "${{ vars.FACTORY_NO_DIFF_RETRY_LIMIT }}", "FACTORY_NO_DIFF_RETRY_RESET_SECONDS": "${{ vars.FACTORY_NO_DIFF_RETRY_RESET_SECONDS }}", "FACTORY_REVIEW_FAILURE_COOLDOWN_SECONDS": "${{ vars.FACTORY_REVIEW_FAILURE_COOLDOWN_SECONDS }}", "FACTORY_FIXED_LEASE_TTL_SECONDS": "${{ vars.FACTORY_FIXED_LEASE_TTL_SECONDS }}", "FACTORY_LOCAL_LEASE_TTL_SECONDS": "${{ vars.FACTORY_LOCAL_LEASE_TTL_SECONDS }}", "FACTORY_PRIORITY_ORDER": "${{ vars.FACTORY_PRIORITY_ORDER }}", "FACTORY_DISABLED_PROVIDERS": "${{ vars.FACTORY_DISABLED_PROVIDERS }}", "FACTORY_DISABLED_MODELS": "${{ vars.FACTORY_DISABLED_MODELS }}", "FACTORY_INCIDENTS": "${{ vars.FACTORY_INCIDENTS }}"}
@@ -120,9 +129,9 @@ jobs:
   # Persist the terminal outcome in this trusted, *separate* runner after the
   # model execution job exits. The capacity drain can remain blocked behind
   # dispatch serialization without delaying durable lifecycle recording.
-  # The reusable model job does not receive Neon secrets.
+  # The reusable model job does not receive the store token.
   persist_outcome:
-    name: Persist trusted worker outcome in Neon
+    name: Persist trusted worker outcome in the store
     needs: run
     if: ${{ always() }}
     runs-on: ubuntu-latest
@@ -150,11 +159,11 @@ jobs:
       - name: Overlay Rotisserie factory runtime
         run: bash .rotisserie/runtime/factory/install/overlay.sh .
 
-      - name: Configure restricted Neon factory event ledger
-        uses: ./.github/actions/factory-state-cache
+      - name: Configure the factory store event ledger
+        uses: ./.github/actions/factory-store
         with:
-          neon-api-key: ${{ secrets.NEON_API_KEY }}
-          neon-project-id: ${{ vars.NEON_PROJECT_ID }}
+          url: ${{ secrets.FACTORY_TURSO_URL }}
+          token: ${{ secrets.FACTORY_TURSO_TOKEN }}
 
       - name: Classify and persist this completed worker
         shell: bash
@@ -231,7 +240,7 @@ jobs:
           jq --arg worker "$INPUT_WORKER" '.worker = $worker' \
             "$RUNNER_TEMP/worker-outcome.json" \
             > "$RUNNER_TEMP/worker-outcome-attested.json"
-          # This write is idempotent by (repo, run_id) in Neon. A temporary
+          # This write is idempotent by (repo, run_id) in the store. A temporary
           # connection failure must not silently drop the terminal outcome.
           for attempt in 1 2 3 4; do
             if python3 .github/scripts/factory_state_ledger.py runtime-outcome \
@@ -241,10 +250,10 @@ jobs:
               break
             fi
             if (( attempt == 4 )); then
-              echo "::error::Unable to persist Neon terminal outcome after 4 attempts"
+              echo "::error::Unable to persist the store terminal outcome after 4 attempts"
               exit 1
             fi
-            echo "::warning::Neon terminal write failed; retrying attempt $((attempt + 1))/4" >&2
+            echo "::warning::Store terminal write failed; retrying attempt $((attempt + 1))/4" >&2
             sleep "$((1 << attempt))"
           done
           # The trusted classifier, not the wrapper job's shell exit, owns
@@ -284,7 +293,7 @@ jobs:
             echo
             # Markdown backticks in this printf format are intentional.
             # shellcheck disable=SC2016
-            printf 'Neon terminal classification: `%s`\n' "$classification"
+            printf 'Store terminal classification: `%s`\n' "$classification"
             # Markdown backticks in this printf format are intentional.
             # shellcheck disable=SC2016
             printf 'Checkpoint saved: `%s`; work PR: `%s`; checkpoint validated: `false`\n' "$saved" "${recovery_pr:-none}"
@@ -303,10 +312,10 @@ jobs:
           fi
 
       # Deferred reconciliation: a persister that hit the installation rate
-      # limit (runs 44031401652, 44032359658) left no Neon outcome. Each later
+      # limit (runs 44031401652, 44032359658) left no store outcome. Each later
       # Entry persister backfills a bounded number of earlier misses with the
       # same classifier. Never blocks or changes this run's own verdict.
-      - name: Reconcile earlier Entry outcomes missing from Neon
+      - name: Reconcile earlier Entry outcomes missing from the factory store
         if: ${{ always() }}
         continue-on-error: true
         timeout-minutes: 5
@@ -319,7 +328,7 @@ jobs:
             --repo "$GITHUB_REPOSITORY" --hours 12 --limit 3 \
             --exclude-run "$GITHUB_RUN_ID"
 
-      # The signed-in Actions run, not Neon, owns this durable handoff record.
+      # The signed-in Actions run, not the store, owns this durable handoff record.
       # A failed agent remains failed; this artifact never upgrades the verdict.
       - name: Preserve attested worker outcome artifact
         if: ${{ always() }}
@@ -329,3 +338,6 @@ jobs:
           path: ${{ runner.temp }}/worker-outcome-attested.json
           if-no-files-found: warn
           retention-days: 30
+      - name: Remove the factory store token
+        if: always()
+        run: rm -f "$RUNNER_TEMP/factory-store-token"

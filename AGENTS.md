@@ -49,6 +49,14 @@ at a Rotisserie ref. Adopter-specific values belong in the adopter's
 reusable workflow or in `factory/`.
 Run the factory suite from `factory/` (`uv run --locked pytest -n auto`).
 
+Factory coordination state lives in a libSQL (Turso) store on the free plan
+(`factory/docs/FACTORY_STATE_STORE.md`). Only trusted controller jobs get the
+store, through `.github/actions/factory-store` (a 0600 token file, removed by
+the job's last step); model jobs never do. Every write is one batch with its
+authorizing checks inside it. Never add a paid service, an ORM, dual writes or
+a fallback store; when the store is unavailable or its quota is spent, the
+factory fails closed. Store tests run on SQLite files (`factory/tests/turso_*`).
+
 ## Architecture boundaries
 
 Maintain these layers as the extraction proceeds:

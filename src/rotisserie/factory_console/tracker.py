@@ -101,12 +101,13 @@ DISPATCH_STEPS: tuple[tuple[str, Stage, str], ...] = (
         Stage.PREPARING,
         "Checking GitHub API allowance",
     ),
+    ("Configure the factory store", Stage.PREPARING, "Connecting to the claim database"),
     (
-        "Configure shared Neon factory discovery cache",
+        "Read the published factory store usage",
         Stage.PREPARING,
-        "Connecting to the claim database",
+        "Checking the claim database usage",
     ),
-    ("Initialize Neon operational state", Stage.PREPARING, "Connecting to the claim database"),
+    ("Initialize the factory store", Stage.PREPARING, "Connecting to the claim database"),
     (
         "Capture scheduling inventory once",
         Stage.READING_WORK,

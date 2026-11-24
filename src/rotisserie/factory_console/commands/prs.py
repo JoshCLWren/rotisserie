@@ -96,8 +96,8 @@ def cmd_sync(context: Context, arguments: argparse.Namespace) -> Outcome:
             return Outcome(Result.NO_WORK, EXIT_CODES[Result.NO_WORK], data)
     ledger, why = branch_sync.load_ledger()
     if ledger is None and not arguments.now:
-        console.line(f"Neon is not reachable from here: {why}.")
-        console.line("Queueing instead: the scheduler syncs each one under a Neon lease.")
+        console.line(f"The factory store is not reachable from here: {why}.")
+        console.line("Queueing instead: the scheduler syncs each one under a store lease.")
         queued = branch_sync.queue(context.github, plan, rows)
         for entry in queued:
             (console.ok if entry.ok else console.warn)(entry.text)
@@ -110,7 +110,9 @@ def cmd_sync(context: Context, arguments: argparse.Namespace) -> Outcome:
         context.github, plan, rows, holder=holder, limit=arguments.max, now=arguments.now
     )
     if note:
-        console.warn(f"Neon was not consulted: {note}. Owner labels decided who holds each PR.")
+        console.warn(
+            f"The store was not consulted: {note}. Owner labels decided who holds each PR."
+        )
     for change in changes:
         (console.ok if change.ok else console.warn)(change.text)
     data["synced"] = [change.to_dict() for change in changes]
@@ -132,7 +134,7 @@ def cmd_leases(context: Context, arguments: argparse.Namespace) -> Outcome:
         console.ok(f"Removed {purged} lease row(s) that expired over an hour ago.")
         return Outcome(Result.COMPLETED, EXIT_OK, {"released": purged})
     if arguments.via == "github":
-        console.waiting("Reading Neon leases through the label claim workflow on GitHub")
+        console.waiting("Reading store leases through the label claim workflow on GitHub")
         try:
             data = claimops.leases(
                 context.github, context.clock, list(arguments.what), started=context.progress
@@ -149,7 +151,7 @@ def cmd_leases(context: Context, arguments: argparse.Namespace) -> Outcome:
 def _show_leases(console: Console, data: dict[str, object]) -> None:
     if data.get("note"):
         console.warn(f"{data['note']}. Showing owner labels instead.")
-    console.heading(f"Leases ({'Neon' if data.get('source') == 'neon' else 'owner labels'})")
+    console.heading(f"Leases ({'store' if data.get('source') == 'neon' else 'owner labels'})")
     rows = _rows(data.get("rows"))
     if not rows:
         console.line("Nothing is held.")

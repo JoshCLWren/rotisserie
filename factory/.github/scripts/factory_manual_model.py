@@ -2,7 +2,7 @@
 """Verify an operator-pinned model against its provider's live executable catalog.
 
 This is an execution-boundary check, not a permission to bypass provider credit,
-quota, Neon exclusions, worker identity, or assignment eligibility.
+quota, store exclusions, worker identity, or assignment eligibility.
 """
 from __future__ import annotations
 
@@ -73,7 +73,7 @@ def select_exact(source: str, runtime_model: str, exclusions: dict[str, list[str
         if not any(row.model == model and row.runtime_model == runtime_model for row in models):
             raise ManualModelUnavailable('Exact model missing from current provider chat/tool catalog')
     if model in exclusions.get(source, []):
-        raise ManualModelUnavailable('Exact model is currently excluded by trusted Neon cooldown')
+        raise ManualModelUnavailable('Exact model is currently excluded by trusted store cooldown')
     return {
         'source': source,
         'model': model,

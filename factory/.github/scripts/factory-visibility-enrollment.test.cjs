@@ -70,7 +70,7 @@ async function run({
 }
 
 
-test('fresh Neon PR inventory skips all GitHub enumeration when enrollment is complete', async () => {
+test('fresh store PR inventory skips all GitHub enumeration when enrollment is complete', async () => {
   const labels = [{ name: 'factory' }, { name: 'factory:review' }, { name: 'factory:unowned' }];
   const { reads, gets, writes, repoLabelReads } = await run({
     snapshot: [{ number: 1, labels, headRefOid: sha, headRefName: 'factory/42-1', isDraft: false }],
@@ -82,13 +82,13 @@ test('fresh Neon PR inventory skips all GitHub enumeration when enrollment is co
   assert.equal(repoLabelReads, 0);
 });
 
-test('incomplete Neon PR inventory checks live GitHub before modifying labels', async () => {
+test('incomplete store PR inventory checks live GitHub before modifying labels', async () => {
   const { reads, gets, writes } = await run({
     snapshot: [{ number: 1, labels: [], headRefOid: sha, headRefName: 'factory/42-1', isDraft: false }],
     prs: [pr(1)],
     labels: [],
   });
-  assert.deepEqual(reads, [], 'Neon supplies the candidate inventory');
+  assert.deepEqual(reads, [], 'The factory store supplies the candidate inventory');
   assert.equal(gets.length, 1, 'live PR must still authorize mutation');
   assert.equal(writes.length, 1);
 });

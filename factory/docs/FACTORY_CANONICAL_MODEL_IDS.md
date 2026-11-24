@@ -31,7 +31,7 @@ chat models. It prefers `opencode-go/hy4-flash-free` while that exact model
 is eligible, then rotates through the remaining free Go models. The Zen
 provider `opencode` is explicitly denied by the worker policy. **There is
 no second OpenCode lane**. The old source name is retained solely for stable
-lease identities and Neon events.
+lease identities and factory store events.
 
 The exchange requires `id-token: write` on the calling Entry and reusable
 worker jobs; trusted worker code renews identity before each model attempt.

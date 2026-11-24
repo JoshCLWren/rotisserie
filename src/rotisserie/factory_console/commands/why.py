@@ -39,7 +39,7 @@ def cmd_why(context: Context, arguments: argparse.Namespace) -> Outcome:
             )
         except bridge.BridgeError as exc:
             context.console.finish()
-            context.console.warn(f"Could not read Neon holders: {exc}")
+            context.console.warn(f"Could not read store holders: {exc}")
         else:
             context.console.finish()
             rows = _rows(held.get("rows"))
@@ -47,7 +47,7 @@ def cmd_why(context: Context, arguments: argparse.Namespace) -> Outcome:
             for row in rows:
                 context.console.line(f"  Held by {row.get('holder')} ({row.get('expires_at')})")
             if not rows:
-                context.console.line("  No Neon lease holds it.")
+                context.console.line("  No store lease holds it.")
     return Outcome(Result.COMPLETED, EXIT_OK, data)
 
 

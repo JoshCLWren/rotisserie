@@ -5,7 +5,6 @@ import json
 from datetime import datetime, timezone
 from collections.abc import Mapping
 from typing import Any
-from factory_state_operations import _run, _export_candidate_health
 
 EVENT_TYPES = ("worker_started", "worker_heartbeat", "worker_outcome_signal",
                "worker_completed", "worker_idle", "worker_failed")
@@ -67,39 +66,12 @@ def project_events(rows: list[Mapping[str, Any]]) -> dict[str, dict[str, dict[st
             target[worker] = record
     return {"attempts": attempts, "heartbeats": heartbeats}
 
-async def _export_view(conn: Any, repo: str) -> dict[str, Any]:
-    # Fixed-size projection: one event per worker/type, no historical snapshots.
-    rows = await conn.fetch(
-        """SELECT DISTINCT ON (detail->>'worker', event_type)
-                   event_type, detail, created_at
-             FROM public.factory_state_events
-             WHERE source='github-actions' AND subject_type='worker'
-               AND detail->>'repo'=$1 AND event_type=ANY($2::text[])
-               AND created_at>now()-interval '7 days'
-             ORDER BY detail->>'worker', event_type, created_at DESC""",
-        repo, list(EVENT_TYPES),
-    )
-    view: dict[str, Any] = project_events([dict(row) for row in rows])
-    view["health"] = await _export_candidate_health(conn, repo)
-    return view
-
 def export_view(repo: str) -> dict[str, Any]:
-    return _run(_export_view, repo)
+    from factory_turso_events import export_view as store_view
 
-async def _run_workers(conn: Any, repo: str, ids: list[str]) -> dict[str, str]:
-    if not ids or any(not value.isdecimal() for value in ids):
-        return {}
-    rows = await conn.fetch(
-        """SELECT DISTINCT ON (detail->>'run_id')
-                  detail->>'run_id' AS run_id, detail->>'worker' AS worker
-           FROM public.factory_state_events
-           WHERE source='github-actions' AND subject_type='worker'
-             AND detail->>'repo'=$1 AND detail->>'run_id'=ANY($2::text[])
-           ORDER BY detail->>'run_id', id DESC""",
-        repo, ids,
-    )
-    return {str(row["run_id"]): str(row["worker"])
-            for row in rows if str(row["worker"]).isdecimal()}
+    return store_view(repo)
 
 def run_workers(repo: str, ids: list[str]) -> dict[str, str]:
-    return _run(_run_workers, repo, ids) if ids else {}
+    from factory_turso_events import run_workers as store_workers
+
+    return store_workers(repo, ids) if ids else {}

@@ -32,9 +32,10 @@ def test_age_reads_the_python_isoformat_stamp() -> None:
 def _step() -> dict[str, object]:
     jobs = yaml.safe_load(WORKFLOW.read_text(encoding="utf-8"))["jobs"]
     steps = jobs["dispatch"]["steps"]
-    assert steps[-2]["name"] == STEP
-    assert steps[-1]["name"] == "Queue roster successor outside assignment lease lock"
-    return steps[-2]
+    assert steps[-3]["name"] == STEP
+    assert steps[-2]["name"] == "Queue roster successor outside assignment lease lock"
+    assert steps[-1]["name"] == "Remove the factory store token"
+    return steps[-3]
 
 
 def test_refresh_runs_after_all_assignment_work_and_never_fails_the_tick() -> None:

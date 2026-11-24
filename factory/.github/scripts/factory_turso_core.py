@@ -10,13 +10,17 @@ from __future__ import annotations
 
 import json
 import os
+import re
 from collections.abc import Callable, Mapping, Sequence
+from pathlib import Path
 from typing import Any
 
 import factory_libsql as libsql
 from factory_libsql import Statement, Store, StoreAmbiguous, placeholders
 
 REQUIRED_ENV = "FACTORY_STATE_REQUIRED"
+REPO_RE = re.compile(r"^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$")
+HEAD_RE = re.compile(r"^[a-f0-9]{40}$")
 _STORE: Store | None = None
 
 LEASE_COLUMNS = (
@@ -24,6 +28,40 @@ LEASE_COLUMNS = (
     " source, slot, acquired_at, expires_at, targets, detail"
 )
 EVENT_FIELDS = ("event_id", "run_id", "worker", "claim_id", "source", "model", "outcome_class")
+
+
+USAGE_FILE_ENV = "FACTORY_DB_USAGE_FILE"
+METRICS_FILE_ENV = "FACTORY_STATE_METRICS_FILE"
+
+
+class ClaimsPaused(libsql.StoreError):
+    """New factory claims are paused: store usage is critical or the quota is exhausted."""
+
+
+def claims_paused() -> str:
+    """Why the factory may not start new claims now, or ``""``.
+
+    The report is the published ``db_usage`` value the workflow saved in
+    ``FACTORY_DB_USAGE_FILE``. A missing or unreadable report never pauses;
+    a ``BLOCKED`` store still refuses every request on its own.
+    """
+    from factory_turso_usage import pause_new_claims
+
+    report: Any = None
+    path = os.environ.get(USAGE_FILE_ENV, "")
+    if path:
+        try:
+            report = json.loads(Path(path).read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            report = None
+    paused, reason = pause_new_claims(report if isinstance(report, Mapping) else None)
+    return reason if paused else ""
+
+
+def refuse_if_paused() -> None:
+    reason = claims_paused()
+    if reason:
+        raise ClaimsPaused(reason)
 
 
 def enabled() -> bool:
@@ -41,7 +79,20 @@ def store() -> Store:
         candidate = libsql.connect()
         libsql.ensure_schema(candidate)
         _STORE = candidate
+        if os.environ.get(METRICS_FILE_ENV):
+            import atexit
+
+            atexit.register(_record_usage, candidate)
     return _STORE
+
+
+def _record_usage(db: Store) -> None:
+    """Append this process's request and row counts; never SQL, keys or values."""
+    try:
+        with Path(os.environ[METRICS_FILE_ENV]).open("a", encoding="utf-8") as output:
+            output.write(json.dumps(dict(db.usage), sort_keys=True) + "\n")
+    except (KeyError, OSError):
+        pass
 
 
 def use_store(candidate: Store | None) -> None:
@@ -190,7 +241,7 @@ def event_exists(db: Store, event_id: str) -> bool:
 
 
 def lease_row(row: Mapping[str, Any]) -> dict[str, Any]:
-    """The operator view of one lease row, the same shape the Neon ledger returned."""
+    """The operator view of one lease row, the same shape the retired Neon ledger returned."""
     from datetime import UTC, datetime
 
     targets = json.loads(row.get("targets") or "[]")

@@ -44,7 +44,7 @@ const DEFINITIONS = {
   // Derived observability label (issue #3138). It is never a stage: it stays out
   // of STAGE_LABELS, precedence, BLOCKED_LABELS, and queue selection.
   'factory:merge-conflict': ['E99695', 'GitHub reports the exact pull-request head as merge-conflicted'],
-  // Ready-for-work claim labels (issue #191). Projections only: Neon leases
+  // Ready-for-work claim labels (issue #191). Projections only: store leases
   // decide ownership, and only the label doctor adds factory:available.
   'factory:available': ['0E8A16', 'Open for an outside claim on its current next step: add factory:claimed'],
   'factory:claimed': ['5319E7', 'Claim requested or held; the status comment names the claimant'],
@@ -976,7 +976,7 @@ async function reconcileMissingPrLabels({ github, context, openPullRequests = nu
       return { data: result.data, headers: result.headers, status: result.status };
     });
 
-    // A fresh, webhook-fed Neon snapshot avoids the full open-PR discovery scan.
+    // A fresh, webhook-fed store snapshot avoids the full open-PR discovery scan.
     // A missing/stale DB snapshot falls back to GitHub. Incomplete records are
     // still revalidated against the live PR and labels before any mutation.
     let open;
@@ -992,7 +992,7 @@ async function reconcileMissingPrLabels({ github, context, openPullRequests = nu
         },
         user: { login: item.author?.login || '' },
       }));
-      console.log(`Factory enrollment: using ${open.length} projected PRs from Neon`);
+      console.log(`Factory enrollment: using ${open.length} projected PRs from the factory store`);
     } else {
       const first = await fetchOpenPage(1);
       open = [...first.data];

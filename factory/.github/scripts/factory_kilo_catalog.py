@@ -14,7 +14,7 @@ from pathlib import Path
 # `kilo` provider (`kilo/kilo-auto/free`); older builds used a dedicated
 # `kilo-auto` provider (`kilo-auto/free`). `kilo models kilo-auto` now fails
 # with "Provider not found: kilo-auto", so both shapes are recognised. The
-# canonical model identity stays `kilo-auto/<route>` so Neon health and
+# canonical model identity stays `kilo-auto/<route>` so store health and
 # cooldown history keep their keys; only the runtime selector differs.
 KILO_PROVIDER = "kilo"
 LEGACY_PROVIDER = "kilo-auto"

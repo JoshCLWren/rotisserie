@@ -113,7 +113,7 @@ provider has no public catalog.
 """
 VIA_HELP = (
     "direct: use this machine's claim store connection (default); github: run the "
-    "repository's installed workflow and wait for its result (no Neon needed here)"
+    "repository's installed workflow and wait for its result (no store connection needed here)"
 )
 BILLING_OPTION: dict[str, Any] = {
     "nargs": "?",

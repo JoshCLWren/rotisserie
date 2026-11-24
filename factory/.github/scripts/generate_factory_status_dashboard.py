@@ -888,7 +888,7 @@ def main() -> int:
     page = page.replace("</body>", f'<script id="fleet-snapshot" type="application/json">{payload}</script><script>{js}</script></body>', 1)
     OUTPUT.write_text(page, encoding="utf-8")
     # Safe public projection for the shared Rotisserie browser UI. Never publish
-    # runner environment, secrets, GitHub tokens, Neon credentials or raw logs.
+    # runner environment, secrets, GitHub tokens, store credentials or raw logs.
     public_keys = ("repo", "generated_at", "workers", "merged_prs", "open_prs",
                    "open_issues", "busy_workers", "idle_workers", "pipeline",
                    "throughput", "executable_slot_capacity", "cooling_candidates",

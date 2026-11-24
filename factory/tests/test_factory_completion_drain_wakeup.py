@@ -18,7 +18,7 @@ def test_completion_is_a_credential_minimal_signal_without_discovery():
     assert 'concurrency' not in job
     assert workflow['permissions'] == {'actions': 'write', 'contents': 'read'}
     source = adopter_view(WORKFLOW.name)
-    for obsolete in ('factory-state-cache', 'factory_full_completion_controller.py',
+    for obsolete in ('factory-store', 'factory_full_completion_controller.py',
                      'actions/checkout', 'schedule:', 'factory-work-controller.py'):
         assert obsolete not in source
 

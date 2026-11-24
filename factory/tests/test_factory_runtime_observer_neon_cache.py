@@ -1,4 +1,4 @@
-"""Contract tests for using Neon to avoid per-worker full comment scans."""
+"""Contract tests for using the factory store to avoid per-worker full comment scans."""
 from pathlib import Path
 
 from tests.workflow_files import adopter_view
@@ -10,14 +10,14 @@ WORKFLOW = Path("../.github/workflows/fixed-model-runtime-observer.yml")
 def test_only_trusted_workflow_run_publisher_receives_neon_cache() -> None:
     workflow = adopter_view(WORKFLOW.name)
     classifier, publisher = workflow.split("  publish-runtime-outcome:", 1)
-    assert "factory-state-cache" not in classifier
-    assert "NEON_API_KEY" not in classifier
+    assert "factory-store" not in classifier
+    assert "secrets.FACTORY_TURSO_TOKEN" not in classifier
     assert "github.event_name == 'workflow_run'" in publisher
     assert "github.event.workflow_run.head_repository.full_name == github.repository" in publisher
     assert "ref: main" in publisher
-    assert "uses: ./.github/actions/factory-state-cache" in publisher
+    assert "uses: ./.github/actions/factory-store" in publisher
     assert "if: steps.runtime.outputs.publish == 'true'" in publisher
-    assert "secrets.NEON_API_KEY" in publisher
+    assert "secrets.FACTORY_TURSO_TOKEN" in publisher
 
 
 def test_observer_persists_neon_outcome_without_registry_comments() -> None:

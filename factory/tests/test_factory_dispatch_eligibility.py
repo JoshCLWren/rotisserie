@@ -2,27 +2,36 @@
 
 from __future__ import annotations
 
-import asyncio
 import sys
-from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / ".github" / "scripts"))
 
 import factory_state_operations as operations  # noqa: E402
-import factory_state_operations_core as core  # noqa: E402
 import factory_state_operations_slots as slots  # noqa: E402
+import factory_turso_exports as exports  # noqa: E402
+import factory_turso_operations as turso_operations  # noqa: E402
+import pytest  # noqa: E402
+
+from tests import turso_support as support  # noqa: E402
 
 REPO = "acme/widgets"
+
+
+@pytest.fixture
+def store(tmp_path, monkeypatch):
+    with support.bound("file", tmp_path / "state.sqlite", monkeypatch) as (db, repo):
+        yield db, repo
+
+
 VERCEL = {"data": [{"id": "a/one", "type": "language"}, {"id": "b/two", "type": "language"}]}
 
 
 def test_slot_is_ineligible_when_every_catalog_model_is_excluded(monkeypatch):
-    monkeypatch.setattr(
-        core,
-        "_roster",
-        lambda: {"1": ("vercel-ai-gateway", ""), "2": ("nvidia", ""), "3": ("openrouter-free", "")},
+    support.use_roster(
+        monkeypatch,
+        {"1": ("vercel-ai-gateway", ""), "2": ("nvidia", ""), "3": ("openrouter-free", "")},
     )
 
     def reader(source):
@@ -53,23 +62,35 @@ def test_credit_pool_counts_against_priced_models_only():
     ) == {"vercel-ai-gateway"}
 
 
-class Events:
-    def __init__(self, released):
-        self.released = released
+def _released(db, repo, released):
+    statements = []
+    for index, (targets, minutes_ago) in enumerate(released):
+        sql, params = support.core.event_insert(
+            repo,
+            "github-actions",
+            "worker_released",
+            {
+                "event_id": f"{repo}:released:{index}",
+                "worker": "1",
+                "targets": targets,
+                "reason": "pre-session-abort: no model",
+            },
+            subject_type="worker",
+            subject_number=1,
+        )
+        statements.append((sql, params))
+        statements.append(
+            (
+                "UPDATE factory_state_events SET created_at = unixepoch() - :ago"
+                " WHERE event_id = :e",
+                {"ago": minutes_ago * 60, "e": f"{repo}:released:{index}"},
+            )
+        )
+    db.batch(statements)
 
-    async def fetch(self, sql, *args):
-        if "factory_pr_stage_retry" in sql:
-            return []
-        assert "worker_released" in sql and "pre-session-abort" in sql
-        return [{"targets": targets, "created_at": at} for targets, at in self.released]
 
-
-def test_review_pr_cooldown_starts_at_the_latest_abort_and_grows():
-    now = datetime.now(UTC)
-
-    def ago(minutes):
-        return now - timedelta(minutes=minutes)
-
+def test_review_pr_cooldown_starts_at_the_latest_abort_and_grows(store):
+    db, repo = store
     heads = {
         5688: ("a" * 40, "factory:review"),
         5700: ("b" * 40, "factory:review"),
@@ -77,29 +98,38 @@ def test_review_pr_cooldown_starts_at_the_latest_abort_and_grows():
         5702: ("d" * 40, "factory:review"),
         5703: ("e" * 40, "factory:review"),
     }
-    conn = Events([
-        ([5688], ago(10)), ([5688], ago(5)),
-        ([5700], ago(1)),
-        ([5701], ago(2)), ([5701], ago(1)),
-        ([5702], ago(50)), ([5702], ago(40)),
-        ([5703], ago(90)), ([5703], ago(60)), (["5703"], ago(40)),
-    ])
-    assert asyncio.run(operations._cooling_prs(conn, REPO, heads)) == {5688, 5703}
+    _released(
+        db,
+        repo,
+        [
+            ([5688], 10),
+            ([5688], 5),
+            ([5700], 1),
+            ([5701], 2),
+            ([5701], 1),
+            ([5702], 50),
+            ([5702], 40),
+            ([5703], 90),
+            ([5703], 60),
+            (["5703"], 40),
+        ],
+    )
+    assert operations.cooling_prs(repo, heads) == {5688, 5703}
 
 
-def test_filter_keeps_workers_when_the_slot_check_fails(monkeypatch):
-    monkeypatch.setattr(operations, "enabled", lambda: True)
-    monkeypatch.setattr(operations, "_run", lambda fn, repo, workers: (list(workers), []))
+def test_filter_keeps_workers_when_the_slot_check_fails(store, monkeypatch):
+    _, repo = store
+    monkeypatch.setattr(turso_operations, "eligibility", lambda db, r, ws: (list(ws), []))
 
     def broken(*_args, **_kwargs):
-        raise RuntimeError("neon down")
+        raise RuntimeError("store down")
 
-    monkeypatch.setattr(operations, "export_model_exclusions", broken)
-    kept, rejected = operations.filter_workers(REPO, ["1", "2"])
+    monkeypatch.setattr(exports, "export_model_exclusions", broken)
+    kept, rejected = operations.filter_workers(repo, ["1", "2"])
     assert kept == ["1", "2"]
     assert rejected == ["catalog slot check skipped (RuntimeError)"]
-    monkeypatch.setattr(operations, "export_model_exclusions", lambda repo: {})
+    monkeypatch.setattr(exports, "export_model_exclusions", lambda repo: {})
     monkeypatch.setattr(
         slots, "drop_exhausted_slots", lambda repo, workers, excluded: (workers[:1], ["2: empty"])
     )
-    assert operations.filter_workers(REPO, ["1", "2"]) == (["1"], ["2: empty"])
+    assert operations.filter_workers(repo, ["1", "2"]) == (["1"], ["2: empty"])

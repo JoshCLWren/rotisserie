@@ -6,10 +6,19 @@ on:
         type: string
         required: false
     secrets:
+      FACTORY_TURSO_URL:
+        required: false
+      FACTORY_TURSO_TOKEN:
+        required: false
+      # Kept until every adopter re-runs the installer: a caller that still
+      # passes it keeps the store required, so the job fails closed.
       NEON_API_KEY:
         required: false
 
 env:
+  # The store is required wherever the adopter configured one; missing
+  # credentials then fail the job instead of running without coordination.
+  FACTORY_STATE_REQUIRED: ${{ secrets.FACTORY_TURSO_URL != '' || secrets.NEON_API_KEY != '' }}
   # Operator settings (rotisserie factory settings) reach every factory script.
   FACTORY_REPO_VARS: >-
     {"FACTORY_SLOTS_PER_PROVIDER": "${{ vars.FACTORY_SLOTS_PER_PROVIDER }}", "FACTORY_PR_WIP_LIMIT": "${{ vars.FACTORY_PR_WIP_LIMIT }}", "FACTORY_REVIEW_BACKLOG_LIMIT": "${{ vars.FACTORY_REVIEW_BACKLOG_LIMIT }}", "FACTORY_OMNIROUTE_FREE_ENTRY_CAP": "${{ vars.FACTORY_OMNIROUTE_FREE_ENTRY_CAP }}", "FACTORY_NO_DIFF_RETRY_LIMIT": "${{ vars.FACTORY_NO_DIFF_RETRY_LIMIT }}", "FACTORY_NO_DIFF_RETRY_RESET_SECONDS": "${{ vars.FACTORY_NO_DIFF_RETRY_RESET_SECONDS }}", "FACTORY_REVIEW_FAILURE_COOLDOWN_SECONDS": "${{ vars.FACTORY_REVIEW_FAILURE_COOLDOWN_SECONDS }}", "FACTORY_FIXED_LEASE_TTL_SECONDS": "${{ vars.FACTORY_FIXED_LEASE_TTL_SECONDS }}", "FACTORY_LOCAL_LEASE_TTL_SECONDS": "${{ vars.FACTORY_LOCAL_LEASE_TTL_SECONDS }}", "FACTORY_PRIORITY_ORDER": "${{ vars.FACTORY_PRIORITY_ORDER }}", "FACTORY_DISABLED_PROVIDERS": "${{ vars.FACTORY_DISABLED_PROVIDERS }}", "FACTORY_DISABLED_MODELS": "${{ vars.FACTORY_DISABLED_MODELS }}", "FACTORY_INCIDENTS": "${{ vars.FACTORY_INCIDENTS }}"}
@@ -47,22 +56,22 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           LOCAL_REVIEW_EVIDENCE: ${{ inputs.evidence }}
         run: python3 .github/scripts/factory_local_review.py
-      # reconcile-ci must see outside-agent Neon claims (no GitHub owner
+      # reconcile-ci must see outside-agent store claims (no GitHub owner
       # label) so it never moves a PR an outside agent is working on.
-      - name: Configure shared restricted Neon authority
-        uses: ./.github/actions/factory-state-cache
+      - name: Configure the shared factory store
+        uses: ./.github/actions/factory-store
         with:
-          neon-api-key: ${{ secrets.NEON_API_KEY }}
-          neon-project-id: ${{ vars.NEON_PROJECT_ID }}
+          url: ${{ secrets.FACTORY_TURSO_URL }}
+          token: ${{ secrets.FACTORY_TURSO_TOKEN }}
 
-      - name: Let factory scripts read outside-agent claims
-        run: python3 -m pip install --quiet --disable-pip-version-check 'asyncpg>=0.30,<1'
 
       - name: Reconcile canonical gates and wake merge drain
         env:
-          # A configured but unconnected claim store holds promotion closed.
-          FACTORY_NEON_CONFIGURED: ${{ vars.NEON_PROJECT_ID != '' }}
+          # FACTORY_STATE_REQUIRED (workflow env): an unconnected required store holds promotion closed.
           GH_TOKEN: ${{ github.token }}
         run: |
           python3 .github/scripts/factory-review-controller.py reconcile-ci
           gh workflow run factory-ready-merge-drain.yml --ref main
+      - name: Remove the factory store token
+        if: always()
+        run: rm -f "$RUNNER_TEMP/factory-store-token"

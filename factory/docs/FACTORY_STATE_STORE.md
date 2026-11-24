@@ -1,9 +1,12 @@
 # Factory execution and coordination state
 
 GitHub is authoritative for issues, PRs, labels, ownership at mutation boundaries,
-commit SHAs, reviews, CI, merges and closure. Neon never authorizes a merge.
-Only trusted control-plane jobs receive the existing restricted `factory_state`
-connection in project `delicate-sea-51036121`; model jobs receive no Neon secret.
+commit SHAs, reviews, CI, merges and closure. The factory store never
+authorizes a merge. The store is a libSQL (Turso) database on the free plan.
+Only trusted control-plane jobs receive its URL and a token file (the
+`factory-store` action); model jobs receive no store credential. Jobs that only
+read get `FACTORY_TURSO_READ_TOKEN`. The factory no longer uses Neon; the
+adopter application database is separate and unaffected.
 
 ## Execution handoff
 
@@ -25,7 +28,7 @@ lease expiration recover interruptions.
 
 Entry persists its trusted classified outcome before sending a completion run
 ID to the signal-only completion bridge. The bridge performs one Actions
-workflow dispatch with no checkout, Neon connection, demand/registry discovery,
+workflow dispatch with no checkout, store connection, demand/registry discovery,
 model selection or lease mutation. The duplicate refill workflow and five-minute
 completion-demand scan are removed. The canonical hourly dispatcher watchdog
 recovers missed events; productive roster cycles retain their bounded successor.
@@ -54,37 +57,39 @@ projection reconciliation and compression transport are deleted. The REST shim
 only adapts CLI response shapes and reads this job's explicit inventory; generic
 API calls and all individual targets/checks/reviews/mutations remain live.
 
-## Storage mapping and remaining dependencies
+## Storage mapping
 
-| Existing storage | Purpose | Destination/status |
+| Responsibility | Store table | Notes |
 | --- | --- | --- |
-| `factory-github-get-v1:*` KV | Duplicated GitHub REST responses | Removed; bounded migration cleanup deletes rows |
-| `<repo>:open-issues`, `<repo>:open-prs` KV | Candidate discovery | Per-job memory; obsolete rows deleted |
-| `factory-projection-v1:*` KV | Duplicated issue/PR state and full-snapshot watermarks | Removed; targeted event inputs and hourly recovery replace synchronization |
-| `<repo>:registry-comments` KV | Retired full registry snapshot | Replaced by compact lifecycle/model/provider records, targeted trusted GitHub marker checks, and bounded comment deltas. Remove the row after deployed workflow verification |
-| `factory-lease-v1:*` KV | Atomic worker and target exclusion | Retained; acquired together under a short transaction lock, renewed only after live run verification, released by original UUID |
-| Worker/model/provider backoff KV families | Fibonacci/exponential retry across independent runs | Retained; no model/provider credentials or source retirement on ordinary transient failures |
-| `factory_model_health` | Verified source/model failures, cooldowns, explicit 410 retirement | Retained coordination; prevents concurrent independent runs repeatedly probing broken routes |
-| `factory_provider_budget` | Account quota/cooldown/concurrency policy | Retained coordination; GitHub cannot atomically reserve provider capacity |
-| `factory_provider_reservation` | Capacity tied to original claim token and expiry | Retained in the same acquisition/release transaction as worker/target leases |
-| `factory_pr_stage_retry` | Exact-head/stage retry not-before | Retained coordination; a new SHA is immediately eligible |
-| `factory_worker_metrics` | Bounded source/model delivery ranking counters | Retained operational dependency; execution failure remains distinct from persisted code delivery |
-| `factory_runtime_event_keys` | Idempotence across independent terminal collectors | Retained coordination; duplicate completion must not double-count/reset breakers |
-| `factory_check_projection` | Advisory CI/review observations | Production writer retired; CI/review completions directly wake exact-head PR scheduling, legacy table requires one-time cleanup |
-| `factory_reconciliation_cursor` | Backfill and coalesced wakeups | Dead: no caller wrote a checkpoint or wakeup, the table held 0 rows (Nov 24), and the registry-observation bootstrap that read it is removed. Not carried to SQLite |
-| `factory_state_events` | Lifecycle/retry history plus old discovery observations | Runtime history still has consumers; lifecycle events expire after 30 days, raw model attempts after 120 days into daily counts (see below) |
+| Worker, target, slot, operation and external claims | `factory_lease` | Typed `kind`; acquired in one write batch, renewed only after live run verification, released by original UUID; an expired external claim still holds |
+| Worker, model, provider and credit-pool backoffs | `factory_backoff` | Fibonacci streaks grow inside the upsert; quota and throttle refusals write reset-timed cooldowns |
+| Health reset marker | `factory_repo_state.health_reset_at` | |
+| Model health and retirement | `factory_model_health` | |
+| Operator provider limits | `factory_provider_budget` | Only `concurrency_limit` and `daily_limit`; the daily cap counts today's `worker_assigned` events |
+| Provider capacity | `factory_provider_reservation` | Written in the same batch as the claim |
+| Exact-head PR retry | `factory_pr_stage_retry` | A new SHA is immediately eligible |
+| Delivery ranking counters | `factory_worker_metrics` | |
+| Runtime projection idempotence | `factory_runtime_event_keys` | A duplicate completion changes nothing |
+| Lifecycle, assignment and attempt history | `factory_state_events` | `event_id` is UNIQUE; lifecycle events expire after 30 days, raw model attempts after 120 days into daily counts |
+| Model attempt retention | `factory_model_attempt_daily` | |
+
+Not carried from Neon: the discovery and projection key families
+(`factory-github-get-v1`, `factory-projection-v1`, open issue and PR lists),
+`factory_reconciliation_cursor` (0 rows, no writer) and
+`factory_check_projection` (writer retired; only the old prune touched it).
+The migration tool (`factory_turso_migrate.py`) copies the live tables and
+reports the skipped families as counts.
 
 Leases and provider reservations must survive independent workflows because
 Actions artifacts, outputs and concurrency groups cannot atomically reserve a
-worker, all linked targets and provider capacity. The database lock covers only
-claim/renew/release transactions, never a model session. GitHub ownership is
-rechecked before label changes; exact-head CI/review/merge gates remain live.
+worker, all linked targets and provider capacity. A write batch covers only
+claim/renew/release, never a model session or a GitHub call. GitHub ownership
+is rechecked before label changes; exact-head CI/review/merge gates remain live.
 
-The status job's bounded `prune-obsolete` migration removes only this repository's
-retired GET/target/open-inventory keys, skips an active old refresh lock, and
-processes at most 1,000 records per invocation. It cannot delete lease, backoff,
-registry or provider state. This cleanup is not a replacement cache. Physical
-Postgres allocation can remain until ordinary vacuum reclaims dead storage.
+The status job's bounded `factory_state_operations.py prune` step deletes this
+repository's lifecycle events older than 30 days and rolls raw model attempts
+older than 120 days into daily counts, at most 1,000 rows per batch and five
+batches per run. It cannot delete lease, backoff or provider state.
 
 ## Backoffs: real failures, quota and throttle
 
@@ -188,10 +193,9 @@ needs one lease per piece. Both use slots of one target:
   `attempt-K` or `piece-<id>`. Slot keys are outside the `target:` namespace,
   so the single-holder readers (frontier, external claims) never see them;
 - `acquire_slot(repo, worker, number, slots)` in
-  `factory_state_ledger_slots.py` is the only allocator. Under the repository
-  advisory lock it takes the first free slot from the ordered list, writes the
-  slot row and the worker row with one claim UUID, and reserves provider
-  capacity like a normal lease;
+  `factory_turso_slots.py` is the only allocator. In one write batch it takes
+  the first free slot from the ordered list, writes the slot row and the worker
+  row with one claim UUID, and reserves provider capacity like a normal lease;
 - one claim per worker; siblings on one target use distinct providers unless
   the caller passes `distinct="none"`;
 - an expired slot is free again, like an expired worker lease. Renewal of
@@ -206,7 +210,7 @@ Nothing assigns slots yet: the dispatcher still leases one worker per item.
 The check-completion workflow sends an explicit `pr:<number>` wakeup only for
 an open, non-draft PR on its current exact head. It never uses an advisory
 database snapshot to authorize a merge. Ordinary CI/guard/review success and
-failure events do **no Neon lookup or write**. A failed trusted review transports
+failure events do **no store lookup or write**. A failed trusted review transports
 only its exact head and workflow-run ID into the retained
 `factory_pr_stage_retry` table, idempotently, so a broken reviewer does not
 immediately spin. The lightweight event job still verifies live GitHub PR
@@ -218,43 +222,22 @@ schema initialization or consumed by factory readers. Its historical rows
 remain physically present until the separately verified retention migration
 removes them.
 
-## Access paths, indexes and retention (#254)
+## Retention
 
-The original tables existed before these lookups grew hot, and
-`ensure_schema` stops at its first table check. The dispatcher's trusted
-`bootstrap` step therefore runs `factory_state_indexes.ensure_upgrades`. It
-checks each object with `to_regclass` and creates a missing one under a
-non-blocking advisory lock with a 5-second lock timeout. A failure (for
-example a role that does not own the table) is printed in the step output and
-does not stop the factory. A fresh database gets the same statements from
-`factory-state-schema.sql`.
+Lifecycle events keep the 30-day, repository-fenced prune. Raw
+`model_attempt` events are kept for 120 days. The status job then moves older
+ones, in one batch, into `factory_model_attempt_daily` (repo, UTC day, source,
+model, outcome: attempts, timed attempts, total duration). The longest raw
+reader is `rotisserie factory estimate-history`: 45 days by default and at
+most 120 (`estimate_neon.py` `DEFAULT_DAYS`, `DAYS_RANGE`). The reliability
+export and runtime view read 24 hours and 7 days, and the outcome reconciler
+reads 12 hours. A reader that needs per-model history older than 120 days
+reads the daily table. Reliability and runtime-view exports run at most once
+an hour.
 
-| Object | Serves |
-| --- | --- |
-| `idx_factory_state_events_event_id` | Event dedup (`detail->>'event_id'`), `recorded_runtime_runs` |
-| `idx_factory_state_events_run_id` | `run_workers` run-to-worker lookup |
-| `idx_factory_state_events_worker_recent` | Reliability export, runtime view, failure streak (lifecycle and terminal events only) |
-| `idx_factory_state_events_retired` | Retired `cache_refresh`/`target_reconciled` arms of the prune (empty once cleaned) |
-| `idx_factory_state_kv_key_prefix` | Key-prefix reads (`text_pattern_ops`); prefixes are escaped `LIKE` patterns |
-| `factory_model_attempt_daily` | Daily per-model attempt counts for retained history |
+## Neon measurements before the store (history)
 
-The lifecycle dedup is one `INSERT ... SELECT ... WHERE NOT EXISTS` under the
-repository lock, not a read followed by a write. The dedup index is not
-unique, because existing rows were never checked for duplicates.
-
-Retention: lifecycle events keep the existing 30-day, repository-fenced
-prune. Raw `model_attempt` events are kept for 120 days. The status job then
-moves older ones, in one statement, into `factory_model_attempt_daily` (repo,
-UTC day, source, model, outcome: attempts, timed attempts, total duration).
-The longest raw reader is `rotisserie factory estimate-history`: 45 days by
-default and at most 120 (`estimate_neon.py` `DEFAULT_DAYS`, `DAYS_RANGE`).
-The reliability export and runtime view read 24 hours and 7 days, and the
-outcome reconciler reads 12 hours. A reader that needs per-model history older
-than 120 days reads the daily table.
-
-## Measurements and scope status
-
-Baseline inspection on 2026-11-15, before migration:
+Baseline inspection on 2026-11-15, on the retired Neon database:
 
 | Category | Observed rows / bytes |
 | --- | --- |
@@ -283,32 +266,35 @@ complete live worker/continuation evidence and actual before/after per-cycle
 measurements remain. A green merge or a simulated handoff does not establish
 those acceptance criteria.
 
-## SQLite and libSQL schema
+## Store schema
 
-`factory-state.sqlite.sql` is the schema for the Turso (libSQL) move (#253).
-It keeps the coordination tables above with typed, indexed columns for the
+`factory-state.sqlite.sql` is the schema. It has typed, indexed columns for the
 properties that queries filter on, a unique `event_id`, epoch-second times
 compared against the database clock, a `repo` column on every table and a
-`_schema_version` table (Turso Cloud cannot set `PRAGMA user_version`). Leases
-and backoffs leave the generic key-value table for `factory_lease` and
-`factory_backoff`. The discovery cache, the reconciliation cursor and the
-check projection are not carried over.
+`_schema_version` table (Turso Cloud cannot set `PRAGMA user_version`). The
+dispatcher's `bootstrap` step applies it; every statement is idempotent.
 
-## libSQL store (D3)
+## libSQL store
 
-`factory_libsql.py` and the `factory_turso_*` modules implement the same
-functions on libSQL. Nothing imports them until the cutover (#257) changes
-the imports of `factory_state_ledger.py` and `factory_state_operations.py`.
-Every write is one Hrana batch: BEGIN IMMEDIATE, the statements, COMMIT, in
-one HTTP request. The first statement holds every authorizing check (key
-free, external work in progress, daily cap, slot provider) and each later
-statement runs only if that row carries this call's claim or event identity.
-An external handoff marks the claim pending with a nonce, verifies on
-GitHub with no transaction open, then finalizes only if the nonce and every
-target row still match. A lost response is reconciled by reading the claim
-or event back before one resend. An unreachable or `BLOCKED` store raises,
-so acquisition fails closed.
+`factory_libsql.py` and the `factory_turso_*` modules implement the factory
+state. `factory_state_ledger.py` and `factory_state_operations.py` keep the
+public names and the command lines that workflows call. Every write is one
+Hrana batch: BEGIN IMMEDIATE, the statements, COMMIT, in one HTTP request.
+The first statement holds every authorizing check (key free, external work in
+progress, daily cap, slot provider) and each later statement runs only if that
+row carries this call's claim or event identity. An external handoff marks the
+claim pending with a nonce, verifies on GitHub with no transaction open, then
+finalizes only if the nonce and every target row still match. A lost response
+is reconciled by reading the claim or event back before one resend. An
+unreachable or `BLOCKED` store raises, so acquisition fails closed.
 
 The trusted environment names the store: `FACTORY_TURSO_URL` with the token
-in the file `FACTORY_TURSO_TOKEN_FILE`, or `FACTORY_STATE_SQLITE` for a
-local file. `FACTORY_STATE_REQUIRED=true` makes an unconfigured store fatal.
+in the file `FACTORY_TURSO_TOKEN_FILE`, or `FACTORY_STATE_SQLITE` for a local
+file. `FACTORY_STATE_REQUIRED=true` makes an unconfigured store fatal; each
+reusable workflow sets it whenever the adopter passes the store URL.
+
+New factory claims pause while the published usage report (`db_usage` in
+`factory-stats.json`) is critical: the dispatcher saves it to
+`FACTORY_DB_USAGE_FILE`, and `acquire_lease` and `acquire_slot` raise
+`ClaimsPaused`. An operator's explicit target is not paused by usage. Renewal
+and release never pause. A `BLOCKED` store refuses every request on its own.

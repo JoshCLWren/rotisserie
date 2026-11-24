@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "notes": "Per-source conservative UTC-day dispatch caps for metered or free-credit providers; Neon owns shared daily usage when available. Inference sessions can require many requests; API limits still win and sessions must honor provider quota errors.",
+  "notes": "Per-source conservative UTC-day dispatch caps for metered or free-credit providers; the factory store owns shared daily usage when available. Inference sessions can require many requests; API limits still win and sessions must honor provider quota errors.",
   "sources": {
     "orcarouter": {
       "max_dispatches_per_utc_day": 1,

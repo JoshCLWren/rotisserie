@@ -152,7 +152,7 @@ def add_parser(
         help="read the ranked work frontier for external agents (never claims work)",
         description=(
             "Inspect versioned, ranked controller candidates and all known holds. "
-            "Neon ownership is authoritative and unavailable lease evidence holds closed. "
+            "Store ownership is authoritative and unavailable lease evidence holds closed. "
             "The result is read-only; a separate trusted claim is required before work."
         ),
     )
@@ -348,7 +348,7 @@ def add_parser(
 
     tags = commands.add_parser(
         "labels",
-        help="audit claim and lifecycle labels against Neon and the frontier (dry run)",
+        help="audit claim and lifecycle labels against the store and the frontier (dry run)",
     )
     tags.add_argument("--repair", action="store_true", help="apply the planned label changes")
     tags.add_argument(
@@ -381,8 +381,8 @@ def add_parser(
         description=(
             "Merge the default branch into each pull request with GitHub's update-branch, "
             "refusing when its head moved (so a worker's push is never overwritten) and while "
-            "a worker holds it. Neon leases decide ownership where Neon is configured; "
-            "otherwise owner labels do, and the output says Neon was not consulted. A PR that "
+            "a worker holds it. Store leases decide ownership where the store is configured; "
+            "otherwise owner labels do, and the output says the store was not consulted. A PR that "
             "conflicts with main is reported and left to merge-conflict work."
         ),
     )
@@ -400,7 +400,7 @@ def add_parser(
         "--now",
         action="store_true",
         help=(
-            "without Neon, sync right away on owner labels instead of queueing for the "
+            "without the store, sync right away on owner labels instead of queueing for the "
             "scheduler's leased sync (a worker assigned mid-sync is possible)"
         ),
     )
@@ -410,7 +410,7 @@ def add_parser(
 
     holds = commands.add_parser(
         "leases",
-        help="who holds which factory item (Neon leases, or owner labels without Neon)",
+        help="who holds which factory item (store leases, or owner labels without the store)",
     )
     holds.add_argument("what", nargs="*", help="pr:N or issue:N (default: every lease)")
     holds.add_argument(

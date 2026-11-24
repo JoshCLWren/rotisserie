@@ -1,7 +1,7 @@
 """Ready-for-work label projection and label doctor policy (issue #191).
 
 Pure and deterministic: callers pass the item's labels plus authoritative
-facts (the controller frontier offer and the Neon lease holder) and get the
+facts (the controller frontier offer and the store lease holder) and get the
 exact label changes back. The existing stage labels stay the next-step
 vocabulary. This module owns only the claim labels and the legacy set; owner
 and stage contradictions use the work policy's own normaliser so the doctor
@@ -85,7 +85,7 @@ def legacy_replacement(label: str) -> str | None:
 
 @dataclass(frozen=True)
 class Holder:
-    """Who Neon says holds the item. ``kind`` is none, factory, external or unknown."""
+    """Who the factory store says holds the item. ``kind`` is none, factory, external or unknown."""
 
     kind: str
     actor: str = ""
@@ -164,9 +164,9 @@ class _Draft:
 
 
 def available_wanted(facts: Facts, labels: set[str]) -> tuple[bool, str]:
-    """Whether the frontier, Neon and the labels agree the item is open for a claim."""
+    """Whether the frontier, the factory store and the labels agree the item is open for a claim."""
     if facts.holder.kind == "unknown":
-        return False, "Neon lease state unknown: availability withheld"
+        return False, "store lease state unknown: availability withheld"
     if facts.holder.kind != "none":
         return False, "a lease holds this item"
     if labels & work.BLOCKED_LABELS:
@@ -237,15 +237,15 @@ def plan(facts: Facts) -> Plan:
 def _claim_labels(facts: Facts, draft: _Draft) -> None:
     holder = facts.holder
     if holder.label_claim:
-        draft.put(CLAIMED, f"Neon holds a label claim by {holder.actor}")
+        draft.put(CLAIMED, f"The factory store holds a label claim by {holder.actor}")
         draft.drop(REJECTED, "the claim was accepted")
     elif CLAIMED in draft.labels and holder.kind == "none":
         if facts.claimed_age is not None and facts.claimed_age >= CLAIM_REQUEST_GRACE_SECONDS:
-            draft.drop(CLAIMED, "no Neon claim backs factory:claimed")
+            draft.drop(CLAIMED, "no store claim backs factory:claimed")
         else:
             draft.holds.append("claim request not answered yet")
     elif CLAIMED in draft.labels and holder.kind == "unknown":
-        draft.holds.append("Neon unavailable: factory:claimed left as is")
+        draft.holds.append("Factory store unavailable: factory:claimed left as is")
     elif CLAIMED in draft.labels and holder.kind in ("factory", "external"):
         if facts.claimed_age is not None and facts.claimed_age >= CLAIM_REQUEST_GRACE_SECONDS:
             draft.drop(CLAIMED, "another lease holds the item; the label claim is not it")

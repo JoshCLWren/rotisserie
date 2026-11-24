@@ -12,7 +12,7 @@ on:
   workflow_dispatch:
     inputs:
       mode:
-        description: Label doctor mode, leases or backoffs to read Neon, estimate-history, or db-usage
+        description: Label doctor mode, leases or backoffs to read the factory store, estimate-history, or db-usage
         type: choice
         options: [dry-run, repair, delete-legacy, leases, backoffs, estimate-history, db-usage]
         default: dry-run
@@ -38,6 +38,6 @@ jobs:
       mode: ${{ inputs.mode }}
       targets: ${{ inputs.targets }}
     secrets:
-      NEON_API_KEY: ${{ secrets.NEON_API_KEY }}
       FACTORY_TURSO_API_TOKEN: ${{ secrets.FACTORY_TURSO_API_TOKEN }}
+      FACTORY_TURSO_TOKEN: ${{ secrets.FACTORY_TURSO_TOKEN }}
       FACTORY_TURSO_URL: ${{ secrets.FACTORY_TURSO_URL }}

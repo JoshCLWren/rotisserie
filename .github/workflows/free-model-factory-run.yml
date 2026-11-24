@@ -22,8 +22,13 @@ on:
         default: auto
         type: string
     secrets:
+      FACTORY_TURSO_URL:
+        required: false
+      FACTORY_TURSO_TOKEN:
+        required: false
+      # Kept until every adopter re-runs the installer: a caller that still
+      # passes it keeps the store required, so the job fails closed.
       NEON_API_KEY:
-        description: Restricted connection resolution in trusted cleanup jobs only
         required: false
       OPENCODE_GO_CLIENT_ID:
         required: false
@@ -96,6 +101,9 @@ concurrency:
   cancel-in-progress: false
 
 env:
+  # The store is required wherever the adopter configured one; missing
+  # credentials then fail the job instead of running without coordination.
+  FACTORY_STATE_REQUIRED: ${{ secrets.FACTORY_TURSO_URL != '' || secrets.NEON_API_KEY != '' }}
   # Operator settings (rotisserie factory settings) reach every factory script.
   FACTORY_REPO_VARS: >-
     {"FACTORY_SLOTS_PER_PROVIDER": "${{ vars.FACTORY_SLOTS_PER_PROVIDER }}", "FACTORY_PR_WIP_LIMIT": "${{ vars.FACTORY_PR_WIP_LIMIT }}", "FACTORY_REVIEW_BACKLOG_LIMIT": "${{ vars.FACTORY_REVIEW_BACKLOG_LIMIT }}", "FACTORY_OMNIROUTE_FREE_ENTRY_CAP": "${{ vars.FACTORY_OMNIROUTE_FREE_ENTRY_CAP }}", "FACTORY_NO_DIFF_RETRY_LIMIT": "${{ vars.FACTORY_NO_DIFF_RETRY_LIMIT }}", "FACTORY_NO_DIFF_RETRY_RESET_SECONDS": "${{ vars.FACTORY_NO_DIFF_RETRY_RESET_SECONDS }}", "FACTORY_REVIEW_FAILURE_COOLDOWN_SECONDS": "${{ vars.FACTORY_REVIEW_FAILURE_COOLDOWN_SECONDS }}", "FACTORY_FIXED_LEASE_TTL_SECONDS": "${{ vars.FACTORY_FIXED_LEASE_TTL_SECONDS }}", "FACTORY_LOCAL_LEASE_TTL_SECONDS": "${{ vars.FACTORY_LOCAL_LEASE_TTL_SECONDS }}", "FACTORY_PRIORITY_ORDER": "${{ vars.FACTORY_PRIORITY_ORDER }}", "FACTORY_DISABLED_PROVIDERS": "${{ vars.FACTORY_DISABLED_PROVIDERS }}", "FACTORY_DISABLED_MODELS": "${{ vars.FACTORY_DISABLED_MODELS }}", "FACTORY_INCIDENTS": "${{ vars.FACTORY_INCIDENTS }}"}
@@ -135,10 +143,10 @@ jobs:
           persist-credentials: false
       - name: Overlay Rotisserie factory runtime
         run: bash .rotisserie/runtime/factory/install/overlay.sh .
-      - uses: ./.github/actions/factory-state-cache
+      - uses: ./.github/actions/factory-store
         with:
-          neon-api-key: ${{ secrets.NEON_API_KEY }}
-          neon-project-id: ${{ vars.NEON_PROJECT_ID }}
+          url: ${{ secrets.FACTORY_TURSO_URL }}
+          token: ${{ secrets.FACTORY_TURSO_TOKEN }}
       - name: Verify original active claim and live target
         id: prepare
         env:
@@ -147,7 +155,6 @@ jobs:
           FACTORY_WORKER: ${{ inputs.worker }}
           REQUESTED_MODEL: ${{ inputs.model || 'auto' }}
           REQUESTED_PROVIDER: ${{ inputs.provider || 'auto' }}
-          FACTORY_NEON_LEASE_REQUIRED: ${{ secrets.NEON_API_KEY != '' }}
         run: |
           set -Eeuo pipefail
           printf '%s' "$FACTORY_ASSIGNMENT" | python3 .github/scripts/factory-work-controller.py validate-assignment --worker "$FACTORY_WORKER" >/dev/null
@@ -186,10 +193,10 @@ jobs:
           fi
           jq -e 'type == "array" and all(.[]; type == "string")' <<< "$review_authors" >/dev/null || review_authors='[]'
           echo "review_authors=$(jq -c . <<< "$review_authors")" >> "$GITHUB_OUTPUT"
-      # Trusted lifecycle evidence lives in Neon, keyed by this Entry run.
+      # Trusted lifecycle evidence lives in the factory store, keyed by this Entry run.
       # It replaces the retired issue #1093 heartbeat comments; the model job
       # never receives the DSN and no GitHub comment is read or written.
-      - name: Record trusted worker start in Neon
+      - name: Record trusted worker start in the factory store
         continue-on-error: true
         env:
           FACTORY_WORKER: ${{ inputs.worker }}
@@ -199,6 +206,9 @@ jobs:
             --repo "$GITHUB_REPOSITORY" --run-id "$GITHUB_RUN_ID" \
             --worker "$FACTORY_WORKER" --status started \
             || echo '::warning::FACTORY_LIFECYCLE_DEFERRED status=started; terminal outcome still persists from the job log'
+      - name: Remove the factory store token
+        if: always()
+        run: rm -f "$RUNNER_TEMP/factory-store-token"
 
   factory:
     needs: validate_assignment
@@ -464,16 +474,16 @@ jobs:
         run: |
           set -Eeuo pipefail
           discovery_outcome="$RUNNER_TEMP/factory-discovery-outcome"
-          exclusions_file="$RUNNER_TEMP/factory-neon-model-exclusions.json"
+          exclusions_file="$RUNNER_TEMP/factory-trusted-model-exclusions.json"
           printf '%s\n' "$FACTORY_MODEL_EXCLUSIONS" > "$exclusions_file"
           printf '%s\n' "$FACTORY_FLEET_SOURCES" > "$RUNNER_TEMP/factory-fleet-sources.json"
           jq -e 'type == "object" and all(.[]; type == "array")' "$exclusions_file" >/dev/null || {
-            printf 'control_plane_failure\tTrusted Neon model snapshot unavailable\n' > "$discovery_outcome"
+            printf 'control_plane_failure\tTrusted store model snapshot unavailable\n' > "$discovery_outcome"
             exit 1
           }
           # A lane whose own catalog is fully cooling, unreadable or empty
           # must not fail the dispatch. Select the next eligible pair across
-          # the trusted Neon fleet admission instead, exactly as the worker
+          # the trusted store fleet admission instead, exactly as the worker
           # does after a failed attempt, and log the trusted transition.
           fleet_fallback() {
             local reason="$1" fallback
@@ -901,7 +911,7 @@ jobs:
           WORKER_STATUS_FILE: ${{ runner.temp }}/factory-worker-status
           DISCOVERY_OUTCOME_FILE: ${{ runner.temp }}/factory-discovery-outcome
         # Visibility only, written to the job summary (not the classified job
-        # log). The trusted Entry persister classifies the job log into Neon;
+        # log). The trusted Entry persister classifies the job log into the store;
         # issue #1093 is retired as a registry and is never written.
         continue-on-error: true
         run: |
@@ -938,7 +948,7 @@ jobs:
             printf -- '- Provisional attempt outcome: `%s`\n' "$attempt_outcome"
             printf -- '- Detail: %s\n' "$attempt_detail"
             echo
-            echo 'The trusted Entry persister classifies the job log into Neon.'
+            echo 'The trusted Entry persister classifies the job log into the store.'
           } >> "$GITHUB_STEP_SUMMARY"
 
   release_pre_session_lease:
@@ -971,13 +981,13 @@ jobs:
       - name: Overlay Rotisserie factory runtime
         run: bash .rotisserie/runtime/factory/install/overlay.sh .
       - uses: ./.github/actions/factory-syntax
-      # Only this trusted, separate cleanup job receives the Neon DSN.
+      # Only this trusted, separate cleanup job receives the store token.
       # The model-running factory job above must never see it.
-      - name: Configure restricted Neon factory lease release
-        uses: ./.github/actions/factory-state-cache
+      - name: Configure the factory store for lease release
+        uses: ./.github/actions/factory-store
         with:
-          neon-api-key: ${{ secrets.NEON_API_KEY }}
-          neon-project-id: ${{ vars.NEON_PROJECT_ID }}
+          url: ${{ secrets.FACTORY_TURSO_URL }}
+          token: ${{ secrets.FACTORY_TURSO_TOKEN }}
       - name: Release lease after pre-session abort
         shell: bash
         env:
@@ -990,16 +1000,16 @@ jobs:
             echo 'Invalid worker ID; refusing lease recovery' >&2
             exit 1
           }
-          # Never clear GitHub ownership without the transactional Neon ledger.
-          [[ -s "${FACTORY_STATE_DSN_FILE:-}" ]] || {
-            echo 'Neon factory lease connection missing; refusing split release' >&2
+          # Never clear GitHub ownership without the transactional store ledger.
+          [[ -s "${FACTORY_TURSO_TOKEN_FILE:-}" ]] || {
+            echo 'Factory store connection missing; refusing split release' >&2
             exit 1
           }
           python3 .github/scripts/factory_worker_slots.py resolve --worker "$FACTORY_WORKER" >/dev/null
           claim_id="$(jq -er '.claim_id | select(type == "string" and length > 0)' <<< "$FACTORY_ASSIGNMENT")"
           python3 .github/scripts/factory-work-controller.py release \
             --worker "$FACTORY_WORKER" --claim-id "$claim_id" --reason "pre-session-abort-run-${GITHUB_RUN_ID}"
-      - name: Record trusted worker exit in Neon
+      - name: Record trusted worker exit in the factory store
         if: always()
         continue-on-error: true
         env:
@@ -1013,6 +1023,9 @@ jobs:
             --repo "$GITHUB_REPOSITORY" --run-id "$GITHUB_RUN_ID" \
             --worker "$FACTORY_WORKER" --status "$status" \
             || echo "::warning::FACTORY_LIFECYCLE_DEFERRED status=$status"
+      - name: Remove the factory store token
+        if: always()
+        run: rm -f "$RUNNER_TEMP/factory-store-token"
 
   release_post_session_lease:
     needs: factory
@@ -1044,11 +1057,11 @@ jobs:
       - name: Overlay Rotisserie factory runtime
         run: bash .rotisserie/runtime/factory/install/overlay.sh .
       - uses: ./.github/actions/factory-syntax
-      - name: Configure restricted Neon post-session lease release
-        uses: ./.github/actions/factory-state-cache
+      - name: Configure the factory store for post-session lease release
+        uses: ./.github/actions/factory-store
         with:
-          neon-api-key: ${{ secrets.NEON_API_KEY }}
-          neon-project-id: ${{ vars.NEON_PROJECT_ID }}
+          url: ${{ secrets.FACTORY_TURSO_URL }}
+          token: ${{ secrets.FACTORY_TURSO_TOKEN }}
       - name: Release worker lease after session exits
         shell: bash
         env:
@@ -1061,15 +1074,15 @@ jobs:
             echo 'Invalid worker ID; refusing lease recovery' >&2
             exit 1
           }
-          [[ -s "${FACTORY_STATE_DSN_FILE:-}" ]] || {
-            echo 'Neon factory lease connection missing; refusing split release' >&2
+          [[ -s "${FACTORY_TURSO_TOKEN_FILE:-}" ]] || {
+            echo 'Factory store connection missing; refusing split release' >&2
             exit 1
           }
           python3 .github/scripts/factory_worker_slots.py resolve --worker "$FACTORY_WORKER" >/dev/null
           claim_id="$(jq -er '.claim_id | select(type == "string" and length > 0)' <<< "$FACTORY_ASSIGNMENT")"
           python3 .github/scripts/factory-work-controller.py release \
             --worker "$FACTORY_WORKER" --claim-id "$claim_id" --reason "post-session-exit-run-${GITHUB_RUN_ID}"
-      - name: Record trusted worker exit in Neon
+      - name: Record trusted worker exit in the factory store
         if: always()
         continue-on-error: true
         env:
@@ -1083,4 +1096,7 @@ jobs:
             --repo "$GITHUB_REPOSITORY" --run-id "$GITHUB_RUN_ID" \
             --worker "$FACTORY_WORKER" --status "$status" \
             || echo "::warning::FACTORY_LIFECYCLE_DEFERRED status=$status"
+      - name: Remove the factory store token
+        if: always()
+        run: rm -f "$RUNNER_TEMP/factory-store-token"
 

@@ -2,14 +2,14 @@
 
 This is the permanent replacement for hand-run sync watchers. The decision and
 the write live in the factory runtime's ``factory_branch_sync`` module, which
-the trusted scheduler runs every tick with Neon leases; this service plans
+the trusted scheduler runs every tick with store leases; this service plans
 candidates from the same evidence ``unstick`` and ``checks`` use and drives that
 module from the console.
 
-Ownership: Neon leases are authoritative. Where the console cannot reach Neon
+Ownership: store leases are authoritative. Where the console cannot reach the factory store
 (an operator laptop) it *queues* the request (label ``factory-sync-main``) for
 the scheduler to perform under a lease. ``now=True`` syncs immediately on owner
-labels alone, and every result says Neon was not consulted.
+labels alone, and every result says the factory store was not consulted.
 
 GitHub cost: every function takes the open-PR rows read once (``open_pull_rows``)
 so a pass shares one list call; each candidate then costs one compare, plus one
@@ -154,7 +154,7 @@ class GitHubHub:
 
 
 def ledger_directories() -> list[Path]:
-    """Where the Neon ledger can be found: the adopter's overlay, then this checkout."""
+    """Where the store ledger can be found: the adopter's overlay, then this checkout."""
     found = [Path.cwd() / ".github" / "scripts"]
     try:
         found.append(runtime.runtime_directory())
@@ -163,12 +163,19 @@ def ledger_directories() -> list[Path]:
     return [path for path in found if (path / "factory_state_ledger.py").is_file()]
 
 
-def load_ledger(env: Mapping[str, str] | None = None) -> tuple[ModuleType | None, str]:
-    """The Neon ledger module, or ``None`` and why it cannot be used here."""
+STORE_ENV = ("FACTORY_TURSO_URL", "FACTORY_STATE_SQLITE")
+
+
+def store_configured(env: Mapping[str, str] | None = None) -> bool:
     values = os.environ if env is None else env
-    if not values.get("FACTORY_STATE_DSN_FILE"):
+    return any(values.get(name) for name in STORE_ENV)
+
+
+def load_ledger(env: Mapping[str, str] | None = None) -> tuple[ModuleType | None, str]:
+    """The store ledger module, or ``None`` and why it cannot be used here."""
+    if not store_configured(env):
         return None, (
-            "Neon is not configured here (FACTORY_STATE_DSN_FILE is unset); leases are "
+            "The factory store is not configured here (FACTORY_TURSO_URL is unset); leases are "
             "visible only to the trusted factory runtime"
         )
     for directory in ledger_directories():
@@ -176,11 +183,11 @@ def load_ledger(env: Mapping[str, str] | None = None) -> tuple[ModuleType | None
         try:
             import factory_state_ledger as ledger  # type: ignore[import-not-found]
         except ImportError as exc:
-            return None, f"the Neon ledger could not load ({exc}); is asyncpg installed?"
+            return None, f"the store ledger could not load ({exc})"
         finally:
             sys.path.remove(str(directory))
         return cast(ModuleType, ledger), ""
-    return None, "the Neon ledger script was not found (run from an adopter checkout)"
+    return None, "the store ledger script was not found (run from an adopter checkout)"
 
 
 def _red(github: GitHub, number: int) -> list[checks.FailingCheck]:
@@ -261,7 +268,7 @@ def execute(
 ) -> tuple[list[SyncOutcome], str]:
     """Sync each candidate under an exclusive lease. Returns outcomes and a lease note.
 
-    Without Neon and without ``now`` this refuses (``RuntimeError``): use :func:`queue`.
+    Without the store and without ``now`` this refuses (``RuntimeError``): use :func:`queue`.
     """
     module = core()
     active_hub = hub if hub is not None else GitHubHub(github)
@@ -270,7 +277,7 @@ def execute(
     if lease_store is None:
         ledger, note = load_ledger()
         if ledger is not None:
-            lease_store = module.NeonLeases(github.repo, holder, ledger)
+            lease_store = module.StoreLeases(github.repo, holder, ledger)
         elif now:
             lease_store = module.LabelLeases(active_hub, pulls)
         else:
@@ -288,7 +295,7 @@ class Queued:
 
 
 def queue(github: GitHub, plan: Plan, rows: Sequence[Obj]) -> list[Queued]:
-    """Ask the trusted scheduler to sync each candidate under a Neon lease.
+    """Ask the trusted scheduler to sync each candidate under a store lease.
 
     One label write per PR not already queued; closed PRs are skipped.
     """
@@ -313,7 +320,7 @@ def queue(github: GitHub, plan: Plan, rows: Sequence[Obj]) -> list[Queued]:
             Queued(
                 item.pr,
                 True,
-                f"PR #{item.pr}: queued; the scheduler syncs it under a Neon lease once no "
+                f"PR #{item.pr}: queued; the scheduler syncs it under a store lease once no "
                 "worker holds it",
             )
         )
@@ -354,7 +361,7 @@ def _describe(row: Mapping[str, object]) -> str:
 def lease_report(
     github: GitHub, rows: Sequence[Obj] | None = None, numbers: Iterable[int] = ()
 ) -> LeaseReport:
-    """Who holds what: Neon when reachable, otherwise owner labels from ``rows``."""
+    """Who holds what: The factory store when reachable, otherwise owner labels from ``rows``."""
     wanted = set(numbers)
     ledger, why = load_ledger()
     if ledger is not None:
@@ -385,7 +392,7 @@ def lease_report(
 
 
 def release_expired(github: GitHub) -> tuple[int | None, str]:
-    """Purge long-expired lease rows (never an active one). ``None`` without Neon."""
+    """Purge long-expired lease rows (never an active one). ``None`` without the factory store."""
     ledger, why = load_ledger()
     if ledger is None:
         return None, why

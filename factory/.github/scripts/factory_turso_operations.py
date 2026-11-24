@@ -1,7 +1,7 @@
 """Dispatch eligibility, daily usage, PR retry cooldowns and worker ranking on the libSQL store.
 
 Same public names and results as ``factory_state_operations``. Eligibility is
-a fresh read before the acquisition batch, as on Neon, where model health and
+a fresh read before the acquisition batch, as on the retired Neon store, where model health and
 backoff writers never took the repository lock either; the authorizing
 capacity checks run inside the batch itself (``factory_turso_leases``).
 """
@@ -15,13 +15,12 @@ from typing import Any
 import factory_turso_core as core
 from factory_libsql import placeholders
 from factory_state_operations_backoff import MODEL_RETRY_CLASSES, worker_backoff_reason
-from factory_state_operations_capacity import (
-    REVIEW_ABORT_LIMIT,
-    REVIEW_ABORT_LOOKBACK_SECONDS,
-    REVIEW_ABORT_MAX_COOLDOWN_SECONDS,
-)
-from factory_state_operations_core import HEAD_RE
+from factory_turso_core import HEAD_RE
 from factory_turso_backoff import record
+
+REVIEW_ABORT_LIMIT = 2
+REVIEW_ABORT_LOOKBACK_SECONDS = 24 * 3600
+REVIEW_ABORT_MAX_COOLDOWN_SECONDS = 6 * 3600
 
 
 def roster() -> dict[str, tuple[str, str]]:

@@ -2,9 +2,9 @@
 
 Reads GitHub (the recent closed ``factory`` PRs, their linked issues and
 the factory's marker comments) and the published ``factory-stats.json``. With
-``history`` (Neon counts the label claim workflow published), attempts and
-person signals come from Neon for every item the history window covers. It
-never connects to Neon. When too few similar items exist it says so and gives
+``history`` (store counts the label claim workflow published), attempts and
+person signals come from the factory store for every item the history window covers. It
+never connects to the factory store. When too few similar items exist it says so and gives
 no number.
 """
 
@@ -185,10 +185,10 @@ def estimate(
     if short:
         notes.append("The GraphQL budget ran low, so fewer items were read than asked.")
     if fallback:
-        notes.append(f"Neon history was not used ({fallback}); attempts come from GitHub markers.")
+        notes.append(f"store history was not used ({fallback}); attempts come from GitHub markers.")
     if history is not None and len(past) - covered:
         notes.append(
-            f"{len(past) - covered} item(s) have no Neon run in the history window (they "
+            f"{len(past) - covered} item(s) have no store run in the history window (they "
             "started earlier, or no run was recorded), so their attempts come from GitHub markers."
         )
     if history is not None and history.unknown_classes:

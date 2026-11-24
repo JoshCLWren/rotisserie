@@ -1,4 +1,4 @@
-"""Authorized external-agent claims over the existing Neon target-lease ledger.
+"""Authorized external-agent claims over the existing store target-lease ledger.
 
 A frontier observation is never authority. Recheck repository permissions, live
 GitHub state and dependency edges before and after the transactional CAS. No
@@ -88,7 +88,7 @@ def ledger() -> ModuleType:
 def principal(github: GitHub, environment: dict[str, str]) -> str:
     """Bind identity to the authenticated GitHub account or trusted Actions actor.
 
-    Write-capable repository permission is required even if the Neon
+    Write-capable repository permission is required even if the factory store
     connection is present. Errors and revoked permissions hold closed.
     """
     if environment.get("GITHUB_ACTIONS") == "true":
@@ -325,7 +325,7 @@ def claim_action(
 
 
 class ClaimStoreUnavailable(RuntimeError):
-    """This machine has no connection to the shared claim store (Neon)."""
+    """This machine has no connection to the shared claim store."""
 
 
 def holder(github: GitHub, number: int) -> dict[str, object] | None:
@@ -340,7 +340,7 @@ def holder(github: GitHub, number: int) -> dict[str, object] | None:
     if not hasattr(store, "external_holder"):
         raise RuntimeError("installed Rotisserie factory runtime cannot read external claims")
     if not store.enabled():
-        raise ClaimStoreUnavailable("FACTORY_STATE_DSN_FILE is not set")
+        raise ClaimStoreUnavailable("FACTORY_TURSO_URL is not set")
     found: dict[str, object] | None = store.external_holder(github.repo, number)
     return found
 

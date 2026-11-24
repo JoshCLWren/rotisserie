@@ -1,7 +1,7 @@
 name: Fixed Model Factory Dispatcher Recovery
 on:
   schedule:
-    - cron: '*/15 * * * *'
+    - cron: '37 * * * *'
   workflow_dispatch:
   push:
     branches: [main]
@@ -18,4 +18,5 @@ jobs:
   rotisserie:
     uses: JoshCLWren/rotisserie/.github/workflows/fixed-model-factory-dispatch-recovery.yml@main
     secrets:
-      NEON_API_KEY: ${{ secrets.NEON_API_KEY }}
+      FACTORY_TURSO_TOKEN: ${{ secrets.FACTORY_TURSO_TOKEN }}
+      FACTORY_TURSO_URL: ${{ secrets.FACTORY_TURSO_URL }}

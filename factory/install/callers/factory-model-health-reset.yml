@@ -24,4 +24,5 @@ jobs:
       include_retired: ${{ inputs.include_retired == true }}
       quota_only: ${{ inputs.quota_only == true }}
     secrets:
-      NEON_API_KEY: ${{ secrets.NEON_API_KEY }}
+      FACTORY_TURSO_TOKEN: ${{ secrets.FACTORY_TURSO_TOKEN }}
+      FACTORY_TURSO_URL: ${{ secrets.FACTORY_TURSO_URL }}

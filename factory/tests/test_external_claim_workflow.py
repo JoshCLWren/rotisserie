@@ -27,15 +27,16 @@ def test_manual_neon_claim_workflow_is_a_controller_not_a_factory_worker() -> No
     # The bridge never runs PR code: it checks out main and the pinned runtime.
     assert "ref: main" in content
     assert "github.event.pull_request" not in content
-    assert "NEON_API_KEY" in content
-    assert "uses: ./.github/actions/factory-state-cache" in content
-    assert "test -s \"$FACTORY_STATE_DSN_FILE\"" in content
+    assert "FACTORY_TURSO_TOKEN" in content
+    assert "uses: ./.github/actions/factory-store" in content
+    assert "test -s \"$FACTORY_TURSO_TOKEN_FILE\"" in content
     assert "GITHUB_RUN_ATTEMPT" in content
     assert "github.triggering_actor" in content
     assert "persist-credentials: false" in content
     assert "FACTORY_REPO_VARS: >-" in content
     assert "factory \"$OP\"" in content
-    assert "uv tool run --with 'asyncpg>=0.30,<1' --from ./.rotisserie/runtime rotisserie" in content
+    assert "uv tool run --from ./.rotisserie/runtime rotisserie" in content
+    assert "asyncpg" not in content
     assert "retention-days: 1" in content
     assert "git push" not in content
     assert "gh issue edit" not in content
@@ -60,5 +61,5 @@ def test_installed_workflow_has_pinned_authoritative_runtime() -> None:
     assert "bash .rotisserie/runtime/factory/install/overlay.sh" in reusable
     assert "persist-credentials: false" in reusable
     assert reusable.index("Check out Rotisserie factory runtime") < reusable.index(
-        "Configure shared restricted Neon authority"
+        "Configure the shared factory store"
     )

@@ -2,14 +2,14 @@
 """Exclusive, compare-and-swap branch synchronization for factory pull requests.
 
 One implementation serves every front end: the trusted scheduler runs it with
-Neon leases through ``main()``; the operator console loads the same module and
+store leases through ``main()``; the operator console loads the same module and
 supplies its own GitHub reader. A sync:
 
 - leaves closed pull requests and heads that already contain the target alone;
-- never runs while a worker holds the pull request. Neon leases are
-  authoritative; owner labels are consulted only when Neon is not configured,
+- never runs while a worker holds the pull request. Store leases are
+  authoritative; owner labels are consulted only when the factory store is not configured,
   and the result says so;
-- holds the target exclusively (a short Neon operation lease) while it writes,
+- holds the target exclusively (a short the factory store operation lease) while it writes,
   so no worker can be assigned the pull request mid-sync;
 - asks GitHub to merge the base branch in with ``expected_head_sha``, so a
   worker's newer push is never overwritten. It never force-pushes and never
@@ -41,7 +41,7 @@ STATUSES = (SYNCED, HELD, CURRENT, CONFLICTS, HEAD_MOVED, CLOSED, ERROR)
 
 HEAD_RE = re.compile(r"^[0-9a-f]{40}$")
 OWNER_LABEL_RE = re.compile(r"^factory:(?:[0-9]+|local)$")
-# A request for the trusted scheduler to sync a PR under a Neon lease. Not a
+# A request for the trusted scheduler to sync a PR under a store lease. Not a
 # ``factory:`` label, so no owner/stage parser ever reads it as ownership.
 QUEUE_LABEL = "factory-sync-main"
 # Results that answer a queued request; anything else keeps it queued.
@@ -88,7 +88,7 @@ class Hub(Protocol):
 
 
 class Leases(Protocol):
-    """Authoritative target ownership. ``consulted`` is False without Neon."""
+    """Authoritative target ownership. ``consulted`` is False without the factory store."""
 
     consulted: bool
 
@@ -116,7 +116,7 @@ class Outcome:
     status: str
     text: str
     head: str = ""
-    neon: bool = True  # whether Neon leases were consulted
+    neon: bool = True  # whether store leases were consulted
 
     @property
     def ok(self) -> bool:
@@ -127,7 +127,7 @@ class Outcome:
 
 
 class LabelLeases:
-    """Fallback when Neon is not configured: owner labels are the only evidence.
+    """Fallback when the factory store is not configured: owner labels are the only evidence.
 
     It cannot hold the target, so a worker assigned between the read and the
     update is possible; the compare-and-swap still protects any push it makes.
@@ -169,7 +169,7 @@ def sync_pull(
     """
     pr = request.pr
     neon = leases.consulted
-    note = "" if neon else " (Neon leases were not consulted; owner labels were)"
+    note = "" if neon else " (store leases were not consulted; owner labels were)"
 
     def done(status: str, text: str, head: str = "") -> Outcome:
         return Outcome(pr, status, f"PR #{pr}: {text}{note}", head, neon)
@@ -274,7 +274,7 @@ def classify_update_error(message: str) -> str:
     return "other"
 
 
-# --- Trusted runtime adapters (gh CLI + Neon ledger) -----------------------------
+# --- Trusted runtime adapters (gh CLI + store ledger) -----------------------------
 
 
 class GhHub:
@@ -356,8 +356,8 @@ class GhHub:
                 raise
 
 
-class NeonLeases:
-    """Neon target leases through ``factory_state_ledger`` (trusted runtime only)."""
+class StoreLeases:
+    """Factory store target leases through ``factory_state_ledger`` (trusted runtime only)."""
 
     consulted = True
 
@@ -382,7 +382,7 @@ class NeonLeases:
             self.repo, self.holder_id, number
         )
         if token == "":
-            raise RuntimeError("Neon is not configured, so no exclusive lease can be taken")
+            raise RuntimeError("The factory store is not configured, so no exclusive lease can be taken")
         return token
 
     def release(self, number: int, token: str) -> None:
@@ -472,10 +472,10 @@ def main(argv: Sequence[str] | None = None) -> int:
         requests = _requests(json.loads(text or "[]"))
     holder = args.holder or f"sync-{os.environ.get('GITHUB_RUN_ID', 'local')}"
     leases: Leases
-    if os.environ.get("FACTORY_STATE_DSN_FILE"):
-        leases = NeonLeases(args.repo, holder)
-    elif os.environ.get("FACTORY_NEON_LEASE_REQUIRED") == "true":
-        print("factory sync: Neon leases are required but not configured", file=sys.stderr)
+    if os.environ.get("FACTORY_TURSO_URL") or os.environ.get("FACTORY_STATE_SQLITE"):
+        leases = StoreLeases(args.repo, holder)
+    elif os.environ.get("FACTORY_STATE_REQUIRED") == "true":
+        print("factory sync: store leases are required but not configured", file=sys.stderr)
         return 1
     else:
         leases = LabelLeases(hub, snapshot)

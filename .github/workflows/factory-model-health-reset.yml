@@ -9,10 +9,19 @@ on:
         type: boolean
         required: false
     secrets:
+      FACTORY_TURSO_URL:
+        required: false
+      FACTORY_TURSO_TOKEN:
+        required: false
+      # Kept until every adopter re-runs the installer: a caller that still
+      # passes it keeps the store required, so the job fails closed.
       NEON_API_KEY:
         required: false
 
 env:
+  # The store is required wherever the adopter configured one; missing
+  # credentials then fail the job instead of running without coordination.
+  FACTORY_STATE_REQUIRED: ${{ secrets.FACTORY_TURSO_URL != '' || secrets.NEON_API_KEY != '' }}
   # Operator settings (rotisserie factory settings) reach every factory script.
   FACTORY_REPO_VARS: >-
     {"FACTORY_SLOTS_PER_PROVIDER": "${{ vars.FACTORY_SLOTS_PER_PROVIDER }}", "FACTORY_PR_WIP_LIMIT": "${{ vars.FACTORY_PR_WIP_LIMIT }}", "FACTORY_REVIEW_BACKLOG_LIMIT": "${{ vars.FACTORY_REVIEW_BACKLOG_LIMIT }}", "FACTORY_OMNIROUTE_FREE_ENTRY_CAP": "${{ vars.FACTORY_OMNIROUTE_FREE_ENTRY_CAP }}", "FACTORY_NO_DIFF_RETRY_LIMIT": "${{ vars.FACTORY_NO_DIFF_RETRY_LIMIT }}", "FACTORY_NO_DIFF_RETRY_RESET_SECONDS": "${{ vars.FACTORY_NO_DIFF_RETRY_RESET_SECONDS }}", "FACTORY_REVIEW_FAILURE_COOLDOWN_SECONDS": "${{ vars.FACTORY_REVIEW_FAILURE_COOLDOWN_SECONDS }}", "FACTORY_FIXED_LEASE_TTL_SECONDS": "${{ vars.FACTORY_FIXED_LEASE_TTL_SECONDS }}", "FACTORY_LOCAL_LEASE_TTL_SECONDS": "${{ vars.FACTORY_LOCAL_LEASE_TTL_SECONDS }}", "FACTORY_PRIORITY_ORDER": "${{ vars.FACTORY_PRIORITY_ORDER }}", "FACTORY_DISABLED_PROVIDERS": "${{ vars.FACTORY_DISABLED_PROVIDERS }}", "FACTORY_DISABLED_MODELS": "${{ vars.FACTORY_DISABLED_MODELS }}", "FACTORY_INCIDENTS": "${{ vars.FACTORY_INCIDENTS }}"}
@@ -43,11 +52,11 @@ jobs:
           persist-credentials: false
       - name: Overlay Rotisserie factory runtime
         run: bash .rotisserie/runtime/factory/install/overlay.sh .
-      - name: Connect restricted factory state database
-        uses: ./.github/actions/factory-state-cache
+      - name: Connect the factory store
+        uses: ./.github/actions/factory-store
         with:
-          neon-api-key: ${{ secrets.NEON_API_KEY }}
-          neon-project-id: ${{ vars.NEON_PROJECT_ID }}
+          url: ${{ secrets.FACTORY_TURSO_URL }}
+          token: ${{ secrets.FACTORY_TURSO_TOKEN }}
       - name: Clear learned model and provider cooldowns
         shell: bash
         env:
@@ -55,8 +64,8 @@ jobs:
           QUOTA_ONLY: ${{ inputs.quota_only }}
         run: |
           set -Eeuo pipefail
-          if [[ -z "${FACTORY_STATE_DSN_FILE:-}" ]]; then
-            echo "::error::Neon factory state connection is required for reset"
+          if [[ -z "${FACTORY_TURSO_TOKEN_FILE:-}" ]]; then
+            echo "::error::The factory store is required for reset"
             exit 1
           fi
           args=(reset-model-health --repo "$GITHUB_REPOSITORY")
@@ -76,3 +85,6 @@ jobs:
           path: ${{ runner.temp }}/model-health-reset.json
           retention-days: 1
           if-no-files-found: warn
+      - name: Remove the factory store token
+        if: always()
+        run: rm -f "$RUNNER_TEMP/factory-store-token"

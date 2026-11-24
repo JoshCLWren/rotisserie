@@ -378,7 +378,7 @@ def test_items_without_a_neon_run_keep_their_marker_count(start: datetime) -> No
     data = estimate.estimate(cast(GitHub, github), "issue:100", now=NOW, history=found)
     assert cast(dict[str, Any], data["source"])["items_from_github"] == 8
     assert cast(dict[str, Any], data["attempts"])["median"] == 4.5
-    assert "have no Neon run in the history window" in str(data["notes"])
+    assert "have no store run in the history window" in str(data["notes"])
 
 
 @pytest.mark.parametrize(

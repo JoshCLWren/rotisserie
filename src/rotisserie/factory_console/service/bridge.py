@@ -1,6 +1,6 @@
 """Run the outside-agent workflows installed in an adopter and read their results.
 
-An agent without the shared claim store (Neon) reserves, renews, releases and
+An agent without the shared claim store reserves, renews, releases and
 hands off work through the adopter's trusted claim workflow, and reads the
 ranked work list through its frontier workflow. Each call here starts one run,
 waits for it to finish and returns the JSON artifact it published, so the CLI

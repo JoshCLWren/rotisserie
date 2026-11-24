@@ -44,13 +44,13 @@ def add_insight_parsers(commands: argparse._SubParsersAction[argparse.ArgumentPa
         choices=("direct", "github"),
         default="direct",
         help="direct: count attempts from GitHub markers (default); github: run the label "
-        "claim workflow to read exact attempts from Neon history, falling back to GitHub",
+        "claim workflow to read exact attempts from store history, falling back to GitHub",
     )
     guess.add_argument(
         "--no-wait", action="store_true", help="with --via github, start the run and return"
     )
     guess.add_argument(
-        "--run", type=int, help="use the Neon history an earlier --via github run published"
+        "--run", type=int, help="use the store history an earlier --via github run published"
     )
     _common(guess)
 
@@ -66,7 +66,7 @@ def add_insight_parsers(commands: argparse._SubParsersAction[argparse.ArgumentPa
 
     trusted = commands.add_parser(
         "estimate-history",
-        help="publish bounded per-item Neon history for estimates (trusted Actions only)",
+        help="publish bounded per-item store history for estimates (trusted Actions only)",
     )
     low, high = neon.DAYS_RANGE
     trusted.add_argument(

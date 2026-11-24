@@ -1,7 +1,7 @@
 """GitHub label claims: add ``factory:claimed`` to request work (issue #191).
 
 A label is a request, never ownership. The trusted event handler checks the
-labeler's write access, the live frontier and the Neon fenced lease through
+labeler's write access, the live frontier and the store fenced lease through
 the same external claim code the workflow bridge uses, then answers on the
 item with labels and one status comment edited in place. Removing the label
 is the claimant's "finished" signal; evidence decides between hand-off and
@@ -127,7 +127,7 @@ def _wake(github: GitHub, kind: str, number: int) -> None:
 def request(
     github: GitHub, kind: str, number: int, environment: dict[str, str]
 ) -> dict[str, object]:
-    """Answer one claim request: exactly one Neon lease wins, the label never decides."""
+    """Answer one claim request: exactly one store lease wins, the label never decides."""
     lp = _lp()
     target = f"{kind}:{number}"
     if string(obj(github.repo_api(f"issues/{number}")), "state") != "open":

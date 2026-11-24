@@ -42,7 +42,7 @@ def exponential_provider_delay(
 ) -> int:
     """Double recent provider cooldowns without penalizing recovered providers.
 
-    This derives the prior delay from the existing durable Neon budget row,
+    This derives the prior delay from the existing durable store row,
     avoiding new schema or one independent timer per concurrent worker.
     """
     base = TRANSIENT[outcome]
@@ -97,8 +97,7 @@ def effective_retry_at(state: dict[str, Any], updated_at: Any = None) -> datetim
 def fibonacci_retry_at(observed: datetime, streak: int) -> datetime:
     """Next retry time; clamps only at the largest representable datetime.
 
-    SQL writers clamp expires_at to 9999-12-31 too, because asyncpg cannot
-    decode a later timestamptz into a Python datetime.
+    Python cannot represent a later datetime, so store readers never see one.
     """
     try:
         return observed + timedelta(seconds=fibonacci_worker_delay(streak))
@@ -140,7 +139,7 @@ def worker_backoff_reason(record: Any, source: str, model: str, now: datetime) -
             return "invalid worker backoff state"
         return f"Fibonacci retry deferred until {until.isoformat()}" if until > now else None
     # Backward compatibility: old timeout keys stored their delay in expires_at.
-    return "legacy timeout cooling in Neon" if record["expires_at"] > now else None
+    return "legacy timeout cooling in the factory store" if record["expires_at"] > now else None
 
 
 MODEL_RETRY_CLASSES = frozenset({
@@ -198,7 +197,7 @@ def historical_failure_streak(
     rows: list[Any], run_id: int, source: str, model: str, *,
     model_only: bool, model_independent: bool = False,
 ) -> int:
-    """Recover a consecutive streak from trusted terminal Neon events.
+    """Recover a consecutive streak from trusted terminal store events.
 
     The current outcome can already be present in the event log. Ignore it
     and anything newer to avoid double counting or reversing a fresh success.
@@ -236,39 +235,3 @@ def historical_failure_streak(
             continue
         streak += 1
     return streak
-
-
-async def _recent_streak(
-    conn: Any, run_id: int, source: str, model: str, *,
-    repo: str, worker: str | None = None, model_independent: bool = False,
-) -> int:
-    """Read prior attempts after the latest manual health reset in one query."""
-    if worker is None:
-        rows = await conn.fetch(
-            """SELECT event_type,detail FROM public.factory_state_events
-               WHERE subject_type='worker'
-                 AND event_type IN ('worker_failed','worker_completed')
-                 AND detail->>'source'=$1 AND detail->>'model'=$2
-                 AND created_at>GREATEST(
-                     now()-interval '7 days',
-                     COALESCE((SELECT updated_at FROM public.factory_state_kv
-                               WHERE cache_key=$3), '-infinity'::timestamptz))
-               ORDER BY id DESC LIMIT 64""",
-            source, model, f"factory-model-health-reset-v1:{repo}",
-        )
-    else:
-        rows = await conn.fetch(
-            """SELECT event_type,detail FROM public.factory_state_events
-               WHERE subject_type='worker' AND subject_number=$1::bigint
-                 AND event_type IN ('worker_failed','worker_completed')
-                 AND created_at>GREATEST(
-                     now()-interval '7 days',
-                     COALESCE((SELECT updated_at FROM public.factory_state_kv
-                               WHERE cache_key=$2), '-infinity'::timestamptz))
-               ORDER BY id DESC LIMIT 64""",
-            int(worker), f"factory-model-health-reset-v1:{repo}",
-        )
-    return historical_failure_streak(
-        rows, run_id, source, model, model_only=worker is None,
-        model_independent=model_independent,
-    )

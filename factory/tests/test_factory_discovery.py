@@ -18,7 +18,7 @@ def test_discovery_fetches_once_per_job_and_never_shares_between_runs(tmp_path, 
     def fetch():
         reads.append(True)
         return [{'number': len(reads)}]
-    monkeypatch.setenv('FACTORY_STATE_DSN_FILE', '/must-not-read-neon')
+    monkeypatch.setenv('FACTORY_TURSO_TOKEN_FILE', '/must-not-read-neon')
     monkeypatch.setenv('FACTORY_DISCOVERY_DIR', str(tmp_path / 'run-one'))
     assert discovery.discover('owner/repo', 'issue', fetch) == [{'number': 1}]
     assert discovery.discover('owner/repo', 'issue', fetch) == [{'number': 1}]
@@ -101,5 +101,5 @@ def test_obsolete_neon_discovery_producers_are_removed():
                  '.github/workflows/factory-target-projections.yml'):
         assert not (ROOT / path).exists()
     shim = (SCRIPTS / 'factory-gh-rest-shim.sh').read_text()
-    assert 'FACTORY_STATE_DSN_FILE' not in shim
+    assert 'FACTORY_TURSO_TOKEN_FILE' not in shim
     assert 'factory_gh_read_through' not in shim

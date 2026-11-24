@@ -58,6 +58,12 @@ on:
         required: false
       MISTRAL_API_KEY:
         required: false
+      FACTORY_TURSO_URL:
+        required: false
+      FACTORY_TURSO_TOKEN:
+        required: false
+      # Kept until every adopter re-runs the installer: a caller that still
+      # passes it keeps the store required, so the job fails closed.
       NEON_API_KEY:
         required: false
       NVIDIA_API_KEY:
@@ -90,6 +96,9 @@ on:
         required: false
 
 env:
+  # The store is required wherever the adopter configured one; missing
+  # credentials then fail the job instead of running without coordination.
+  FACTORY_STATE_REQUIRED: ${{ secrets.FACTORY_TURSO_URL != '' || secrets.NEON_API_KEY != '' }}
   # Operator settings (rotisserie factory settings) reach every factory script.
   FACTORY_REPO_VARS: >-
     {"FACTORY_SLOTS_PER_PROVIDER": "${{ vars.FACTORY_SLOTS_PER_PROVIDER }}", "FACTORY_PR_WIP_LIMIT": "${{ vars.FACTORY_PR_WIP_LIMIT }}", "FACTORY_REVIEW_BACKLOG_LIMIT": "${{ vars.FACTORY_REVIEW_BACKLOG_LIMIT }}", "FACTORY_OMNIROUTE_FREE_ENTRY_CAP": "${{ vars.FACTORY_OMNIROUTE_FREE_ENTRY_CAP }}", "FACTORY_NO_DIFF_RETRY_LIMIT": "${{ vars.FACTORY_NO_DIFF_RETRY_LIMIT }}", "FACTORY_NO_DIFF_RETRY_RESET_SECONDS": "${{ vars.FACTORY_NO_DIFF_RETRY_RESET_SECONDS }}", "FACTORY_REVIEW_FAILURE_COOLDOWN_SECONDS": "${{ vars.FACTORY_REVIEW_FAILURE_COOLDOWN_SECONDS }}", "FACTORY_FIXED_LEASE_TTL_SECONDS": "${{ vars.FACTORY_FIXED_LEASE_TTL_SECONDS }}", "FACTORY_LOCAL_LEASE_TTL_SECONDS": "${{ vars.FACTORY_LOCAL_LEASE_TTL_SECONDS }}", "FACTORY_PRIORITY_ORDER": "${{ vars.FACTORY_PRIORITY_ORDER }}", "FACTORY_DISABLED_PROVIDERS": "${{ vars.FACTORY_DISABLED_PROVIDERS }}", "FACTORY_DISABLED_MODELS": "${{ vars.FACTORY_DISABLED_MODELS }}", "FACTORY_INCIDENTS": "${{ vars.FACTORY_INCIDENTS }}"}
@@ -104,8 +113,6 @@ jobs:
   dispatch:
     if: "!(inputs.target || inputs.provider) || github.ref == 'refs/heads/main'"
     env:
-      # Adopters without Neon run on the ledger's no-database mode.
-      FACTORY_NEON_LEASE_REQUIRED: ${{ secrets.NEON_API_KEY != '' }}
       FACTORY_DISCOVERY_TARGET: ${{ inputs.target }}
       FACTORY_READER_APP_ID: ${{ secrets.FACTORY_READER_APP_ID }}
     outputs:
@@ -317,20 +324,39 @@ jobs:
           fi
           echo "allow=true" >> "$GITHUB_OUTPUT"
 
-      - name: Configure shared Neon factory discovery cache
+      - name: Configure the factory store
         if: steps.api_budget.outputs.allow == 'true'
-        uses: ./.github/actions/factory-state-cache
+        uses: ./.github/actions/factory-store
         with:
-          neon-api-key: ${{ secrets.NEON_API_KEY }}
-          neon-project-id: ${{ vars.NEON_PROJECT_ID }}
+          url: ${{ secrets.FACTORY_TURSO_URL }}
+          token: ${{ secrets.FACTORY_TURSO_TOKEN }}
 
-      - name: Initialize Neon operational state
+      # New factory claims pause while the published store usage is critical.
+      # A missing report never pauses; an exhausted store refuses on its own.
+      - name: Read the published factory store usage
+        if: steps.api_budget.outputs.allow == 'true'
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -Eeuo pipefail
+          usage="$RUNNER_TEMP/factory-db-usage.json"
+          if gh api "repos/${GITHUB_REPOSITORY}/contents/factory-stats.json?ref=factory-status-live" \
+              --jq '.content' 2>/dev/null | base64 -d 2>/dev/null | jq -e '.db_usage | objects' > "$usage"; then
+            echo "FACTORY_DB_USAGE_FILE=$usage" >> "$GITHUB_ENV"
+            jq -r '"Factory store usage: \(.status)"' "$usage"
+          else
+            rm -f "$usage"
+            echo "No published factory store usage; claims are not paused by usage"
+          fi
+
+      - name: Initialize the factory store
         if: steps.api_budget.outputs.allow == 'true'
         shell: bash
         run: |
           set -Eeuo pipefail
-          if [[ -z "${FACTORY_STATE_DSN_FILE:-}" && "$FACTORY_NEON_LEASE_REQUIRED" != true ]]; then
-            echo "Neon is not configured for this adopter; skipping operational state bootstrap"
+          if [[ -z "${FACTORY_TURSO_TOKEN_FILE:-}" && "$FACTORY_STATE_REQUIRED" != true ]]; then
+            echo "The factory store is not configured for this adopter; skipping its bootstrap"
             exit 0
           fi
           python3 .github/scripts/factory_state_operations.py bootstrap --repo "$GITHUB_REPOSITORY"
@@ -473,21 +499,19 @@ jobs:
         env:
           # Outside-agent claims hold promotion; a configured but unconnected
           # claim store holds it closed.
-          FACTORY_NEON_CONFIGURED: ${{ vars.NEON_PROJECT_ID != '' }}
           GH_TOKEN: ${{ github.token }}
         run: |
           set -Eeuo pipefail
-          python3 -m pip install --quiet --disable-pip-version-check 'asyncpg>=0.30,<1'
           python3 .github/scripts/factory-review-controller.py reconcile-ci
 
       # Rotisserie owns branch synchronization: `rotisserie factory sync` (or an
       # operator) queues a PR with the factory-sync-main label, and this pass
-      # merges main into it only while it holds the PR's Neon target lease, so
+      # merges main into it only while it holds the PR's store target lease, so
       # no worker can be assigned mid-sync and a held PR is never touched. The
       # update is a compare-and-swap on the head, never a force push. Cost: one
       # open-PR list, then one compare per queued PR and one update-branch
       # (plus one label removal) per PR it finishes. Bounded to 5 writes.
-      - name: Sync queued factory PRs with main under Neon leases
+      - name: Sync queued factory PRs with main under store leases
         if: steps.api_budget.outputs.allow == 'true' && !(inputs.target || inputs.provider) && steps.main_health.outputs.state != 'red'
         continue-on-error: true
         shell: bash
@@ -546,7 +570,7 @@ jobs:
           jq '.issues' "$RUNNER_TEMP/factory-discovery.json" > "$issues"
           jq '.prs' "$RUNNER_TEMP/factory-discovery.json" > "$prs"
           health="$RUNNER_TEMP/jev-factory-health.json"
-          if [[ -n "${FACTORY_STATE_DSN_FILE:-}" ]]; then
+          if [[ -n "${FACTORY_TURSO_TOKEN_FILE:-}" ]]; then
             python3 .github/scripts/factory_state_operations.py stats \
               --repo "$GITHUB_REPOSITORY" > "$health" || rm -f "$health"
           fi
@@ -865,7 +889,7 @@ jobs:
             echo "PR #${pr} changed ownership or stage; skipping Ollama dispatch"
             exit 0
           fi
-          # Outside-agent claims (#191) set no owner label; only Neon knows.
+          # Outside-agent claims (#191) set no owner label; only the store knows.
           if ! PR="$pr" python3 - <<'PY'
           import os, sys
           sys.path.insert(0, ".github/scripts")
@@ -895,7 +919,10 @@ jobs:
       - name: Report factory query measurements
         if: always() && inputs.measure
         run: |
-          python3 .github/scripts/factory_state_metrics.py "$RUNNER_TEMP/factory-query-counts.jsonl" | tee -a "$GITHUB_STEP_SUMMARY"
+          counts="$RUNNER_TEMP/factory-query-counts.jsonl"
+          [[ -s "$counts" ]] || { echo "No factory store requests were measured" | tee -a "$GITHUB_STEP_SUMMARY"; exit 0; }
+          jq -rs '"Factory store: \(map(.requests) | add) requests, \(map(.rows_read) | add) rows read, \(map(.rows_written) | add) rows written, in \(length) process(es)"' "$counts" \
+            | tee -a "$GITHUB_STEP_SUMMARY"
 
       # Runs started by GITHUB_TOKEN never fire workflow_run, and GitHub skips
       # most */15 crons, so the reliability snapshot went hours stale. A
@@ -1017,6 +1044,9 @@ jobs:
 
   # The dispatch job holds the assignment lock and cannot sleep. When its
   # quick retries all fail, back off here, after that lock is released.
+      - name: Remove the factory store token
+        if: always()
+        run: rm -f "$RUNNER_TEMP/factory-store-token"
   chain_rescue:
     needs: dispatch
     if: always() && needs.dispatch.outputs.rescue_delay != ''

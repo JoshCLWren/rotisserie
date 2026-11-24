@@ -5,6 +5,12 @@ name: Factory Ready Merge Drain
 on:
   workflow_call:
     secrets:
+      FACTORY_TURSO_URL:
+        required: false
+      FACTORY_TURSO_TOKEN:
+        required: false
+      # Kept until every adopter re-runs the installer: a caller that still
+      # passes it keeps the store required, so the job fails closed.
       NEON_API_KEY:
         required: false
       OPENROUTER_JEV_API_KEY:
@@ -13,6 +19,9 @@ on:
         required: false
 
 env:
+  # The store is required wherever the adopter configured one; missing
+  # credentials then fail the job instead of running without coordination.
+  FACTORY_STATE_REQUIRED: ${{ secrets.FACTORY_TURSO_URL != '' || secrets.NEON_API_KEY != '' }}
   # Operator settings (rotisserie factory settings) reach every factory script.
   FACTORY_REPO_VARS: >-
     {"FACTORY_SLOTS_PER_PROVIDER": "${{ vars.FACTORY_SLOTS_PER_PROVIDER }}", "FACTORY_PR_WIP_LIMIT": "${{ vars.FACTORY_PR_WIP_LIMIT }}", "FACTORY_REVIEW_BACKLOG_LIMIT": "${{ vars.FACTORY_REVIEW_BACKLOG_LIMIT }}", "FACTORY_OMNIROUTE_FREE_ENTRY_CAP": "${{ vars.FACTORY_OMNIROUTE_FREE_ENTRY_CAP }}", "FACTORY_NO_DIFF_RETRY_LIMIT": "${{ vars.FACTORY_NO_DIFF_RETRY_LIMIT }}", "FACTORY_NO_DIFF_RETRY_RESET_SECONDS": "${{ vars.FACTORY_NO_DIFF_RETRY_RESET_SECONDS }}", "FACTORY_REVIEW_FAILURE_COOLDOWN_SECONDS": "${{ vars.FACTORY_REVIEW_FAILURE_COOLDOWN_SECONDS }}", "FACTORY_FIXED_LEASE_TTL_SECONDS": "${{ vars.FACTORY_FIXED_LEASE_TTL_SECONDS }}", "FACTORY_LOCAL_LEASE_TTL_SECONDS": "${{ vars.FACTORY_LOCAL_LEASE_TTL_SECONDS }}", "FACTORY_PRIORITY_ORDER": "${{ vars.FACTORY_PRIORITY_ORDER }}", "FACTORY_DISABLED_PROVIDERS": "${{ vars.FACTORY_DISABLED_PROVIDERS }}", "FACTORY_DISABLED_MODELS": "${{ vars.FACTORY_DISABLED_MODELS }}", "FACTORY_INCIDENTS": "${{ vars.FACTORY_INCIDENTS }}"}
@@ -61,20 +70,18 @@ jobs:
           python3 .github/scripts/hourly_coderabbit_review.py \
             --repo "$GITHUB_REPOSITORY"
 
-      # Outside agents hold Neon target claims with no GitHub owner label;
+      # Outside agents hold store target claims with no GitHub owner label;
       # merge authorization reads them, so the drain needs the same restricted
       # connection as the controller (never exposed to model jobs).
-      - name: Configure shared restricted Neon authority
-        uses: ./.github/actions/factory-state-cache
+      - name: Configure the shared factory store
+        uses: ./.github/actions/factory-store
         with:
-          neon-api-key: ${{ secrets.NEON_API_KEY }}
-          neon-project-id: ${{ vars.NEON_PROJECT_ID }}
+          url: ${{ secrets.FACTORY_TURSO_URL }}
+          token: ${{ secrets.FACTORY_TURSO_TOKEN }}
 
       - name: Install factory syntax parsers
         uses: ./.github/actions/factory-syntax
 
-      - name: Let factory scripts read outside-agent claims
-        run: python3 -m pip install --quiet --disable-pip-version-check 'asyncpg>=0.30,<1'
 
       - name: Ensure GitHub CLI supports JSON PR checks
         shell: bash
@@ -270,8 +277,7 @@ jobs:
         if: steps.main_health.outputs.state == 'green' || steps.main_health.outputs.state == 'red'
         shell: bash
         env:
-          # A configured but unconnected claim store holds merges closed.
-          FACTORY_NEON_CONFIGURED: ${{ vars.NEON_PROJECT_ID != '' }}
+          # FACTORY_STATE_REQUIRED (workflow env): an unconnected required store holds merges closed.
           GH_TOKEN: ${{ github.token }}
           FACTORY_MAIN_CI_WORKFLOWS: ${{ vars.FACTORY_MAIN_CI_WORKFLOWS }}
           MAIN_STATE: ${{ steps.main_health.outputs.state }}
@@ -417,3 +423,6 @@ jobs:
         run: |
           python3 .github/scripts/factory_gh_usage.py "${FACTORY_GH_CALL_LOG:-/dev/null}" \
             --label "merge drain" --summary "$GITHUB_STEP_SUMMARY"
+      - name: Remove the factory store token
+        if: always()
+        run: rm -f "$RUNNER_TEMP/factory-store-token"

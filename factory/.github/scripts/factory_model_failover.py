@@ -31,7 +31,7 @@ PROVEN_OUTCOMES = frozenset({"success", "work_failure", "agent_timeout"})
 
 
 def proven_models(health_json: str | None = None) -> set[tuple[str, str]]:
-    """Read the trusted Neon health snapshot handed to every runner.
+    """Read the trusted store health snapshot handed to every runner.
 
     Advisory only: it orders already-eligible candidates and can never make
     a cooled, attempted or unlisted model selectable.

@@ -1,4 +1,4 @@
-# Installed into adopter by factory/install/install.py. Trusted label claims -> shared Neon (#191).
+# Installed into adopter by factory/install/install.py. Trusted label claims -> shared factory store (#191).
 # Every trigger here runs the default-branch workflow file, never a PR's copy.
 name: Rotisserie Label Claim Controller
 on:
@@ -11,6 +11,10 @@ on:
         type: string
         required: false
     secrets:
+      FACTORY_TURSO_TOKEN:
+        required: false
+      # Kept until every adopter re-runs the installer: a caller that still
+      # passes it keeps the store required, so the job fails closed.
       NEON_API_KEY:
         required: false
       FACTORY_TURSO_API_TOKEN:
@@ -30,6 +34,9 @@ permissions:
   statuses: read
 
 env:
+  # The store is required wherever the adopter configured one; missing
+  # credentials then fail the job instead of running without coordination.
+  FACTORY_STATE_REQUIRED: ${{ secrets.FACTORY_TURSO_URL != '' || secrets.NEON_API_KEY != '' }}
   FACTORY_REPO_VARS: >-
     {"FACTORY_SLOTS_PER_PROVIDER": "${{ vars.FACTORY_SLOTS_PER_PROVIDER }}", "FACTORY_PR_WIP_LIMIT": "${{ vars.FACTORY_PR_WIP_LIMIT }}", "FACTORY_REVIEW_BACKLOG_LIMIT": "${{ vars.FACTORY_REVIEW_BACKLOG_LIMIT }}", "FACTORY_OMNIROUTE_FREE_ENTRY_CAP": "${{ vars.FACTORY_OMNIROUTE_FREE_ENTRY_CAP }}", "FACTORY_NO_DIFF_RETRY_LIMIT": "${{ vars.FACTORY_NO_DIFF_RETRY_LIMIT }}", "FACTORY_NO_DIFF_RETRY_RESET_SECONDS": "${{ vars.FACTORY_NO_DIFF_RETRY_RESET_SECONDS }}", "FACTORY_REVIEW_FAILURE_COOLDOWN_SECONDS": "${{ vars.FACTORY_REVIEW_FAILURE_COOLDOWN_SECONDS }}", "FACTORY_FIXED_LEASE_TTL_SECONDS": "${{ vars.FACTORY_FIXED_LEASE_TTL_SECONDS }}", "FACTORY_LOCAL_LEASE_TTL_SECONDS": "${{ vars.FACTORY_LOCAL_LEASE_TTL_SECONDS }}", "FACTORY_PRIORITY_ORDER": "${{ vars.FACTORY_PRIORITY_ORDER }}", "FACTORY_DISABLED_PROVIDERS": "${{ vars.FACTORY_DISABLED_PROVIDERS }}", "FACTORY_DISABLED_MODELS": "${{ vars.FACTORY_DISABLED_MODELS }}", "FACTORY_INCIDENTS": "${{ vars.FACTORY_INCIDENTS }}"}
 
@@ -82,14 +89,14 @@ jobs:
           python-version: '3.14'
       - uses: astral-sh/setup-uv@v7
 
-      # The doctor must still run when Neon is down: it then withholds every
-      # factory:available and touches no claim. Claim events need Neon.
-      - name: Configure shared restricted Neon authority
+      # The doctor must still run when the store is down: it then withholds every
+      # factory:available and touches no claim. Claim events need the store.
+      - name: Configure the shared factory store
         continue-on-error: ${{ github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' }}
-        uses: ./.github/actions/factory-state-cache
+        uses: ./.github/actions/factory-store
         with:
-          neon-api-key: ${{ secrets.NEON_API_KEY }}
-          neon-project-id: ${{ vars.NEON_PROJECT_ID }}
+          url: ${{ secrets.FACTORY_TURSO_URL }}
+          token: ${{ secrets.FACTORY_TURSO_TOKEN }}
 
       - name: Answer the claim event or run the label doctor
         id: run
@@ -100,14 +107,12 @@ jobs:
           TARGETS: ${{ inputs.targets }}
           # The Turso Platform API token reaches only the db-usage read.
           FACTORY_TURSO_API_TOKEN: ${{ inputs.mode == 'db-usage' && secrets.FACTORY_TURSO_API_TOKEN || '' }}
-          FACTORY_TURSO_URL: ${{ inputs.mode == 'db-usage' && secrets.FACTORY_TURSO_URL || '' }}
           FACTORY_TURSO_ORG: ${{ vars.FACTORY_TURSO_ORG }}
           FACTORY_TURSO_DATABASE: ${{ vars.FACTORY_TURSO_DATABASE }}
-          FACTORY_NEON_CONFIGURED: ${{ vars.NEON_PROJECT_ID != '' }}
         run: |
           set -Eeuo pipefail
           test -f .rotisserie/runtime/pyproject.toml
-          rotisserie=(uv tool run --with 'asyncpg>=0.30,<1' --from ./.rotisserie/runtime rotisserie)
+          rotisserie=(uv tool run --from ./.rotisserie/runtime rotisserie)
           case "$GITHUB_EVENT_NAME" in
             schedule) args=(factory labels --repair) ;;
             workflow_dispatch)
@@ -121,14 +126,14 @@ jobs:
                     [[ "$item" =~ ^(issue|pr):[1-9][0-9]*$ ]] || exit 2
                   done
                   args=(factory leases "${wanted[@]}") ;;
-                # One bounded read-only Neon query; publishes per-item counts only.
+                # One bounded read-only store query; publishes per-item counts only.
                 estimate-history) args=(factory estimate-history) ;;
                 # Turso usage API only; publishes counts, never the token or URL.
                 db-usage) args=(factory db-usage --live) ;;
                 *) args=(factory labels) ;;
               esac ;;
             *)
-              test -s "${FACTORY_STATE_DSN_FILE:-}"
+              test -s "${FACTORY_TURSO_TOKEN_FILE:-}"
               args=(factory label-event --event-path "$GITHUB_EVENT_PATH") ;;
           esac
           "${rotisserie[@]}" "${args[@]}" --repo "$GITHUB_REPOSITORY" --json \
@@ -141,14 +146,9 @@ jobs:
 
       # An outside review hand-off leaves the PR in factory:ci; promote it
       # through the canonical gates exactly as the local review attestation does.
-      - name: Let factory scripts read outside-agent claims
-        if: steps.run.outputs.handed_off == 'yes'
-        run: python3 -m pip install --quiet --disable-pip-version-check 'asyncpg>=0.30,<1'
-
       - name: Reconcile canonical gates and wake merge drain
         if: steps.run.outputs.handed_off == 'yes'
         env:
-          FACTORY_NEON_CONFIGURED: ${{ vars.NEON_PROJECT_ID != '' }}
           GH_TOKEN: ${{ github.token }}
         run: |
           python3 .github/scripts/factory-review-controller.py reconcile-ci
@@ -162,3 +162,6 @@ jobs:
           path: ${{ runner.temp }}/label-claim.json
           retention-days: 1
           if-no-files-found: warn
+      - name: Remove the factory store token
+        if: always()
+        run: rm -f "$RUNNER_TEMP/factory-store-token"

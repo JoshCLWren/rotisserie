@@ -133,17 +133,18 @@ def test_echoed_script_text_alone_is_not_capacity() -> None:
     assert dynamic.classify(SLOT + ECHO)["outcome_class"] == "control_plane_failure"
 
 
-def test_no_capacity_is_an_idle_worker_event(monkeypatch: pytest.MonkeyPatch) -> None:
-    import factory_state_operations
+def test_no_capacity_is_an_idle_worker_event(tmp_path, monkeypatch: pytest.MonkeyPatch) -> None:
+    from tests import turso_support as support
 
-    written: list[dict[str, object]] = []
-    monkeypatch.setattr(ledger, "record_events", lambda _repo, entries: written.extend(entries))
-    monkeypatch.setattr(factory_state_operations, "enabled", lambda: False)
     outcome = dynamic.classify(SLOT + REVIEW_EXIT)
     outcome["worker"] = WORKER
-    ledger.record_runtime_outcome("o/r", "45386686089", outcome)
-    assert [entry["event_type"] for entry in written] == ["worker_idle"]
-    assert written[0]["outcome_class"] == "no_capacity"
+    with support.bound("file", tmp_path / "state.sqlite", monkeypatch) as (db, repo):
+        ledger.record_runtime_outcome(repo, "45386686089", outcome)
+        rows = db.read(
+            "SELECT event_type, outcome_class FROM factory_state_events WHERE repo = :r",
+            {"r": repo},
+        )
+    assert rows == [{"event_type": "worker_idle", "outcome_class": "no_capacity"}]
 
 
 def _reviewer_guard_block() -> str:

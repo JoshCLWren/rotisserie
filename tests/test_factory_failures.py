@@ -14,7 +14,7 @@ from rotisserie.factory_console.tracker import Tracker
 
 REPO = "acme/widgets"
 PICK = "Select execution candidate at dispatch time"
-PERSIST = "Persist trusted worker outcome in Neon"
+PERSIST = "Persist trusted worker outcome in the store"
 REVIEW_ERROR = (
     "No reviewer model: 1 model(s) outside exclusions are eligible and all 1 authored this PR "
     "(2 author model(s) recorded); the review waits for a non-author model"

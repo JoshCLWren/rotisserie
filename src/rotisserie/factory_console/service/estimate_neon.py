@@ -1,15 +1,15 @@
-"""Exact per-item factory history from Neon, read only inside the trusted workflow.
+"""Exact per-item factory history from the factory store, read only inside the trusted workflow.
 
 The label claim workflow's ``estimate-history`` mode runs this with the
-adopter's restricted Neon secret. It runs one bounded, read-only query over
-``public.factory_state_events`` and publishes per-item counts. It never
+adopter's store secret. It runs one bounded, read-only query over
+``factory_state_events`` (``factory_turso_events.history_rows``) and publishes
+per-item counts. It never
 publishes claim UUIDs, logins, prompts or failure log tails. The console reads
-the published counts; it never connects to Neon itself.
+the published counts; it never connects to the factory store itself.
 """
 
 from __future__ import annotations
 
-import asyncio
 import json
 from collections import Counter, defaultdict
 from collections.abc import Mapping, Sequence
@@ -25,7 +25,6 @@ DEFAULT_DAYS = 45
 DAYS_RANGE = (1, 120)
 DEFAULT_ROWS = 40000
 ROWS_RANGE = (100, 100000)
-STATEMENT_TIMEOUT_MS = 30000
 EVENT_TYPES = (
     "worker_assigned",
     "model_attempt",
@@ -37,40 +36,6 @@ EVENT_TYPES = (
     "external_revoked",
 )
 TERMINAL = frozenset(("worker_completed", "worker_failed", "worker_idle"))
-# A catalog refusal burst can log hundreds of model rows in one run. Model rows
-# that never ran (no exit code, no positive duration) collapse to one counted
-# row per run and class before the row cap applies.
-QUERY = """WITH recent AS (
-    SELECT event_type, created_at, subject_number, detail,
-           event_type <> 'model_attempt'
-             OR coalesce(detail->>'agent_exit_code', '') ~ '^-?[0-9]+$'
-             OR coalesce(detail->>'duration_ms', '') ~ '^[1-9][0-9]*$' AS ran
-      FROM public.factory_state_events
-     WHERE detail->>'repo' = $1
-       AND created_at >= now() - make_interval(days => $2)
-       AND event_type = ANY($3::text[])
-)
-SELECT event_type, created_at, subject_number,
-       detail->>'run_id' AS run_id,
-       detail->'targets' AS targets,
-       detail->>'selected_number' AS selected_number,
-       detail->>'outcome_class' AS outcome_class,
-       detail->>'source' AS source,
-       detail->>'model' AS model,
-       detail->>'duration_ms' AS duration_ms,
-       detail->>'agent_exit_code' AS agent_exit_code,
-       detail->>'client' AS client,
-       1::bigint AS row_count
-  FROM recent WHERE ran
-UNION ALL
-SELECT 'model_attempt', max(created_at), NULL::bigint,
-       detail->>'run_id', NULL::jsonb, detail->>'selected_number',
-       detail->>'outcome_class', NULL, NULL, NULL, NULL, NULL,
-       count(*)
-  FROM recent WHERE NOT ran
- GROUP BY detail->>'run_id', detail->>'selected_number', detail->>'outcome_class'
- ORDER BY created_at DESC
- LIMIT $4"""
 
 
 def bounds(days: int, rows: int) -> tuple[int, int]:
@@ -78,25 +43,6 @@ def bounds(days: int, rows: int) -> tuple[int, int]:
         if not low <= value <= high:
             raise ValueError(f"{flag} must be between {low} and {high}")
     return days, rows
-
-
-def history_query(repo: str, days: int, rows: int) -> tuple[str, tuple[object, ...]]:
-    """The one statement this mode runs. One row more than the cap shows truncation."""
-    days, rows = bounds(days, rows)
-    return QUERY, (repo, days, list(EVENT_TYPES), rows + 1)
-
-
-async def _fetch(ledger: Any, sql: str, args: tuple[object, ...]) -> list[dict[str, Any]]:
-    conn = await ledger.measured_connect(
-        dsn=ledger._dsn(), timeout=8, command_timeout=STATEMENT_TIMEOUT_MS // 1000 + 5
-    )
-    try:
-        async with conn.transaction(readonly=True, isolation="repeatable_read"):
-            await conn.execute(f"SET LOCAL statement_timeout = {STATEMENT_TIMEOUT_MS}")
-            found = await conn.fetch(sql, *args)
-        return [dict(row) for row in found]
-    finally:
-        await conn.close()
 
 
 def _number(value: object) -> int | None:
@@ -269,14 +215,15 @@ def read_history(
 ) -> dict[str, object]:
     """Run the bounded query (trusted Actions only) and return the publishable summary."""
     now = now or datetime.now(UTC)
-    sql, args = history_query(repo, days, cap)
+    days, cap = bounds(days, cap)
     if ledger is None:
         ledger, why = branch_sync.load_ledger()
         if ledger is None:
             return unavailable(why, days=days, cap=cap, now=now)
     try:
-        rows = asyncio.run(_fetch(ledger, sql, args))
+        # One row past the cap shows the history was truncated.
+        rows = ledger.history_rows(repo, days, cap + 1, EVENT_TYPES)
     except Exception as exc:  # noqa: BLE001 - the console falls back to GitHub history
-        why = f"the Neon read failed ({type(exc).__name__})"
+        why = f"the store read failed ({type(exc).__name__})"
         return unavailable(why, days=days, cap=cap, now=now)
     return summarize(rows, days=days, cap=cap, now=now)

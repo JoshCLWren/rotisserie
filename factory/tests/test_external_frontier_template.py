@@ -15,7 +15,7 @@ def test_github_frontier_is_manual_and_read_only() -> None:
     assert "on:\n  workflow_dispatch:" in workflow
     assert "schedule:" not in workflow
     assert "FACTORY_REPO_VARS: >-" in workflow
-    assert "uses: ./.github/actions/factory-state-cache" in workflow
+    assert "uses: ./.github/actions/factory-store" in workflow
     assert "gh issue edit" not in workflow
     assert "git push" not in workflow
     assert "contents: read" in workflow
@@ -27,7 +27,7 @@ def test_github_frontier_is_manual_and_read_only() -> None:
     assert "pull-requests: write" not in workflow
     assert "checkout@v7" in workflow
     assert "persist-credentials: false" in workflow
-    assert "uv tool run --with 'asyncpg>=0.30,<1' --from ./.rotisserie/runtime rotisserie factory" in workflow
+    assert "uv tool run --from ./.rotisserie/runtime rotisserie factory" in workflow
     assert 'next --repo "$GITHUB_REPOSITORY" --json' in workflow
     assert "actions/upload-artifact@v7" in workflow
     assert "retention-days: 1" in workflow

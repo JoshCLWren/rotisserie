@@ -223,26 +223,26 @@ function renderEstimate(d){
  const range=(r,f)=>r?"median "+f(r.median)+", middle 80% "+f(r.low)+" to "+f(r.high)+" (from "+r.n+" merged items)":"not enough similar merged items";
  const rows=[["Attempts from",src.label],["So far",s.attempts+" attempt(s)"+(s.refusals!=null?", "+s.capacity_runs+" run(s) where no model worked, "+s.refusals+" catalog refusal(s)":"")],["Similar items",sim.count?sim.count+" ("+sim.tier+")":"too few for an estimate"]];
  if(sim.count){rows.push(["Attempts to merge",range(d.attempts,num)],["Time to merge",range(d.hours,hrs)]);if(d.unattended)rows.push(["Without a human",Math.round(d.unattended.probability*100)+"% ("+d.unattended.unattended+" of "+d.unattended.n+")"])}
- if(src.attempts==="neon")rows.push(["Neon history",src.rows_read+" events over "+src.window_days+" days; "+src.items_from_neon+" item(s) from Neon, "+src.items_from_github+" from GitHub"]);
- let html='<div class="item"><div class="item-head"><div class="item-title">Estimate for '+gh(d.target)+'</div>'+badge(src.attempts==="neon"?"Neon":"GitHub",src.attempts==="neon"?"good":"")+'</div>'+rows.map(r=>'<div class="meta">'+h(r[0])+': '+h(r[1])+'</div>').join("")+(src.bridge&&src.bridge.url?'<div class="item-actions">'+link(src.bridge.url,"Neon history run")+'</div>':"")+'</div>';
+ if(src.attempts==="neon")rows.push(["Store history",src.rows_read+" events over "+src.window_days+" days; "+src.items_from_neon+" item(s) from the store, "+src.items_from_github+" from GitHub"]);
+ let html='<div class="item"><div class="item-head"><div class="item-title">Estimate for '+gh(d.target)+'</div>'+badge(src.attempts==="neon"?"The factory store":"GitHub",src.attempts==="neon"?"good":"")+'</div>'+rows.map(r=>'<div class="meta">'+h(r[0])+': '+h(r[1])+'</div>').join("")+(src.bridge&&src.bridge.url?'<div class="item-actions">'+link(src.bridge.url,"store history run")+'</div>':"")+'</div>';
  for(const note of Array.isArray(d.notes)?d.notes:[])html+='<div class="info spaced">'+h(note)+'</div>';
  return html;
 }
 async function estimateNeon(){
  const t=itemTarget(),box=el("item-content");if(!t){notice("Enter an issue or PR number.",true);return}
- box.innerHTML=empty("Starting the Neon history run for "+t+"…");
+ box.innerHTML=empty("Starting the store history run for "+t+"…");
  try{
-  const started=ok(await send({operation:"estimate_neon",target:t},"Starting the Neon history run").finally(()=>{el("operation-status").textContent=""}));
+  const started=ok(await send({operation:"estimate_neon",target:t},"Starting the store history run").finally(()=>{el("operation-status").textContent=""}));
   const run=started.bridge&&started.bridge.run_id;
   if(!run){box.innerHTML=empty("The run was requested. This page cannot read its result here; use the local control room or the CLI with --run.");return}
   for(let i=0;i<60;i++){
-   box.innerHTML=empty("Waiting for the Neon history run")+(started.bridge.url?'<div class="hint">'+link(started.bridge.url,"Open the GitHub run")+'</div>':"");
+   box.innerHTML=empty("Waiting for the store history run")+(started.bridge.url?'<div class="hint">'+link(started.bridge.url,"Open the GitHub run")+'</div>':"");
    await new Promise(r=>setTimeout(r,15000));
    const d=await get("estimate",{target:t,run:String(run)});
    if(d.result==="pending")continue;
    box.innerHTML=renderEstimate(ok(d));return;
   }
-  box.innerHTML=empty("The Neon history run did not finish in 15 minutes.");
+  box.innerHTML=empty("The store history run did not finish in 15 minutes.");
  }catch(err){box.innerHTML=empty(err.message)}
 }
 function itemTarget(){const number=el("item-number").value;return /^[1-9][0-9]*$/.test(number)?el("item-kind").value+":"+number:""}

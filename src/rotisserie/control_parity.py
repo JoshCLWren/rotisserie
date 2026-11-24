@@ -51,8 +51,8 @@ _AGENT = (
 CLI_ONLY: dict[str, str] = {
     "label-event": "handles one GitHub label event; only trusted Actions may run it",
     "estimate-history": (
-        "publishes Neon history inside the label claim workflow; only trusted Actions "
-        "may run it, and Exact estimate (Neon) starts that workflow"
+        "publishes store history inside the label claim workflow; only trusted Actions "
+        "may run it, and Exact estimate (store) starts that workflow"
     ),
     "watch": (
         "follows one run in a terminal until it ends; both control rooms already "
@@ -66,7 +66,7 @@ CLI_ONLY: dict[str, str] = {
     "release": _AGENT,
     "handoff": _AGENT,
     "revoke": (
-        "deferred: removes an outside agent's claim in the Neon store, which the write "
+        "deferred: removes an outside agent's claim in the store, which the write "
         "operator workflow cannot reach yet"
     ),
     "groom": (

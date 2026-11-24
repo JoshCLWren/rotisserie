@@ -274,7 +274,7 @@ def _model_state(
 def durable_attempt_evidence(
     payload: Mapping[str, Any], *, now_epoch: int,
 ) -> dict[tuple[str, str], AttemptEvidence]:
-    """Translate only trusted validate-job Neon projections into health evidence.
+    """Translate only trusted validate-job store projections into health evidence.
 
     Unlike registry comments, this is not user-authored content. Provenance
     is the protected Actions job output; never interpret arbitrary comments

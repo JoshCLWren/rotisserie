@@ -1,7 +1,7 @@
 """Trusted read-only exports, backoff views and health resets on the libSQL store.
 
-Same names and result shapes as the Neon operations. Provider account
-cooldowns live in ``factory_backoff`` (kind ``provider``); the Neon
+Same names and result shapes as the retired Neon operations. Provider account
+cooldowns live in ``factory_backoff`` (kind ``provider``); the Neon store
 ``factory_provider_budget`` columns they replace had no writer.
 """
 
@@ -17,7 +17,7 @@ from factory_state_operations_backoff import (
     effective_retry_at,
     legacy_capacity_backoff,
 )
-from factory_state_operations_core import REPO_RE
+from factory_turso_core import REPO_RE
 from factory_state_operations_quota import CREDIT_POOL_KEY
 from factory_state_operations_reliability import RELIABILITY_WINDOWS, summarize_reliability
 from factory_turso_backoff import active_capacity_cooldowns, state

@@ -135,8 +135,8 @@ def _flag(data: Mapping[str, Any], name: str) -> bool:
 def read_command(name: str, query: Mapping[str, str], *, trusted: bool = False) -> list[str]:
     """Build only allowlisted, non-mutating factory commands.
 
-    ``trusted`` is set only inside the read workflow, which holds the Neon
-    connection; elsewhere Neon-only reads go through the trusted workflow.
+    ``trusted`` is set only inside the read workflow, which holds the factory store
+    connection; elsewhere store-only reads go through the trusted workflow.
     """
     if name not in READ_ONLY:
         raise InvalidRequest("Unknown read operation")

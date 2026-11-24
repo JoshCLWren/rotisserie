@@ -127,7 +127,7 @@ def test_limit_bounds_one_pass() -> None:
 def test_entry_persister_runs_reconciliation_without_owning_the_verdict() -> None:
     entry = yaml.safe_load((ROOT.parent / ".github/workflows/free-model-factory-entry.yml").read_text())
     steps = entry["jobs"]["persist_outcome"]["steps"]
-    step = next(s for s in steps if s.get("name") == "Reconcile earlier Entry outcomes missing from Neon")
+    step = next(s for s in steps if s.get("name") == "Reconcile earlier Entry outcomes missing from the factory store")
     assert step["if"] == "${{ always() }}"
     assert step["continue-on-error"] is True
     assert '--exclude-run "$GITHUB_RUN_ID"' in step["run"]

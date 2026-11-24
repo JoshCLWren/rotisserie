@@ -23,7 +23,7 @@ from factory_state_operations_backoff import (
     model_scoped_transient,
     validate_intermediate_model_failures,
 )
-from factory_state_operations_core import REPO_RE
+from factory_turso_core import REPO_RE
 from factory_state_operations_quota import capacity_hints
 from factory_turso_backoff import capacity_statements, clear_statement, streak_upsert
 from factory_turso_operations import roster

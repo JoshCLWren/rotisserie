@@ -1,4 +1,4 @@
-"""Fenced external agent claims on the libSQL store, same keys and results as the Neon ledger.
+"""Fenced external agent claims on the libSQL store, same keys and results as the retired Neon ledger.
 
 The handoff ``verify`` callback calls GitHub, so it runs before the write,
 never inside a transaction. The write then re-checks, inside one batch, that
