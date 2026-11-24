@@ -48,6 +48,7 @@ from rotisserie.factory_console.service import (
     reliability,
     review,
     stalls,
+    turning,
     unstick,
 )
 from rotisserie.factory_console.service.failures import WORKER_JOB, first_failed_step
@@ -56,7 +57,9 @@ from rotisserie.factory_console.tracker import (
     WORKER_WORKFLOW,
     Clock,
     Tracker,
+    completed,
     failure_reasons,
+    run_version,
 )
 
 DASHBOARD_WORKFLOW = "factory-status-pages.yml"
@@ -121,7 +124,7 @@ def _dashboard(github: GitHub, tracker: Tracker) -> Finding:
         return Finding("dashboard publisher", "ok", "last run succeeded")
     run_id = integer(last, "id") or 0
     detail = ""
-    for job in tracker.jobs(run_id):
+    for job in tracker.jobs(run_id, version=run_version(last)):
         failed = [
             string(step, "name")
             for step in items(job, "steps")
@@ -129,11 +132,12 @@ def _dashboard(github: GitHub, tracker: Tracker) -> Finding:
         ]
         if failed:
             job_id = integer(job, "id") or 0
-            reasons = failure_reasons(tracker.annotations(job_id))
+            finished = completed(job)
+            reasons = failure_reasons(tracker.annotations(job_id, final=finished))
             if not reasons:
                 # Tracebacks only reach the log; annotations say "exit code 1".
                 try:
-                    reasons = failure_reasons([], tracker.log(job_id))
+                    reasons = failure_reasons([], tracker.log(job_id, final=finished))
                 except GitHubError:
                     reasons = []
             detail = f" at step '{failed[0]}'" + (f": {reasons[0]}" if reasons else "")
@@ -414,6 +418,7 @@ def run_checks(github: GitHub, *, now: datetime, clock: Clock | None = None) -> 
         ("database usage", lambda: Finding("database usage", *db_usage.health(stats(), now))),
         ("dashboard publisher", lambda: _dashboard(github, tracker)),
         ("scheduler", lambda: _scheduler(github, now)),
+        (turning.CHECK, lambda: Finding(turning.CHECK, *turning.health(github, now, clock))),
         ("main verification", lambda: main_verification(github)),
         ("rotisserie intake", lambda: _intake(github, now)),
         ("worker rejections", rejections),

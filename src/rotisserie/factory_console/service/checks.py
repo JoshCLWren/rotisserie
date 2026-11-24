@@ -124,7 +124,9 @@ def failing_checks_at(
         job = integer(run, "id")
         if read_logs and job is not None:
             try:
-                kind, summary, files = summarize_log(github.text(f"actions/jobs/{job}/logs"))
+                kind, summary, files = summarize_log(
+                    github.text(f"actions/jobs/{job}/logs", final="completed")
+                )
             except GitHubError:
                 pass
         found.append(

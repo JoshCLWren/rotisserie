@@ -680,6 +680,69 @@ action leaves a marker comment, so running the same plan again changes nothing.
 Without `--yes` nothing is written; `--log` appends every result to an audit
 file.
 
+## Is the factory turning?
+
+`baste turning` answers one question: is the factory moving work right now? The
+verdict comes first, then the evidence.
+
+- 🍗🔄 **Turning**: a worker started within `--idle` (45 minutes), or there is
+  no work and no worker to start.
+- 🐢 **Slowing**: `--failures` (3) or more control workflow runs failed in
+  `--window` (1 hour). An Entry run counts only when its persist job failed
+  before it recorded an outcome; a run that is red for its recorded outcome
+  (for example `work_failure`) is a worker result, not a control failure.
+- 🔥🔥 **Burning**: no worker started for longer than `--idle` while eligible
+  work or eligible workers exist. A stopped rotisserie burns the food.
+- ❔ **Unknown**: the worker runs could not be read. `--follow` does not alert
+  on it and checks again on the next interval.
+
+Each verdict names the most likely reason and the command that digs further
+(👉). Burning reasons, in the order they are checked:
+
+| Reason | Means | Next |
+|---|---|---|
+| store-unreachable | the store step failed on the last dispatcher pass, or Turso reports BLOCKED | `baste store selftest` |
+| dispatcher-none | every recent pass had eligible workers and the controller answered "none" for all of them | `baste unstick --dry-run` |
+| dispatch-broken | the dispatcher failed to assign or start a worker | `baste doctor` |
+| review-limit, wip-limit | the review backlog or open-PR limit holds new work | `baste unstick --dry-run` |
+| no-capacity | no worker was eligible: every provider capped, cooling, out of budget or off | `baste backoffs --via github` |
+| scheduler-stopped | the dispatcher has not run in 20 minutes | `baste doctor` |
+| unknown | none of the above | `baste why` |
+
+The evidence:
+
+- 🧑‍🍳 when the last worker run started and 🍽️ when the last one finished.
+  These come from GitHub runs of `free-model-factory-entry.yml`; the store's
+  lifecycle events are readable only inside trusted jobs.
+- 🎛️ the last `--passes` (3) dispatcher passes that ran the assign step: eligible
+  workers, assigned, "none", and the controller's reason when the dispatcher
+  logs one ("reason not logged" otherwise), plus the sources the filters
+  skipped (daily budget reached, turned off, missing credentials).
+- 💥 failed runs of the dispatcher, status pages, label claim, ready-merge drain
+  and completion drain workflows in the window, and Entry runs whose persist job
+  failed before recording an outcome, with links. Workflows are matched by file path, not run name.
+- 🧊 providers whose models are all cooling, 📦 eligible issues, open factory
+  PRs and any backlog limit, ⏰ expired holds (store leases; readable only where
+  the store is configured), 🗄️ the store step of the last pass and the age of
+  the published `db_usage` snapshot.
+
+It reads a bounded set: one page of worker runs, eight dispatcher runs (jobs
+and logs for at most `--passes` of them), one page of failed runs, the jobs of
+the five newest failed Entry runs, the reliability snapshot and the open
+issue and PR lists.
+
+`baste turning --follow [--every 5m]` checks again on an interval and prints
+only changes. On Burning it prints a 🚨🔥 alert line and exits 10; on Slowing it
+exits 11. The first reading counts, so starting on a burning factory exits at
+once. `--notify` also shows a macOS notification (osascript) and does nothing
+elsewhere. `--json` keeps plain values (`"verdict": "burning"`), no emoji.
+
+`baste doctor` runs the same logic as its `work turning` check, and
+`baste recap` names the longest stretch over 45 minutes without a worker start
+inside the recap window. It says 🔥🔥 Burning only when that stretch is still
+going and the doctor's `work turning` check fails; otherwise it states the gap. Both control rooms show the verdict at the top
+of the overview, above the morning recap.
+
 ## Is the factory itself healthy?
 
 `baste doctor` runs the checks behind problems that were first
@@ -691,6 +754,7 @@ found by hand. It exits 4 when any check fails.
 | database usage | the published Turso usage is critical (fail) or warn, or over an hour old (warn); it reads `db_usage` from the same `factory-stats.json`, never the Turso API |
 | dashboard publisher | the last `factory-status-pages.yml` run failed; names the step and error |
 | scheduler | no scheduler run in 20 minutes |
+| work turning | `baste turning` says Burning (fail) or Slowing (warn) |
 | rotisserie intake | the intake decision cannot be made, so no fresh issue is admitted |
 | worker rejections | one factory gate rejected at least half (and 3+) of recent finished workers; that points at the gate or the repository, not the models |
 | main verification | the exact default-branch commit failed product CI (fail), or has no product CI run yet (warn: *unverified*, never green) |
@@ -923,6 +987,8 @@ not attempt repairs until it can read GitHub.
 | 4 | the scheduler, worker or model failed |
 | 5 | GitHub unreachable, not logged in, or rate limited |
 | 6 | the outcome could not be confirmed |
+| 10 | `turning --follow`: the factory is Burning |
+| 11 | `turning --follow`: the factory is Slowing |
 | 130 | you stopped watching; the factory keeps working |
 
 ## Reliability and the daily report

@@ -38,8 +38,16 @@ _CAPACITY = re.compile(
     r"|factory failover exhausted: no eligible provider/model combination remains"
     r"|Every available model authored this PR|No reviewer model:"
     # A pinned model the worker's exclusions refuse: no slot broke, the pick was cooling.
-    r"|Exact requested model could not be selected)[^\n]*)$",
+    r"|Exact requested model could not be selected"
+    # factory_quota_reset.capacity_sentence: an account quota ended same-run failover.
+    r"|[A-Za-z][\w.-]* (?:daily|monthly) (?:free allowance|quota) used up; resets at)[^\n]*)$",
     re.M,
+)
+# The worker's own line after the last candidate: the source's account quota
+# is used up and no other eligible provider remained for this run.
+_ACCOUNT_EXHAUSTED = (
+    r"(?m)^\d{{4}}-\d{{2}}-\d{{2}}T\S+Z \[factory:{worker}\]\[source:{source}\]\[model:[^\]\n]+\] "
+    r"FACTORY_CAPACITY_EXHAUSTED: account={source} kind=[a-z_]+ earliest_retry_at=\d+\s*$"
 )
 _FLEET_FALLBACK = re.compile(_STAMP + r"Factory \d+ lane \S+: [^\n]*; selecting across the eligible fleet$", re.M)
 
@@ -219,6 +227,12 @@ def classify(log: str) -> dict[str, Any]:
         result = replace(result, outcome="PROVIDER THROTTLE" if throttled == "provider_throttle"
                          else "PROVIDER QUOTA", outcome_class=throttled,
                          detail="the session's last provider retry was an HTTP 429 response")
+    if (result.outcome_class in {"provider_quota", "provider_throttle"}
+            and result.delivery_outcome == "none"
+            and re.search(_ACCOUNT_EXHAUSTED.format(worker=worker, source=re.escape(source)),
+                          executed_lines)):
+        result = replace(result, outcome="NO CAPACITY", outcome_class="no_capacity",
+                         detail=capacity_reason(executed_lines) or result.detail)
     return asdict(result)
 
 

@@ -78,6 +78,16 @@ def add_insight_parsers(commands: argparse._SubParsersAction[argparse.ArgumentPa
     )
     _common(trusted)
 
+    clash = commands.add_parser(
+        "conflicts", help="which of a pull request's files main also changed, and where"
+    )
+    clash.add_argument("what", help="pr:N")
+    _common(clash)
+
+    red = commands.add_parser("checks", help="why checks fail on a PR or branch, one line each")
+    red.add_argument("what", help="pr:N, main or branch:NAME")
+    _common(red)
+
     choose = commands.add_parser("use", help="show or save the default factory repository")
     choose.add_argument("repository", nargs="?", help="owner/name to save as the default")
     _common(choose)

@@ -17,3 +17,11 @@ runtime.bind_repository(FAKE_ADOPTER)
 @pytest.fixture(autouse=True)
 def fake_adopter() -> None:
     runtime.bind_repository(FAKE_ADOPTER)
+
+
+@pytest.fixture(autouse=True)
+def private_read_cache(
+    tmp_path_factory: pytest.TempPathFactory, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """No test may read or write the operator's real GitHub read cache."""
+    monkeypatch.setenv("ROTISSERIE_CACHE_DIR", str(tmp_path_factory.mktemp("read-cache")))

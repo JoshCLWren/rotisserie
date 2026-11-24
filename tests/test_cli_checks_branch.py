@@ -27,7 +27,7 @@ class Branch:
             }
         raise AssertionError(f"unexpected read: {route}")
 
-    def text(self, path: str) -> str:
+    def text(self, path: str, **_: object) -> str:
         assert path == "actions/jobs/1/logs"
         return TSC_LOG
 

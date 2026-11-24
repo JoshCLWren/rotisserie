@@ -131,6 +131,15 @@ def test_old_sign_in_service_keeps_the_launcher_on_history(results: dict[str, An
     assert results["oldServiceLiveLine"].startswith("Live models unavailable")
 
 
+def test_stored_reads_are_keyed_by_a_known_viewer_and_refresh_is_not_sent(
+    results: dict[str, Any],
+) -> None:
+    assert results["signedOutViewer"] == "public"
+    assert results["viewerWhileChecking"] == ""
+    assert results["viewerSignedIn"] == "admin"
+    assert results["freshQuery"] == {}
+
+
 def test_expired_session_fails_closed(results: dict[str, Any]) -> None:
     assert "expired" in results["expired"]["error"]
     assert results["expiredSignedInClass"] is False

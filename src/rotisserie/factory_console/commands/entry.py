@@ -4,7 +4,9 @@ import argparse
 import json
 import os
 import sys
+import time
 from collections.abc import Sequence
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import TextIO
 
@@ -49,10 +51,12 @@ from rotisserie.factory_console.commands.run import cmd_run
 from rotisserie.factory_console.commands.settings import cmd_prioritize, cmd_settings
 from rotisserie.factory_console.commands.status import cmd_cancel, cmd_status
 from rotisserie.factory_console.commands.store import cmd_store
+from rotisserie.factory_console.commands.turning import cmd_turning
 from rotisserie.factory_console.commands.watch import cmd_watch
 from rotisserie.factory_console.commands.why import cmd_next, cmd_why
 from rotisserie.factory_console.context import Context, UsageError, find_repository
 from rotisserie.factory_console.github import GitHub, GitHubError, GitHubRateLimitError
+from rotisserie.factory_console.read_cache import ReadCache, pure_read
 from rotisserie.factory_console.tracker import Clock
 from rotisserie.factory_console.ui import Console, Prompt
 
@@ -81,11 +85,15 @@ def main(
         print(_help_text(), file=console.stream)
         return EXIT_OK
     data: dict[str, object] = {"command": command}
+    started = time.time()
     context: Context | None = None
     try:
         explicit = getattr(arguments, "repo", None) or getattr(arguments, "repository", None)
         repo = find_repository(explicit, values, Path.cwd())
         github = GitHub(repo, executable=executable)
+        max_age = max(0, int(getattr(arguments, "max_age", 0) or 0))
+        cache = ReadCache.for_repo(repo, values, max_age=max_age)
+        github.use_cache(cache, reads=pure_read(arguments))
         runtime.bind_repository(repo)
         input_stream = stdin or sys.stdin
         interactive = console.interactive and input_stream.isatty() and not json_mode
@@ -135,9 +143,18 @@ def main(
         data.update(result="invalid", error=str(exc))
         code = EXIT_USAGE
     data["exit_code"] = code
+    if context is not None:
+        data["read_at"] = _read_at(context.github, started)
     if json_mode:
         print(json.dumps(data, default=str, sort_keys=True), file=console.stream)
     return code
+
+
+def _read_at(github: GitHub, started: float) -> str:
+    """When the oldest GitHub answer behind this result was fetched."""
+    oldest = github.cache.oldest if github.cache is not None else None
+    moment = min(started, oldest) if oldest is not None else started
+    return datetime.fromtimestamp(moment, UTC).isoformat(timespec="seconds")
 
 
 def _help_text() -> str:
@@ -147,6 +164,7 @@ def _help_text() -> str:
             "",
             "  baste run [PROVIDER [MODEL]] [--force] [--target issue:N]",
             "  baste status        who is working on what",
+            "  baste turning       is work moving: Turning, Slowing or Burning (--follow alerts)",
             "  baste recap         morning summary: the answer first, plain words",
             "  baste report        what merged, failed and is stuck",
             "  baste failures      failed worker runs by job and step",
@@ -255,6 +273,7 @@ HANDLERS = {
     "recap": cmd_recap,
     "heal": cmd_heal,
     "store": cmd_store,
+    "turning": cmd_turning,
 }
 
 

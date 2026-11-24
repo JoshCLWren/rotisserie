@@ -11,6 +11,14 @@ such change must be called out here and in its release notes.
 
 ### Added
 
+- `baste turning` says whether the factory is moving work: 🍗🔄 Turning,
+  🐢 Slowing or 🔥🔥 Burning, with the most likely reason, the next command
+  and the evidence (last worker start and outcome, dispatcher passes with their
+  "none" answers, control workflow failures, capped providers, backlog limits,
+  store state). `--follow` exits 10 on Burning and 11 on Slowing, with an
+  optional macOS notification. `baste doctor` gains a `work turning` check,
+  `baste recap` names a burning stretch, and both control rooms show the
+  verdict at the top of the overview.
 - The factory clears three stalls by itself on each dispatcher pass
   (`factory_self_heal.py sweep`). A PR whose repair verdict named no finding
   goes back to review once, and the next review avoids the model that wrote

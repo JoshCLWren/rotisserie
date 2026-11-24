@@ -71,7 +71,45 @@ trip_exhausted_credit_pool() {
   log "FACTORY_CREDIT_POOL_EXHAUSTED: source=$failed_source pool=$pool model=$failed_model"
 }
 
+# One trip per refusal. A credit pool is #234. An account quota is a refusal
+# whose canonical cross-run cooldown blocks the whole source (scope "account"
+# in factory_quota_reset), so no sibling model at that source can succeed in
+# this run. Throttles and model-scoped quotas keep failing over per model.
+trip_exhausted_capacity() {
+  local failed_source="$1" failed_model="$2" outcome="$3" elapsed="$4" account
+  failure_scope=model
+  if [[ "$outcome" == provider_quota ]] \
+    && trip_exhausted_credit_pool "$failed_source" "$failed_model" "$elapsed"; then
+    failure_scope=pool
+    return 0
+  fi
+  [[ "$outcome" == provider_quota || "$outcome" == provider_throttle ]] || return 0
+  account="$(python3 "$FACTORY_TRUSTED_FAILOVER_DIR/factory_quota_reset.py" account \
+    --source "$failed_source" --model "$failed_model" --outcome "$outcome" \
+    --log "/tmp/opencode-factory-${WORKER}.log" \
+    --probe --probe-cache "$RUNNER_TEMP/factory-quota-probe.json" 2>/dev/null)" || return 0
+  exhausted_accounts+=("$failed_source")
+  exhausted_account_details+=("$account")
+  log "FACTORY_ACCOUNT_QUOTA_EXHAUSTED: source=$failed_source kind=${account%%$'\t'*} model=$failed_model"
+}
+
+record_exhausted_account() {
+  local outcome index kind retry_at sentence
+  outcome="$(cut -f1 "$TERMINAL_OUTCOME_FILE" 2>/dev/null)"
+  [[ "$outcome" == provider_quota || "$outcome" == provider_throttle ]] || return 1
+  for index in "${!exhausted_accounts[@]}"; do
+    [[ "${exhausted_accounts[$index]}" == "$SOURCE" ]] || continue
+    IFS=$'\t' read -r kind retry_at sentence <<< "${exhausted_account_details[$index]}"
+    record_terminal_outcome "$outcome" "${sentence}; failover ended in this run"
+    log "FACTORY_CAPACITY_EXHAUSTED: account=$SOURCE kind=$kind earliest_retry_at=$retry_at"
+    printf '::error::%s\n' "$sentence"
+    return 0
+  done
+  return 1
+}
+
 record_exhausted_capacity() {
+  record_exhausted_account && return 0
   (( ${#exhausted_pools[@]} > 0 )) || return 0
   [[ "$(cut -f1 "$TERMINAL_OUTCOME_FILE" 2>/dev/null)" == provider_quota ]] || return 0
   local retry_at

@@ -10,6 +10,7 @@ from rotisserie.factory_console.commands import (
     incident,
     recap,
     store,
+    turning,
 )
 from rotisserie.factory_console.commands._shared import ACTIONS
 from rotisserie.factory_console.commands.parser_insight import (
@@ -41,6 +42,9 @@ def add_parser(
     factory.add_argument("--verbose", action="store_true", help="also show raw diagnostic detail")
     factory.add_argument(
         "--progress", action="store_true", help="write one JSON line per step to stderr"
+    )
+    factory.add_argument(
+        "--max-age", type=int, default=0, help="reads: reuse cached GitHub answers"
     )
     commands = factory.add_subparsers(dest="factory_command", metavar="COMMAND")
 
@@ -375,12 +379,6 @@ def add_parser(
     event.add_argument("--event-path", required=True, help="the GITHUB_EVENT_PATH payload")
     _common(event)
 
-    clash = commands.add_parser(
-        "conflicts", help="which of a pull request's files main also changed, and where"
-    )
-    clash.add_argument("what", help="pr:N")
-    _common(clash)
-
     syncer = commands.add_parser(
         "sync",
         help="merge main into factory PRs, only while no worker holds them",
@@ -453,10 +451,6 @@ def add_parser(
     fix.add_argument("--log", help="append each result (JSON lines) to this audit file")
     _common(fix)
 
-    red = commands.add_parser("checks", help="why checks fail on a PR or branch, one line each")
-    red.add_argument("what", help="pr:N, main or branch:NAME")
-    _common(red)
-
     gate = commands.add_parser(
         "review",
         help="whose review counts on a pull request: known self-review versus missing metadata",
@@ -494,3 +488,4 @@ def add_parser(
     recap.add_parser(commands)
     heal.add_parser(commands)
     store.add_parser(commands)
+    turning.add_parser(commands)

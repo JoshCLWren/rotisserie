@@ -28,8 +28,10 @@ from rotisserie.control_contract import (
     write_command,
 )
 from rotisserie.factory_console.context import UsageError, find_repository
-from rotisserie.web_jobs import JobRefused, Jobs
+from rotisserie.web_jobs import JobRefused, Jobs, shared
 
+# Panels of one page load share GitHub answers this young; a cold load takes about 45 seconds.
+SHARED_READ_SECONDS = 60
 REPO = re.compile(r"^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$")
 JOB = re.compile(r"^/api/jobs/([A-Za-z0-9_-]{1,64})$")
 __all__ = [
@@ -136,9 +138,9 @@ def make_handler(
                 return False
             return True
 
-        def _start(self, args: list[str], *, mutating: bool) -> None:
+        def _start(self, args: list[str], *, mutating: bool, max_age: int = 0) -> None:
             try:
-                job = background.start(args, mutating=mutating)
+                job = background.start(args, mutating=mutating, max_age=max_age)
             except JobRefused as exc:
                 self._send_json(409, {"error": str(exc), "running": exc.running})
                 return
@@ -188,14 +190,15 @@ def make_handler(
                     raise InvalidRequest("Query too long")
                 query = {k: v[-1] for k, v in parse_qs(parsed.query).items()}
                 in_background = query.pop("background", "") == "1"
+                age = 0 if query.pop("fresh", "") == "1" else SHARED_READ_SECONDS
                 args = read_command(name, query)
             except InvalidRequest as exc:
                 self._send_json(400, {"error": str(exc)})
                 return
             if in_background:
-                self._start(args, mutating=False)
+                self._start(args, mutating=False, max_age=age)
                 return
-            self._send_json(200, runner(repository, args))
+            self._send_json(200, runner(repository, shared(args, age)))
 
         def do_POST(self) -> None:
             if self.path != "/api/command":

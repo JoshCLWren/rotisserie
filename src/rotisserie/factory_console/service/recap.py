@@ -25,6 +25,7 @@ from rotisserie.factory_console.service import (
     review,
     self_heal,
     stalls,
+    turning,
 )
 from rotisserie.factory_console.service import recap_build as build
 from rotisserie.factory_console.service.report import search
@@ -51,6 +52,7 @@ class Recap:
     stuck: list[dict[str, object]]
     database: dict[str, object] | None
     unread: list[str]
+    burning: dict[str, object] | None = None
 
     def to_dict(self) -> dict[str, object]:
         return {
@@ -68,6 +70,7 @@ class Recap:
             "stuck": self.stuck,
             "database": self.database,
             "unread": self.unread,
+            "burning": self.burning,
         }
 
 
@@ -106,7 +109,23 @@ def assemble(sources: build.Sources) -> Recap:
         stuck=build.stuck(sources),
         database=build.database(sources),
         unread=sorted(sources.unread),
+        burning=burning_stretch(sources),
     )
+
+
+def burning_stretch(sources: build.Sources) -> dict[str, object] | None:
+    if "worker runs" in sources.unread:
+        return None
+    gap = turning.longest_gap(sources.runs, sources.since, sources.now)
+    if gap is None:
+        return None
+    span = turning.minutes_words(int(str(gap["minutes"])))
+    until = "until now" if gap["ongoing"] else "then workers started again"
+    burning = gap["ongoing"] and any(
+        item.check == turning.CHECK and item.status == "fail" for item in sources.findings
+    )
+    text = f"no worker started for {span}, {until}."
+    return {**gap, "burning": burning, "text": f"Burning: {text}" if burning else text.capitalize()}
 
 
 def gather(
