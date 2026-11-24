@@ -30,6 +30,9 @@ from factory_state_ledger_events import (
     _events, recorded_runtime_runs, refine_trusted_dynamic_models,
     refine_trusted_failover_models, refine_trusted_smoke_timeout,
 )
+from factory_state_ledger_slots import (
+    SLOT_RE, acquire_slot, attempt_slots, slot_holders, slot_key, slot_prefix,
+)
 from factory_state_ledger_external import (
     EXTERNAL_ACTIONS, EXTERNAL_ID_RE, EXTERNAL_WIP_ACTIONS, _external_holder, _external_key,
     _external_request, _finish_external, _reserve_external, _revoke_external,
