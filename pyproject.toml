@@ -61,6 +61,7 @@ include = [
   "/factory/.github/scripts/factory_main_health.py",
   "/factory/.github/scripts/factory_billing_pool.py",
   "/factory/.github/scripts/factory_turso_usage.py",
+  "/factory/.github/scripts/factory_dynamic_outcome.py",
   "/factory/scripts/factory_eligibility.py",
   "/CHANGELOG.md",
   "/docs",
@@ -97,6 +98,7 @@ packages = ["src/rotisserie"]
 "factory/.github/scripts/factory_main_health.py" = "rotisserie/factory_console/factory_runtime/factory_main_health.py"
 "factory/.github/scripts/factory_billing_pool.py" = "rotisserie/factory_console/factory_runtime/factory_billing_pool.py"
 "factory/.github/scripts/factory_turso_usage.py" = "rotisserie/factory_console/factory_runtime/factory_turso_usage.py"
+"factory/.github/scripts/factory_dynamic_outcome.py" = "rotisserie/factory_console/factory_runtime/factory_dynamic_outcome.py"
 "factory/scripts/factory_eligibility.py" = "rotisserie/factory_console/factory_runtime/factory_eligibility.py"
 
 [tool.pytest.ini_options]

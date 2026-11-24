@@ -27,6 +27,7 @@ from rotisserie.factory_console.github import (
     timestamp,
 )
 from rotisserie.factory_console.service import reliability
+from rotisserie.factory_console.service import report as shared
 from rotisserie.factory_console.service.failures import runs_since
 from rotisserie.factory_console.tracker import (
     DISPATCH_WORKFLOW,
@@ -151,12 +152,6 @@ def _conclusion_word(name: str) -> str:
     }.get(name, name)
 
 
-def _search(github: GitHub, query: str) -> list[Obj]:
-    from urllib.parse import quote
-
-    return items(github.api(f"search/issues?q={quote(query)}&per_page=100&sort=updated"), "items")
-
-
 def _failure_reasons(github: GitHub, runs: list[Obj]) -> Counter[tuple[str, str]]:
     tracker = Tracker(github)
 
@@ -179,67 +174,14 @@ def _failure_reasons(github: GitHub, runs: list[Obj]) -> Counter[tuple[str, str]
     return counter
 
 
-NO_CAPACITY = "no capacity: "
-
-
-def split_capacity(
-    found: Counter[tuple[str, str]],
-) -> tuple[Counter[tuple[str, str]], Counter[tuple[str, str]]]:
-    """Capacity exits apart from real failures: (no capacity, failures)."""
-    capacity = Counter({key: n for key, n in found.items() if key[0].startswith(NO_CAPACITY)})
-    return capacity, found - capacity
-
-
-def plain_failure(message: str) -> str:
-    """Turn the factory's outcome sentence into a short, plain reason."""
-    if message.startswith("No capacity: "):
-        return NO_CAPACITY + message.removeprefix("No capacity: ")[:120]
-    match = re.search(r"worker failed: ([a-z_0-9]+)", message)
-    if match is None:
-        return message[:120]
-    reason = OUTCOME_WORDS.get(match.group(1), match.group(1).replace("_", " "))
-    if message.startswith("Code saved"):
-        reason += "; its code was saved on the pull request"
-    return reason
-
-
-def _main_health(github: GitHub) -> list[str]:
-    try:
-        repo = obj(github.repo_api(""))
-        branch = string(repo, "default_branch") or "main"
-        checks = items(github.repo_api(f"commits/{branch}/check-runs?per_page=100"), "check_runs")
-    except GitHubError:
-        return []
-    return sorted(
-        {
-            string(check, "name")
-            for check in checks
-            if string(check, "conclusion") in ("failure", "timed_out", "startup_failure")
-        }
-    )
-
-
+_search = shared.search
+_main_health = shared.main_failing_checks
+_provider_rows = shared.provider_rows
+split_capacity = shared.split_capacity
+plain_failure = shared.plain_failure
 _load_stats = reliability.load_stats
 _window = reliability.window
 _count = reliability.count
-
-
-def _provider_rows(stats: Obj, window: str) -> list[list[str]]:
-    rows = []
-    for entry in items(stats, "providers"):
-        counts = _window(entry, window)
-        provider = runtime.provider_for_source(string(entry, "source"))
-        rows.append(
-            [
-                provider,
-                str(_count(counts, "runs")),
-                str(_count(counts, "delivered")),
-                str(_count(counts, "completed") - _count(counts, "delivered")),
-                str(_count(counts, "idle")),
-                str(_count(counts, "failed")),
-            ]
-        )
-    return sorted(rows, key=lambda row: (-int(row[2]), -int(row[1])))
 
 
 def cmd_stats(context: Context, arguments: argparse.Namespace) -> Outcome:
