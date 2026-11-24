@@ -72,7 +72,7 @@ API calls and all individual targets/checks/reviews/mutations remain live.
 | `factory_runtime_event_keys` | Idempotence across independent terminal collectors | Retained coordination; duplicate completion must not double-count/reset breakers |
 | `factory_check_projection` | Advisory CI/review observations | Production writer retired; CI/review completions directly wake exact-head PR scheduling, legacy table requires one-time cleanup |
 | `factory_reconciliation_cursor` | Backfill and coalesced wakeups | Existing consumers remain; remove obsolete scopes after consumers migrate |
-| `factory_state_events` | Lifecycle/retry history plus old discovery observations | Runtime history still has consumers; lifecycle events expire after 30 days; `model_attempt` events have no retention yet |
+| `factory_state_events` | Lifecycle/retry history plus old discovery observations | Runtime history still has consumers; lifecycle events expire after 30 days, raw model attempts after 120 days into daily counts (see below) |
 
 Leases and provider reservations must survive independent workflows because
 Actions artifacts, outputs and concurrency groups cannot atomically reserve a
@@ -218,7 +218,7 @@ schema initialization or consumed by factory readers. Its historical rows
 remain physically present until the separately verified retention migration
 removes them.
 
-## Access paths and indexes (#254)
+## Access paths, indexes and retention (#254)
 
 The original tables existed before these lookups grew hot, and
 `ensure_schema` stops at its first table check. The dispatcher's trusted
@@ -236,10 +236,21 @@ does not stop the factory. A fresh database gets the same statements from
 | `idx_factory_state_events_worker_recent` | Reliability export, runtime view, failure streak (lifecycle and terminal events only) |
 | `idx_factory_state_events_retired` | Retired `cache_refresh`/`target_reconciled` arms of the prune (empty once cleaned) |
 | `idx_factory_state_kv_key_prefix` | Key-prefix reads (`text_pattern_ops`); prefixes are escaped `LIKE` patterns |
+| `factory_model_attempt_daily` | Daily per-model attempt counts for retained history |
 
 The lifecycle dedup is one `INSERT ... SELECT ... WHERE NOT EXISTS` under the
 repository lock, not a read followed by a write. The dedup index is not
 unique, because existing rows were never checked for duplicates.
+
+Retention: lifecycle events keep the existing 30-day, repository-fenced
+prune. Raw `model_attempt` events are kept for 120 days. The status job then
+moves older ones, in one statement, into `factory_model_attempt_daily` (repo,
+UTC day, source, model, outcome: attempts, timed attempts, total duration).
+The longest raw reader is `rotisserie factory estimate-history`: 45 days by
+default and at most 120 (`estimate_neon.py` `DEFAULT_DAYS`, `DAYS_RANGE`).
+The reliability export and runtime view read 24 hours and 7 days, and the
+outcome reconciler reads 12 hours. A reader that needs per-model history older
+than 120 days reads the daily table.
 
 ## Measurements and scope status
 

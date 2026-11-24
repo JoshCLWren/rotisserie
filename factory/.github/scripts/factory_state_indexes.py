@@ -42,6 +42,14 @@ UPGRADES: tuple[tuple[str, str], ...] = (
         "CREATE INDEX IF NOT EXISTS idx_factory_state_kv_key_prefix"
         " ON public.factory_state_kv (cache_key text_pattern_ops)",
     ),
+    (
+        "factory_model_attempt_daily",
+        "CREATE TABLE IF NOT EXISTS public.factory_model_attempt_daily ("
+        " repo text NOT NULL, day date NOT NULL, source text NOT NULL, model text NOT NULL,"
+        " outcome_class text NOT NULL, attempts bigint NOT NULL DEFAULT 0,"
+        " timed_attempts bigint NOT NULL DEFAULT 0, duration_ms bigint NOT NULL DEFAULT 0,"
+        " PRIMARY KEY (repo, day, source, model, outcome_class))",
+    ),
 )
 
 

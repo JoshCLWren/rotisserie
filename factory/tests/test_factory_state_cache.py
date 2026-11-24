@@ -354,6 +354,8 @@ def test_prune_cli_cleans_in_batches_with_upper_limit(monkeypatch, tmp_path):
         projection_calls.append(True)
         return 250 if len(projection_calls) < 4 else 7
     monkeypatch.setattr(cache, "_prune_retired_check_projection", prune_checks)
+    import factory_state_retention
+    monkeypatch.setattr(factory_state_retention, "prune_model_attempts", lambda _repo: 3)
     assert cache.main(["prune-obsolete"]) == 0
     assert len(calls) == 3
     assert len(event_calls) == 3

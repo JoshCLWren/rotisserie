@@ -37,3 +37,4 @@ CREATE INDEX IF NOT EXISTS idx_factory_state_events_run_id ON public.factory_sta
 CREATE INDEX IF NOT EXISTS idx_factory_state_events_worker_recent ON public.factory_state_events (created_at) WHERE event_type IN ('worker_started', 'worker_heartbeat', 'worker_outcome_signal', 'worker_completed', 'worker_idle', 'worker_failed');
 CREATE INDEX IF NOT EXISTS idx_factory_state_events_retired ON public.factory_state_events (id) WHERE event_type IN ('cache_refresh', 'target_reconciled');
 CREATE INDEX IF NOT EXISTS idx_factory_state_kv_key_prefix ON public.factory_state_kv (cache_key text_pattern_ops);
+CREATE TABLE IF NOT EXISTS public.factory_model_attempt_daily ( repo text NOT NULL, day date NOT NULL, source text NOT NULL, model text NOT NULL, outcome_class text NOT NULL, attempts bigint NOT NULL DEFAULT 0, timed_attempts bigint NOT NULL DEFAULT 0, duration_ms bigint NOT NULL DEFAULT 0, PRIMARY KEY (repo, day, source, model, outcome_class));

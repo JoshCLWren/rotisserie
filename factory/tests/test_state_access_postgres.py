@@ -1,4 +1,4 @@
-"""Index upgrades, single-statement dedup and escaped key prefixes on real PostgreSQL (#254).
+"""Index upgrades, single-statement dedup and attempt retention on real PostgreSQL (#254).
 
 Uses the disposable server fixture of the external claim suite. Set
 ``FACTORY_TEST_POSTGRES_URL`` to a LOCAL throwaway server when no server
@@ -18,6 +18,7 @@ from tests.test_external_claim_postgres import _sql, neon, pytestmark, server  #
 ledger = importlib.import_module("factory_state_ledger")
 indexes = importlib.import_module("factory_state_indexes")
 core = importlib.import_module("factory_state_ledger_core")
+retention = importlib.import_module("factory_state_retention")
 
 REPO = "acme/widgets"
 NAMES = [name for name, _ in indexes.UPGRADES]
@@ -58,7 +59,10 @@ def _present() -> set[str]:
 
 def test_bootstrap_upgrades_a_database_created_before_the_indexes(neon: str) -> None:  # noqa: F811
     assert _present() == set(NAMES)
-    _sql("".join(f"DROP INDEX IF EXISTS public.{name};" for name in NAMES))
+    _sql(
+        "DROP TABLE IF EXISTS public.factory_model_attempt_daily;"
+        + "".join(f" DROP INDEX IF EXISTS public.{name};" for name in NAMES[:-1])
+    )
     assert _present() == set()
     first = _upgrade()
     assert first["created"] == NAMES
@@ -116,3 +120,54 @@ def test_prefix_patterns_never_match_another_repository(neon: str) -> None:  # n
     assert ledger.external_wip_count("acme/wid_ets") == 0
     assert ledger.external_wip_count("acme/wid%") == 0
 
+
+def _attempt(repo: str, run: int, index: int, days_old: int, **detail: Any) -> None:
+    body = {
+        "event_id": f"model-attempt:{run}:{index}",
+        "repo": repo,
+        "worker": "3",
+        "run_id": str(run),
+        "source": "nvidia",
+        "model": "m1",
+        "outcome_class": "provider_failure",
+        "duration_ms": 1000,
+        **detail,
+    }
+    _sql(
+        """INSERT INTO public.factory_state_events
+             (source, event_type, subject_type, subject_number, created_at, detail)
+           VALUES ('github-actions', 'model_attempt', 'worker', 3,
+                   now() - $1::int * interval '1 day',
+                   $2::jsonb)""",
+        days_old,
+        json.dumps(body),
+    )
+
+
+def test_old_model_attempts_roll_into_daily_counts_once(neon: str) -> None:  # noqa: F811
+    _sql("DELETE FROM public.factory_model_attempt_daily;")
+    for index in range(4):
+        _attempt(REPO, 1, index, 130)
+    _attempt(REPO, 2, 0, 130, duration_ms=None, outcome_class="success")
+    _attempt(REPO, 3, 0, 100)
+    _attempt("other/repo", 4, 0, 130)
+    with ThreadPoolExecutor(max_workers=3) as pool:
+        moved = list(pool.map(lambda _: retention.rollup_model_attempts(REPO), range(3)))
+    assert sum(moved) == 5
+    daily = _sql(
+        """SELECT outcome_class, attempts, timed_attempts, duration_ms
+             FROM public.factory_model_attempt_daily WHERE repo=$1 ORDER BY outcome_class""",
+        REPO,
+    )
+    assert daily == [
+        {
+            "outcome_class": "provider_failure",
+            "attempts": 4,
+            "timed_attempts": 4,
+            "duration_ms": 4000,
+        },
+        {"outcome_class": "success", "attempts": 1, "timed_attempts": 0, "duration_ms": 0},
+    ]
+    left = _sql("SELECT detail->>'run_id' AS run FROM public.factory_state_events ORDER BY run")
+    assert [row["run"] for row in left] == ["3", "4"]
+    assert retention.prune_model_attempts(REPO) == 0
