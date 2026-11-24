@@ -89,7 +89,7 @@ def parser() -> argparse.ArgumentParser:
         prog="rotisserie",
         description=(
             "Rotisserie coordinates AI and human workers. "
-            "Start with 'rotisserie factory' to operate a software factory."
+            "Start with 'baste' to operate a software factory."
         ),
     )
     value.add_argument(

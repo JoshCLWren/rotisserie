@@ -186,7 +186,7 @@ def cmd_labels(context: Context, arguments: argparse.Namespace) -> Outcome:
         console.ok("No label changes needed.")
     elif mode == "dry-run":
         suffix = " --via github" if arguments.via == "github" else ""
-        console.line(f"Apply these changes: rotisserie factory labels --repair{suffix}")
+        console.line(f"Apply these changes: baste labels --repair{suffix}")
     return Outcome(Result.COMPLETED, EXIT_OK, data)
 
 

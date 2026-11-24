@@ -165,7 +165,7 @@ def test_a_finding_free_repair_verdict_is_a_deadlock() -> None:
     assert found.kind == "empty-repair-verdict"
     assert "names no finding" in found.text
     assert "run PROVIDER auto --force --target pr:44 --action review" in found.hint
-    assert "rotisserie factory stats" in found.hint
+    assert "baste stats" in found.hint
     assert found.url == "https://x/c1"
 
 
@@ -295,7 +295,7 @@ def test_a_failure_elsewhere_is_named_not_blamed_on_providers() -> None:
     found = availability([("failure", "Checkout main")] * 3 + [("success", "")])
     assert found.status == "warn"
     assert "3 failed at 'Checkout main'" in found.text
-    assert found.hint == "rotisserie factory report shows the failed runs"
+    assert found.hint == "baste report shows the failed runs"
 
 
 def test_a_worker_that_ran_but_failed_its_outcome_had_a_model() -> None:

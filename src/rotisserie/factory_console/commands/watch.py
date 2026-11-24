@@ -106,7 +106,7 @@ def _report_dispatch(
         data["assignment"] = asdict(assignment)
         if decision_only:
             console.link("Scheduler", scheduler_url)
-            console.note(f"Follow the worker: rotisserie factory watch {data['scheduler_run_id']}")
+            console.note(f"Follow the worker: baste watch {data['scheduler_run_id']}")
             return Outcome(Result.SUBMITTED, EXIT_CODES[Result.SUBMITTED], data)
         return _watch_worker(context, tracker, assignment, data, follow=follow)
     console.line()
@@ -119,11 +119,9 @@ def _report_dispatch(
         )
         if request is not None:
             target = request.target or f"issue:{number}"
-            again = (
-                f"rotisserie factory run {request.provider.key} {request.model} --target {target}"
-            )
+            again = f"baste run {request.provider.key} {request.model} --target {target}"
             console.line(f"  Take it over: {again} --take-over")
-        console.line(f"  Stop it:      rotisserie factory cancel issue:{number}")
+        console.line(f"  Stop it:      baste cancel issue:{number}")
         console.link("Scheduler", scheduler_url)
         return Outcome(Result.BUSY, EXIT_CODES[Result.BUSY], data)
     if outcome.status == "deferred":
@@ -142,7 +140,7 @@ def _report_dispatch(
         explain_target = (
             request.target if request is not None and request.target.startswith("issue:") else ""
         )
-        console.line(f"See why: rotisserie factory why {explain_target}".rstrip())
+        console.line(f"See why: baste why {explain_target}".rstrip())
         console.link("Scheduler", scheduler_url)
         return Outcome(Result.NO_WORK, EXIT_CODES[Result.NO_WORK], data)
     if outcome.status == "failed":
@@ -228,7 +226,7 @@ def _watch_worker(
                         f"/{'issues' if assignment.kind == 'issue' else 'pull'}/{assignment.number}"
                     ),
                 )
-                console.note(f"Keep watching: rotisserie factory watch {run_id} --follow")
+                console.note(f"Keep watching: baste watch {run_id} --follow")
                 return Outcome(Result.STARTED, EXIT_CODES[Result.STARTED], data)
         if view.finished:
             break

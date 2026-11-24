@@ -19,9 +19,7 @@ def cmd_why(context: Context, arguments: argparse.Namespace) -> Outcome:
         else:
             kind, number = _split_target(arguments.what)
             if kind != "issue":
-                raise UsageError(
-                    "'why' explains issues. For pull requests, see 'rotisserie factory status'."
-                )
+                raise UsageError("'why' explains issues. For pull requests, see 'baste status'.")
     now = int(context.clock.now().timestamp())
     variables = _variables(context.github)
     if number is None:
@@ -61,7 +59,7 @@ def _show_answer(context: Context, answer: queue.IssueAnswer) -> None:
         console.ok("Eligible now", "the next free worker can pick it up")
         console.line(
             "  Order among eligible work follows the priority settings; "
-            f"to move it up: rotisserie factory prioritize issue:{number}"
+            f"to move it up: baste prioritize issue:{number}"
         )
     elif found.status == "waiting":
         console.warn("Eligible, but held back by the factory's limits")
@@ -94,22 +92,20 @@ def _why_hints(found: queue.Verdict, number: int) -> list[str]:
         return []
     if found.category == "held":
         return [
-            f"Take it over: rotisserie factory run PROVIDER MODEL --target issue:{number} "
-            "--take-over",
-            f"Stop it:      rotisserie factory cancel issue:{number}",
+            f"Take it over: baste run PROVIDER MODEL --target issue:{number} --take-over",
+            f"Stop it:      baste cancel issue:{number}",
         ]
     if found.category == "has-pr":
         return ["The pull request moves on through review, checks and repair."]
     setting = found.reasons[0].setting if found.reasons else None
     if setting:
         return [
-            "Clear it:         rotisserie factory unstick",
-            f"Raise the limit:  rotisserie factory settings {setting} N",
-            f"Start it anyway: rotisserie factory run PROVIDER MODEL --target issue:{number} "
-            "--force",
+            "Clear it:         baste unstick",
+            f"Raise the limit:  baste settings {setting} N",
+            f"Start it anyway: baste run PROVIDER MODEL --target issue:{number} --force",
         ]
     return [
-        f"Start it anyway: rotisserie factory run PROVIDER MODEL --target issue:{number} --force",
+        f"Start it anyway: baste run PROVIDER MODEL --target issue:{number} --force",
         "  (--force ignores the factory's limits and blocked/dependency labels)",
     ]
 
@@ -137,8 +133,8 @@ def _show_queue(console: Console, summary: queue.QueueSummary) -> None:
         console.warn(f"Rotisserie intake admits nothing: {summary.board.intake_problem}")
     console.line()
     if any(code in held for code in ("review-limit", "wip-limit", "backpressure")):
-        console.line("Clear the backlog: rotisserie factory unstick")
-    console.line("Ask about one:     rotisserie factory why issue:N")
+        console.line("Clear the backlog: baste unstick")
+    console.line("Ask about one:     baste why issue:N")
 
 
 def _snapshot(

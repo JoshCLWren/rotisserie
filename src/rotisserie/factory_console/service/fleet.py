@@ -140,7 +140,7 @@ def switchable_provider(name: str) -> str:
 
 
 def full_model_id(provider: runtime.Provider, model: str) -> str:
-    """The model ID as ``rotisserie factory models PROVIDER`` shows it."""
+    """The model ID as ``baste models PROVIDER`` shows it."""
     if model == "auto":
         raise SwitchError("Name an exact model; 'auto' is not a model")
     full = (

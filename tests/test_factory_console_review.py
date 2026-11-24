@@ -1,4 +1,4 @@
-"""`rotisserie factory review`: who may approve a PR, and safe requeue from the old gate."""
+"""`baste review`: who may approve a PR, and safe requeue from the old gate."""
 
 from __future__ import annotations
 

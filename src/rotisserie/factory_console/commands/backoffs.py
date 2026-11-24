@@ -13,8 +13,8 @@ from rotisserie.factory_console.ui import local_time
 HELP = """\
 What keeps each provider's models from running, and when they retry.
 
-  rotisserie factory backoffs --via github              list, per provider
-  rotisserie factory backoffs reset --quota-only --via github
+  baste backoffs --via github              list, per provider
+  baste backoffs reset --quota-only --via github
 
 The list shows three kinds of wait per provider: model health cooldowns,
 Fibonacci backoffs of real failures (capped at one day), and quota, throttle
@@ -109,7 +109,7 @@ def cmd_backoffs(context: Context, arguments: argparse.Namespace) -> Outcome:
             "Factory Model Health Reset workflow"
         )
     if arguments.quota_only and arguments.action != "reset":
-        raise UsageError("--quota-only goes with: rotisserie factory backoffs reset")
+        raise UsageError("--quota-only goes with: baste backoffs reset")
     try:
         if arguments.action == "reset":
             if not arguments.yes:

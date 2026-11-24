@@ -1,4 +1,4 @@
-"""Every `rotisserie factory` command has a control in both control rooms, or a reason not to.
+"""Every `baste` command has a control in both control rooms, or a reason not to.
 
 AGENTS.md: a new or changed CLI command gets a working control in the local
 web UI and the hosted control room in the same PR. This test enforces it from

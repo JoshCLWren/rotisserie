@@ -131,7 +131,7 @@ def reserve_target(
                 "status": "held",
                 "reason": "the claim could not be undone; check the lease",
                 "claim_id": claim_id,
-                "next": f"rotisserie factory leases {target} --via github",
+                "next": f"baste leases {target} --via github",
             }
         return _refused(str(exc), "Claim it again.")
     issue_body = string(item, "body")
@@ -155,7 +155,7 @@ def _holder_detail(github: GitHub, store: ModuleType, numbers: list[int]) -> dic
     try:
         rows: list[dict[str, Any]] = store.list_leases(github.repo)
     except Exception:  # noqa: BLE001 - the refusal stands without the detail
-        return {"next": "rotisserie factory leases --via github"}
+        return {"next": "baste leases --via github"}
     for row in rows:
         targets = [n for n in row.get("targets") or [] if isinstance(n, int)]
         if not set(targets) & set(numbers):
@@ -169,9 +169,7 @@ def _holder_detail(github: GitHub, store: ModuleType, numbers: list[int]) -> dic
         )
         expires = row.get("expires_at", "?")
         end = (
-            f"rotisserie factory revoke {row.get('claim_id')}"
-            if outside
-            else f"rotisserie factory cancel issue:{targets[0]}"
+            f"baste revoke {row.get('claim_id')}" if outside else f"baste cancel issue:{targets[0]}"
         )
         if row.get("active"):
             reason = f"#{targets[-1]} is held by {who} until {expires}"
@@ -186,4 +184,4 @@ def _holder_detail(github: GitHub, store: ModuleType, numbers: list[int]) -> dic
             },
             "next": next_step,
         }
-    return {"next": "rotisserie factory leases --via github"}
+    return {"next": "baste leases --via github"}

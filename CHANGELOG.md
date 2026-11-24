@@ -11,6 +11,10 @@ such change must be called out here and in its release notes.
 
 ### Added
 
+- `baste` is the short name for the factory console: `baste status` runs
+  `rotisserie factory status`, and `baste web` opens the local control room.
+  Help and hints now name `baste`. `rotisserie factory ...` keeps working, and
+  the original local-config commands stay under `rotisserie --config FILE`.
 - Turso cost observability (#258, #253): `rotisserie factory db-usage`
   (published value, `--via github` or `--live`), a doctor line read from the
   published `factory-stats.json`, and a Database usage control in both control

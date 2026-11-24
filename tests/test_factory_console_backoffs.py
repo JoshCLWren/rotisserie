@@ -1,4 +1,4 @@
-"""`rotisserie factory backoffs`: read and quota-only reset through trusted workflows."""
+"""`baste backoffs`: read and quota-only reset through trusted workflows."""
 
 from __future__ import annotations
 

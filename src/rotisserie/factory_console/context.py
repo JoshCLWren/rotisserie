@@ -42,7 +42,7 @@ def find_repository(explicit: str | None, env: dict[str, str], cwd: Path) -> str
     """Pick the adopter repository.
 
     Order: flag, FACTORY_REPO, the project's .rotisserie/config.toml, the
-    default set with ``rotisserie factory use``, then the git remote.
+    default set with ``baste use``, then the git remote.
     """
     if explicit:
         return explicit
@@ -79,7 +79,7 @@ def find_repository(explicit: str | None, env: dict[str, str], cwd: Path) -> str
         return match.group(1)
     raise UsageError(
         "Could not tell which repository runs the factory. Pass --repo owner/name, "
-        "or set a default once with: rotisserie factory use owner/name"
+        "or set a default once with: baste use owner/name"
     )
 
 
@@ -89,7 +89,7 @@ def user_config(env: dict[str, str]) -> Path:
 
 
 def default_repository(env: dict[str, str]) -> str:
-    """The repository saved with ``rotisserie factory use``, or ""."""
+    """The repository saved with ``baste use``, or ""."""
     try:
         data = tomllib.loads(user_config(env).read_text(encoding="utf-8"))
     except OSError, tomllib.TOMLDecodeError:

@@ -1,4 +1,4 @@
-"""``rotisserie factory``: the operator console for the software factory."""
+"""``baste``: the operator console for the software factory."""
 
 from __future__ import annotations
 

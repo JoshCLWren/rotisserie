@@ -11,8 +11,8 @@ authenticated as the actual agent principal, and a restricted
 `FACTORY_STATE_DSN_FILE` provisioned by the existing trusted controller:
 
 ```bash
-rotisserie factory next --repo acme/widgets --json
-rotisserie factory reserve-next --repo acme/widgets --client chatgpt --json
+baste next --repo acme/widgets --json
+baste reserve-next --repo acme/widgets --client chatgpt --json
 ```
 
 Only a JSON response with `"status": "reserved"` and an exact `claim_id`
@@ -25,8 +25,8 @@ instruction.
 Renew before expiration. For example, use the claim UUID returned above:
 
 ```bash
-rotisserie factory renew UUID --repo acme/widgets --client chatgpt --json
-rotisserie factory release UUID --repo acme/widgets --client chatgpt --json
+baste renew UUID --repo acme/widgets --client chatgpt --json
+baste release UUID --repo acme/widgets --client chatgpt --json
 gh workflow run rotisserie-external-claim.yml --repo acme/widgets --ref main \
   -f operation=handoff -f client=chatgpt -f claim_id=UUID \
   -f evidence=https://github.com/acme/widgets/pull/123
@@ -95,7 +95,7 @@ author-model marker for each (agent `external-CLIENT`), so no model that
 contributed the work can approve it. Only
 the Actions bot's comments count as author records, so **every handoff runs
 through the GitHub bridge**: a CLI agent reserves, renews and releases from
-the CLI, and `rotisserie factory handoff` prints the exact `gh workflow run`
+the CLI, and `baste handoff` prints the exact `gh workflow run`
 command to use instead. If the PR head moves while the handoff runs, it is
 refused and the claim stays held; hand off the new head.
 
@@ -133,11 +133,11 @@ direct call would (a refusal inside the workflow exits 4, as it does locally).
 No Neon connection is needed on the agent's machine:
 
 ```bash
-rotisserie factory next --repo acme/widgets --via github
-rotisserie factory wait-for-work --repo acme/widgets --can merge-conflict --via github
-rotisserie factory reserve-next --repo acme/widgets --client claude-code --via github --json
-rotisserie factory renew UUID --repo acme/widgets --client claude-code --via github
-rotisserie factory handoff UUID --repo acme/widgets --client claude-code \
+baste next --repo acme/widgets --via github
+baste wait-for-work --repo acme/widgets --can merge-conflict --via github
+baste reserve-next --repo acme/widgets --client claude-code --via github --json
+baste renew UUID --repo acme/widgets --client claude-code --via github
+baste handoff UUID --repo acme/widgets --client claude-code \
   --evidence https://github.com/acme/widgets/pull/123 --via github
 ```
 
@@ -204,14 +204,14 @@ Limits:
 - A label claim records only the GitHub login that added the label, with
   client `label`. Agents that share one GitHub login cannot be told apart, and
   either can finish the other's claim.
-- Only the claimant (or the operator's `rotisserie factory revoke`) can end a
+- Only the claimant (or the operator's `baste revoke`) can end a
   claim. When anyone else removes `factory:claimed`, the controller puts it
   back.
 - Events from bots, from forks and from reruns are ignored.
 
 ### Label doctor
 
-`rotisserie factory labels` audits every open factory issue and PR and prints
+`baste labels` audits every open factory issue and PR and prints
 the exact label changes, with reasons, without writing anything.
 `--repair` applies them; `--repair --delete-legacy` also deletes the obsolete
 label definitions it lists. The label claim workflow runs the repair every hour
@@ -280,14 +280,14 @@ Nothing else frees an outside claim; an elapsed timestamp alone never does.
 The operator can always take an item back. Either remove the claim directly:
 
 ```bash
-rotisserie factory revoke UUID --reason "phone agent went offline"
+baste revoke UUID --reason "phone agent went offline"
 ```
 
 or take the item over for a factory worker, which removes any outside agent's
 claim on it first:
 
 ```bash
-rotisserie factory run PROVIDER auto --target pr:123 --take-over
+baste run PROVIDER auto --target pr:123 --take-over
 ```
 
 Both need the factory's Neon connection (`FACTORY_STATE_DSN_FILE`) and write

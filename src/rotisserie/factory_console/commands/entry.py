@@ -140,44 +140,44 @@ def _help_text() -> str:
         [
             "Factory operator console",
             "",
-            "  rotisserie factory run [PROVIDER [MODEL]] [--force] [--target issue:N]",
-            "  rotisserie factory status        who is working on what",
-            "  rotisserie factory report        what merged, failed and is stuck",
-            "  rotisserie factory failures      failed worker runs by job and step",
-            "  rotisserie factory stats         reliable providers and models",
-            "  rotisserie factory settings      limits, worker counts, priorities",
-            "  rotisserie factory why [issue:N] why work is or is not being picked up",
-            "  rotisserie factory next         ranked read-only work offers for agents",
-            "  rotisserie factory wait-for-work [--can ACTION]  wait until an agent can take work",
-            "  rotisserie factory reserve-next --client AGENT [--can ACTION] [--target pr:N]",
-            "  rotisserie factory renew UUID --client AGENT",
-            "  rotisserie factory release UUID --client AGENT",
-            "  rotisserie factory handoff UUID --client AGENT --evidence GITHUB_URL",
-            "  rotisserie factory revoke UUID --reason TEXT  remove an external agent's claim",
+            "  baste run [PROVIDER [MODEL]] [--force] [--target issue:N]",
+            "  baste status        who is working on what",
+            "  baste report        what merged, failed and is stuck",
+            "  baste failures      failed worker runs by job and step",
+            "  baste stats         reliable providers and models",
+            "  baste settings      limits, worker counts, priorities",
+            "  baste why [issue:N] why work is or is not being picked up",
+            "  baste next         ranked read-only work offers for agents",
+            "  baste wait-for-work [--can ACTION]  wait until an agent can take work",
+            "  baste reserve-next --client AGENT [--can ACTION] [--target pr:N]",
+            "  baste renew UUID --client AGENT",
+            "  baste release UUID --client AGENT",
+            "  baste handoff UUID --client AGENT --evidence GITHUB_URL",
+            "  baste revoke UUID --reason TEXT  remove an external agent's claim",
             "    (next, wait-for-work, reserve-next, renew, release, handoff: --via github runs",
             "     the repository's installed workflow when this machine has no claim store)",
-            "  rotisserie factory unstick       start the workers that clear the bottleneck",
-            "  rotisserie factory outcomes      did the requested work actually happen",
-            "  rotisserie factory checks pr:N   why its checks fail",
-            "  rotisserie factory conflicts pr:N  what main changed under it",
-            "  rotisserie factory sync pr:N     merge main in (never while a worker holds it)",
-            "  rotisserie factory leases        who holds which item",
-            "  rotisserie factory backoffs      what keeps each provider waiting, and until when",
-            "  rotisserie factory db-usage      Turso rows, storage and quota this month",
-            "  rotisserie factory doctor        is the factory itself healthy",
-            "  rotisserie factory claim pr:N    request work by label; finish pr:N ends it",
-            "  rotisserie factory follow pr:N   each lifecycle change until done; runs pr:N",
-            "  rotisserie factory limits        GitHub API quota and reset time",
-            "  rotisserie factory estimate issue:N  attempts, time and unattended chance",
-            "  rotisserie factory close pr:N --reason TEXT   close work that should not be done",
-            "  rotisserie factory cancel issue:N",
-            "  rotisserie factory watch RUN",
-            "  rotisserie factory providers | models PROVIDER | prioritize issue:N",
-            "  rotisserie factory providers disable|enable NAME [--reason TEXT]",
-            "  rotisserie factory models disable|enable PROVIDER MODEL [--reason TEXT]",
-            "  rotisserie factory incident [start issue:N [--attempts K] | stop issue:N]",
+            "  baste unstick       start the workers that clear the bottleneck",
+            "  baste outcomes      did the requested work actually happen",
+            "  baste checks pr:N   why its checks fail",
+            "  baste conflicts pr:N  what main changed under it",
+            "  baste sync pr:N     merge main in (never while a worker holds it)",
+            "  baste leases        who holds which item",
+            "  baste backoffs      what keeps each provider waiting, and until when",
+            "  baste db-usage      Turso rows, storage and quota this month",
+            "  baste doctor        is the factory itself healthy",
+            "  baste claim pr:N    request work by label; finish pr:N ends it",
+            "  baste follow pr:N   each lifecycle change until done; runs pr:N",
+            "  baste limits        GitHub API quota and reset time",
+            "  baste estimate issue:N  attempts, time and unattended chance",
+            "  baste close pr:N --reason TEXT   close work that should not be done",
+            "  baste cancel issue:N",
+            "  baste watch RUN",
+            "  baste providers | models PROVIDER | prioritize issue:N",
+            "  baste providers disable|enable NAME [--reason TEXT]",
+            "  baste models disable|enable PROVIDER MODEL [--reason TEXT]",
+            "  baste incident [start issue:N [--attempts K] | stop issue:N]",
             "",
-            "Run 'rotisserie factory COMMAND --help' for details.",
+            "Run 'baste COMMAND --help' for details.",
         ]
     )
 
@@ -188,14 +188,14 @@ def _stopped_watching(console: Console, data: dict[str, object]) -> None:
     console.line("  Your request keeps running on GitHub. Nothing was cancelled.")
     run = data.get("scheduler_run_id") or data.get("worker_run_id")
     if run:
-        console.line(f"  Resume:  rotisserie factory watch {run}")
+        console.line(f"  Resume:  baste watch {run}")
     bridged = data.get("bridge_run")
     if bridged:
         # A claim run may still reserve or release work: look before retrying.
         console.line(f"  Its result: {bridged}")
     target = data.get("target_ref")
     if target:
-        console.line(f"  Stop it: rotisserie factory cancel {target}")
+        console.line(f"  Stop it: baste cancel {target}")
 
 
 HANDLERS = {

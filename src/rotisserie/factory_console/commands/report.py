@@ -64,9 +64,7 @@ def cmd_report(context: Context, arguments: argparse.Namespace) -> Outcome:
         )
     else:
         console.ok("Scheduler is running", f"last run {since(last_dispatch, now)} ago")
-    console.note(
-        f"{len(coding_now)} item(s) being worked on now  (details: rotisserie factory status)"
-    )
+    console.note(f"{len(coding_now)} item(s) being worked on now  (details: baste status)")
     data["scheduler_last_run"] = last_dispatch.isoformat() if last_dispatch else None
     data["working_now"] = len(coding_now)
 

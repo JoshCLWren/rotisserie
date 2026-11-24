@@ -42,7 +42,7 @@ def cmd_conflicts(context: Context, arguments: argparse.Namespace) -> Outcome:
         if report.prs:
             console.line(
                 "Both sides changed these files. If the merged change already did this PR's "
-                "work, close it: rotisserie factory close pr:"
+                "work, close it: baste close pr:"
                 f"{number} --reason TEXT. Otherwise a person may need to merge by hand."
             )
     return Outcome(Result.COMPLETED, EXIT_OK, report.to_dict())
@@ -224,8 +224,7 @@ def cmd_checks(context: Context, arguments: argparse.Namespace) -> Outcome:
         own = shared.own_failures(number, failing)
         if own:
             console.line(
-                f"Repair it: rotisserie factory run PROVIDER MODEL --target pr:{number} "
-                "--action ci-repair"
+                f"Repair it: baste run PROVIDER MODEL --target pr:{number} --action ci-repair"
             )
         elif shared.needs_sync(number):
             console.line("Main has moved past these failures: sync the branch with main.")

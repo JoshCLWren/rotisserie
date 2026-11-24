@@ -1,4 +1,4 @@
-"""Which control-room control serves each ``rotisserie factory`` command.
+"""Which control-room control serves each ``baste`` command.
 
 ``tests/test_control_parity.py`` reads the CLI parser and fails unless every
 subcommand is listed here once: mapped to reads and writes of the shared

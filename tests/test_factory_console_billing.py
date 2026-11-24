@@ -1,4 +1,4 @@
-"""`rotisserie factory models PROVIDER --billing`: the credit-pool rule the worker applies."""
+"""`baste models PROVIDER --billing`: the credit-pool rule the worker applies."""
 
 from __future__ import annotations
 

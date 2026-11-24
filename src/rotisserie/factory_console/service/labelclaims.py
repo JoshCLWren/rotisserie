@@ -262,7 +262,7 @@ def finish(
             number,
             [
                 f"@{actor} removed `factory:claimed`, but @{claim.get('actor')} holds the claim.",
-                "Only the claimant or the operator (`rotisserie factory revoke`) can end it.",
+                "Only the claimant or the operator (`baste revoke`) can end it.",
             ],
         )
         return {"event": "finish", "status": "restored", "holder": claim.get("actor")}

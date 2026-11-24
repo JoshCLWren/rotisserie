@@ -129,7 +129,7 @@ def health(stats: Obj | None, now: datetime) -> tuple[str, str, str]:
         return "ok", "no Turso usage published yet (not in use yet)", ""
     checked = timestamp(report, "checked_at")
     status = DOCTOR_STATUS.get(state, "warn")
-    hint = "rotisserie factory db-usage --via github reads it fresh"
+    hint = "baste db-usage --via github reads it fresh"
     if state != "not_configured" and (checked is None or now - checked > STALE):
         if status == "ok":
             status = "warn"

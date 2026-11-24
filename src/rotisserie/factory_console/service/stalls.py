@@ -152,8 +152,8 @@ def _unchecked(number: int, why: str) -> Stall:
 
 
 def _review_again(number: int) -> str:
-    command = f"rotisserie factory run PROVIDER auto --force --target pr:{number} --action review"
-    choose = "pick PROVIDER from 'rotisserie factory stats'"
+    command = f"baste run PROVIDER auto --force --target pr:{number} --action review"
+    choose = "pick PROVIDER from 'baste stats'"
     return f"Review it again: {command} ({choose}; add --take-over if a worker holds it)"
 
 

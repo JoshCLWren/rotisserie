@@ -26,6 +26,7 @@ Changelog = "https://github.com/JoshCLWren/rotisserie/blob/main/CHANGELOG.md"
 
 [project.scripts]
 rotisserie = "rotisserie.cli:main"
+baste = "rotisserie.baste:main"
 
 [dependency-groups]
 dev = [

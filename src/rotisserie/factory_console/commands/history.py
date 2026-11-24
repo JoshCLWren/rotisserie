@@ -60,7 +60,5 @@ def cmd_use(context: Context, arguments: argparse.Namespace) -> Outcome:
         return Outcome(Result.COMPLETED, EXIT_OK, {"default": arguments.repository})
     saved = default_repository(env)
     context.console.line(f"Using {context.repo}")
-    context.console.line(
-        f"  Saved default: {saved or 'none (set one: rotisserie factory use owner/name)'}"
-    )
+    context.console.line(f"  Saved default: {saved or 'none (set one: baste use owner/name)'}")
     return Outcome(Result.COMPLETED, EXIT_OK, {"default": saved, "using": context.repo})

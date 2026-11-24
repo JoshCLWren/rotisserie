@@ -12,9 +12,9 @@ from rotisserie.factory_console.tracker import Result
 HELP = """\
 Turso rows read and written, storage and sync this month, against the free plan.
 
-  rotisserie factory db-usage                 last value the status page published
-  rotisserie factory db-usage --via github    fresh read in the label claim workflow
-  rotisserie factory db-usage --live          read the Turso API (trusted jobs only)
+  baste db-usage                 last value the status page published
+  baste db-usage --via github    fresh read in the label claim workflow
+  baste db-usage --live          read the Turso API (trusted jobs only)
 
 Status is ok, warn (any allowance projected over 70%, or the factory database
 projected over the owner targets of 50M reads, 1M writes or 250 MB) or critical

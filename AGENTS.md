@@ -102,11 +102,11 @@ When editing:
   changes the invariant it proves. Add the replacement assertion first.
 - Keep source-reference behavior traceable in commit messages or documentation.
 - Any factory operation you do by hand (a script, a polling loop, or a chain of
-  `gh` commands) becomes a `rotisserie factory` command. Put its logic in a
+  `gh` commands) becomes a `baste` command. Put its logic in a
   service under `src/rotisserie/factory_console/service/` that returns plain
   data, so the CLI only renders it and other consumers such as the web UI can
   call it.
-- Every new or changed `rotisserie factory` command also gets a working control
+- Every new or changed `baste` command also gets a working control
   in both user interfaces in the same PR: add it to the shared allowlist
   (`src/rotisserie/control_contract.py`), give it a control in
   `src/rotisserie/web_ui.html`, and map it in `src/rotisserie/control_parity.py`.

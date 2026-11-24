@@ -1,7 +1,7 @@
 """Queue eligibility: why the factory is or is not picking up an issue.
 
 Front-end neutral: functions here read GitHub and return typed results with
-structured reasons. The CLI (``rotisserie factory why``) only renders them.
+structured reasons. The CLI (``baste why``) only renders them.
 
 Every answer comes from the dispatcher's own rules: the shared eligibility
 module, the controller's backpressure gates, and Rotisserie's intake decision,
@@ -145,7 +145,7 @@ def issue_row(github: GitHub, board: Board, number: int) -> Obj:
     if "pull_request" in raw:
         raise ValueError(
             f"#{number} is a pull request. 'why' explains issues; "
-            f"see 'rotisserie factory status' for pull requests."
+            f"see 'baste status' for pull requests."
         )
     return {
         "number": number,
@@ -331,7 +331,7 @@ def _limit_lines(explanation: runtime.Explanation) -> list[Reason]:
         held.append(
             Reason(
                 "incident",
-                "An incident is open (rotisserie factory incident). New intake of other "
+                "An incident is open (baste incident). New intake of other "
                 "issues pauses until the incident issue closes.",
                 setting="FACTORY_INCIDENTS",
             )

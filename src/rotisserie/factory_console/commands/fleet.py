@@ -45,12 +45,12 @@ def _report(context: Context, change: fleet.Change, label: str) -> Outcome:
             f"{label} turned off",
             "the next dispatcher tick skips it; running work continues",
         )
-        console.note("Stop running work if needed: rotisserie factory cancel issue:N (or pr:N)")
+        console.note("Stop running work if needed: baste cancel issue:N (or pr:N)")
     return Outcome(Result.COMPLETED, EXIT_OK, change.to_dict())
 
 
 def cmd_providers(context: Context, arguments: argparse.Namespace) -> Outcome:
-    usage = "rotisserie factory providers disable|enable NAME [--reason TEXT]"
+    usage = "baste providers disable|enable NAME [--reason TEXT]"
     switch = _switch_words(arguments.change, 2, usage)
     if switch is not None:
         enabled, (name,) = switch
@@ -128,7 +128,7 @@ def cmd_providers(context: Context, arguments: argparse.Namespace) -> Outcome:
         "A ready provider still has to prove itself: "
         "the worker checks price, quota and access at start."
     )
-    console.note("Turn one off: rotisserie factory providers disable NAME --reason TEXT")
+    console.note("Turn one off: baste providers disable NAME --reason TEXT")
     return Outcome(
         Result.COMPLETED,
         EXIT_OK,
@@ -137,7 +137,7 @@ def cmd_providers(context: Context, arguments: argparse.Namespace) -> Outcome:
 
 
 def cmd_models(context: Context, arguments: argparse.Namespace) -> Outcome:
-    usage = "rotisserie factory models disable|enable PROVIDER MODEL [--reason TEXT]"
+    usage = "baste models disable|enable PROVIDER MODEL [--reason TEXT]"
     switch = _switch_words(arguments.words, 3, usage)
     if switch is not None:
         enabled, (provider_name, model) = switch
@@ -154,7 +154,7 @@ def cmd_models(context: Context, arguments: argparse.Namespace) -> Outcome:
             raise UsageError(str(exc)) from None
         return _report(context, change, f"Model {change.model}")
     if len(arguments.words) != 1:
-        raise UsageError(f"Usage: rotisserie factory models PROVIDER, or {usage}")
+        raise UsageError(f"Usage: baste models PROVIDER, or {usage}")
     if arguments.billing is not None:
         catalog = Path(arguments.billing) if arguments.billing else None
         return _models_billing(context, runtime.resolve_provider(arguments.words[0]), catalog)
