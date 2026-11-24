@@ -120,9 +120,9 @@ async def _release(repo: str, worker: str, token: str, reason: str) -> bool:
             keys = _keys(repo, worker, numbers)
             await conn.execute(
                 """DELETE FROM public.factory_state_kv
-                   WHERE cache_key=ANY($1::text[])
+                   WHERE (cache_key=ANY($1::text[]) OR starts_with(cache_key, $3))
                      AND payload->0->>'claim_id'=$2""",
-                keys, token,
+                keys, token, f"{LEASE_PREFIX}{repo}:slot:",
             )
             from factory_state_operations import release_capacity
             await release_capacity(conn, token)
@@ -202,8 +202,9 @@ async def _renew_verified(repo: str, workers: list[str]) -> int:
                            updated_at=now()
                        WHERE expires_at>now()
                          AND payload->0->>'claim_id'=$1
-                         AND (cache_key=$2 OR cache_key LIKE $3)""",
+                         AND (cache_key=$2 OR cache_key LIKE $3 OR cache_key LIKE $5)""",
                     token, worker_key, f"{LEASE_PREFIX}{repo}:target:%", FIXED_LEASE_TTL_SECONDS,
+                    f"{LEASE_PREFIX}{repo}:slot:%",
                 )
                 renewed += 1
         return renewed

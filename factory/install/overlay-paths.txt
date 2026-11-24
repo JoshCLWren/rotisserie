@@ -91,6 +91,7 @@
 .github/scripts/factory_state_ledger_events.py
 .github/scripts/factory_state_ledger_external.py
 .github/scripts/factory_state_ledger_operations.py
+.github/scripts/factory_state_ledger_slots.py
 .github/scripts/factory_state_ledger_workers.py
 .github/scripts/factory_state_metrics.py
 .github/scripts/factory_state_operations.py

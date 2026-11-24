@@ -86,6 +86,29 @@ processes at most 1,000 records per invocation. It cannot delete lease, backoff,
 registry or provider state. This cleanup is not a replacement cache. Physical
 Postgres allocation can remain until ordinary vacuum reclaims dead storage.
 
+## Slot leases (several holders on one target)
+
+A normal lease lets one worker hold an issue or PR. Incident racing (#239)
+needs several separate attempts on one issue, and a planned collaborative mode
+needs one lease per piece. Both use slots of one target:
+
+- key `factory-lease-v1:<repo>:slot:<number>:<slot>`, where `<slot>` is
+  `attempt-K` or `piece-<id>`. Slot keys are outside the `target:` namespace,
+  so the single-holder readers (frontier, external claims) never see them;
+- `acquire_slot(repo, worker, number, slots)` in
+  `factory_state_ledger_slots.py` is the only allocator. Under the repository
+  advisory lock it takes the first free slot from the ordered list, writes the
+  slot row and the worker row with one claim UUID, and reserves provider
+  capacity like a normal lease;
+- one claim per worker; siblings on one target use distinct providers unless
+  the caller passes `distinct="none"`;
+- an expired slot is free again, like an expired worker lease. Renewal of
+  verified running workers keeps a live attempt's slot;
+- `release_lease` and `renew_verified_workers` release and renew slot rows by
+  claim UUID, so a slot claim has no separate release path.
+
+Nothing assigns slots yet: the dispatcher still leases one worker per item.
+
 ## CI and review completion routing
 
 The check-completion workflow sends an explicit `pr:<number>` wakeup only for

@@ -20,6 +20,11 @@ such change must be called out here and in its release notes.
   issue closes, intake resumes and the dispatcher closes leftover incident PRs
   as superseded. The web UI can start, stop and list incidents. Racing separate
   attempts is not live yet (#239).
+- Slot leases in the Neon ledger (#239): `acquire_slot` leases one of several
+  named slots (`attempt-K` or `piece-<id>`) on one target, with exactly one
+  holder per slot under the repository advisory lock and distinct providers per
+  target by default. The normal release and renewal cover slot rows. Nothing
+  assigns slots yet; incident racing wires them in a later change.
 - Fleet switch: `rotisserie factory providers disable|enable NAME` and
   `rotisserie factory models disable|enable PROVIDER MODEL`, each with
   `--reason`. The switch stores `FACTORY_DISABLED_PROVIDERS` and
