@@ -36,7 +36,9 @@ _CAPACITY = re.compile(
     r"|OpenCode Go unavailable: No zero-cost Go coding models outside cooldown"
     r"|factory catalog: \S+: no eligible catalog candidates available"
     r"|factory failover exhausted: no eligible provider/model combination remains"
-    r"|Every available model authored this PR|No reviewer model:)[^\n]*)$",
+    r"|Every available model authored this PR|No reviewer model:"
+    # A pinned model the worker's exclusions refuse: no slot broke, the pick was cooling.
+    r"|Exact requested model could not be selected)[^\n]*)$",
     re.M,
 )
 _FLEET_FALLBACK = re.compile(_STAMP + r"Factory \d+ lane \S+: [^\n]*; selecting across the eligible fleet$", re.M)

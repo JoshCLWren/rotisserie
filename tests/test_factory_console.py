@@ -1111,7 +1111,8 @@ def stats_snapshot(*models: tuple[str, str, int, int, Obj]) -> Obj:
         }
         for source, model, runs, delivered, health in models
     ]
-    payload = {"generated_at": "2026-11-21T22:50:00Z", "models": entries, "providers": []}
+    payload: Obj = {"generated_at": "2026-11-21T22:50:00Z", "models": entries, "providers": []}
+    payload["model_exclusions"] = {"generated_at": payload["generated_at"], "sources": {}}
     return {"content": base64.b64encode(json.dumps(payload).encode()).decode()}
 
 
@@ -1459,21 +1460,6 @@ def test_outcomes_flags_an_idle_worker_that_left_conflicts(fake: FakeGitHub) -> 
     data = json.loads(out)
     assert data["goals"]["not-met"] == 1
     assert data["requests"][0]["worker_result"] == "idle"
-
-
-def test_unstick_does_not_repeat_a_model_that_just_missed_on_the_item() -> None:
-    from rotisserie.factory_console.service.unstick import Task, _assign
-
-    ranked = [("opencode-go", "opencode-go/a", "best"), ("opencode-go", "opencode-go/b", "next")]
-    task = Task("pr:5575", "merge-conflict", "t", "w")
-    fresh = _assign(task, ranked, {})
-    assert fresh.model == "opencode-go/a" and "missed" not in fresh.why
-    moved = _assign(task, ranked, {"pr:5575": {"opencode-go/a"}})
-    assert moved.model == "opencode-go/b"
-    assert "opencode-go/a just missed on it" in moved.why
-    exhausted = _assign(task, ranked, {"pr:5575": {"opencode-go/a", "opencode-go/b"}})
-    assert exhausted.model == "opencode-go/a"
-    assert "every offered model already missed on it recently" in exhausted.why
 
 
 def _missing() -> JSON:

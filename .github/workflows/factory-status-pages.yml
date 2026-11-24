@@ -143,6 +143,7 @@ jobs:
             --repo "$GITHUB_REPOSITORY" --output site/index.html
 
       - name: Export provider and model reliability counts
+        id: reliability
         continue-on-error: true
         env:
           PYTHONPATH: .github/scripts
@@ -150,6 +151,27 @@ jobs:
           set -Eeuo pipefail
           # Counts of trusted worker outcomes only; read by `rotisserie factory stats`.
           python3 .github/scripts/factory_state_operations.py export-reliability > site/factory-stats.json.tmp
+          mv site/factory-stats.json.tmp site/factory-stats.json
+
+      # The worker's own exclusion export, so `baste unstick` never pins a model
+      # the worker refuses. It runs only after a live store read (the reliability
+      # export needs one): an export without the store would publish "nothing is
+      # excluded". On any failure no block is published and the planner lets the
+      # worker pick the model.
+      - name: Add the worker's model exclusions to the published stats
+        if: steps.reliability.outcome == 'success'
+        continue-on-error: true
+        env:
+          PYTHONPATH: .github/scripts
+        run: |
+          set -Eeuo pipefail
+          python3 .github/scripts/factory_state_operations.py export-model-exclusions \
+            --repo "$GITHUB_REPOSITORY" > "$RUNNER_TEMP/model-exclusions.json"
+          jq -e 'type == "object" and all(.[]; type == "array")' "$RUNNER_TEMP/model-exclusions.json" >/dev/null
+          jq --slurpfile sources "$RUNNER_TEMP/model-exclusions.json" \
+            --arg at "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+            '.model_exclusions = {generated_at: $at, sources: $sources[0]}' \
+            site/factory-stats.json > site/factory-stats.json.tmp
           mv site/factory-stats.json.tmp site/factory-stats.json
 
       # Counts, status and dates only: no token, URL, organization or database name.

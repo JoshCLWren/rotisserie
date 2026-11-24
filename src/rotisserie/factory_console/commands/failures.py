@@ -48,6 +48,11 @@ def cmd_failures(context: Context, arguments: argparse.Namespace) -> Outcome:
             f"{count} {_class_word(name)}" for name, count in entry.classes().most_common()
         )
         console.line(f"  recorded as: {classes}")
+        if entry.causes() != entry.classes():
+            causes = ", ".join(
+                f"{count} {_class_word(name)}" for name, count in entry.causes().most_common()
+            )
+            console.line(f"  current rules count these as: {causes}")
         for run in entry.runs[:RUNS_PER_GROUP]:
             details = "  ".join(
                 part

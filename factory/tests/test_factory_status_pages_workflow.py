@@ -100,3 +100,13 @@ def test_refresh_runs_cannot_cancel_a_queued_push_deployment() -> None:
         "factory-status-pages-${{ github.event_name == 'push' && 'push' || 'refresh' }}"
     )
     assert workflow["concurrency"]["cancel-in-progress"] is False
+
+
+def test_published_stats_carry_the_workers_model_exclusions() -> None:
+    """`baste unstick` reads the worker's own exclusions; publish them only after a live read."""
+    workflow = adopter_view(WORKFLOW.name)
+
+    assert "id: reliability" in workflow
+    assert "if: steps.reliability.outcome == 'success'" in workflow
+    assert "factory_state_operations.py export-model-exclusions" in workflow
+    assert ".model_exclusions = {generated_at: $at, sources: $sources[0]}" in workflow

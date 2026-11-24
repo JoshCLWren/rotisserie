@@ -61,6 +61,10 @@ class FailureGroup:
     def classes(self) -> Counter[str]:
         return Counter(run.outcome_class or "unrecorded" for run in self.runs)
 
+    def causes(self) -> Counter[str]:
+        """The classes the factory's current rules give these runs."""
+        return Counter(real_cause(run) or "unrecorded" for run in self.runs)
+
     def to_dict(self) -> dict[str, object]:
         return {
             "job": self.job,
@@ -68,8 +72,24 @@ class FailureGroup:
             "count": len(self.runs),
             "errors": dict(self.errors().most_common()),
             "classes": dict(self.classes().most_common()),
+            "causes": dict(self.causes().most_common()),
             "runs": [run.to_dict() for run in self.runs],
         }
+
+
+def real_cause(row: WorkerFailure) -> str:
+    """The recorded class, or ``no_capacity`` when the factory's capacity rule matches.
+
+    Runs recorded before a capacity exit was recognized carry an older class
+    for the same exit, so the error is checked with the factory's own rule.
+    """
+    if row.outcome_class == "no_capacity" or not row.error:
+        return row.outcome_class
+    try:
+        rule = runtime.module("factory_dynamic_outcome").capacity_reason
+    except runtime.RuntimeUnavailableError:
+        return row.outcome_class
+    return "no_capacity" if rule(row.error) else row.outcome_class
 
 
 def runs_since(github: GitHub, workflow: str, iso: str, *, pages: int = 3) -> list[Obj]:

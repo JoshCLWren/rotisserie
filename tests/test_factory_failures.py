@@ -178,3 +178,20 @@ def test_rows_serialize_for_json_output() -> None:
     )
     text = json.dumps([group.to_dict() for group in failures.group(rows)])
     assert "pr:5671" in text
+
+
+@pytest.mark.parametrize(
+    "error",
+    [
+        "Exact requested model could not be selected; no provider fallback",
+        "Every available model authored this PR; the review stays queued for another model",
+    ],
+)
+def test_capacity_refusals_recorded_as_setup_problems_count_as_no_capacity(error: str) -> None:
+    row = failures.WorkerFailure(
+        1, "u", "2026-11-24T18:55:00Z", "7", "run / factory", PICK, error,
+        "control_plane_failure", "NVIDIA", "", "pr:5671",
+    )  # fmt: skip
+    entry = failures.group([row])[0]
+    assert entry.to_dict()["classes"] == {"control_plane_failure": 1}
+    assert entry.to_dict()["causes"] == {"no_capacity": 1}

@@ -305,7 +305,7 @@ function renderUnstick(d){
  const started=(d.started||[]).map(x=>{const a=by.get(x.target)||{};return row('<strong>'+h(String((a.task&&a.task.action)||"work").replace(/-/g," "))+' '+gh(x.target)+'</strong> · '+(x.url?link(x.url,"GitHub run"):"run not found yet"),h(a.model||""))});
  const synced=(d.synced||[]).map(x=>row(h(x.text),"",x.ok?"":"step-error"));
  const errors=[...(d.failed||[]).map(x=>row('<strong>'+gh(x.target)+' not started</strong>',h(x.error),"step-error")),...(d.not_attempted||[]).map(t=>row(gh(t)+" not attempted",h(d.stopped||""),"step-error"))];
- const skipped=[...(p.held||[]),...(p.needs_person||[]),...(p.waiting_on_main||[]),...(p.obsolete||[])].map(x=>row(h(x.text)));
+ const skipped=[...(p.no_model||[]),...(p.held||[]),...(p.needs_person||[]),...(p.waiting_on_main||[]),...(p.obsolete||[])].map(x=>row(h(x.text)));
  if(p.left_out)skipped.push(row(h(p.left_out+" more could start; the worker limit left them out.")));
  if(!(d.started||[]).length&&!(d.synced||[]).length)for(const x of p.problems||[])skipped.push(row(h(x)));
  return '<div class="info">'+h(unstickHeadline(d))+'</div>'+part("Started",started)+part("Synced with main",synced)+part("Errors",errors)+part("Not started, and why",skipped)+stepLog();
@@ -317,7 +317,7 @@ function renderPlan(plan){
  if(assignments.length)html+='<div class="spaced">'+assignments.map(a=>'<div class="plan-row"><strong>'+h((a.task?.action||"advance").replace(/-/g," "))+' '+gh(a.task?.target||"issue:0")+'</strong> · '+h(a.task?.title||"")+'<div class="meta">'+h(a.provider||"")+" · "+h(a.model||"Auto")+(a.task?.why?" · "+h(a.task.why):"")+'</div></div>').join("")+'</div>';
  if(syncs.length)html+='<div class="spaced">'+syncs.map(x=>'<div class="plan-row"><strong>Sync '+gh("pr:"+x.pr)+'</strong><div class="meta">'+h(x.why||"Update branch against main")+'</div></div>').join("")+'</div>';
  if(!total)html+='<div class="empty">No safe immediate actions. Existing claims remain protected.</div>';
- const details=[...diagnosis.map(x=>x.text),...held.map(x=>x.text),...problems.map(x=>typeof x==="string"?x:x.text||x.message||"Unclassified diagnostic")].filter(Boolean);
+ const details=[...(p.no_model||[]).map(x=>x.text),...(p.skipped_models||[]).map(x=>"Skipped "+x),...diagnosis.map(x=>x.text),...held.map(x=>x.text),...problems.map(x=>typeof x==="string"?x:x.text||x.message||"Unclassified diagnostic")].filter(Boolean);
  if(details.length)html+='<details class="plan-details"><summary>'+details.length+' waiting conditions and other diagnostics</summary>'+details.map(x=>'<div class="plan-row">'+h(x)+'</div>').join("")+'</details>';
  return html;
 }

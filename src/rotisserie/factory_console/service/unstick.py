@@ -30,6 +30,7 @@ from rotisserie.factory_console.service import (
     providers,
     queue,
 )
+from rotisserie.factory_console.service import unstick_assign as choose
 from rotisserie.factory_console.service import unstick_checks as read
 from rotisserie.factory_console.service.steps import Step, quiet
 
@@ -117,6 +118,10 @@ class Plan:
     waiting_on_main: tuple[queue.Reason, ...] = field(default=())
     # PRs red only because of an old main that has since moved on: sync, no worker.
     syncs: tuple[Sync, ...] = field(default=())
+    # Tasks no ranked model can take: the worker would refuse every one.
+    no_model: tuple[queue.Reason, ...] = field(default=())
+    # Models with a track record left out, and why: "MODELS: reason".
+    skipped_models: tuple[str, ...] = field(default=())
 
     def to_dict(self) -> dict[str, object]:
         from dataclasses import asdict
@@ -315,7 +320,7 @@ def plan(
     ]
     capped = tasks if max_workers is None else tasks[:max_workers]
     left_out = len(tasks) - len(capped)
-    choice_text, ranked, problems = model_choice.choose_models(
+    choice_text, ranked, problems, skipped_models = model_choice.choose_models(
         github, variables, now, provider, model, step
     )
     if ranked and len(ranked) > 1:
@@ -346,7 +351,22 @@ def plan(
                 task = replace(task, why=f"{task.why}; {overlap}")
         keep.append(task)
     capped = keep
-    assignments = tuple(_assign(task, ranked, missed) for task in capped) if ranked else ()
+    assignments: list[Assignment] = []
+    no_model: list[queue.Reason] = []
+    for task in capped if ranked else []:
+        authors: tuple[str, ...] = ()
+        if task.action == "review" and any(model != "auto" for _, model, _ in ranked):
+            step(f"Reading which models wrote {task.target}", phase="authors")
+            authors = choose.review_excluded_models(github, int(task.target.split(":")[1]))
+        picked = _assign(task, ranked, missed, authors)
+        if isinstance(picked, Assignment):
+            assignments.append(picked)
+            step(
+                f"{task.target}: {picked.model} ({picked.why})", phase="assign", target=task.target
+            )
+        else:
+            no_model.append(picked)
+            step(picked.text, phase="assign", target=task.target)
     if not tasks:
         problems = (*problems, "nothing is waiting that a new worker could take")
     syncs = [item for item in syncs if f"pr:{item.pr}" not in skip]
@@ -354,16 +374,18 @@ def plan(
         syncs = [item for item in syncs if f"pr:{item.pr}" in only]
     step(
         f"Plan: {len(assignments)} workers to start, {len(syncs)} pull requests to sync "
-        f"with main, {len(held)} held by running workers, {len(needs_person)} need a person",
+        f"with main, {len(held)} held by running workers, {len(needs_person)} need a person, "
+        f"{len(no_model)} have no model the worker would accept",
         phase="plan",
         assignments=len(assignments),
+        no_model=len(no_model),
         syncs=len(syncs),
         held=len(held),
         needs_person=len(needs_person),
     )
     return Plan(
         tuple(diagnosis),
-        assignments,
+        tuple(assignments),
         tuple(held),
         left_out,
         needed,
@@ -374,6 +396,8 @@ def plan(
         shared.incidents,
         tuple(waiting),
         tuple(syncs),
+        tuple(no_model),
+        skipped_models,
     )
 
 
@@ -429,15 +453,15 @@ GIVE_UP_AFTER = 3
 
 
 def _assign(
-    task: Task, ranked: list[tuple[str, str, str]], missed: dict[str, set[str]]
-) -> Assignment:
-    """The best-ranked model that has not just missed on this task's target."""
-    tried = missed.get(task.target, set())
-    for provider, model, why in ranked:
-        if model not in tried:
-            note = f"; {', '.join(sorted(tried))} just missed on it" if tried else ""
-            return Assignment(task, provider, model, why + note)
-    provider, model, why = ranked[0]
-    return Assignment(
-        task, provider, model, why + "; every offered model already missed on it recently"
-    )
+    task: Task,
+    ranked: list[tuple[str, str, str]],
+    missed: dict[str, set[str]],
+    authors: tuple[str, ...] = (),
+) -> Assignment | queue.Reason:
+    """The best-ranked usable model that has not just missed on this task's target."""
+    found = choose.pick(ranked, missed.get(task.target, set()), authors)
+    if isinstance(found, str):
+        number = int(task.target.split(":")[1])
+        prs = (number,) if task.target.startswith("pr:") else ()
+        return queue.Reason("no-model", f"{task.target}: not started: {found}.", prs=prs)
+    return Assignment(task, *found)
