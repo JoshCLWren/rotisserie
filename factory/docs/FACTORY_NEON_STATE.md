@@ -136,14 +136,47 @@ After a quota or throttle failover the worker writes one trusted marker:
 `FACTORY_QUOTA_RESET: source= model= outcome= kind= reset_at= reset_source=`.
 `reset_source` is `text` (the refusal named the wait), `header` (Retry-After or
 X-RateLimit-Reset from the probe), `key_endpoint` (OpenRouter key endpoint) or
-`policy` (the default above). Parsed resets are clamped between now and
-32 days (1 hour for a throttle).
+`policy` (the default above). Parsed resets are clamped between now and a
+ceiling per kind: 1 hour for a throttle, 2 days for a daily quota, 7 days for an
+empty balance, 32 days for a monthly quota. Only provider refusal lines of the
+OpenCode log count as text evidence (JSON error events, or lines that start as
+an error or carry an HTTP status), never agent prose or tool output.
 
 `factory_quota_probe.py` sends at most one request per source per run, from the
 worker shell and never from the model. It prints only parsed numbers. A 401 or
-403 is a blocked probe and never a reset signal. Sources whose request headers
-OpenCode sets per session (`opencode-free`, `kilo-auto`, `omniroute-free`) are
-never probed: they use the policy default.
+403 is a blocked probe and never a reset signal. OpenCode sends per-session
+`x-opencode-*` headers and its own User-Agent to every provider; they carry no
+credential and the probe does not copy them. It does copy the registry headers
+and the HTTP-Referer and X-Title that OpenCode adds for NVIDIA. The OpenCode Zen
+and Go lane (`opencode-free`), `kilo-auto` and `omniroute-free` are never probed
+and use the policy default. `export-backoffs` shows each provider's probe
+method (`key_endpoint`, `inference` or `none`).
+
+### Dispatch eligibility
+
+- A catalog slot (no pinned model) is admitted only when its source's live
+  published catalog lists a model outside the exported exclusions and any
+  credit-pool cooldown (`factory_state_operations_slots.py`). Sources without a
+  key-free catalog, and unreadable catalogs, stay eligible; the run job checks
+  the authenticated catalog before a session.
+- A review PR whose lease ended before a session (for example because every
+  eligible model authored it) cools in `cooling_prs` from its second such abort
+  in 24 hours. It waits `FACTORY_REVIEW_FAILURE_COOLDOWN_SECONDS` times
+  (aborts - 1) after the latest abort, up to 6 hours.
+
+### Operator commands
+
+- `rotisserie factory backoffs --via github` lists per provider: capacity
+  cooldowns with their reset source, Fibonacci backoffs (old quota-caused
+  streaks are marked), and model health cooldowns, with next retry in local
+  time. It runs `export-backoffs` in the trusted label claim workflow.
+- `rotisserie factory backoffs reset --quota-only --via github` deletes the
+  Fibonacci rows and cooling health rows that quota and throttle refusals wrote,
+  and the account and credit-pool cooldowns (use it after adding credits or when
+  a policy default was wrong). It caps every other Fibonacci row at one day after
+  its last update, keeps real streaks, and does not write the full-reset marker.
+  The full reset also clears credit-pool cooldowns. It runs
+  `reset-model-health --quota-only` in the Factory Model Health Reset workflow.
 
 ## Slot leases (several holders on one target)
 

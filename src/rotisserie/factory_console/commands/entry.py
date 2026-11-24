@@ -11,6 +11,7 @@ from typing import TextIO
 from rotisserie.factory_console import runtime
 from rotisserie.factory_console.commands._shared import EXIT_INTERRUPTED, EXIT_OK, EXIT_USAGE
 from rotisserie.factory_console.commands.agents import cmd_external, cmd_wait_for_work
+from rotisserie.factory_console.commands.backoffs import cmd_backoffs
 from rotisserie.factory_console.commands.claims import (
     cmd_claim,
     cmd_finish,
@@ -158,6 +159,7 @@ def _help_text() -> str:
             "  rotisserie factory conflicts pr:N  what main changed under it",
             "  rotisserie factory sync pr:N     merge main in (never while a worker holds it)",
             "  rotisserie factory leases        who holds which item",
+            "  rotisserie factory backoffs      what keeps each provider waiting, and until when",
             "  rotisserie factory doctor        is the factory itself healthy",
             "  rotisserie factory claim pr:N    request work by label; finish pr:N ends it",
             "  rotisserie factory follow pr:N   each lifecycle change until done; runs pr:N",
@@ -234,6 +236,7 @@ HANDLERS = {
     "providers": cmd_providers,
     "models": cmd_models,
     "incident": cmd_incident,
+    "backoffs": cmd_backoffs,
 }
 
 

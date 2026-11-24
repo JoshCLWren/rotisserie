@@ -418,3 +418,29 @@ def test_hint_cli_never_prints_the_key(tmp_path, monkeypatch, capsys):
     assert "sk-secret" not in out.out + out.err
     assert reset.parse_marker("FACTORY_QUOTA_RESET: " + out.out.strip())["reset_source"] == "header"
     assert "sk-secret" not in (tmp_path / "c.json").read_text()
+
+
+def test_probe_sends_the_headers_opencode_adds_for_nvidia(tmp_path):
+    seen = []
+
+    def opener(request):
+        seen.append(dict(request.header_items()))
+        return refusal(429, {"Retry-After": "30"})(request)
+
+    probe.probe_reset(
+        "nvidia", "vendor/m", "throttle", OBSERVED, tmp_path / "c.json", env=ENV, opener=opener
+    )
+    assert seen[0]["Http-referer"] == "https://opencode.ai/"
+    assert seen[0]["X-title"] == "opencode"
+
+
+def test_agent_prose_never_becomes_a_reset_hint():
+    log = (
+        "I will wait: try again in 9h and the account has insufficient balance\n"
+        '{"type":"text","text":"Please recharge"}\n'
+        '{"type":"error","error":{"message":"HTTP 429 Too Many Requests"}}\n'
+        "Error: Rate limit exceeded: free-models-per-day-high-balance\n"
+    )
+    assert reset.refusal_evidence(log) == (
+        "HTTP 429 Too Many Requests\nError: Rate limit exceeded: free-models-per-day-high-balance"
+    )

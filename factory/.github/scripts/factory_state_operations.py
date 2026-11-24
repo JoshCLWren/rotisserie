@@ -83,7 +83,15 @@ def record_runtime(repo: str, run_id: int, outcome: dict[str, Any]) -> bool:
 def filter_workers(repo: str, workers: list[str]) -> tuple[list[str],list[str]]:
     if not enabled():
         return workers, ["Neon unavailable; existing lease checks still required"]
-    return _run(_eligibility,repo,workers)
+    kept, rejected = _run(_eligibility,repo,workers)
+    if kept:
+        from factory_state_operations_slots import drop_exhausted_slots
+        try:
+            kept, empty = drop_exhausted_slots(repo, kept, export_model_exclusions(repo))
+            rejected += empty
+        except Exception as exc:  # noqa: BLE001 - the slot check is advisory; fail open
+            rejected.append(f"catalog slot check skipped ({type(exc).__name__})")
+    return kept, rejected
 
 
 def daily_usage(repo: str, sources: list[str]) -> dict[str,int] | None:
@@ -161,7 +169,7 @@ def export_model_exclusions(
 
 def main() -> int:
     parser=argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("command",choices=("bootstrap","filter","rank","stats","ingest-check","checkpoint","sync-catalog","export-model-exclusions","export-candidate-health","export-fleet-failover-sources","reset-model-health","export-reliability"))
+    parser.add_argument("command",choices=("bootstrap","filter","rank","stats","ingest-check","checkpoint","sync-catalog","export-model-exclusions","export-candidate-health","export-fleet-failover-sources","reset-model-health","export-reliability","export-backoffs"))
     parser.add_argument("--repo",default=None)
     parser.add_argument("--file",type=Path)
     parser.add_argument("--scope")
@@ -169,14 +177,22 @@ def main() -> int:
     parser.add_argument("--requested-model",default="auto")
     parser.add_argument("--cursor",default="")
     parser.add_argument("--include-retired",action="store_true")
+    parser.add_argument("--quota-only",action="store_true",
+                        help="clear only quota/throttle backoffs; cap real-failure streaks")
     args=parser.parse_args()
     args.repo=args.repo or repository()
     if not REPO_RE.fullmatch(args.repo):
         parser.error("invalid repo")
-    if args.command=="reset-model-health":
+    if args.command in {"reset-model-health","export-backoffs"}:
+        from factory_state_operations_backoffs import _export_backoffs, _reset_quota_backoffs
         if not enabled():
-            raise SystemExit("Neon is required for model health reset")
-        print(json.dumps(_run(_reset_model_health,args.repo,args.include_retired),sort_keys=True))
+            raise SystemExit("Neon is required for model health reset and backoffs")
+        if args.command=="export-backoffs":
+            print(json.dumps(_run(_export_backoffs,args.repo),sort_keys=True))
+        elif args.quota_only:
+            print(json.dumps(_run(_reset_quota_backoffs,args.repo),sort_keys=True))
+        else:
+            print(json.dumps(_run(_reset_model_health,args.repo,args.include_retired),sort_keys=True))
     elif args.command=="bootstrap":
         if not enabled():
             raise SystemExit("Neon is required for factory operations")
