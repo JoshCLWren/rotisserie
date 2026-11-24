@@ -5,6 +5,7 @@ import argparse
 from rotisserie.factory_console.commands._shared import EXIT_OK, Outcome
 from rotisserie.factory_console.commands.parser_insight import _common
 from rotisserie.factory_console.commands.status import parse_since
+from rotisserie.factory_console.commands.turning import decorate
 from rotisserie.factory_console.context import Context
 from rotisserie.factory_console.service import recap
 from rotisserie.factory_console.tracker import Result
@@ -37,6 +38,12 @@ def _rows(value: object) -> list[dict[str, object]]:
 def render(console: Console, data: dict[str, object]) -> None:
     console.heading(f"Morning recap since {_when(data['since'])}")
     console.line(console.bold(str(data["verdict"])))
+    burning = data.get("burning")
+    if isinstance(burning, dict) and burning.get("text"):
+        console.line(
+            f"  {decorate(str(burning['text']))} "
+            f"({_when(burning.get('from'))} to {_when(burning.get('to'))})"
+        )
     merged = data["merged"] if isinstance(data["merged"], dict) else {}
     for group, label in (("product", "Merged: product"), ("factory", "Merged: factory")):
         rows = _rows(merged.get(group))

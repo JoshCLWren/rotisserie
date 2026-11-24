@@ -48,6 +48,7 @@ from rotisserie.factory_console.service import (
     reliability,
     review,
     stalls,
+    turning,
     unstick,
 )
 from rotisserie.factory_console.service.failures import WORKER_JOB, first_failed_step
@@ -417,6 +418,7 @@ def run_checks(github: GitHub, *, now: datetime, clock: Clock | None = None) -> 
         ("database usage", lambda: Finding("database usage", *db_usage.health(stats(), now))),
         ("dashboard publisher", lambda: _dashboard(github, tracker)),
         ("scheduler", lambda: _scheduler(github, now)),
+        (turning.CHECK, lambda: Finding(turning.CHECK, *turning.health(github, now, clock))),
         ("main verification", lambda: main_verification(github)),
         ("rotisserie intake", lambda: _intake(github, now)),
         ("worker rejections", rejections),
