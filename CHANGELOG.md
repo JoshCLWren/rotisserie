@@ -11,6 +11,11 @@ such change must be called out here and in its release notes.
 
 ### Added
 
+- `rotisserie factory history <target>`: an item's label changes, close and
+  reopen events, factory markers and label-claim controller runs, in local
+  time. `rotisserie factory labels --run <id>` shows an earlier label doctor
+  report. `rotisserie factory use owner/name` saves the default factory
+  repository, so `--repo` is optional. The web UI reads `history` too.
 - `rotisserie factory claim`, `finish`, `runs` and `follow`, plus
   `wait-for-work --claim`, `labels --via github`, `leases --via github` and
   `why --via github`: label claims and the label doctor from the console without

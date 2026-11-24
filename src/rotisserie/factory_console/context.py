@@ -35,8 +35,15 @@ class Context:
         return f"https://github.com/{self.repo}{path}"
 
 
+REPOSITORY = re.compile(r"[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+\Z")
+
+
 def find_repository(explicit: str | None, env: dict[str, str], cwd: Path) -> str:
-    """Pick the adopter repository: flag, FACTORY_REPO, .rotisserie/config.toml, git remote."""
+    """Pick the adopter repository.
+
+    Order: flag, FACTORY_REPO, the project's .rotisserie/config.toml, the
+    default set with ``rotisserie factory use``, then the git remote.
+    """
     if explicit:
         return explicit
     if env.get("FACTORY_REPO"):
@@ -54,6 +61,9 @@ def find_repository(explicit: str | None, env: dict[str, str], cwd: Path) -> str
                 if isinstance(owner, str) and isinstance(name, str):
                     return f"{owner}/{name}"
             break
+    chosen = default_repository(env)
+    if chosen:
+        return chosen
     try:
         remote = subprocess.run(
             ["git", "-C", str(cwd), "remote", "get-url", "origin"],
@@ -69,5 +79,29 @@ def find_repository(explicit: str | None, env: dict[str, str], cwd: Path) -> str
         return match.group(1)
     raise UsageError(
         "Could not tell which repository runs the factory. Pass --repo owner/name, "
-        "set FACTORY_REPO, or run inside a repository with .rotisserie/config.toml."
+        "or set a default once with: rotisserie factory use owner/name"
     )
+
+
+def user_config(env: dict[str, str]) -> Path:
+    base = env.get("XDG_CONFIG_HOME") or str(Path(env.get("HOME", "~")).expanduser() / ".config")
+    return Path(base) / "rotisserie" / "config.toml"
+
+
+def default_repository(env: dict[str, str]) -> str:
+    """The repository saved with ``rotisserie factory use``, or ""."""
+    try:
+        data = tomllib.loads(user_config(env).read_text(encoding="utf-8"))
+    except (OSError, tomllib.TOMLDecodeError):
+        return ""
+    value = data.get("repository")
+    return value if isinstance(value, str) and REPOSITORY.fullmatch(value) else ""
+
+
+def save_default_repository(env: dict[str, str], repository: str) -> Path:
+    if not REPOSITORY.fullmatch(repository):
+        raise UsageError("repository must look like owner/name")
+    path = user_config(env)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(f'repository = "{repository}"\n', encoding="utf-8")
+    return path

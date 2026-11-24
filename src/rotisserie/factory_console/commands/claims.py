@@ -120,7 +120,7 @@ def cmd_follow(context: Context, arguments: argparse.Namespace) -> Outcome:
         raise UsageError("--interval must be at least 15 seconds and --timeout 0 or more")
 
     def changed(view: dict[str, object], keys: list[str]) -> None:
-        stamp = context.clock.now().strftime("%H:%M:%S")
+        stamp = context.clock.now().astimezone().strftime("%I:%M:%S %p")
         console.line(f"{stamp} {arguments.what}: {_describe_view(view)}")
 
     data = claimops.follow(
@@ -146,6 +146,10 @@ def cmd_labels(context: Context, arguments: argparse.Namespace) -> Outcome:
     mode = (
         "delete-legacy" if arguments.delete_legacy else "repair" if arguments.repair else "dry-run"
     )
+    if arguments.run:
+        data = claimops.run_report(context.github, arguments.run)
+        _show_label_report(console, data)
+        return Outcome(Result.COMPLETED, EXIT_OK, data)
     if arguments.via == "github":
         if not arguments.no_wait:
             console.waiting("Running the label doctor workflow on GitHub")

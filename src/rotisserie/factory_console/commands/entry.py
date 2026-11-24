@@ -26,6 +26,7 @@ from rotisserie.factory_console.commands.health import (
     cmd_outcomes,
     cmd_unstick,
 )
+from rotisserie.factory_console.commands.history import cmd_history, cmd_use
 from rotisserie.factory_console.commands.models import (
     cmd_close,
     cmd_groom,
@@ -76,7 +77,8 @@ def main(
     data: dict[str, object] = {"command": command}
     context: Context | None = None
     try:
-        repo = find_repository(getattr(arguments, "repo", None), values, Path.cwd())
+        explicit = getattr(arguments, "repo", None) or getattr(arguments, "repository", None)
+        repo = find_repository(explicit, values, Path.cwd())
         github = GitHub(repo, executable=executable)
         input_stream = stdin or sys.stdin
         interactive = console.interactive and input_stream.isatty() and not json_mode
@@ -220,6 +222,8 @@ HANDLERS = {
     "claim": cmd_claim,
     "finish": cmd_finish,
     "runs": cmd_runs,
+    "history": cmd_history,
+    "use": cmd_use,
     "follow": cmd_follow,
     "label-event": cmd_label_event,
     "explain": cmd_why,
