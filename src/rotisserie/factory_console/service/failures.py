@@ -141,15 +141,18 @@ def read_failure(tracker: Tracker, run: Obj) -> WorkerFailure | None:
 
 
 def worker_failures(
-    github: GitHub, start: datetime, *, limit: int = 60, tracker: Tracker | None = None
+    github: GitHub,
+    start: datetime,
+    *,
+    limit: int = 60,
+    tracker: Tracker | None = None,
+    runs: list[Obj] | None = None,
 ) -> list[WorkerFailure]:
     """The most recent failed worker runs created since ``start``, newest first."""
-    iso = start.astimezone(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
-    failed = [
-        run
-        for run in runs_since(github, WORKER_WORKFLOW, iso)
-        if string(run, "conclusion") in FAILED_CONCLUSIONS
-    ]
+    if runs is None:
+        iso = start.astimezone(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
+        runs = runs_since(github, WORKER_WORKFLOW, iso)
+    failed = [run for run in runs if string(run, "conclusion") in FAILED_CONCLUSIONS]
     failed.sort(key=lambda run: string(run, "updated_at"), reverse=True)
     reader = tracker or Tracker(github)
     with ThreadPoolExecutor(max_workers=6) as pool:

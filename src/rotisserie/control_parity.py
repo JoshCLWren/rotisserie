@@ -13,6 +13,7 @@ CONTROLS: dict[str, tuple[str, ...]] = {
     "status": ("read:status",),
     "cancel": ("write:cancel",),
     "report": ("read:report",),
+    "recap": ("read:recap",),
     "stats": ("read:stats",),
     "settings": ("read:settings", "write:settings"),
     "prioritize": ("write:prioritize",),

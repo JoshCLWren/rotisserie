@@ -42,6 +42,7 @@ from rotisserie.factory_console.commands.prs import (
     cmd_review,
     cmd_sync,
 )
+from rotisserie.factory_console.commands.recap import cmd_recap
 from rotisserie.factory_console.commands.report import cmd_report, cmd_stats
 from rotisserie.factory_console.commands.run import cmd_run
 from rotisserie.factory_console.commands.settings import cmd_prioritize, cmd_settings
@@ -142,6 +143,7 @@ def _help_text() -> str:
             "",
             "  baste run [PROVIDER [MODEL]] [--force] [--target issue:N]",
             "  baste status        who is working on what",
+            "  baste recap         morning summary: the answer first, plain words",
             "  baste report        what merged, failed and is stuck",
             "  baste failures      failed worker runs by job and step",
             "  baste stats         reliable providers and models",
@@ -244,6 +246,7 @@ HANDLERS = {
     "incident": cmd_incident,
     "backoffs": cmd_backoffs,
     "db-usage": cmd_db_usage,
+    "recap": cmd_recap,
 }
 
 

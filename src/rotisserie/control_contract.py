@@ -31,6 +31,7 @@ LEVELS = frozenset(("critical", "high", "medium", "low", "none"))
 READ_ONLY = frozenset(
     (
         "status",
+        "recap",
         "report",
         "failures",
         "stats",
@@ -94,6 +95,7 @@ _READ_PARAMETERS = {
     "estimate": {"target", "sample", "run"},
     "follow": {"target"},
     "report": {"since"},
+    "recap": {"since"},
     "failures": {"since"},
     "stats": {"window"},
 }
@@ -158,8 +160,8 @@ def read_command(name: str, query: Mapping[str, str], *, trusted: bool = False) 
             args.extend(("--run", _match(run, RUN_ID, "run")))
     elif name == "follow":
         args.extend((_match(_string(query, "target", required=True), TARGET, "target"), "--once"))
-    elif name in ("report", "failures"):
-        since = _string(query, "since") or ("12h" if name == "report" else "10h")
+    elif name in ("report", "failures", "recap"):
+        since = _string(query, "since") or ("10h" if name == "failures" else "12h")
         args.extend(("--since", _match(since, re.compile(r"^[0-9]{1,3}[hd]$"), "since")))
     elif name == "outcomes":
         args.extend(("--since", "2h", "--limit", "40"))

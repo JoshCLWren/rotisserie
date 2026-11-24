@@ -21,6 +21,7 @@ from typing import Any
 
 from rotisserie.factory_console.context import UsageError
 from rotisserie.factory_console.service import catalog, dispatch
+from rotisserie.factory_console.service.report import OUTCOME_WORDS as OUTCOME_WORDS
 from rotisserie.factory_console.tracker import Result
 
 EXIT_OK = 0
@@ -43,19 +44,6 @@ PRIORITY_LABELS = (
     "ralph-priority:medium",
     "ralph-priority:low",
 )
-OUTCOME_WORDS = {
-    "provider_quota": "provider out of quota",
-    "provider_failure": "provider error",
-    "model_retired_410": "model retired by provider",
-    "control_plane_failure": "factory setup problem",
-    "no_capacity": "no capacity",
-    "work_failure": "model could not finish the work",
-    "no_progress": "model made no progress",
-    "timeout": "ran out of time",
-    "agent_timeout": "ran out of time",
-    "unknown_failure": "unclassified failure",
-    "unconfigured": "provider not configured",
-}
 TAKE_OVER_ATTEMPTS = 2
 FORCE_EXPLANATION = (
     "Ignores the factory's own limits (open-PR and review limits, cooldowns, "
