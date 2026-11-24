@@ -137,12 +137,34 @@ def test_unrecorded_claim_ignores_a_later_run_of_the_same_worker(env) -> None:
     assert held(db, token) and left(db, token) <= 120
 
 
-def test_unrecorded_claim_is_released_when_its_dispatched_run_completed(env) -> None:
+def test_unrecorded_claim_is_never_released_by_an_inferred_owner(env) -> None:
     db, repo = env
     worker = support.uncapped_workers(1)[0]
     token = short_claim(db, repo, worker)
-    owners.reconcile(repo, getter(run(R1, worker, "completed", iso(5))), Live(), ledger)
-    assert not held(db, token)
+    for created in (iso(5), iso(-60)):
+        result = owners.reconcile(
+            repo, getter(run(R1, worker, "completed", created)), Live(), ledger
+        )
+        assert [o.state for o in result] == ["unknown"]
+        assert held(db, token) and left(db, token) <= 120
+    assert (
+        owners.claim_owners(leases.list_leases(repo), getter(run(R1, worker, "completed", iso(5))))[
+            0
+        ].describe()
+        == f"run {R1} (dispatched), completed"
+    )
+
+
+def test_live_fork_repair_run_keeps_a_claim_whose_entry_run_finished(env) -> None:
+    db, repo = env
+    worker = support.uncapped_workers(1)[0]
+    token = short_claim(db, repo, worker)
+    started_by_r1(db, repo, worker, token)
+    fork = run(R2, worker, "in_progress", iso(1800))
+    fork["display_title"] = f"Factory {worker} · fork repair · PR 9 · abc"
+    get = getter(run(R1, worker, "completed", iso(-60)))
+    owners.reconcile(repo, get, Live(fork), ledger)
+    assert held(db, token) and left(db, token) > 600
 
 
 def test_claim_is_renewed_while_its_own_run_executes(env) -> None:
@@ -169,3 +191,45 @@ def test_failed_lookup_leaves_the_claim_to_expire(env) -> None:
     result = owners.reconcile(repo, broken, Live(), ledger)
     assert [o.state for o in result] == ["unknown"]
     assert held(db, token) and left(db, token) <= 120
+
+
+def load_controller():
+    import importlib.util
+
+    path = Path(__file__).resolve().parents[1] / ".github/scripts/factory-work-controller.py"
+    spec = importlib.util.spec_from_file_location("factory_work_controller_owners", path)
+    assert spec and spec.loader
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+@pytest.mark.parametrize("r2_live", [False, True])
+def test_controller_renews_the_live_owner_and_releases_the_finished_one(
+    env, monkeypatch: pytest.MonkeyPatch, r2_live: bool
+) -> None:
+    db, repo = env
+    finished, live = support.uncapped_workers(2)
+    stale = short_claim(db, repo, finished)
+    started_by_r1(db, repo, finished, stale)
+    current = leases.acquire_lease(repo, live, [TARGET + 1], ttl=120)
+    entry_runs = [run("45500000001", live, "in_progress", iso(5))]
+    if r2_live:
+        entry_runs.append(run(R2, finished, "in_progress", iso(3600)))
+    completed = run(R1, finished, "completed", iso(-60))
+
+    def gh_json(args: list[str], **_kwargs: object) -> object:
+        path = args[-1]
+        if path.endswith(f"/actions/runs/{R1}"):
+            return completed
+        live_entry = "free-model-factory-entry.yml/runs?status=in_progress" in path
+        return [{"workflow_runs": entry_runs if live_entry else []}]
+
+    controller = load_controller()
+    monkeypatch.setattr(controller, "REPO", repo)
+    monkeypatch.setattr(controller, "gh_json", gh_json)
+    monkeypatch.setattr(controller, "list_issues", lambda: [])
+    monkeypatch.setattr(controller, "list_prs", lambda: [])
+    assert controller.reconcile_stale_leases() == []
+    assert not held(db, stale)
+    assert left(db, current) > 600
