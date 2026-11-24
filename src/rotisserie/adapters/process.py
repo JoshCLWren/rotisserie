@@ -197,7 +197,7 @@ class ProcessExecutor:
             return ExecutionResult(Outcome.FAILED, detail="process exited unsuccessfully")
         try:
             result = process_result(json.loads(output), assignment, attempt)
-        except (ValueError, TypeError, KeyError, RecursionError):
+        except ValueError, TypeError, KeyError, RecursionError:
             return ExecutionResult(Outcome.MALFORMED_OUTPUT, detail="invalid process response")
         if cancellation.cancelled():
             return ExecutionResult(Outcome.CANCELLED)

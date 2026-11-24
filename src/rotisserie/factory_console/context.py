@@ -53,7 +53,7 @@ def find_repository(explicit: str | None, env: dict[str, str], cwd: Path) -> str
         if config.is_file():
             try:
                 data = tomllib.loads(config.read_text(encoding="utf-8"))
-            except (OSError, tomllib.TOMLDecodeError):
+            except OSError, tomllib.TOMLDecodeError:
                 break
             repository = data.get("repository")
             if isinstance(repository, dict):
@@ -72,7 +72,7 @@ def find_repository(explicit: str | None, env: dict[str, str], cwd: Path) -> str
             timeout=5,
             check=False,
         ).stdout.strip()
-    except (OSError, subprocess.SubprocessError):
+    except OSError, subprocess.SubprocessError:
         remote = ""
     match = re.search(r"github\.com[:/]([^/]+/[^/]+?)(?:\.git)?$", remote)
     if match:
@@ -92,7 +92,7 @@ def default_repository(env: dict[str, str]) -> str:
     """The repository saved with ``rotisserie factory use``, or ""."""
     try:
         data = tomllib.loads(user_config(env).read_text(encoding="utf-8"))
-    except (OSError, tomllib.TOMLDecodeError):
+    except OSError, tomllib.TOMLDecodeError:
         return ""
     value = data.get("repository")
     return value if isinstance(value, str) and REPOSITORY.fullmatch(value) else ""

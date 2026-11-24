@@ -64,7 +64,7 @@ def _required_checks_outcome(github: GitHub, number: int) -> str:
                 allow_exit_one=True,
             )
         )
-    except (GitHubError, ValueError):
+    except GitHubError, ValueError:
         return "waiting"
     if not isinstance(values, list) or not values:
         return "waiting"

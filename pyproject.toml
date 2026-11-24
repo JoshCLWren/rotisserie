@@ -7,7 +7,7 @@ name = "rotisserie"
 version = "0.1.0.dev0"
 description = "Portable graph engineering for coordinating AI and human workers"
 readme = "README.md"
-requires-python = ">=3.12"
+requires-python = ">=3.14"
 license = "Apache-2.0"
 authors = [{ name = "Josh C. L. Wren" }]
 keywords = ["automation", "coordination", "graph", "workflow"]
@@ -15,8 +15,6 @@ classifiers = [
   "Development Status :: 2 - Pre-Alpha",
   "Intended Audience :: Developers",
   "Programming Language :: Python :: 3",
-  "Programming Language :: Python :: 3.12",
-  "Programming Language :: Python :: 3.13",
   "Programming Language :: Python :: 3.14",
   "Typing :: Typed",
 ]
@@ -97,7 +95,7 @@ addopts = "-ra"
 testpaths = ["prototype", "tests"]
 
 [tool.ruff]
-target-version = "py312"
+target-version = "py314"
 line-length = 100
 extend-exclude = ["factory"]
 
@@ -109,7 +107,7 @@ select = ["E", "F", "I", "UP"]
 "tests/test_factory_console.py" = ["E501"]
 
 [tool.mypy]
-python_version = "3.12"
+python_version = "3.14"
 strict = true
 explicit_package_bases = true
 mypy_path = "src"

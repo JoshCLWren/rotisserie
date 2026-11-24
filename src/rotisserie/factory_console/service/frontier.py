@@ -127,7 +127,7 @@ def _retry_history(github: GitHub, core: Any, now: datetime) -> list[Any] | None
     path = f"repos/{github.repo}/issues/comments?since={since:%Y-%m-%dT%H:%M:%SZ}&per_page=100"
     try:
         pages = json.loads(github.gh("api", "--paginate", "--slurp", path))
-    except (GitHubError, ValueError):
+    except GitHubError, ValueError:
         return None
     if not isinstance(pages, list) or not all(isinstance(page, list) for page in pages):
         return None

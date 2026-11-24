@@ -31,7 +31,7 @@ has a schedule. `tests/test_rotisserie_actions.py` enforces this boundary.
 ## Standalone foundation
 
 Rotisserie now has an independently buildable `src/rotisserie` package with
-Apache-2.0 package metadata, Python 3.12–3.14 support, a locked development
+Apache-2.0 package metadata, Python 3.14 support, a locked development
 environment, and one canonical `./scripts/verify` command. The prototype stays
 outside the public package as traceable migration evidence.
 
@@ -156,7 +156,7 @@ and required CI, rejects forks, and revalidates the head before an expected-SHA
 merge. Producer/reviewer separation uses durable Rotisserie worker identities,
 matching the first adopter's single-account Factory contract; formal GitHub approval is
 not required. A repository variable is the kill switch. Server-side branch
-protection requires the Python 3.12, 3.13, and 3.14 CI contexts. No worker
+protection requires the Python 3.14 CI context. No worker
 execution or schedule has been activated. The canary lifecycle and recovery
 evidence is recorded in [`docs/dogfood-evidence.md`](docs/dogfood-evidence.md).
 

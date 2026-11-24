@@ -326,7 +326,7 @@ def parse_result(log: str) -> DispatchOutcome | None:
     if status == "dispatched":
         try:
             number = int(str(found["number"]))
-        except (KeyError, ValueError):
+        except KeyError, ValueError:
             return DispatchOutcome("unknown", reason="The scheduler's result did not name a task.")
         dispatched = found.get("dispatched_at")
         return DispatchOutcome(

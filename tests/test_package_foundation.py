@@ -29,4 +29,4 @@ def test_distribution_declares_apache_license() -> None:
 
 
 def test_supported_python_floor_is_explicit() -> None:
-    assert _project_metadata()["requires-python"] == ">=3.12"
+    assert _project_metadata()["requires-python"] == ">=3.14"

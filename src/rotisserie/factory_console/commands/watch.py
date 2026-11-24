@@ -279,7 +279,7 @@ def _show_pull_request(context: Context, number: int) -> dict[str, object]:
             "state,mergedAt,reviewDecision,statusCheckRollup,url,title,isDraft",
         )
         view = obj(json.loads(raw))
-    except (GitHubError, ValueError):
+    except GitHubError, ValueError:
         console.warn(f"Could not read pull request #{number}")
         return {"number": number}
     checks = items(view, "statusCheckRollup")

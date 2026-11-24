@@ -22,7 +22,7 @@ Security vulnerabilities do not belong in public issues. Follow
 
 ## Development setup
 
-Install Python 3.12 through 3.14 and
+Install Python 3.14 and
 [uv](https://docs.astral.sh/uv/). From a clean clone:
 
 ```bash

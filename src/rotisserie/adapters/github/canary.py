@@ -20,7 +20,7 @@ class CanaryScope:
     issue: int
     branch: str
     base_branch: str = "main"
-    required_checks: frozenset[str] = frozenset({"Python 3.12", "Python 3.13", "Python 3.14"})
+    required_checks: frozenset[str] = frozenset({"Python 3.14"})
     producer: str = "codex-implementation"
 
 

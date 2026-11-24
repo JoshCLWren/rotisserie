@@ -107,7 +107,7 @@ def label_age(
                 f"repos/{github.repo}/issues/{number}/events?per_page=100",
             )
         )
-    except (GitHubError, ValueError):
+    except GitHubError, ValueError:
         return None
     stamps = [
         event.get("created_at")

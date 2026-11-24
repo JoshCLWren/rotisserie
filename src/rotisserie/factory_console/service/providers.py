@@ -20,7 +20,7 @@ def repository_variables(github: GitHub) -> dict[str, str]:
     try:
         raw = github.gh("variable", "list", "--repo", github.repo, "--json", "name,value")
         rows = json.loads(raw)
-    except (GitHubError, ValueError):
+    except GitHubError, ValueError:
         return delivered
     listed = {
         str(row["name"]): str(row["value"])
@@ -35,7 +35,7 @@ def secret_names(github: GitHub) -> set[str] | None:
     try:
         raw = github.gh("secret", "list", "--repo", github.repo, "--json", "name")
         rows = json.loads(raw)
-    except (GitHubError, ValueError):
+    except GitHubError, ValueError:
         return None
     return {str(row["name"]) for row in rows if isinstance(row, dict) and "name" in row}
 
