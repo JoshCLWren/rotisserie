@@ -82,8 +82,8 @@ def store(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> dict[str, Any]:
     async def connect(**_: Any) -> KvConnection:
         return holder["conn"]
 
-    monkeypatch.setattr(ledger, "measured_connect", connect)
-    monkeypatch.setattr(ledger, "_dsn", lambda: "postgres://unused")
+    monkeypatch.setattr("factory_state_ledger_external.measured_connect", connect)
+    monkeypatch.setattr("factory_state_ledger_external._dsn", lambda: "postgres://unused")
     return holder
 
 

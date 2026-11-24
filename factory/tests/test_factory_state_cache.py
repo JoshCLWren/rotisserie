@@ -276,8 +276,8 @@ def test_event_pruning_retains_recent_worker_lifecycle_and_coordination(monkeypa
 
 
 def test_worker_event_writers_tag_all_future_lifecycle_events_with_repo():
-    ledger = (Path(__file__).resolve().parents[1] /
-              ".github/scripts/factory_state_ledger.py").read_text()
+    ledger = "".join(path.read_text() for path in sorted(
+        (Path(__file__).resolve().parents[1] / ".github/scripts").glob("factory_state_ledger*.py")))
     assert "'source', $6::text, 'repo', $7::text" in ledger
     assert "'targets',$5::jsonb,'repo',$6::text" in ledger
     assert 'json.dumps({**entry, "repo": repo})' in ledger
