@@ -5,6 +5,7 @@
 .github/actions/factory-state-cache/
 .github/actions/factory-syntax/
 .github/factory-state-schema.sql
+.github/factory-state.sqlite.sql
 .github/scripts/classify-fixed-model-run.py
 .github/scripts/classify_fixed_model_patterns.py
 .github/scripts/classify_fixed_model_testing.py
