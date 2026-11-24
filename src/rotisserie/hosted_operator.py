@@ -29,7 +29,7 @@ from rotisserie.control_contract import (
 Runner = Callable[[str, list[str]], dict[str, Any]]
 EXIT_REJECTED = 2
 READ_TIMEOUT = 240
-WRITE_TIMEOUT = 600
+WRITE_TIMEOUT = 840
 
 
 def _default_runner(timeout: int) -> Runner:
@@ -62,7 +62,7 @@ def execute(mode: str, raw: str, repository: str, runner: Runner) -> dict[str, A
         body = _body(raw)
         envelope["request_id"] = request_id(body)
         if mode == "read":
-            reads = read_batch(body)
+            reads = read_batch(body, trusted=True)
         else:
             if body.get("operation") == "read":
                 raise InvalidRequest("Reads run in the read-only operator workflow")

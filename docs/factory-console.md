@@ -140,8 +140,16 @@ Unstick previews from live state, then replans when executed.
 The Work queue page has an item tracker for one issue or PR: Follow (state,
 stage, owner, checks, claim labels and the linked issue), Claim runs, History,
 Claim and Finish claim. Claim and Finish claim use `--no-wait`: they change the
-label and return, and the label claim controller answers on the item. The PR
-workbench reads checks for a PR or for `main`. The Diagnostics page starts a
+label and return, and the label claim controller answers on the item. The item
+tracker also shows Estimate. The PR workbench reads checks for a PR or for
+`main`, and Close PR closes a pull request and the issue it delivers after it
+asks for a reason and a confirmation. The Diagnostics page reads the GitHub API
+limits and the backoffs, and resets quota backoffs after a confirmation. Both
+backoff controls go through the trusted workflows (`--via github`) locally; the
+hosted read workflow reads backoffs from Neon directly. Run history lists the
+failed worker runs of the last 10 hours. `tests/test_control_parity.py` checks that every `rotisserie factory`
+command has a control in both control rooms, or a reason in
+`src/rotisserie/control_parity.py` why it has none. The Diagnostics page starts a
 label doctor dry run or repair on GitHub and links the run. The Models page
 lists each provider with its switch (on, or off with the reason) and turns a
 provider or one of its models off or on. Turning off needs a reason and a

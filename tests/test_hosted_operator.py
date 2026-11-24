@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import subprocess
 from pathlib import Path
 from typing import Any
 
@@ -208,3 +209,54 @@ def test_read_caller_passes_only_the_request_and_neon_secret() -> None:
     assert "rotisserie-operator-read.yml@main" in source
     assert "NEON_API_KEY: ${{ secrets.NEON_API_KEY }}" in source
     assert ": write" not in source
+
+
+def test_close_needs_a_pull_request_and_a_reason() -> None:
+    body = {"operation": "close", "target": "pr:4", "reason": "duplicate of #3"}
+    assert contract.write_command(body) == ["close", "pr:4", "--reason=duplicate of #3", "--yes"]
+    keep = contract.write_command({**body, "keep_issue": True})
+    assert keep[-1] == "--keep-issue"
+    for bad in ({"reason": ""}, {"reason": "  "}, {"target": "issue:4"}, {"reason": "a|b"}):
+        with pytest.raises(contract.InvalidRequest):
+            contract.write_command({**body, **bad})
+
+
+def test_limits_is_a_live_read_without_arguments() -> None:
+    assert contract.read_command("limits", {}) == ["limits"]
+    assert "limits" in contract.LIVE_READS
+
+
+def test_backoffs_read_uses_neon_only_inside_the_read_workflow() -> None:
+    assert contract.read_command("backoffs", {}) == ["backoffs", "--via", "github"]
+    assert contract.read_command("backoffs", {}, trusted=True) == ["backoffs"]
+    cli = FakeCli()
+    raw = json.dumps({"operation": "read", "reads": [{"name": "backoffs"}]})
+    hosted_operator.execute("read", raw, "acme/widgets", cli)
+    assert cli.calls == [("acme/widgets", ["backoffs"])]
+    with pytest.raises(contract.InvalidRequest):
+        contract.read_command("backoffs", {"action": "reset"})
+
+
+def test_backoffs_reset_is_quota_only_through_the_trusted_workflow() -> None:
+    assert contract.write_command({"operation": "backoffs_reset"}) == [
+        "backoffs",
+        "reset",
+        "--quota-only",
+        "--yes",
+        "--via",
+        "github",
+    ]
+
+
+def test_bridged_commands_get_the_bridge_timeout(monkeypatch: pytest.MonkeyPatch) -> None:
+    seen: list[float] = []
+
+    def fake_run(command: list[str], **options: Any) -> Any:
+        seen.append(options["timeout"])
+        raise subprocess.TimeoutExpired(command, options["timeout"])
+
+    monkeypatch.setattr(subprocess, "run", fake_run)
+    web.invoke("acme/widgets", ["backoffs", "--via", "github"])
+    web.invoke("acme/widgets", ["labels", "--via", "github", "--no-wait"])
+    web.invoke("acme/widgets", ["why"])
+    assert seen == [900, 90, 90]
