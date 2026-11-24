@@ -13,7 +13,7 @@ from datetime import UTC, datetime
 from types import ModuleType
 
 from rotisserie.factory_console.github import GitHub, GitHubError, obj, string
-from rotisserie.factory_console.service import frontier
+from rotisserie.factory_console.service import external_target, frontier
 from rotisserie.factory_console.service import sync as branch_sync
 from rotisserie.factory_console.service.external_checks import (
     _bypasses_wip,
@@ -124,13 +124,8 @@ def reserve_next(
     abilities: frozenset[str] = ACTIONS,
     expected: str = "",
     advertised_at: str = "",
-    pick: str = "",
 ) -> dict[str, object]:
-    """Reserve the highest live offer, or with ``pick`` exactly that target's offer.
-
-    A label claim picks the item the agent labeled: any current candidate the
-    agent can do, whatever its rank, after the same live and post-CAS checks.
-    """
+    """Reserve the highest live offer in the factory's ranking."""
     if not CLIENT.fullmatch(client):
         raise ValueError("client must be a stable non-secret identifier")
     if not abilities or not abilities <= ACTIONS:
@@ -155,28 +150,7 @@ def reserve_next(
             }
     # Walk the ranking: the agent gets the highest offer it can do that is
     # still live now (CI settled, head and rank unchanged), not merely rank 1.
-    if pick:
-        offered = next((o for o in snapshot.offers if o.target == pick), None)
-        if offered is None:
-            return {"status": "conflict", "reason": "not_offered_now", "retry": "refresh_frontier"}
-        if offered.status != "candidate":
-            return {
-                "status": "conflict",
-                "reason": "held: " + "; ".join(offered.hold_reasons),
-                "retry": "refresh_frontier",
-            }
-        if offered.action not in abilities:
-            return {
-                "status": "conflict",
-                "reason": f"action {offered.action} is not claimable",
-                "retry": "refresh_frontier",
-            }
-        expected = pick
-    able = [
-        o
-        for o in snapshot.offers
-        if o.status == "candidate" and o.action in abilities and (not pick or o.target == pick)
-    ]
+    able = [o for o in snapshot.offers if o.status == "candidate" and o.action in abilities]
     if not able:
         return {
             "status": "conflict" if expected else "held",
@@ -292,6 +266,27 @@ def reserve_next(
         acceptance=issue_body,
     )
     return outcome
+
+
+def reserve_target(
+    github: GitHub,
+    *,
+    client: str,
+    environment: dict[str, str],
+    target: str,
+    abilities: frozenset[str] = ACTIONS,
+) -> dict[str, object]:
+    """Claim exactly ``target``: only another active lease on it refuses (#212)."""
+    if not CLIENT.fullmatch(client):
+        raise ValueError("client must be a stable non-secret identifier")
+    if not abilities or not abilities <= ACTIONS:
+        raise ValueError("unsupported agent abilities")
+    actor = principal(github, environment)
+    store = ledger()
+    reconcile(github, actor=actor, store=store)
+    return external_target.reserve_target(
+        github, store=store, actor=actor, client=client, target=target, abilities=abilities
+    )
 
 
 def claim_action(

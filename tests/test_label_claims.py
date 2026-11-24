@@ -5,7 +5,6 @@ from __future__ import annotations
 import json
 import threading
 from concurrent.futures import ThreadPoolExecutor
-from dataclasses import replace
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, cast
@@ -295,9 +294,9 @@ class Neon:
         self.claims: dict[int, dict[str, object]] = {}
 
     def reserve(
-        self, github: Any, *, client: str, environment: dict[str, str], pick: str, **_: Any
+        self, github: Any, *, client: str, environment: dict[str, str], target: str, **_: Any
     ) -> dict[str, object]:
-        number = int(pick.split(":")[1])
+        number = int(target.split(":")[1])
         with self.lock:
             if number in self.claims:
                 return {"status": "conflict", "reason": "existing_or_unreconciled_lease"}
@@ -305,7 +304,7 @@ class Neon:
                 "claim_id": f"uuid-{environment['GITHUB_ACTOR']}",
                 "actor": environment["GITHUB_ACTOR"],
                 "client": client,
-                "target": pick,
+                "target": target,
                 "action": "implement",
                 "head": None,
             }
@@ -342,7 +341,7 @@ class Neon:
 @pytest.fixture
 def neon(monkeypatch: pytest.MonkeyPatch) -> Neon:
     store = Neon()
-    monkeypatch.setattr(external, "reserve_next", store.reserve)
+    monkeypatch.setattr(external, "reserve_target", store.reserve)
     monkeypatch.setattr(external, "holder", store.holder)
     monkeypatch.setattr(external, "claim_action", store.action)
     return store
@@ -509,37 +508,6 @@ def test_claimant_comment_renews(neon: Neon) -> None:
         {**ACTIONS_ENV, "GITHUB_EVENT_NAME": "issue_comment"},
     )
     assert result["status"] == "renewed"
-
-
-def test_pick_reserves_the_labeled_item_whatever_its_rank(monkeypatch: pytest.MonkeyPatch) -> None:
-    first = offer("issue:5", "implement")
-    second = replace(offer("issue:7", "implement"), rank=2)
-    monkeypatch.setattr(frontier, "capture", lambda *a, **k: snapshot(first, second))
-    monkeypatch.setattr(external, "principal", lambda github, env: "alice")
-    monkeypatch.setattr(external, "ledger", lambda: object())
-    monkeypatch.setattr(external, "reconcile", lambda *a, **k: [])
-    seen: list[str] = []
-
-    def live(github: Any, chosen: Any, snap: Any) -> tuple[bool, str]:
-        seen.append(chosen.target)
-        return False, "stop here"
-
-    monkeypatch.setattr(external, "_live_offer", live)
-    result = external.reserve_next(
-        cast(GitHub, FakeGitHub()), client="label", environment={}, pick="issue:7"
-    )
-    assert seen == ["issue:7"]
-    assert result["status"] == "conflict"
-    held = replace(second, status="held", hold_reasons=("blocked by #3",))
-    monkeypatch.setattr(frontier, "capture", lambda *a, **k: snapshot(first, held))
-    result = external.reserve_next(
-        cast(GitHub, FakeGitHub()), client="label", environment={}, pick="issue:7"
-    )
-    assert result == {
-        "status": "conflict",
-        "reason": "held: blocked by #3",
-        "retry": "refresh_frontier",
-    }
 
 
 def test_label_events_pass_the_principal_fence_only_from_trusted_events() -> None:
@@ -712,7 +680,8 @@ def test_claim_on_closed_work_is_dropped_without_a_rejection_label(neon: Neon) -
     )
     assert result["reason"] == "closed"
     assert github.items[7] == {"factory"}
-    assert neon.claims == {} and github.comments == {}
+    assert neon.claims == {}
+    assert "Reopen issue:7, then add `factory:claimed` again." in github.comments[7][0]["body"]
 
 
 def test_accepted_claim_on_an_item_without_availability_still_answers(neon: Neon) -> None:

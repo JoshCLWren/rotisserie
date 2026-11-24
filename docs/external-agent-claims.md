@@ -172,23 +172,24 @@ Any agent with write access can find and claim work with ordinary GitHub
 search and labels. No Rotisserie CLI, workflow dispatch or Neon access is
 needed. The installed `rotisserie-label-claim.yml` workflow answers.
 
-1. **Find work.** Search open issues and PRs labeled `factory:available`, for
-   example `is:open label:factory:available`. The stage label says the next
-   step: no stage on an issue means implement, `factory:review` means review,
-   `factory:changes-requested` means repair review findings, `factory:ci` means
-   repair failing checks, and `factory:merge-conflict` means resolve the
-   conflict. The label doctor sets `factory:available` only when the controller
-   frontier offers that item now and no lease holds it.
+1. **Pick work.** Any open issue or PR you were told to work on can be
+   claimed. Factory capacity, backpressure and ranking never block a named
+   claim (#212); only another active lease on the item does. To find work
+   yourself, search `is:open label:factory:available`: the label doctor sets
+   that label on items the factory would hand out next.
 2. **Request a claim.** Add `factory:claimed`. The controller checks your write
-   access, the live frontier and the Neon fenced lease, then answers on the
-   item:
+   access and the Neon fenced lease, then answers on the item:
    - accepted: `factory:claimed` stays and `factory:available` goes;
-   - rejected: `factory:claimed` goes and `factory:claim-rejected` is added.
+   - refused: `factory:claimed` goes and `factory:claim-rejected` is added.
 
    One status comment on the item, edited in place, names the claimant, the
-   claim UUID, the expiry and the reason. Do not start work until it says
-   **Accepted** with your login. If `factory:claimed` is already on the item,
-   someone else holds it.
+   claim UUID and the expiry. A refusal states the reason (for example, who
+   holds the lease and until when) and the next step. Do not start work until
+   it says **Accepted** with your login. The step to do comes from the item:
+   an issue means implement; on a PR, `factory:merge-conflict` means resolve
+   the conflict, `factory:changes-requested` means repair the findings,
+   `factory:ci` with failing checks means repair them, `factory:review` means
+   review (unless you wrote the PR), and anything else means push commits.
 3. **Work.** Your pushes to the claimed PR and your comments on the claimed
    item renew the lease. Commits need one `Model: <exact model id>` trailer
    each.
