@@ -51,6 +51,7 @@ READ_ONLY = frozenset(
         "unstick",
         "runs",
         "follow",
+        "history",
     )
 )
 MAX_BODY = 4096
@@ -93,6 +94,7 @@ def read_command(name: str, query: Mapping[str, str]) -> list[str]:
         "review": {"target"},
         "conflicts": {"target"},
         "runs": {"target"},
+        "history": {"target"},
         "follow": {"target"},
         "report": {"since"},
         "stats": {"window"},
@@ -108,7 +110,7 @@ def read_command(name: str, query: Mapping[str, str]) -> list[str]:
             args.append(_match(target, re.compile(r"^issue:[1-9][0-9]*$"), "target"))
     elif name in ("checks", "review", "conflicts"):
         args.append(_match(_string(query, "target", required=True), PR, "target"))
-    elif name == "runs":
+    elif name in ("runs", "history"):
         args.append(_match(_string(query, "target", required=True), TARGET, "target"))
     elif name == "follow":
         args.extend((_match(_string(query, "target", required=True), TARGET, "target"), "--once"))

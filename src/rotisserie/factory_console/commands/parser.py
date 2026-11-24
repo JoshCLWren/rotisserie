@@ -197,6 +197,17 @@ def add_parser(subcommands: argparse._SubParsersAction[argparse.ArgumentParser])
     controller_runs.add_argument("--limit", type=int, default=5, help="runs to show (5)")
     _common(controller_runs)
 
+    timeline = commands.add_parser(
+        "history", help="label changes, close/reopen, factory markers and controller runs"
+    )
+    timeline.add_argument("what", help="issue:N or pr:N")
+    timeline.add_argument("--limit", type=int, default=40, help="timeline items (40)")
+    _common(timeline)
+
+    choose = commands.add_parser("use", help="show or save the default factory repository")
+    choose.add_argument("repository", nargs="?", help="owner/name to save as the default")
+    _common(choose)
+
     track = commands.add_parser(
         "follow",
         help="show each lifecycle change of an item until it finishes or is held",
@@ -342,6 +353,7 @@ def add_parser(subcommands: argparse._SubParsersAction[argparse.ArgumentParser])
     tags.add_argument(
         "--no-wait", action="store_true", help="with --via github, start the run and return"
     )
+    tags.add_argument("--run", type=int, help="show the report of an earlier doctor run")
     _via(tags)
     _common(tags)
 

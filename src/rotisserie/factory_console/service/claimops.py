@@ -145,6 +145,18 @@ def run_result(github: GitHub, row: dict[str, object]) -> dict[str, object]:
         return {"result": "unavailable", "reason": str(exc)}
 
 
+def run_report(github: GitHub, run_id: int) -> dict[str, object]:
+    """The JSON report an earlier label-claim workflow run published."""
+    run = obj(github.repo_api(f"actions/runs/{run_id}"))
+    row: dict[str, object] = {
+        "run_id": run_id,
+        "url": string(run, "html_url"),
+        "status": string(run, "status"),
+        "conclusion": string(run, "conclusion"),
+    }
+    return {**run_result(github, row), "bridge": row}
+
+
 def status_comment(github: GitHub, number: int) -> str:
     """The controller's one status comment on the item, or "" when there is none."""
     pages = json.loads(
