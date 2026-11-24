@@ -69,6 +69,7 @@ def routes(pr: Obj, comments: list[Obj], issue_labels: list[str] | None = None) 
         "pulls/7": pr,
         "issues/7/comments": comments,  # type: ignore[dict-item]
         "issues/3": {"labels": [{"name": n} for n in (issue_labels or [])]},
+        f"commits/{HEAD}": {"sha": HEAD, "parents": [{"sha": OLD}], "commit": {"message": "x"}},
     }
 
 

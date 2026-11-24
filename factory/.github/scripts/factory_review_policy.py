@@ -776,9 +776,9 @@ def head_author_record(
     ``heads`` is the current head, then the PR-side parent of each clean
     default-branch merge it sits on (a sync carries that parent's author). The
     first commit with evidence decides: every controller author marker for it
-    (all of them when they disagree; ``human`` excludes no model), else its
-    ``Model:`` trailers, else, when a worker recorded it but no model, every
-    author on the PR (fail closed). ``("", (), "")``: no evidence, nobody excluded.
+    (all of them when they disagree; ``human`` excludes no model), else, when a
+    worker recorded it but no model, every author on the PR (fail closed), else
+    its ``Model:`` trailers. ``("", (), "")``: no evidence, nobody excluded.
     """
     rows = [str(body or "").strip() for body in comments]
     for sha in heads:
@@ -790,11 +790,12 @@ def head_author_record(
             and int(marker["pr"]) == pr
             and marker["head"] == sha
         }
-        found = markers or set((trailers or {}).get(sha, ()))
-        if found:
-            return sha, _models(found), "marker" if found & markers else "trailer"
+        if markers:
+            return sha, _models(markers), "marker"
         if current_head_contributors(rows, pr=pr, head=sha):
             return sha, tuple(known_author_models(rows, pr=pr)), "unrecorded-worker"
+        if found := set((trailers or {}).get(sha, ())):
+            return sha, _models(found), "trailer"
     return "", (), ""
 
 

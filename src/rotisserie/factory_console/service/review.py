@@ -33,6 +33,11 @@ REVIEW_GATE_BLOCK_NOTES = (
     "same model family as the head's author",
 )
 HEADER = "### Factory semantic review"
+FAIL_CLOSED = {
+    "unrecorded-worker": "a factory worker pushed it without a model record",
+    "unprovable-merge": "a merge under it could not be proven to be a clean sync",
+    "sync-chain-too-long": "it sits on more than five syncs",
+}
 
 
 @dataclass(frozen=True)
@@ -79,9 +84,35 @@ def _exclusion() -> ModuleType:
     return runtime.module("factory_review_exclusion")
 
 
-def excluded_models(github: GitHub, number: int, *, pull: Obj | None = None) -> object:
-    """``factory_review_exclusion.Exclusion`` for one PR: the models that may not review it."""
-    return _exclusion().for_pull(github.repo_api, number, pull=pull)
+@dataclass(frozen=True)
+class Excluded:
+    """The models that may not review a PR's current head (owner rule, 2026-11-24)."""
+
+    pr: int
+    head: str
+    excluded: tuple[str, ...]
+    author_commit: str  # commit whose record decided ("" when none)
+    source: str
+    reason: str
+
+
+def excluded_models(
+    github: GitHub,
+    number: int,
+    *,
+    pull: Obj | None = None,
+    records: Sequence[Obj] | None = None,
+) -> Excluded:
+    """The one shared answer to "which models may not review this PR", for any caller."""
+    found = _exclusion().for_pull(github.repo_api, number, pull=pull, records=records)
+    return Excluded(
+        pr=number,
+        head=str(found.head),
+        excluded=tuple(str(model) for model in found.excluded),
+        author_commit=str(found.author_commit),
+        source=str(found.source),
+        reason=str(found.describe()),
+    )
 
 
 def _pages(github: GitHub, path: str, *, limit: int = 30) -> list[Obj]:
@@ -190,11 +221,11 @@ def authorship_lines(report: ReviewReport) -> list[str]:
     names = ", ".join(report.head_authors)
     commit = report.head_author_commit[:10]
     if not report.head_author_commit:
-        lines = ["Head author: none recorded (a human push or a sync); no model is excluded."]
+        lines = ["Head author: none recorded (a human or outside push); no model is excluded."]
     elif not report.head_authors:
-        lines = ["Head author: a human; no model is excluded."]
-    elif report.head_author_source == "unrecorded-worker":
-        lines = [f"Head author: a factory worker with no model record on {commit}; all excluded."]
+        lines = ["Head author: a human, or no model is recorded; no model is excluded."]
+    elif report.head_author_source in FAIL_CLOSED:
+        lines = [f"Head author: unknown ({FAIL_CLOSED[report.head_author_source]})."]
     elif report.head_author_commit != report.head:
         lines = [f"Head author: {names} (a sync carries {commit}, which {names} authored)"]
     else:

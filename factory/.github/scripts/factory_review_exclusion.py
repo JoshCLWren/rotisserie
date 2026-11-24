@@ -34,10 +34,18 @@ def _rows(value: object) -> list[Any]:
     return value if isinstance(value, list) else []
 
 
-def clean_base_merge_parent(
+CLEAN, NOT_SYNC, UNKNOWN = "clean", "not-sync", "unknown"
+FAIL_CLOSED = {
+    "unrecorded-worker": "A factory worker pushed the head without a model record",
+    "unprovable-merge": "A merge under the head could not be proven to be a clean sync",
+    "sync-chain-too-long": f"The head sits on more than {MAX_BASE_MERGE_CHAIN} syncs",
+}
+
+
+def merge_status(
     fetch: Fetch, head: str, *, base_branch: str, commit: object = None
-) -> str | None:
-    """The PR-side parent when ``head`` only merged the default branch in, else ``None``.
+) -> tuple[str, str]:
+    """``(status, PR-side parent)``: whether ``head`` only merged the default branch in.
 
     "Update branch" (or an operator or Rotisserie sync) adds a merge commit
     authored by whoever ran it, so the head loses its attested author although
@@ -47,20 +55,23 @@ def clean_base_merge_parent(
     ancestor of ``head``, that last diff is exactly what the head adds on top of
     the default branch; ``ours...head`` is what the merge brought in. A file in
     both was changed by the merge relative to the default branch's version: a
-    conflict resolution or an extra edit. Any such overlap fails closed.
+    conflict resolution or an extra edit, so ``NOT_SYNC``. A read that fails, or
+    a diff too large to list, is ``UNKNOWN``: it neither proves nor disproves.
     """
     payload = _obj(commit if commit is not None else fetch(f"commits/{head}"))
     if str(payload.get("sha") or "") != head:
-        return None
+        return UNKNOWN, ""
     parents = [str(_obj(raw).get("sha") or "") for raw in _rows(payload.get("parents"))]
-    if len(parents) != 2 or not all(HEAD_RE.fullmatch(sha) for sha in parents):
-        return None
+    if len(parents) != 2:
+        return NOT_SYNC, ""
+    if not all(HEAD_RE.fullmatch(sha) for sha in parents) or not base_branch:
+        return UNKNOWN, ""
     ours, theirs = parents
-    if not base_branch:
-        return None
     on_base = fetch(f"compare/{theirs}...{base_branch}")
-    if not isinstance(on_base, dict) or on_base.get("status") not in ("ahead", "identical"):
-        return None
+    if not isinstance(on_base, dict):
+        return UNKNOWN, ""
+    if on_base.get("status") not in ("ahead", "identical"):
+        return NOT_SYNC, ""
 
     def changed(diff: object) -> set[str] | None:
         if not isinstance(diff, dict) or not isinstance(diff.get("files"), list):
@@ -80,9 +91,29 @@ def clean_base_merge_parent(
 
     brought_in = changed(fetch(f"compare/{ours}...{head}"))
     beyond_base = changed(fetch(f"compare/{theirs}...{head}"))
-    if brought_in is None or beyond_base is None or brought_in & beyond_base:
-        return None
-    return ours
+    if brought_in is None or beyond_base is None:
+        return UNKNOWN, ""
+    if brought_in & beyond_base:
+        return NOT_SYNC, ""
+    return CLEAN, ours
+
+
+def clean_base_merge_parent(
+    fetch: Fetch, head: str, *, base_branch: str, commit: object = None
+) -> str | None:
+    """The PR-side parent when ``head`` is provably a clean sync, else ``None``."""
+    status, parent = merge_status(fetch, head, base_branch=base_branch, commit=commit)
+    return parent if status == CLEAN else None
+
+
+def _safe(fetch: Fetch) -> Fetch:
+    def read(path: str) -> object:
+        try:
+            return fetch(path)
+        except (RuntimeError, OSError, ValueError):
+            return None
+
+    return read
 
 
 @dataclass(frozen=True)
@@ -95,7 +126,7 @@ class Exclusion:
     excluded: tuple[str, ...]  # models that may not review the current head
     carried: tuple[str, ...]  # clean default-branch merges walked to reach author_commit
     earlier_authors: tuple[str, ...]  # every recorded author on the PR (informational)
-    source: str = ""  # marker | trailer | unrecorded-worker | "" (no evidence)
+    source: str = ""  # marker, trailer, a FAIL_CLOSED key, or "" (no evidence)
 
     @property
     def via_sync(self) -> bool:
@@ -107,15 +138,12 @@ class Exclusion:
 
     def describe(self) -> str:
         if not self.author_commit:
-            return "The current head has no author record (a human push or a sync); none excluded."
+            return "The current head has no author record (a human or outside push); none excluded."
         if not self.excluded:
-            return "The current head's author record names no model (a human); none excluded."
+            return "The current head's author is a human or no model is recorded; none excluded."
         names = ", ".join(self.excluded)
-        if self.source == "unrecorded-worker":
-            return (
-                f"A factory worker pushed {self.author_commit[:10]} without a model record;"
-                f" every recorded author ({names}) is excluded."
-            )
+        if self.source in FAIL_CLOSED:
+            return f"{FAIL_CLOSED[self.source]}; every recorded author ({names}) is excluded."
         if self.via_sync:
             return (
                 f"The current head is a sync on {self.author_commit[:10]}, which {names} authored;"
@@ -137,29 +165,34 @@ def resolve(
 ) -> Exclusion:
     """Resolve the current head's author models from controller comment bodies and GitHub.
 
-    Each commit is read once for its ``Model:`` trailers and parents. A commit
-    without author evidence passes to its PR-side parent only when it is a clean
-    default-branch merge, up to ``MAX_BASE_MERGE_CHAIN`` merges.
+    A commit whose record names a model decides. A clean sync passes to its
+    PR-side parent, even over a ``human`` record (the merge itself adds no code).
+    A merge that cannot be proven either way, or more than ``MAX_BASE_MERGE_CHAIN``
+    syncs, excludes every recorded author (fail closed). Anything else (a human
+    or unrecorded push, a conflict-resolving merge) excludes no model.
     """
     rows = [str(body or "") for body in comments]
     earlier = tuple(policy.known_author_models(rows, pr=pr))
+    read = _safe(fetch)
     walked: list[str] = []
     sha = head
     for _ in range(MAX_BASE_MERGE_CHAIN + 1):
-        commit = _obj(fetch(f"commits/{sha}")) if HEAD_RE.fullmatch(sha) else {}
+        commit = _obj(read(f"commits/{sha}")) if HEAD_RE.fullmatch(sha) else {}
         message = str(_obj(commit.get("commit")).get("message") or "")
         trailers = {sha: policy.model_trailer_models(message)}
         decided, models, source = policy.head_author_record(
             rows, pr=pr, heads=(sha,), trailers=trailers
         )
-        if decided:
+        if models:
             return Exclusion(pr, head, decided, models, tuple(walked), earlier, source)
-        parent = clean_base_merge_parent(fetch, sha, base_branch=base_branch, commit=commit)
-        if parent is None:
-            break
+        status, parent = merge_status(read, sha, base_branch=base_branch, commit=commit)
+        if status == UNKNOWN:
+            return Exclusion(pr, head, sha, earlier, tuple(walked), earlier, "unprovable-merge")
+        if status == NOT_SYNC:
+            return Exclusion(pr, head, decided, models, tuple(walked), earlier, source)
         walked.append(sha)
         sha = parent
-    return Exclusion(pr, head, "", (), (), earlier)
+    return Exclusion(pr, head, sha, earlier, tuple(walked), earlier, "sync-chain-too-long")
 
 
 def comment_records(fetch: Fetch, pr: int, *, limit: int = 30) -> list[dict[str, Any]]:

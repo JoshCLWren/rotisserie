@@ -457,13 +457,16 @@ excluded every model that authored any head.
 
 - The head author comes from the controller's author records for that exact
   head (what the runtime actually executed). Every model those records name is
-  excluded, even when they disagree. Without a record, the head commit's
-  `Model:` trailer counts.
+  excluded, even when they disagree. A head that a factory worker pushed
+  without a model record excludes every model recorded on the PR. Without
+  either record, the head commit's `Model:` trailer counts.
 - A sync (a merge of the default branch with no change of its own, proven from
-  GitHub's compare API) carries the author of the commit it merged into, up to
-  five syncs deep. A merge that resolved conflicts or edited files does not.
-- A head that a factory worker pushed without a model record excludes every
-  model recorded on the PR (fail closed).
+  GitHub's compare API) carries the author of the commit it merged into, even
+  over a `human` record on the merge. A merge that resolved conflicts or
+  edited files does not carry an author.
+- Fail closed: a merge that cannot be proven either way (an unreadable read, or
+  300 or more changed files), more than five syncs in a row, or an unreadable
+  head commit excludes every model recorded on the PR.
 - `factory_review_exclusion.for_pull` is the one resolver. Reviewer selection,
   the outside-review bridge, the merge gate, `baste review` and `baste unstick`
   use it or the same policy function.

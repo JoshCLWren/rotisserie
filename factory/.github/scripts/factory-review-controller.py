@@ -621,6 +621,13 @@ def repo_fetch(path: str) -> object:
     return gh_json(["api", f"repos/{REPO}/{path}"])
 
 
+def _safe_fetch(path: str) -> object:
+    try:
+        return repo_fetch(path)
+    except (RuntimeError, OSError, ValueError):
+        return None
+
+
 def clean_base_merge_parent(head: str, *, base_branch: str) -> str | None:
     """The PR-side parent when ``head`` only merged the default branch in, else ``None``."""
     return _review_exclusion.clean_base_merge_parent(repo_fetch, head, base_branch=base_branch)
@@ -911,10 +918,19 @@ def review_eligibility(
     """The owner's review rule for one exact head, from trusted controller records.
 
     Every promoter (review callback, CI reconciliation, merge authorization)
-    calls this one function, so they cannot disagree about self-review.
+    calls this one function, so they cannot disagree about self-review. The
+    excluded models come from the shared resolver, so a sync head carries its
+    author here exactly as at reviewer selection.
     """
     comments = model_comments if model_comments is not None else model_comment_bodies(pr_number)
-    return evaluate_review_eligibility(comments, pr=pr_number, head=head, approvers=approvers)
+    pull = json_object(_safe_fetch(f"pulls/{pr_number}")) or {}
+    base = str((json_object(pull.get("base")) or {}).get("ref") or "")
+    excluded = _review_exclusion.resolve(
+        repo_fetch, pr=pr_number, head=head, base_branch=base, comments=comments
+    ).excluded
+    return evaluate_review_eligibility(
+        comments, pr=pr_number, head=head, approvers=approvers, excluded=excluded
+    )
 
 
 def redact_review_text(text: str) -> str:
