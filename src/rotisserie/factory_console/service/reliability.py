@@ -137,6 +137,7 @@ def pick_models(
     name: str = "7d",
     minimum_runs: int = 3,
     live: Callable[[runtime.Provider], frozenset[str] | None] | None = None,
+    disabled: Callable[[runtime.Provider, str], bool] | None = None,
 ) -> list[Choice]:
     """Models that can run now, best delivered track record first.
 
@@ -146,7 +147,7 @@ def pick_models(
     a track record. ``live`` lists the models a provider offers right now; a
     model missing from a readable list is left out (the worker would refuse
     it), and one whose provider has no readable list is kept but ranked after
-    every checked model.
+    every checked model. ``disabled`` names models turned off with the fleet switch.
     """
     providers = {provider.source: provider for provider in runtime.providers()}
     choices = []
@@ -160,7 +161,7 @@ def pick_models(
         if record.delivered == 0:
             continue
         model = dispatch_model_id(provider, record.model)
-        if model is None:
+        if model is None or (disabled is not None and disabled(provider, model)):
             continue
         if provider.key not in offered:
             offered[provider.key] = live(provider) if live else None

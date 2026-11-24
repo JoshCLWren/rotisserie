@@ -19,6 +19,7 @@ from rotisserie.factory_console.commands.claims import (
     cmd_labels,
     cmd_runs,
 )
+from rotisserie.factory_console.commands.fleet import cmd_models, cmd_providers
 from rotisserie.factory_console.commands.health import (
     _show_rate_limits,
     cmd_doctor,
@@ -27,12 +28,7 @@ from rotisserie.factory_console.commands.health import (
     cmd_unstick,
 )
 from rotisserie.factory_console.commands.history import cmd_history, cmd_use
-from rotisserie.factory_console.commands.models import (
-    cmd_close,
-    cmd_groom,
-    cmd_models,
-    cmd_providers,
-)
+from rotisserie.factory_console.commands.models import cmd_close, cmd_groom
 from rotisserie.factory_console.commands.parser import add_parser
 from rotisserie.factory_console.commands.prs import (
     cmd_checks,
@@ -168,6 +164,8 @@ def _help_text() -> str:
             "  rotisserie factory cancel issue:N",
             "  rotisserie factory watch RUN",
             "  rotisserie factory providers | models PROVIDER | prioritize issue:N",
+            "  rotisserie factory providers disable|enable NAME [--reason TEXT]",
+            "  rotisserie factory models disable|enable PROVIDER MODEL [--reason TEXT]",
             "",
             "Run 'rotisserie factory COMMAND --help' for details.",
         ]

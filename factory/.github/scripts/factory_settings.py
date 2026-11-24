@@ -109,6 +109,8 @@ SETTINGS: tuple[Setting, ...] = (
     ),
 )
 BY_NAME: Mapping[str, Setting] = {setting.name: setting for setting in SETTINGS}
+# Fleet switch lists (factory_fleet_switch): delivered with the settings, never validated as numbers.
+SWITCHES = ("FACTORY_DISABLED_PROVIDERS", "FACTORY_DISABLED_MODELS")
 
 
 def _warn(message: str) -> None:
@@ -122,7 +124,8 @@ def workflow_env_value() -> str:
     would print unrelated configuration into public workflow logs). Unset
     variables arrive as empty strings and are treated as unset.
     """
-    pairs = ", ".join(f'"{s.name}": "${{{{ vars.{s.name} }}}}"' for s in SETTINGS)
+    names = [setting.name for setting in SETTINGS] + list(SWITCHES)
+    pairs = ", ".join(f'"{name}": "${{{{ vars.{name} }}}}"' for name in names)
     return "{" + pairs + "}"
 
 

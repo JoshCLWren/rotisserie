@@ -6,20 +6,16 @@ from collections import Counter
 from dataclasses import asdict
 from pathlib import Path
 
-from rotisserie.factory_console import runtime
 from rotisserie.factory_console.commands._shared import (
     EXIT_OK,
     Outcome,
     _split_target,
-    discover_models,
 )
-from rotisserie.factory_console.commands.report import _count, _load_stats, _provider_rows, _window
 from rotisserie.factory_console.commands.status import _stop_worker
 from rotisserie.factory_console.context import Context, UsageError
-from rotisserie.factory_console.github import items, string
-from rotisserie.factory_console.service import close, groom, providers
+from rotisserie.factory_console.service import close, groom
 from rotisserie.factory_console.tracker import EXIT_CODES, Result
-from rotisserie.factory_console.work import current_work, lookup
+from rotisserie.factory_console.work import lookup
 
 
 def cmd_groom(context: Context, arguments: argparse.Namespace) -> Outcome:
@@ -146,101 +142,3 @@ def cmd_close(context: Context, arguments: argparse.Namespace) -> Outcome:
         done.append(closed.to_dict())
     result = Result.COMPLETED if len(done) == len(plan) else Result.FAILED
     return Outcome(result, EXIT_CODES[result], {"closed": done})
-
-
-def cmd_providers(context: Context, arguments: argparse.Namespace) -> Outcome:
-    console = context.console
-    working = Counter(item.provider for item in current_work(context.github, with_session=False))
-    stats = _load_stats(context.github)
-    delivered: dict[str, str] = {}
-    if stats is not None:
-        for row in _provider_rows(stats, "7d"):
-            delivered[row[0]] = f"{row[2]} PRs / {row[1]} runs"
-    rows = []
-    out = []
-    for setup in providers.provider_setup(context.github):
-        provider = setup.provider
-        ready = (
-            "unknown"
-            if not setup.known
-            else ("ready" if not setup.missing else "missing " + ", ".join(setup.missing))
-        )
-        rows.append(
-            [
-                provider.key,
-                provider.name,
-                ready,
-                str(working.get(provider.name, 0)),
-                delivered.get(provider.name, ""),
-            ]
-        )
-        out.append(
-            {
-                "provider": provider.key,
-                "name": provider.name,
-                "setup": ready,
-                "working_now": working.get(provider.name, 0),
-                "model_prefix": provider.model_prefix or None,
-            }
-        )
-    console.heading("Providers")
-    console.table(["Provider", "Name", "Setup", "Working", "Last 7 days"], rows)
-    console.line()
-    console.note(
-        "A ready provider still has to prove itself: "
-        "the worker checks price, quota and access at start."
-    )
-    return Outcome(Result.COMPLETED, EXIT_OK, {"providers": out})
-
-
-def cmd_models(context: Context, arguments: argparse.Namespace) -> Outcome:
-    console = context.console
-    provider = runtime.resolve_provider(arguments.provider)
-    stats = _load_stats(context.github)
-    record: dict[str, str] = {}
-    if stats is not None:
-        for entry in items(stats, "models"):
-            if string(entry, "source") == provider.source:
-                counts = _window(entry, "7d")
-                model = string(entry, "model")
-                full = (
-                    model
-                    if model.startswith(provider.model_prefix)
-                    else provider.model_prefix + model
-                )
-                record[full] = f"{_count(counts, 'delivered')} PRs / {_count(counts, 'runs')} runs"
-    models = discover_models(provider)
-    known = {model for model, _ in models}
-    rows = [[model, record.get(model, ""), origin] for model, origin in models]
-    # A model with a track record that the live lists no longer include would be
-    # refused by the worker; say so instead of offering it.
-    gone = "no longer offered (the worker would refuse it)" if known else "ran in the factory"
-    rows += [[model, value, gone] for model, value in record.items() if model not in known]
-    rows.sort(key=lambda row: (row[1] == "", row[0]))
-    console.heading(f"{provider.name} models")
-    if not provider.model_prefix:
-        console.line("This provider picks its model automatically; use 'auto'.")
-    elif not rows:
-        console.line("No models discovered. You can still pass an exact model ID.")
-    console.table(["Model", "Last 7 days", "Source"], rows)
-    console.line()
-    console.note(
-        "A listed model is not proof it will run: "
-        "the worker checks price and access when it starts."
-    )
-    return Outcome(
-        Result.COMPLETED,
-        EXIT_OK,
-        {
-            "provider": provider.key,
-            "models": [
-                {
-                    "model": r[0],
-                    "track_record": r[1] or None,
-                    "source": r[2],
-                    "offered": (r[0] in known) if known else None,
-                }
-                for r in rows
-            ],
-        },
-    )

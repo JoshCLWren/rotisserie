@@ -689,3 +689,69 @@ workflow receives the variables as `FACTORY_REPO_VARS`, so a change applies to
 the next run without a commit. `settings NAME --reset` restores the default.
 Priority order (`FACTORY_PRIORITY_ORDER`) decides which kind of work is
 picked first. `prioritize issue:N` raises one item within its kind.
+
+## Turning providers and models off
+
+```sh
+rotisserie factory providers disable local-ollama --reason "fans too loud"
+rotisserie factory providers enable local-ollama
+rotisserie factory models disable opencode-go opencode-go/hy4-flash-free --reason "loops"
+rotisserie factory models enable opencode-go opencode-go/hy4-flash-free
+rotisserie factory providers          # the Switch column shows what is off and why
+```
+
+The switch writes two repository variables. Every factory workflow receives
+them in `FACTORY_REPO_VARS`, so the next dispatcher tick obeys a change without
+a deploy.
+
+- `FACTORY_DISABLED_PROVIDERS`: a comma list of provider names, for example
+  `local-ollama,kilo-auto`. `opencode-go` is stored as `opencode-free`.
+- `FACTORY_DISABLED_MODELS`: a comma list of `PROVIDER=MODEL` pairs. MODEL is
+  the ID that `models PROVIDER` shows.
+- `FACTORY_DISABLED_REASONS`: JSON with each reason and time. Only the console
+  reads it. Workflows never receive it.
+
+Names and model IDs are checked on write. A double quote in a value would
+break the `FACTORY_REPO_VARS` JSON, and then every setting and switch falls
+back to its default. Edit these variables with the console, not by hand.
+
+Every place that picks a provider or a model obeys the switch:
+
+- roster offers (`factory_dispatch_credential_filter.py`);
+- worker assignment, including forced runs and automatic targets
+  (`worker_skip_reason` in `factory-work-controller.py`);
+- automatic model choice and same-run failover, through the trusted model
+  exclusion snapshot (`export-model-exclusions`);
+- cross-provider failover, through `export-fleet-failover-sources`;
+- `unstick`, which never plans a turned-off provider or model;
+- the local Ollama review offer in the dispatcher, and the Local Ollama Review
+  workflow itself on every trigger (`local-ollama`);
+- PR-Agent advisory review (`routeway`, `requesty`, `orcarouter`).
+
+A run that names the provider (`run PROVIDER ...`) or the exact model may still
+use it. A disable never cancels work that is already running. To stop it, run
+`rotisserie factory cancel issue:N` (or `pr:N`).
+
+The local overnight scripts (`factory/scripts/opencode-factory.sh` and
+`opencode-model-scout.sh`) run on your own machine with their own
+`FACTORY_ALLOWED_PROVIDERS` list. They do not read repository variables.
+
+### Adding a provider
+
+A new provider is a Rotisserie code change, not a switch. The former
+`factory/defaults/providers.toml` overlay was removed in #83.
+
+1. Add a `ProviderSpec` to `PROVIDERS` in
+   `factory/.github/scripts/factory_provider_registry.py` (source key, OpenCode
+   provider ID, secret name, OpenAI-compatible endpoint, display name).
+2. Add `FACTORY_HAS_<SECRET>: ${{ secrets.<SECRET> != '' }}` to both dispatch
+   steps in `.github/workflows/fixed-model-factory-dispatch.yml`, and declare
+   the secret in its `workflow_call` secrets.
+3. Declare and pass the secret in `free-model-factory-entry.yml` and
+   `free-model-factory-run.yml`, and in the callers
+   `factory/install/callers/fixed-model-factory-dispatch.yml` and
+   `free-model-factory-entry.yml`.
+4. Set the secret in the adopter repository.
+
+Worker identities derive from the registry, so the new provider gets worker
+slots on the next tick after the adopter runs the new Rotisserie ref.

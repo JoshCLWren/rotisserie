@@ -96,6 +96,8 @@ else:
         ({"MOVED": "1"}, False),
         ({"OUTSIDE_CLAIM": "1"}, False),
         ({"NEON_DOWN": "1"}, False),
+        ({"FACTORY_REPO_VARS": '{"FACTORY_DISABLED_PROVIDERS": "local-ollama"}'}, False),
+        ({"FACTORY_REPO_VARS": '{"FACTORY_DISABLED_PROVIDERS": "kilo-auto"}'}, True),
     ],
 )
 def test_auto_dispatch_respects_busy_gpu_factory_leases_and_fresh_pr_stage(
@@ -118,7 +120,8 @@ def test_auto_dispatch_respects_busy_gpu_factory_leases_and_fresh_pr_stage(
     })
     scripts = tmp_path / "work" / ".github" / "scripts"
     scripts.mkdir(parents=True)
-    for name in ("local_review_contract.py", "factory_issue_acceptance.py", "factory_adopter.py"):
+    for name in ("local_review_contract.py", "factory_issue_acceptance.py", "factory_adopter.py",
+                 "factory_fleet_switch.py", "factory_settings.py"):
         shutil.copy(ROOT / ".github" / "scripts" / name, scripts / name)
     (scripts / "factory_state_ledger.py").write_text(
         "import os\n"

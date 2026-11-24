@@ -859,8 +859,6 @@ async def _stats(conn:Any,repo:str)->dict[str,Any]:
                    WHERE repo=$1 AND cooldown_until>now() ORDER BY cooldown_until""",repo)]}
 
 
-
-
 async def _sync_catalog(conn:Any,repo:str,report:dict[str,Any])->int:
     """Record trusted catalog absence without editing the checked-in roster."""
     count=0
@@ -1207,22 +1205,24 @@ def _neon_required() -> bool:
 
 
 def export_fleet_failover_sources(repo: str, worker: str) -> list[str]:
+    from factory_fleet_switch import filter_sources
     if not enabled():
         if not _neon_required():
             return []
         raise RuntimeError("Neon capacity read required for fleet failover")
-    return _run(_export_fleet_failover_sources, repo, worker)
-
+    return filter_sources(_run(_export_fleet_failover_sources, repo, worker))
 
 
 def export_model_exclusions(
     repo: str, worker: str = "", requested_model: str = "auto",
 ) -> dict[str, list[str]]:
-    if not enabled():
-        if not _neon_required():
-            return {}
+    """Trusted exclusions plus models the operator turned off (factory_fleet_switch)."""
+    from factory_fleet_switch import merge_exclusions
+    if enabled():
+        return merge_exclusions(_run(_export_model_exclusions, repo, worker, requested_model), requested_model=requested_model)
+    if _neon_required():
         raise RuntimeError("Neon is required for model health snapshot")
-    return _run(_export_model_exclusions, repo, worker, requested_model)
+    return merge_exclusions({}, requested_model=requested_model)
 
 
 async def _reset_model_health(conn: Any, repo: str, include_retired: bool = False) -> dict[str, int]:

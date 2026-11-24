@@ -26,13 +26,12 @@ from rotisserie.factory_console.github import (
 )
 from rotisserie.factory_console.service import (
     baseline,
-    catalog,
     checks,
     dispatch,
+    model_choice,
     outcomes,
     providers,
     queue,
-    reliability,
 )
 from rotisserie.factory_console.service import conflicts as conflict_check
 from rotisserie.factory_console.service import obsolete as obsolete_check
@@ -315,7 +314,9 @@ def plan(
     ]
     capped = tasks if max_workers is None else tasks[:max_workers]
     left_out = len(tasks) - len(capped)
-    choice_text, ranked, problems = _choose_models(github, variables, now, provider, model)
+    choice_text, ranked, problems = model_choice.choose_models(
+        github, variables, now, provider, model
+    )
     missed = _recent_misses(github, now) if ranked and len(ranked) > 1 else {}
     needs_person: list[queue.Reason] = []
     keep: list[Task] = []
@@ -487,43 +488,6 @@ def _assign(
     return Assignment(
         task, provider, model, why + "; every offered model already missed on it recently"
     )
-
-
-def _choose_models(
-    github: GitHub,
-    variables: dict[str, str],
-    now: datetime,
-    provider: str | None,
-    model: str | None,
-) -> tuple[str, list[tuple[str, str, str]], tuple[str, ...]]:
-    """Ranked (provider key, model, why) choices, best first."""
-    if provider and model:
-        found = runtime.resolve_provider(provider)
-        runtime.validate_model(found, model)
-        return "you chose it", [(found.key, model, "you chose it")], ()
-    stats = reliability.load_stats(github)
-    if stats is None:
-        return (
-            "no track record is published yet",
-            [],
-            ("no reliability snapshot to pick a model from; name PROVIDER MODEL",),
-        )
-    setup = providers.provider_setup(github, variables)
-    ready = {item.provider.key for item in setup if item.ready}
-    if provider:
-        ready &= {runtime.resolve_provider(provider).key}
-    choices = reliability.pick_models(stats, ready=ready, now=now, live=catalog.live_models)
-    if not choices:
-        return (
-            "no set-up model has delivered recently",
-            [],
-            (
-                "no set-up, unpaused model that the provider still offers has a track record; "
-                "name PROVIDER MODEL",
-            ),
-        )
-    ranked = [(item.provider.key, item.model, item.why) for item in choices]
-    return f"best track record: {choices[0].why}", ranked, ()
 
 
 def start(github: GitHub, clock: Clock, chosen: Plan) -> list[dispatch.Submission]:

@@ -52,7 +52,6 @@
   "src/rotisserie/cli.py": 1139,
   "src/rotisserie/factory_console/service/baseline.py": 503,
   "src/rotisserie/factory_console/service/groom.py": 714,
-  "src/rotisserie/factory_console/service/unstick.py": 531,
   "src/rotisserie/factory_console/tracker.py": 530,
   "tests/test_completion_controller.py": 747,
   "tests/test_external_agent_claims.py": 1435,

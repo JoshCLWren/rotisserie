@@ -43,6 +43,7 @@ include = [
   "/factory/.github/scripts/factory_manual_model.py",
   "/factory/.github/scripts/factory_settings.py",
   "/factory/.github/scripts/factory_dispatch_credential_filter.py",
+  "/factory/.github/scripts/factory_fleet_switch.py",
   "/factory/.github/scripts/factory_published_model_catalog.py",
   "/factory/.github/scripts/factory_work_policy.py",
   "/factory/.github/scripts/factory_work_policy_assignment.py",
@@ -75,6 +76,7 @@ packages = ["src/rotisserie"]
 "factory/.github/scripts/factory_manual_model.py" = "rotisserie/factory_console/factory_runtime/factory_manual_model.py"
 "factory/.github/scripts/factory_settings.py" = "rotisserie/factory_console/factory_runtime/factory_settings.py"
 "factory/.github/scripts/factory_dispatch_credential_filter.py" = "rotisserie/factory_console/factory_runtime/factory_dispatch_credential_filter.py"
+"factory/.github/scripts/factory_fleet_switch.py" = "rotisserie/factory_console/factory_runtime/factory_fleet_switch.py"
 "factory/.github/scripts/factory_published_model_catalog.py" = "rotisserie/factory_console/factory_runtime/factory_published_model_catalog.py"
 "factory/.github/scripts/factory_work_policy.py" = "rotisserie/factory_console/factory_runtime/factory_work_policy.py"
 "factory/.github/scripts/factory_work_policy_assignment.py" = "rotisserie/factory_console/factory_runtime/factory_work_policy_assignment.py"
