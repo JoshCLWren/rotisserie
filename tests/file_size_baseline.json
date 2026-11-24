@@ -17,7 +17,7 @@
   "factory/.github/scripts/factory_rotisserie_adopter.py": 627,
   "factory/.github/scripts/factory_state_operations.py": 1414,
   "factory/.github/scripts/free-model-factory-worker-primitives.sh": 1273,
-  "factory/.github/scripts/free-model-factory-worker.sh": 1166,
+  "factory/.github/scripts/free-model-factory-worker.sh": 1122,
   "factory/.github/scripts/generate_factory_status_dashboard.py": 921,
   "factory/.github/scripts/nvidia-factory-worker.sh": 617,
   "factory/.github/scripts/omniroute-factory-worker.sh": 599,

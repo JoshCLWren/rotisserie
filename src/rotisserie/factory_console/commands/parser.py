@@ -473,6 +473,8 @@ def add_parser(subcommands: argparse._SubParsersAction[argparse.ArgumentParser])
         )
         fleet.add_argument("change" if name == "providers" else "words", nargs="*", metavar=words)
         fleet.add_argument("--reason", default="", help="why it is turned off (shown in listings)")
+        if name == "models":
+            fleet.add_argument("--billing", **_shared.BILLING_OPTION)
         _common(fleet)
 
 
@@ -481,10 +483,7 @@ def _via(parser: argparse.ArgumentParser) -> None:
         "--via",
         choices=("direct", "github"),
         default="direct",
-        help=(
-            "direct: use this machine's claim store connection (default); github: run the "
-            "repository's installed workflow and wait for its result (no Neon needed here)"
-        ),
+        help=_shared.VIA_HELP,
     )
 
 

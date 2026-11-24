@@ -24,10 +24,12 @@
 .github/scripts/factory-vm-sampler.sh
 .github/scripts/factory-work-checkpoint.sh
 .github/scripts/factory-work-controller.py
+.github/scripts/factory-worker-outcome.sh
 .github/scripts/factory-worker-push-token.sh
 .github/scripts/factory_adopter.py
 .github/scripts/factory_app_client_id.py
 .github/scripts/factory_attempt_history.py
+.github/scripts/factory_billing_pool.py
 .github/scripts/factory_branch_sync.py
 .github/scripts/factory_candidate_health.py
 .github/scripts/factory_capacity_policy.py

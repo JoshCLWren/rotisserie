@@ -90,6 +90,7 @@ packages = ["src/rotisserie"]
 "factory/.github/scripts/factory_adopter.py" = "rotisserie/factory_console/factory_runtime/factory_adopter.py"
 "factory/.github/scripts/factory_branch_sync.py" = "rotisserie/factory_console/factory_runtime/factory_branch_sync.py"
 "factory/.github/scripts/factory_main_health.py" = "rotisserie/factory_console/factory_runtime/factory_main_health.py"
+"factory/.github/scripts/factory_billing_pool.py" = "rotisserie/factory_console/factory_runtime/factory_billing_pool.py"
 "factory/scripts/factory_eligibility.py" = "rotisserie/factory_console/factory_runtime/factory_eligibility.py"
 
 [tool.pytest.ini_options]

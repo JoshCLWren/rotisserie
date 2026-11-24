@@ -193,7 +193,7 @@ def refine_trusted_failover_models(outcome: dict[str, Any], job_log: str) -> dic
         r"(?m)^\d{4}-\d{2}-\d{2}T\S+Z "
         r"\[factory:(\d+)\]\[source:([^\]\n]+)\]\[model:[^\]\n]+\] "
         r"FACTORY_TRUSTED_FAILOVER: source=(\S+) model=([\w./:-]{1,180}) "
-        r"outcome=([a-z_]+)(?: scope=(account|model))?\s*$"
+        r"outcome=([a-z_]+)(?: scope=(account|model|pool))?\s*$"
     )
     accepted = {
         "provider_failure", "provider_throttle", "provider_quota",
@@ -211,6 +211,8 @@ def refine_trusted_failover_models(outcome: dict[str, Any], job_log: str) -> dic
                 or (source, model) in seen):
             continue
         if scope == "account" and classification not in {"provider_quota", "provider_failure"}:
+            continue
+        if scope == "pool" and classification != "provider_quota":
             continue
         failures.append({
             "source": source, "model": model, "outcome": classification,

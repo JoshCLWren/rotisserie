@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass, field
+from typing import Any
 
 from rotisserie.factory_console.context import UsageError
 from rotisserie.factory_console.service import catalog, dispatch
@@ -108,9 +109,25 @@ MODELS_HELP = """\
 List a provider's models, or turn one model off or on for the whole fleet.
 
   rotisserie factory models opencode-go
+  rotisserie factory models orcarouter --billing factory-fleet-catalogs.json
   rotisserie factory models disable opencode-go opencode-go/hy4-flash-free --reason "loops"
   rotisserie factory models enable opencode-go opencode-go/hy4-flash-free
 
 MODEL is the ID the listing shows. Automatic model choice, failover and
 unstick never pick a turned-off model; a run that names that exact model may.
+
+--billing groups the catalog into paid-credit, free and unknown-price models,
+the rule a worker uses to stop trying paid models after an out-of-credits
+refusal. Give it a saved provider catalog or worker fleet snapshot when the
+provider has no public catalog.
 """
+VIA_HELP = (
+    "direct: use this machine's claim store connection (default); github: run the "
+    "repository's installed workflow and wait for its result (no Neon needed here)"
+)
+BILLING_OPTION: dict[str, Any] = {
+    "nargs": "?",
+    "const": "",
+    "metavar": "CATALOG",
+    "help": "group by paid, free and unknown price (optional saved catalog file)",
+}

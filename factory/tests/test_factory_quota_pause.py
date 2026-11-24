@@ -202,10 +202,7 @@ def test_bare_session_429_records_throttle(tmp_path: Path, source: str) -> None:
     """Plain 429 responses produce transient throttle evidence, not quota pause."""
     import subprocess
 
-    script = (SCRIPTS / 'free-model-factory-worker.sh').read_text()
-    functions = script[script.index('record_terminal_outcome() {'):script.index(
-        '# A PR branch may predate the Kilo integration'
-    )]
+    functions = (SCRIPTS / 'factory-worker-outcome.sh').read_text()
     worker = f'quota-test-{tmp_path.name}'
     log = Path(f'/tmp/opencode-factory-{worker}.log')
     outcome = tmp_path / 'outcome'
