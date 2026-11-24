@@ -1,5 +1,5 @@
--- ComicPile factory shared discovery state, isolated from product tables.
--- Applied 2026-11-13 to Neon project comic-pile, database factory_state.
+-- Factory shared discovery state, isolated from product tables, in the
+-- adopter's Neon database factory_state.
 -- The factory_state_rw role has read_write access to ONLY this database.
 -- GitHub remains authoritative for leases, reviews, checks, and merges.
 

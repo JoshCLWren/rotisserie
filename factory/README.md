@@ -1,8 +1,8 @@
 # Rotisserie factory runtime
 
 This directory is the factory runtime that adopter repositories install. It
-is a copy of JoshCLWren/comic-pile's factory and keeps that repository's layout
-so relative paths still work.
+started as a copy of the first adopter's factory and keeps that layout so
+relative paths still work.
 
 The workflow files under `.github/workflows/` here are templates. GitHub does
 not run them in Rotisserie. They run in each adopter repository, on that
@@ -67,9 +67,12 @@ before. `FACTORY_MARKER_PREFIX` overrides it, for example after a rename.
 
 ## Scope
 
-The runtime files are a verbatim copy of Comic Pile's factory at
-`29fd7ce`, the commit before the cutover. They still name
-`JoshCLWren/comic-pile`. Adopter configuration is tracked in issue #78.
+The runtime started as a copy of the first adopter's factory at `29fd7ce`, the
+commit before the cutover. It names no adopter: the repository, comment-marker
+prefix and reserved issues come from `GITHUB_REPOSITORY` and
+`.rotisserie/config.toml`. Some built-in defaults still reflect the first
+adopter's stack (for example the pre-push fast checks); `[checks] fast`
+replaces them.
 
 ## Tests
 

@@ -153,7 +153,7 @@ ${diff}`;
   const timer = setTimeout(() => fail(new Error('ACP review timed out')), timeoutMs);
   try {
     const init = await rpc('initialize', { protocolVersion: 1, clientCapabilities: {},
-      clientInfo: { name: 'comic-pile-local-review', version: '1' } });
+      clientInfo: { name: 'rotisserie-local-review', version: '1' } });
     save('initialize.json', init);
     if (init.protocolVersion !== 1) throw new Error('ACP protocol version unconfirmed');
     const session = await rpc('session/new', { cwd, mcpServers: [] });

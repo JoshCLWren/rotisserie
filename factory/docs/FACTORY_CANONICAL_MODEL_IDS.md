@@ -1,6 +1,6 @@
 # Canonical provider and model identity
 
-There are two independent identities in the ComicPile factory.
+There are two independent identities in the factory.
 
 1. **Worker/lease identity** is a stable numeric slot derived from the
    provider source and slot index by

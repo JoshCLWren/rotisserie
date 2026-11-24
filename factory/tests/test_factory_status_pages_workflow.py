@@ -90,7 +90,7 @@ def test_publisher_also_runs_after_the_scheduler_when_the_snapshot_is_stale() ->
 
 
 def test_refresh_runs_cannot_cancel_a_queued_push_deployment() -> None:
-    """Greptile P1 on Comic Pile #5671: one pending run per concurrency group."""
+    """Greptile P1 on adopter PR #5671: one pending run per concurrency group."""
     import yaml
 
     workflow = yaml.safe_load(WORKFLOW.read_text(encoding="utf-8"))

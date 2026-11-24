@@ -72,7 +72,7 @@ Branch protection independently requires the Python 3.12, 3.13, and 3.14 CI
 contexts and resolved conversations. The adapter requires the same complete
 successful CI set and refuses GitHub command failures as explicit canary
 errors. Formal GitHub `APPROVED` state is not required: the single authenticated
-operator account cannot approve its own pull request. This follows ComicPile's
+operator account cannot approve its own pull request. This follows the first adopter's
 factory contract, where producer/reviewer separation is a worker-identity
 boundary recorded in an exact-head semantic-review marker, not a second GitHub
 account.

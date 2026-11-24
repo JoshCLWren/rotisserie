@@ -6,7 +6,7 @@ autonomous implementation. The rules live in the domain layer
 signals. They never parse GitHub payloads, labels, HTML markers, issue bodies,
 or any other product encoding — that translation is an adopter concern.
 
-This boundary ports the shared semantics ComicPile keeps in
+This boundary ports the shared semantics the first adopter keeps in
 `scripts/factory_eligibility.py` and documents in its
 `docs/FACTORY_QUEUE_ELIGIBILITY.md`, splitting them along Rotisserie's
 architecture: the deterministic rules move into the domain, while the label and
@@ -60,7 +60,7 @@ a single node's signals.
 
 ## Evaluation order
 
-The order matches ComicPile's static exclusion list so verdicts remain
+The order matches the first adopter's static exclusion list so verdicts remain
 comparable across the shadow boundary:
 
 1. Not open — `WorkBlock.NOT_OPEN`
@@ -96,9 +96,9 @@ tracked follow-up and is deliberately out of this chunk's porting scope. Until
 then, treat those six codes as the portable rule vocabulary that an adopter's
 own selector consults, not as an active gate inside Rotisserie's lease path.
 
-## Mapping to ComicPile
+## Mapping to the first adopter's rules
 
-| ComicPile static exclusion (`factory_eligibility.py`) | Rotisserie signal | Exclusion code |
+| The first adopter static exclusion (`factory_eligibility.py`) | Rotisserie signal | Exclusion code |
 |---|---|---|
 | `state != OPEN` | `state is not WorkState.OPEN` | `NOT_OPEN` |
 | `non_executable_numbers` membership | `product_excluded` | `PRODUCT_EXCLUSION` |
@@ -116,7 +116,7 @@ own selector consults, not as an active gate inside Rotisserie's lease path.
 
 The following semantics are host- or product-specific encoding. They are
 deliberately **not** in the Rotisserie domain and remain the responsibility of
-the adopter's translator layer (ComicPile owns these today):
+the adopter's translator layer (the first adopter owns these today):
 
 - the structured manual-only HTML directive and its code-span/fenced-block
   exemptions (`<!-- factory-execution:manual-only -->` detection);
@@ -136,6 +136,6 @@ the adopter's translator layer (ComicPile owns these today):
   and `ralph-status:pending` labels.
 
 The translator decodes each of these into an `EligibilitySignals` value; the
-domain then evaluates every adopter identically. This keeps ComicPile's label
+domain then evaluates every adopter identically. This keeps the first adopter's label
 and marker strings out of the portable core while preserving the exact decision
 semantics across the shadow comparison boundary.

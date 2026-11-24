@@ -7,7 +7,7 @@ provisioning remains gated by #3137 and #3139.
 
 ## Start and resume
 
-Requires Node.js 22 or newer, `gh` authenticated as JoshCLWren with repository
+Requires Node.js 22 or newer, `gh` authenticated as the repository owner with repository
 secret write access, and a browser signed into that account on the same machine.
 
 ```sh
@@ -18,7 +18,7 @@ Open the printed loopback URL. The registration form supplies the persisted name
 autonomous-worker description, private visibility, no webhook configuration, and
 repository permissions. GitHub generates the private key during manifest conversion, so no
 manual key download or copying is necessary. After registration, follow the direct
-installation link and select **only `comic-pile`**.
+installation link and select **only the adopter repository**.
 
 Contents and pull requests need write access for pushes, PR creation, and reviews;
 issues need write access for the readable issue/PR handoffs. Metadata is read-only.
@@ -45,7 +45,7 @@ App when its local credentials are missing.
 
 ## Local credentials and callbacks
 
-Private state lives in `~/.local/state/comic-pile/worker-app-48`, with directory mode
+Private state lives in `~/.local/state/<repository name>/worker-app-48`, with directory mode
 0700 and credential files mode 0600. Preserve it through an interrupted setup; the
 manifest conversion code is single-use. It is not printed by the helper or served
 to the browser. Back up the private key in your normal secret store after success.

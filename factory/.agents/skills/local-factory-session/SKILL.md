@@ -1,6 +1,6 @@
 ---
 name: local-factory-session
-description: Bootstrap and hand off a local factory/issue session in Comic Pile so nothing needs manual reconfiguration. Use when starting local issue-driven work, before the first commit of a session, when commit provenance (Model trailer) or factory labels look wrong, when opening or reviving a factory PR, or when handing work to the scheduled review fleet.
+description: Bootstrap and hand off a local factory/issue session in an adopter repository so nothing needs manual reconfiguration. Use when starting local issue-driven work, before the first commit of a session, when commit provenance (Model trailer) or factory labels look wrong, when opening or reviving a factory PR, or when handing work to the scheduled review fleet.
 metadata:
   opencode/slash: "true"
 ---
@@ -113,7 +113,7 @@ do not steal it back.
    cut to 50 characters. Keep exactly one `via:` label: drop the previous one in the same PUT.
    Create a missing label first with `gh label create <name> --color c5def5 --force`.
 
-   Replace each set atomically via `gh api -X PUT repos/JoshCLWren/comic-pile/issues/N/labels`
+   Replace each set atomically via `gh api -X PUT repos/OWNER/REPO/issues/N/labels`
    with every label in one call. POST only adds labels, leaving old owners and stages in place.
 
 4. Every push to the PR head requires the same `factory:review` state to stay truthful
@@ -143,7 +143,7 @@ not grant merge authorization or replace exact-head review requirements.
 
 ## Stale-expiration is real
 
-`comic-pile-factory-stale-expiration-v1` closes factory PRs idle ~24h
+`<prefix>-factory-stale-expiration-v1` (the prefix is the repository name) closes factory PRs idle ~24h
 (`threshold-86400`) and releases the issue to `factory:unowned`. If that happens:
 
 - GitHub **refuses to reopen** a PR whose branch was force-pushed after close

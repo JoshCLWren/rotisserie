@@ -60,17 +60,18 @@ def test_runtime_has_no_default_adopter() -> None:
         assert 'setdefault("GITHUB_REPOSITORY"' not in text, path.name
 
 
-def test_runtime_scripts_never_name_a_fixed_adopter_repository() -> None:
-    import re
-    from pathlib import Path
-
-    scripts = Path(__file__).resolve().parents[1] / ".github" / "scripts"
-    pattern = re.compile(r'name\s*[:=]\s*\\?"comic-pile\\?"|"name":\s*"comic-pile"')
-    offenders = [
-        path.name for path in scripts.glob("*.py")
-        if not path.name.startswith("test_") and pattern.search(path.read_text(encoding="utf-8"))
+def test_runtime_never_names_the_first_adopter() -> None:
+    factory = Path(__file__).resolve().parents[1]
+    pattern = re.compile(r"comic[-_ ]?pile", re.IGNORECASE)
+    runtime = [
+        path
+        for folder in (factory / ".github" / "scripts", factory / "scripts", factory / ".agents", factory / ".opencode", factory / "docs")
+        for path in folder.rglob("*")
+        if path.is_file() and path.suffix in {".py", ".sh", ".cjs", ".mjs", ".js", ".md"}
+        and not path.name.startswith("test_") and ".test." not in path.name and "tests" not in path.parts
     ]
-    assert offenders == []
+    assert runtime
+    assert [str(path.relative_to(factory)) for path in runtime if pattern.search(path.read_text(encoding="utf-8"))] == []
 
 
 def test_worker_exports_are_empty_without_neon_unless_required(monkeypatch) -> None:

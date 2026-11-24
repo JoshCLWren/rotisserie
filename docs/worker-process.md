@@ -5,7 +5,7 @@ worker process handoff. An adopter supplies a trusted provider bridge and
 configuration, then calls the public `execute` CLI. Rotisserie handles launch,
 expiry, timeout, cancellation, fallback, heartbeat records, and execution
 receipts. The live GitHub controller and provider bridges still reside in
-ComicPile; this boundary is the first step toward removing that duplication.
+the first adopter; this boundary is the first step toward removing that duplication.
 
 ## Try the complete handoff
 
@@ -162,16 +162,16 @@ to the existing operation journal, without raw bridge output or credentials.
 This is application orchestration plus a local process adapter and operator
 entrypoint. It rewrites the bounded lifecycle/fallback/handoff ideas in archived
 `.github/scripts/free-model-factory-worker.sh` and
-`free-model-factory-worker-primitives.sh` from ComicPile
+`free-model-factory-worker-primitives.sh` from the first adopter
 `2dc9b675e1a828b526f074c5f5c151293dedcdee`. The live controller was inspected
-read-only at ComicPile `03b95add5c7d8363588ef2883c1a0d719e23a80b` on
+read-only at adopter commit `03b95add5c7d8363588ef2883c1a0d719e23a80b` on
 2026-10-07. Provider routes, fleet numbering, product checks, labels, workflow
 topology and release writing remain adopter concerns. The archive is unchanged.
 
 The next operational slice is a Rotisserie-owned controller over the current
 graph/effect protocols: configured host acquisition, scoped claim/release,
-execution, and exact-head review/completion. Then ComicPile can consume a pinned
+execution, and exact-head review/completion. Then the first adopter can consume a pinned
 runtime with small bridges/configuration, validate same-view parity, observe a
 bounded canary, and delete duplicates after rollback is proven. Release
 publication is not on this interim cutover's critical path. This issue activates
-no workflow, schedule, self-worker, remote mutation or live ComicPile cutover.
+no workflow, schedule, self-worker, remote mutation or live adopter cutover.

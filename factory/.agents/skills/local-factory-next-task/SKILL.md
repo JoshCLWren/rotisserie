@@ -25,12 +25,10 @@ Also: inspect `git status` and preserve any existing user changes.
 
 Never share a checkout with another agent (Codex, Cursor, other opencode sessions).
 Parallel agents in one worktree clobber branches, build artifacts, and ports. One session =
-one worktree, following the existing on-disk convention (`comic-pile-<issue-or-topic>`
-under `/mnt/extra/josh/code/` or `/home/josh/tmp/`):
+one worktree, named `<repo>-<issue-or-topic>` beside the main checkout:
 
 ```bash
-git -C /mnt/extra/josh/code/comic-pile-<main-or-topic> worktree add \
-  /mnt/extra/josh/code/comic-pile-<issue> -b <branch-name> origin/main
+git -C ../<repo> worktree add ../<repo>-<issue> -b <branch-name> origin/main
 ```
 
 Run every subsequent command from that worktree. `make worktrees` lists existing ones; if a
@@ -151,7 +149,7 @@ issue, create a linked issue instead of widening scope.
    the issue immediately carries truthful factory state for a local session:
 
    ```bash
-   gh api -X PUT repos/JoshCLWren/comic-pile/issues/<number>/labels \
+   gh api -X PUT "repos/$(gh repo view --json nameWithOwner -q .nameWithOwner)/issues/<number>/labels" \
      -F "labels[]=ralph-task" -F "labels[]=ralph-status:in-progress" \
      -F "labels[]=ralph-priority:<band>" \
      -F "labels[]=factory" -F "labels[]=factory:building" -F "labels[]=factory:local" \

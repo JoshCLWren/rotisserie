@@ -1,17 +1,17 @@
 # External adopter integration
 
-Issue #10 introduces ComicPile as Rotisserie's first external adopter. The
+Issue #10 introduces Rotisserie's first external adopter. The
 integration proceeds by observation before mutation: both systems evaluate the
 same acquired host snapshot, their normalized decisions are compared, and every
 difference must be understood before a bounded canary can be approved.
 
 ## Boundary inventory
 
-ComicPile retains product policy and host translation:
+The first adopter retains product policy and host translation:
 
 - Factory labels, stages, priority labels, branch conventions, and closing-keyword parsing;
 - worker-number labels, local-worker identity, and legacy lease activity markers;
-- no-diff retry windows and ComicPile-specific repair or migration lanes;
+- no-diff retry windows and adopter-specific repair or migration lanes;
 - model/provider routes, health rules, prompts, skills, and agent commands;
 - GitHub workflow triggers, repository variables, credentials, and rollback controls.
 
@@ -36,8 +36,8 @@ without the adopter reimplementing scheduling policy:
 
 ```bash
 rotisserie --config operator.toml decide \
-  --snapshot comic-pile-graph.json \
-  --revision comic-pile-snapshot-2026-09-28T120000Z \
+  --snapshot adopter-graph.json \
+  --revision adopter-snapshot-2026-09-28T120000Z \
   --at 1790596800 > rotisserie-decision-evidence.json
 ```
 
@@ -70,7 +70,7 @@ An adopter can compare two normalized snapshot files through the stable CLI:
 
 ```bash
 rotisserie --config operator.toml shadow \
-  --baseline comic-pile-decisions.json \
+  --baseline adopter-decisions.json \
   --candidate rotisserie-decisions.json
 ```
 
@@ -86,9 +86,9 @@ graph and compares it with the legacy baseline in one read-only operation:
 
 ```bash
 rotisserie --config operator.toml shadow-project \
-  --baseline comic-pile-decisions.json \
-  --snapshot comic-pile-graph.json \
-  --revision comic-pile-snapshot-2026-09-28T120000Z \
+  --baseline adopter-decisions.json \
+  --snapshot adopter-graph.json \
+  --revision adopter-snapshot-2026-09-28T120000Z \
   --at 1790596800
 ```
 
@@ -101,7 +101,7 @@ statuses as `shadow`, and never acquires credentials or mutates local graph or
 remote host state.
 
 This contract performs no acquisition or mutation. Snapshot acquisition,
-ComicPile translation, report storage, credential scope, and later canary
+adopter translation, report storage, credential scope, and later canary
 controls belong to the adopter integration. Mutation remains prohibited until
 shadow reports explain all divergence, rollback is tested, and an operator
 explicitly approves a bounded lane.
@@ -123,7 +123,7 @@ remaining in canary. Evidence for a different lane or control revision cannot
 authorize a transition. The rollback switch takes precedence over missing or
 failed parity evidence so an adapter can always leave a canary or expanded
 lane. The returned decision is schema-versioned and machine-readable, but it
-performs no mutation. ComicPile continues to own the physical switch,
+performs no mutation. The first adopter continues to own the physical switch,
 credential scope, live evidence acquisition, and enforcement of the returned
 lane at its mutation boundary.
 
@@ -158,7 +158,7 @@ rotisserie --config operator.toml adopt \
 ```
 
 Redundant or out-of-order transitions hold closed. The command never enforces
-the decision or performs a remote mutation; ComicPile must map the bounded lane,
+the decision or performs a remote mutation; the first adopter must map the bounded lane,
 reported stage, and action onto its own independently scoped switch and reject
 the result if the host-side stage changed after evaluation.
 
@@ -179,13 +179,13 @@ adapter.
 
 ## Live parity observations
 
-ComicPile's read-only adopter capture was exercised on 2026-09-28 against fetched
+The first adopter's read-only adopter capture was exercised on 2026-09-28 against fetched
 upstream commit `cbea5e1ee3bff4cd76f4a7dc64d48f796b80e5f4`. The captured host view
 contained 44 work nodes, three linked changes, 26 exact-head checks, one semantic
 review, and no active leases. Its source digest was
 `d1bf88323897d965f005a7acd56e5bbea2257136fc213ada7cd09900c37a75e5`.
 
-The atomic `shadow-project` run supplied ComicPile's observed completion backlog of
+The atomic `shadow-project` run supplied the first adopter's observed completion backlog of
 eight and configured limit of eight as explicit projection inputs. It compared 94
 observations across all six required dimensions with zero divergences. The normalized
 baseline digest was
@@ -202,7 +202,7 @@ This first observation did not authorize cutover. A distinct matching run, bound
 lane definition, adopter-owned rollback drill, and explicit transition approval were
 still required before a canary could be entered.
 
-A second read-only observation was captured on 2026-09-28 from ComicPile commit
+A second read-only observation was captured on 2026-09-28 from adopter commit
 `657fe86d9a4af8f914ec8f36412368deb3027e70`. The capture again contained 44
 work nodes, three linked changes, 26 exact-head checks, one semantic review, and no
 active leases. Its source digest was
@@ -216,15 +216,15 @@ graph snapshot digest was
 No host payload, credential, or mutation plan is retained in the repository.
 
 The two distinct matching runs satisfy the configured parity-count prerequisite.
-ComicPile commit `88fa4f3fa0bdcfb697133d37de3c88560b3e570b` added the adopter-owned,
+Adopter commit `88fa4f3fa0bdcfb697133d37de3c88560b3e570b` added the adopter-owned,
 bounded `issue-intake` control. Its tests exercise canary entry, exact-stage and
 exact-revision compare-and-swap rejection, and immediate rollback while preserving
 the original Factory.
 
-After an explicit canary entry and a zero-divergence observation at ComicPile
-revision `6fdf11f92f16006a89f750a3085eaebaff361825`, ComicPile commit
+After an explicit canary entry and a zero-divergence observation at adopter
+revision `6fdf11f92f16006a89f750a3085eaebaff361825`, adopter commit
 `87748a26485e97f3c061addb0c69b402bae591b1` advanced that bounded lane to
-`expanded`. ComicPile PR #2958 then merged the runtime enforcement at commit
+`expanded`. Adopter PR #2958 then merged the runtime enforcement at commit
 `a110f31b295e0f992ee0bf02466ac244d817ffb3`: the centralized assignment path
 constructs a repository-scoped graph snapshot from its live controller view,
 invokes only the public `rotisserie decide` CLI, and filters fresh issue candidates
@@ -234,7 +234,7 @@ the adopter-owned path, and changing the control back to `legacy` is the immedia
 rollback.
 
 Post-merge dispatcher run
-[`36633600180`](https://github.com/JoshCLWren/comic-pile/actions/runs/36633600180)
+`36633600180`
 checked out that merge commit, installed Rotisserie from the exact pinned commit
 `0067e8c49cb3a3142a04f6c56f19795a1e81ad3c`, and completed successfully. The
 expanded intake boundary was evaluated during centralized assignment without an

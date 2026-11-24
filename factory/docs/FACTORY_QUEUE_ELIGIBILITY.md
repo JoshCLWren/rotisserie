@@ -1,7 +1,7 @@
 # Factory queue eligibility
 
 Canonical reference for executable-eligibility and lease reconciliation across
-the ComicPile work-selection paths (issue #3039).
+the factory work-selection paths (issue #3039).
 
 ## Authoritative roles
 

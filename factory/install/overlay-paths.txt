@@ -2,7 +2,6 @@
 .agents/skills/local-factory-next-task/
 .agents/skills/local-factory-session/
 .agents/skills/model-recommendation/
-.agents/skills/plan-task-handoff/
 .github/actions/factory-state-cache/
 .github/actions/factory-syntax/
 .github/factory-state-schema.sql

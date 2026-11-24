@@ -92,7 +92,7 @@ install -m 644 .agents/skills/crouton-factory-codex/scripts/local-factory-acp-re
   "${CODEX_HOME:-$HOME/.codex}/skills/crouton-factory-codex/scripts/local-factory-acp-review.mjs"
 ```
 
-Repository `AGENTS.md` routes Comic Pile local factory requests to this adapter.
+Repository `AGENTS.md` routes local factory requests to this adapter.
 Installation grants no mutation authority. Official guidance explains
 [skill discovery](https://learn.chatgpt.com/docs/build-skills) and
 [AGENTS.md discovery](https://learn.chatgpt.com/docs/agent-configuration/agents-md).

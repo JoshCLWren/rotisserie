@@ -2,8 +2,7 @@
 
 ## Hosted control room (GitHub Pages)
 
-The hosted ComicPile dashboard at https://joshclwren.github.io/comic-pile/
-is generated from the **same** `src/rotisserie/web_ui.html` as `rotisserie web`.
+An adopter's hosted dashboard (its GitHub Pages site) is generated from the **same** `src/rotisserie/web_ui.html` as `rotisserie web`.
 The public GitHub Pages interface reads sanitized factory snapshots from the
 `factory-status-live` branch, and does not use a separate controller or
 database. The publishing workflow preserves the previous detailed status HTML
@@ -22,8 +21,8 @@ normal browser authorization screen and returns the operator to the same
 control room. No personal access token, developer-token creation, or manually
 pasted credential is required.
 
-ComicPile's existing Rust service at `comic-pile.vercel.app` supplies only the
-OAuth callback and a narrowly scoped command-dispatch bridge. The GitHub OAuth
+The adopter's sign-in service, named by `[dashboard] auth_url` in
+`.rotisserie/config.toml`, supplies only the OAuth callback and a narrowly scoped command-dispatch bridge. The GitHub OAuth
 authorization-code flow uses PKCE, a signed, HTTP-only, SameSite=Lax state
 cookie, and a server-side code exchange. The GitHub access token and client
 secret never enter the public HTML or browser. The bridge verifies GitHub's
@@ -53,17 +52,17 @@ The OAuth client must exist before publishing the hosted sign-in UI.
 
 1. Under GitHub **Settings → Developer settings → OAuth Apps**, register
    `Rotisserie Factory Control Room`.
-2. Homepage: `https://joshclwren.github.io/comic-pile/`
+2. Homepage: the adopter's GitHub Pages URL.
 3. Authorization callback:
-   `https://comic-pile.vercel.app/api/v2/factory/github/callback`
+   `<auth_url>/callback`.
 4. Add `ROTISSERIE_GITHUB_OAUTH_CLIENT_ID` and the sensitive
-   `ROTISSERIE_GITHUB_OAUTH_CLIENT_SECRET` to ComicPile's **production**
-   Vercel environment, never to GitHub Pages or source control.
-5. Confirm the pre-existing Vercel `GITHUB_TOKEN` has permission to dispatch
-   Actions in `JoshCLWren/comic-pile`, and verify an allowed login, denied
+   `ROTISSERIE_GITHUB_OAUTH_CLIENT_SECRET` to the sign-in service's production
+   environment, never to GitHub Pages or source control.
+5. Confirm the service's `GITHUB_TOKEN` has permission to dispatch
+   Actions in the adopter repository, and verify an allowed login, denied
    login, expired session, and authenticated dispatch before cutting over Pages.
 
-The public UI is intentionally deployed **after** the Rust bridge is
+The public UI is intentionally deployed **after** the sign-in bridge is
 configured and verified. There are no alternate credential prompts or
 unrequested fallbacks.
 
@@ -73,7 +72,7 @@ The browser interface uses the same `rotisserie factory` commands and your exist
 authentication. It does **not** install or start an additional controller:
 
 ```bash
-rotisserie web --repo JoshCLWren/comic-pile
+rotisserie web --repo acme/widgets
 ```
 
 This opens `http://127.0.0.1:8765/`. Omit `--repo` from a checkout containing
@@ -104,8 +103,7 @@ panels show a failure instead of inventing state.
 
 
 `rotisserie factory` operates a software factory installed from `factory/`
-(for example ComicPile). It replaces adopter-local scripts such as
-ComicPile's old `scripts/factory-run`.
+in an adopter repository. It replaces adopter-local operator scripts.
 
 ```bash
 rotisserie factory run opencode-go opencode-go/hy4-flash-free --force
