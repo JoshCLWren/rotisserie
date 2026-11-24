@@ -50,6 +50,8 @@ READ_ONLY = frozenset(
         "history",
         "estimate",
         "incident",
+        "limits",
+        "backoffs",
     )
 )
 # Served on GitHub Pages from the published snapshot without sign-in.
@@ -74,6 +76,8 @@ WRITE_OPERATIONS = frozenset(
         "finish",
         "labels",
         "estimate_neon",
+        "close",
+        "backoffs_reset",
     )
 )
 MAX_BODY = 4096
@@ -120,8 +124,12 @@ def _flag(data: Mapping[str, Any], name: str) -> bool:
     return value
 
 
-def read_command(name: str, query: Mapping[str, str]) -> list[str]:
-    """Build only allowlisted, non-mutating factory commands."""
+def read_command(name: str, query: Mapping[str, str], *, trusted: bool = False) -> list[str]:
+    """Build only allowlisted, non-mutating factory commands.
+
+    ``trusted`` is set only inside the read workflow, which holds the Neon
+    connection; elsewhere Neon-only reads go through the trusted workflow.
+    """
     if name not in READ_ONLY:
         raise InvalidRequest("Unknown read operation")
     if set(query) - _READ_PARAMETERS.get(name, set()):
@@ -161,6 +169,8 @@ def read_command(name: str, query: Mapping[str, str]) -> list[str]:
         args.extend(("--window", window))
     elif name == "unstick":
         args.append("--dry-run")
+    elif name == "backoffs" and not trusted:
+        args.extend(("--via", "github"))
     return args
 
 
@@ -232,6 +242,17 @@ def _labels(data: Mapping[str, Any]) -> list[str]:
     return ["labels", *flags[mode], "--via", "github", "--no-wait"]
 
 
+def _close(data: Mapping[str, Any]) -> list[str]:
+    target = _match(_string(data, "target", required=True), PR, "target")
+    reason = _match(_string(data, "reason", required=True), REASON, "reason")
+    if not reason.strip():
+        raise InvalidRequest("Closing needs a reason")
+    args = ["close", target, f"--reason={reason}", "--yes"]
+    if _flag(data, "keep_issue"):
+        args.append("--keep-issue")
+    return args
+
+
 def write_command(data: Mapping[str, Any]) -> list[str]:
     """Explicit operations map to CLI guards. No arbitrary arguments accepted."""
     name = _string(data, "operation", required=True)
@@ -275,6 +296,10 @@ def write_command(data: Mapping[str, Any]) -> list[str]:
         return ["estimate", target, "--via", "github", "--no-wait"]
     if name in ("claim", "finish"):
         return [name, _match(_string(data, "target", required=True), TARGET, "target"), "--no-wait"]
+    if name == "close":
+        return _close(data)
+    if name == "backoffs_reset":
+        return ["backoffs", "reset", "--quota-only", "--yes", "--via", "github"]
     return _labels(data)
 
 
@@ -288,7 +313,9 @@ def request_id(data: Mapping[str, Any]) -> str:
     return value
 
 
-def read_batch(data: Mapping[str, Any]) -> list[tuple[str, dict[str, str], list[str]]]:
+def read_batch(
+    data: Mapping[str, Any], *, trusted: bool = False
+) -> list[tuple[str, dict[str, str], list[str]]]:
     """Validate ``{"operation": "read", "reads": [{"name", "query"}, ...]}``."""
     if data.get("operation") != "read":
         raise InvalidRequest("Expected a read request")
@@ -305,5 +332,5 @@ def read_batch(data: Mapping[str, Any]) -> list[tuple[str, dict[str, str], list[
             isinstance(key, str) and isinstance(value, str) for key, value in query.items()
         ):
             raise InvalidRequest("Invalid read query")
-        found.append((name, dict(query), read_command(name, query)))
+        found.append((name, dict(query), read_command(name, query, trusted=trusted)))
     return found

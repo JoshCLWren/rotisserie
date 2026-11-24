@@ -41,8 +41,11 @@ __all__ = [
 ]
 
 
-def invoke(repository: str, args: list[str], *, timeout: int = 90) -> dict[str, Any]:
+def invoke(repository: str, args: list[str], *, timeout: int | None = None) -> dict[str, Any]:
     """Call the shipped CLI, which enforces all dispatcher and lease checks."""
+    if timeout is None:
+        bridged = "github" in args and "--via" in args and "--no-wait" not in args
+        timeout = 900 if bridged else 90
     command = [
         sys.executable,
         "-m",
