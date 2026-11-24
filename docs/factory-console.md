@@ -9,10 +9,20 @@ database. The publishing workflow preserves the previous detailed status HTML
 as `legacy-dashboard.html` and publishes `factory-status-snapshot.json`
 alongside `factory-stats.json`.
 
-**Snapshots are not live operator evaluations.** Their timestamps are shown;
-pages that require live queue eligibility, individual check inspection, lease
-ledger reads or mutable settings explicitly report unavailable instead of
-inventing data. The local control room continues to serve those operations.
+**Snapshots are not live operator evaluations.** Signed out, the page shows
+status, merges, health, outcomes and reliability from the published snapshot
+with its timestamp. Every other view says "Sign in with GitHub to use this".
+The provider and model pickers show published history only, and no
+historical model can be chosen.
+
+Signed in, the other views (Work queue and Why?, leases, settings, PR checks,
+review and conflicts, item follow, runs and history, incidents, the unstick
+preview, and live providers and models with their switches) run the same
+`rotisserie factory ... --json` reads in the adopter's read-only
+`rotisserie-operator-read.yml` workflow. The page batches reads that start
+together into one run, keeps each result for one minute, and labels it with
+its GitHub run and observation time. A Refresh button drops the cached
+results. Signing out or an expired session drops them too.
 
 ### GitHub administrator access
 
@@ -33,12 +43,25 @@ sessionStorage. The session is checked server-side on **every** operator
 request and expires automatically.
 
 The existing public snapshots remain completely read-only without login.
-Commands from a signed-in administrator go to the Rust bridge, which
+Commands from a signed-in administrator go to the sign-in service, which
 enforces the GitHub user ID allowlist and the exact Pages origin, then
-dispatches a JSON operation to the existing GitHub Actions
-`rotisserie-operator.yml`. The workflow continues to enforce the trusted
-Rotisserie command validator, leases, and factory policies. A successful
-dispatch means **submitted**, not completed; inspect the linked workflow.
+dispatches the JSON request to `rotisserie-operator.yml` (writes) or
+`rotisserie-operator-read.yml` (reads). The workflows enforce the shared
+command contract, leases and factory policies. The page waits for the run,
+then shows the CLI's own result and the operator run's conclusion: a
+rejection such as "Invalid provider/model identifier" appears in the page.
+For `run`, the page first checks the model against the live model list and
+refuses a model that is not listed, turned off or unavailable.
+
+#### What the sign-in service provides
+
+| Endpoint | Behavior |
+| --- | --- |
+| `POST <auth_url>/dispatch` | Accept every operation in `WRITE_OPERATIONS` from `control_contract.py`, and `read`. Dispatch `read` to `rotisserie-operator-read.yml` and the others to `rotisserie-operator.yml`, with the request JSON as the `request` input. Return `run_id` and `run_url` from GitHub's dispatch response (API version 2026-03-10 returns `workflow_run_id` and `html_url`). |
+| `GET <auth_url>/runs/<run_id>` | Check the session. Read the run and refuse any run that is not one of those two workflows in the adopter repository. Return `run_id`, `run_url`, `status` and `conclusion`. When the run is completed, download the artifact `rotisserie-operator-<run_id>`, unzip its single JSON file (refuse more than 1 MB) and return it as `result`, or `null` when there is none. |
+
+With an older service that returns no `run_id`, a write shows "accepted by
+GitHub" only and live reads say the service cannot report results.
 
 The initial administrator is GitHub user ID **4014199** (`JoshCLWren`).
 Additional administrators require a trusted configuration update to

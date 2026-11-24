@@ -14,6 +14,7 @@ import pytest
 ROOT = Path(__file__).resolve().parents[1]
 BUILDER = ROOT / "factory" / "scripts" / "build_hosted_control_room.py"
 ADAPTER = ROOT / "factory" / "scripts" / "hosted_control_room.js"
+PARTS = sorted((ROOT / "factory" / "scripts" / "hosted").glob("*.js"))
 WORKFLOW = ROOT / ".github" / "workflows" / "rotisserie-operator.yml"
 
 
@@ -36,7 +37,8 @@ def test_hosted_page_reuses_canonical_local_ui_without_local_session() -> None:
     assert "__SESSION_TOKEN__" not in page
     assert "__REPOSITORY__" not in page
     assert 'const TOKEN=null, REPO="acme/widgets";' in page
-    assert "GitHub Pages · Published snapshot" in page
+    assert "GitHub Pages · Published snapshot for public views" in page
+    assert 'id="hosted-live"' in page
     assert 'const AUTH_BASE = "";' in page
     assert "Sign-in is not configured." in page
     assert "https://raw.githubusercontent.com" in page
@@ -77,7 +79,7 @@ def test_workflow_requires_verified_actor_before_executing_commands() -> None:
 
 
 def test_browser_uses_real_github_oauth_not_pasted_tokens() -> None:
-    content = ADAPTER.read_text(encoding="utf-8")
+    content = "\n".join(path.read_text(encoding="utf-8") for path in (*PARTS, ADAPTER))
     assert "localStorage" not in content
     assert "window.prompt" not in content
     assert "personal-access-tokens" not in content
@@ -88,7 +90,7 @@ def test_browser_uses_real_github_oauth_not_pasted_tokens() -> None:
     assert "history.replaceState" in content
     assert "sessionStorage" in content
     assert "window.hostedRequest" in content
-    assert "rotisserie-operator.yml" in content
+    assert 'authRequest("/runs/"' in content
     assert "/actions/workflows/" not in content
     assert "Bearer " in content
 

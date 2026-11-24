@@ -109,7 +109,7 @@ When editing:
 - Every new or changed `rotisserie factory` command also gets a working control
   in both user interfaces in the same PR: the local web UI (`src/rotisserie/web.py`
   allowlists and `src/rotisserie/web_ui.html`) and the hosted control room on
-  GitHub Pages (`factory/scripts/hosted_control_room.js` and
+  GitHub Pages (`factory/scripts/hosted_control_room.js`, `factory/scripts/hosted/` and
   `factory/scripts/build_hosted_control_room.py`). A server allowlist entry
   alone does not count.
 - Keep every source file at or under 500 lines, tests included.
