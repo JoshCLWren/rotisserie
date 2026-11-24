@@ -83,3 +83,34 @@ def _rows(value: object) -> list[dict[str, object]]:
 
 
 discover_models = catalog.discover_models
+
+PROVIDERS_HELP = """\
+List providers, or turn one off or on for the whole fleet.
+
+  rotisserie factory providers
+  rotisserie factory providers disable local-ollama --reason "fans too loud"
+  rotisserie factory providers enable local-ollama
+
+A turned-off provider is skipped by every lane on the next dispatcher tick:
+roster offers, automatic targets, unstick, cross-provider failover, the local
+Ollama review offer and PR-Agent advisory review. Only a run that names the
+provider explicitly ('rotisserie factory run PROVIDER ...') may still use it.
+Work already running is not cancelled; stop it with
+'rotisserie factory cancel issue:N' (or pr:N).
+
+Adding a provider is a Rotisserie code change, not a switch: add its entry to
+factory/.github/scripts/factory_provider_registry.py, add a FACTORY_HAS_<SECRET>
+line to both dispatch steps in .github/workflows/fixed-model-factory-dispatch.yml,
+pass the secret through the adopter's caller workflows, and set the secret in
+the adopter repository. See docs/factory-console.md.
+"""
+MODELS_HELP = """\
+List a provider's models, or turn one model off or on for the whole fleet.
+
+  rotisserie factory models opencode-go
+  rotisserie factory models disable opencode-go opencode-go/hy4-flash-free --reason "loops"
+  rotisserie factory models enable opencode-go opencode-go/hy4-flash-free
+
+MODEL is the ID the listing shows. Automatic model choice, failover and
+unstick never pick a turned-off model; a run that names that exact model may.
+"""

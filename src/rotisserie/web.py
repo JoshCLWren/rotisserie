@@ -29,6 +29,7 @@ PROVIDER = re.compile(r"^[a-zA-Z0-9][a-zA-Z0-9_.-]{0,79}$")
 MODEL = re.compile(r"^[a-zA-Z0-9_./:+-]{1,180}$")
 SETTING = re.compile(r"^[A-Z][A-Z0-9_]{1,100}$")
 INTEGER = re.compile(r"^[0-9]{1,7}$")
+REASON = re.compile(r"^[A-Za-z0-9 _.,:;()'/+-]{0,180}$")
 ACTIONS = frozenset(
     ("advance", "implement", "review", "review-findings", "ci-repair", "merge-conflict")
 )
@@ -175,6 +176,14 @@ def write_command(data: Mapping[str, Any]) -> list[str]:
         name = _match(_string(data, "name", required=True), SETTING, "setting")
         value = _match(_string(data, "value", required=True), INTEGER, "value")
         return ["settings", name, value]
+    if name in ("provider_switch", "model_switch"):
+        words = ["enable" if _flag(data, "enabled") else "disable"]
+        words.append(_match(_string(data, "provider", required=True), PROVIDER, "provider"))
+        if name == "model_switch":
+            words.append(_match(_string(data, "model", required=True), MODEL, "model"))
+        reason = _match(_string(data, "reason"), REASON, "reason")
+        command = "providers" if name == "provider_switch" else "models"
+        return [command, *words, f"--reason={reason}"]
     if name == "doctor_fix":
         return ["doctor", "--fix"]
     if name == "release_expired":

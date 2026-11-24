@@ -42,7 +42,7 @@ def test_model_first_chooses_canonical_provider_worker_and_real_pr(monkeypatch):
         '1327811785101': 'opencode-free', '1327811785100': 'opencode-free',
     })
     invoked = []
-    monkeypatch.setattr(controller, 'assign', lambda worker: (
+    monkeypatch.setattr(controller, 'assign', lambda worker, named=False: (
         invoked.append(worker)
         or (None if worker.endswith('00') else SimpleNamespace(
             kind='issue', number=5147, stage='factory:building', conflicted=False))
@@ -149,6 +149,7 @@ def test_force_slot_bypasses_advisory_health_but_keeps_existing_slot_and_target(
     # override too, not normal targeted scheduling.
     assert calls == [('1000000000002', {
         'target': ('issue', 5123), 'requested_action': 'advance', 'operator_force': True,
+        'named': True,
     })]
     assert 'model=opencode-go/hy4-flash-free' in launched[0]
     assert 'provider=opencode-free' in launched[0]
@@ -396,4 +397,4 @@ def test_operator_force_dispatch_passes_owner_override_into_assignment(monkeypat
     assert result['status'] == 'deferred'
     assert result['reason'] == 'Nothing is waiting: every open item is finished, claimed or blocked.'
     # The shared pool is identical for every identity: one look is enough.
-    assert calls == [('1000000000001', {'operator_force': True})]
+    assert calls == [('1000000000001', {'operator_force': True, 'named': True})]

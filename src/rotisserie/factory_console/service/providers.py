@@ -45,15 +45,18 @@ class Setup:
     provider: runtime.Provider
     known: bool  # False when secrets could not be listed
     missing: tuple[str, ...]
+    disabled: bool = False  # turned off with the fleet switch
 
     @property
     def ready(self) -> bool:
-        return self.known and not self.missing
+        return self.known and not self.missing and not self.disabled
 
 
 def provider_setup(github: GitHub, variables: dict[str, str] | None = None) -> list[Setup]:
     secrets = secret_names(github)
     values = repository_variables(github) if variables is None else variables
+    switch = runtime.module("factory_fleet_switch")
+    off = switch.disabled_providers({switch.PROVIDERS_VAR: values.get(switch.PROVIDERS_VAR, "")})
     result = []
     for provider in runtime.providers():
         missing = [
@@ -68,5 +71,6 @@ def provider_setup(github: GitHub, variables: dict[str, str] | None = None) -> l
             "yes",
         ):
             missing.append(f"{provider.needs_variable}=on")
-        result.append(Setup(provider, secrets is not None, tuple(missing)))
+        disabled = provider.source in off
+        result.append(Setup(provider, secrets is not None, tuple(missing), disabled))
     return result

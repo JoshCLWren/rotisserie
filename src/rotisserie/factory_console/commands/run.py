@@ -17,7 +17,7 @@ from rotisserie.factory_console.commands._shared import (
 from rotisserie.factory_console.commands.status import _stop_worker
 from rotisserie.factory_console.commands.watch import _watch_scheduler
 from rotisserie.factory_console.context import Context, UsageError
-from rotisserie.factory_console.service import dispatch, external
+from rotisserie.factory_console.service import dispatch, external, fleet
 from rotisserie.factory_console.tracker import EXIT_CODES, Result, Tracker
 from rotisserie.factory_console.ui import Console, local_time, since
 from rotisserie.factory_console.work import Item, current_work, lookup, open_items
@@ -237,8 +237,12 @@ def _submit_and_watch(
 
 def _pick_provider(context: Context) -> runtime.Provider:
     providers = runtime.providers()
-    index = context.prompt.choose("Which provider?", [f"{p.name}  ({p.key})" for p in providers])
-    return providers[index]
+    switched = fleet.read(context.github)
+    labels = [
+        f"{p.name}  ({p.key})" + ("  [turned off]" if switched.provider_off(p.source) else "")
+        for p in providers
+    ]
+    return providers[context.prompt.choose("Which provider?", labels)]
 
 
 def _pick_model(context: Context, provider: runtime.Provider) -> str:

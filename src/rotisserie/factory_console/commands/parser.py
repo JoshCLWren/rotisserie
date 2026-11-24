@@ -461,14 +461,19 @@ def add_parser(subcommands: argparse._SubParsersAction[argparse.ArgumentParser])
     gate.add_argument("--yes", action="store_true", help="requeue without asking")
     _common(gate)
 
-    providers = commands.add_parser(
-        "providers", help="providers the factory can use and whether they are set up"
-    )
-    _common(providers)
-
-    models = commands.add_parser("models", help="models a provider offers, with track record")
-    models.add_argument("provider")
-    _common(models)
+    for name, words, text in (
+        ("providers", "[disable|enable NAME]", _shared.PROVIDERS_HELP),
+        ("models", "PROVIDER | disable|enable PROVIDER MODEL", _shared.MODELS_HELP),
+    ):
+        fleet = commands.add_parser(
+            name,
+            help=text.splitlines()[0],
+            description=text,
+            formatter_class=argparse.RawDescriptionHelpFormatter,
+        )
+        fleet.add_argument("change" if name == "providers" else "words", nargs="*", metavar=words)
+        fleet.add_argument("--reason", default="", help="why it is turned off (shown in listings)")
+        _common(fleet)
 
 
 def _via(parser: argparse.ArgumentParser) -> None:

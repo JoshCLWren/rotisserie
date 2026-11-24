@@ -41,6 +41,7 @@
 .github/scripts/factory_external_review.py
 .github/scripts/factory_fleet_console.cjs
 .github/scripts/factory_fleet_style.py
+.github/scripts/factory_fleet_switch.py
 .github/scripts/factory_fork_control.py
 .github/scripts/factory_full_completion_controller.py
 .github/scripts/factory_gh_usage.py

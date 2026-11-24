@@ -6,6 +6,7 @@ import json
 import os
 import sys
 
+from factory_fleet_switch import filter_workers as drop_disabled
 from factory_provider_registry import PROVIDERS
 from factory_worker_slots import slots
 
@@ -36,7 +37,7 @@ def filter_workers(
     workers: list[str], sources: dict[str, str], env: dict[str, str],
 ) -> tuple[list[str], list[str]]:
     kept: list[str] = []
-    deferred: list[str] = []
+    workers, deferred = drop_disabled(workers, sources, env)
     for worker in workers:
         source = sources.get(worker, "")
         needs = source_requirements(source)

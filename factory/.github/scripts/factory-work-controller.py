@@ -1346,19 +1346,15 @@ def is_authorized_fixed_worker(worker: str) -> bool:
     )
 
 
-def worker_skip_reason(worker: str, *, operator_force: bool = False) -> str | None:
+def worker_skip_reason(worker: str, *, operator_force: bool = False, named: bool = False) -> str | None:
     """Return why this worker itself cannot take work now, or None.
 
-    These checks are about the worker (pause, credentials, lease, budget,
-    entry capacity), not the shared work pool. Callers must not treat a
-    non-None reason as evidence that there is no executable work.
-
-    An operator-forced request is never held back by pacing the factory set
-    for itself: configured quota pauses, remembered provider cooldowns, daily
-    dispatch budgets and shared entry caps. If the provider really refuses,
-    the worker run reports that refusal. Missing credentials (the run could not
-    authenticate at all) and this worker already running still apply; the
-    caller then tries another identity.
+    These checks are about the worker (switch, pause, credentials, lease, budget,
+    entry capacity), not the shared work pool: a reason is not evidence of no work.
+    Operator force skips the factory's own pacing (quota pauses, cooldowns, daily
+    budgets, entry caps), never missing credentials or a running worker. A turned-off
+    provider (factory_fleet_switch) holds even under force unless the request
+    ``named`` that provider.
     """
     if not operator_force:
         quota_pause = quota_pause_for(worker)
@@ -1370,6 +1366,9 @@ def worker_skip_reason(worker: str, *, operator_force: bool = False) -> str | No
     try:
         sources = worker_sources()
         source = sources.get(str(worker), "")
+        from factory_fleet_switch import provider_reason
+        if not named and (switched_off := provider_reason(source)):
+            return f'Factory {worker}: {switched_off}'
         from factory_dispatch_credential_filter import ANONYMOUS, TRUTHY, source_requirements
         needs = source_requirements(source)
         if source not in ANONYMOUS and needs is not None:
@@ -1404,6 +1403,7 @@ def assign(worker: str, kinds: tuple[str, ...] | None = None,
     requested_action: str = 'advance',
     batch_reconciled: bool = False,
     operator_force: bool = False,
+    named: bool = False,
 ) -> Candidate | None:
     """Assign the highest-ranked executable work to one fixed-model worker.
 
@@ -1416,7 +1416,7 @@ def assign(worker: str, kinds: tuple[str, ...] | None = None,
     """
     if not is_authorized_fixed_worker(worker):
         raise SystemExit(f'unsupported fixed-model worker: {worker}')
-    skip_reason = worker_skip_reason(worker, operator_force=operator_force)
+    skip_reason = worker_skip_reason(worker, operator_force=operator_force, named=named)
     if skip_reason is not None:
         print(f'[factory-controller] {skip_reason}; skipping dispatch', file=sys.stderr)
         return None
@@ -1432,6 +1432,7 @@ def assign_from_pool(worker: str, kinds: tuple[str, ...] | None = None,
     requested_action: str = 'advance',
     batch_reconciled: bool = False,
     operator_force: bool = False,
+    named: bool = False,
 ) -> Candidate | None:
     """Rank the shared pool for a worker already proven eligible."""
     # Trusted dispatcher batches run these two full-repository reconciliations
@@ -2543,7 +2544,7 @@ def dispatch_next(
     busy_workers = 0
     for worker in eligible:
         if force_slot:
-            reason = worker_skip_reason(worker, operator_force=True)
+            reason = worker_skip_reason(worker, operator_force=True, named=True)
             if reason is not None:
                 if 'already has an active lease' in reason:
                     busy_workers += 1
@@ -2557,11 +2558,11 @@ def dispatch_next(
                 }
         try:
             candidate = (
-                assign(worker, target=target_spec, requested_action=action, operator_force=True)
+                assign(worker, target=target_spec, requested_action=action, operator_force=True, named=True)
                 if force_slot and target_spec
-                else assign(worker, target=target_spec) if target_spec
-                else assign(worker, operator_force=True) if force_slot
-                else assign(worker)
+                else assign(worker, target=target_spec, named=True) if target_spec
+                else assign(worker, operator_force=True, named=True) if force_slot
+                else assign(worker, named=True)
             )
         except TargetBusy as busy:
             return {
@@ -2584,7 +2585,7 @@ def dispatch_next(
             # Only for operator commands, provide a useful reason when a
             # registered slot cannot start. Do not mutate it or steal a lease.
             if force_slot:
-                skipped.append(worker_skip_reason(worker, operator_force=True) or 'No executable unowned work')
+                skipped.append(worker_skip_reason(worker, operator_force=True, named=True) or 'No executable unowned work')
                 if not target_spec:
                     # The shared pool is the same for every identity.
                     break
@@ -2741,7 +2742,6 @@ def dispatch_target(kind: str, number: int, action: str, model: str = 'auto') ->
         'status': 'deferred',
         'reason': 'No eligible action or available independent worker. Check current stage, leases, and factory capacity.',
     }
-
 
 
 def main() -> int:
