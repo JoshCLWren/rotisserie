@@ -1,7 +1,8 @@
 """``rotisserie factory`` — the operator console for the software factory.
 
-Every command reads real factory state; nothing is estimated. Human output is
-the default. ``--json`` prints one machine-readable document. Exit codes:
+Every command reads real factory state. Only ``estimate`` predicts, and it
+shows the past items behind each figure. Human output is the default.
+``--json`` prints one machine-readable document. Exit codes:
 
   0  success (request accepted / worker started / work finished)
   2  the command was used incorrectly
