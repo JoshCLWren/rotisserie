@@ -94,6 +94,16 @@ Launch uses `--no-wait`, so *submitted* means GitHub accepted the request,
 to follow it. Sync defaults to leased/queued mode, never `--now`.
 Unstick previews from live state, then replans when executed.
 
+The Work queue page has an item tracker for one issue or PR: Follow (state,
+stage, owner, checks, claim labels and the linked issue), Claim runs, History,
+Claim and Finish claim. Claim and Finish claim use `--no-wait`: they change the
+label and return, and the label claim controller answers on the item. The PR
+workbench reads checks for a PR or for `main`. The Diagnostics page starts a
+label doctor dry run or repair on GitHub and links the run. The Models page
+lists each provider with its switch (on, or off with the reason) and turns a
+provider or one of its models off or on. Turning off needs a reason and a
+confirmation.
+
 The server only binds IPv4 loopback, checks the localhost Host/Origin, requires
 a per-process session token for every API request, does not accept shell
 commands, and never sends `gh` credentials to the browser. It is a single-user

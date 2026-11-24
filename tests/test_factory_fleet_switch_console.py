@@ -114,11 +114,16 @@ def test_unknown_provider_and_bad_usage_are_refused(
 def test_model_disable_adds_the_provider_prefix_shown_by_models(
     github: Variables, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    run(github, ["models", "disable", "opencode-go", "hy4-flash-free"], monkeypatch)
+    run(
+        github,
+        ["models", "disable", "opencode-go", "hy4-flash-free", "--reason=flaky"],
+        monkeypatch,
+    )
     assert github.values["FACTORY_DISABLED_MODELS"] == "opencode-free=opencode-go/hy4-flash-free"
     listing = run(github, ["models", "opencode-go"], monkeypatch)
     rows = {row["model"]: row for row in listing["models"]}  # type: ignore[attr-defined]
     assert rows["opencode-go/hy4-flash-free"]["disabled"] is True
+    assert rows["opencode-go/hy4-flash-free"]["disabled_reason"] == "flaky"
     run(github, ["models", "enable", "opencode-go", "opencode-go/hy4-flash-free"], monkeypatch)
     assert "FACTORY_DISABLED_MODELS" not in github.values
 
@@ -183,8 +188,24 @@ def test_fleet_state_reads_only_well_formed_entries() -> None:
                 "operation": "model_switch",
                 "provider": "opencode-go",
                 "model": "opencode-go/hy4-flash-free",
+                "reason": "out of credits, #234",
             },
-            ["models", "disable", "opencode-go", "opencode-go/hy4-flash-free", "--reason="],
+            [
+                "models",
+                "disable",
+                "opencode-go",
+                "opencode-go/hy4-flash-free",
+                "--reason=out of credits, #234",
+            ],
+        ),
+        (
+            {
+                "operation": "model_switch",
+                "provider": "opencode-go",
+                "model": "opencode-go/hy4-flash-free",
+                "enabled": True,
+            },
+            ["models", "enable", "opencode-go", "opencode-go/hy4-flash-free", "--reason="],
         ),
     ],
 )
@@ -203,6 +224,9 @@ def test_web_switch_writes_map_to_cli_commands(
         {"operation": "provider_switch", "provider": "kilo-auto", "reason": "a\nb"},
         {"operation": "provider_switch", "provider": "kilo-auto", "enabled": "yes"},
         {"operation": "model_switch", "provider": "opencode-go"},
+        {"operation": "provider_switch", "provider": "kilo-auto"},
+        {"operation": "provider_switch", "provider": "kilo-auto", "reason": "   "},
+        {"operation": "model_switch", "provider": "opencode-go", "model": "opencode-go/x"},
     ],
 )
 def test_web_switch_refuses_unsafe_input(body: dict[str, object]) -> None:
