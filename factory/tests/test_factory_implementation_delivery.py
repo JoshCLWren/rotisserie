@@ -578,29 +578,29 @@ def test_post_merge_refuses_non_delivery_and_repairs_keyword_closure(
     """Both open issues and prematurely auto-closed issues retain implementation work."""
     closure = importlib.import_module("factory_post_merge_closure")
 
-    monkeypatch.setattr(closure, "_pr_info", lambda _pr: {
+    monkeypatch.setattr(closure.github, "_pr_info", lambda _pr: {
         "branch": "factory/46-4042-kilo-auto", "body": "Closes #4042",
         "state": "MERGED", "head": HEAD,
     })
-    monkeypatch.setattr(closure, "_issue_view", lambda _issue: {
+    monkeypatch.setattr(closure.github, "_issue_view", lambda _issue: {
         "state": "CLOSED" if closed else "OPEN", "body": "Implement browsing",
         "labels": ["factory", "ralph-status:done", "factory:unowned"],
     })
-    monkeypatch.setattr(closure, "_issue_has_open_successor_pr", lambda *_args: False)
-    monkeypatch.setattr(closure, "_repo_slug", lambda: "owner/repo")
-    monkeypatch.setattr(closure, "_closed_by_pr", lambda *_args: True)
+    monkeypatch.setattr(closure.github, "_issue_has_open_successor_pr", lambda *_args: False)
+    monkeypatch.setattr(closure.github, "_repo_slug", lambda: "owner/repo")
+    monkeypatch.setattr(closure.github, "_closed_by_pr", lambda *_args: True)
     monkeypatch.setattr(delivery, "complete_pr_diff", lambda *_args: (
         ["docs/plan.md"], patch("docs/plan.md", ["old"], ["new"])
     ))
     mutations: list[tuple[str, tuple[object, ...]]] = []
-    monkeypatch.setattr(closure, "_run_gh", lambda *args: mutations.append(("gh", args)))
+    monkeypatch.setattr(closure.github, "_run_gh", lambda *args: mutations.append(("gh", args)))
     monkeypatch.setattr(
-        closure, "_replace_labels", lambda *args: mutations.append(("labels", args))
+        closure.github, "_replace_labels", lambda *args: mutations.append(("labels", args))
     )
     monkeypatch.setattr(
-        closure, "_comment_issue", lambda *args: mutations.append(("comment", args))
+        closure.github, "_comment_issue", lambda *args: mutations.append(("comment", args))
     )
-    monkeypatch.setattr(closure, "_close_issue", lambda *_args: pytest.fail("must not close"))
+    monkeypatch.setattr(closure.github, "_close_issue", lambda *_args: pytest.fail("must not close"))
     assert closure.close_merged_pr_issue(4046).startswith("not-delivered:")
     # A closed issue additionally has its dependency-block marker rechecked via
     # a comments read, which inspects the issue without mutating it.
@@ -677,11 +677,11 @@ def test_marker_helpers_treat_none_payload_as_no_marker(
 ) -> None:
     """A None gh payload (as mocks and interrupted calls produce) is not a crash."""
     closure = importlib.import_module("factory_post_merge_closure")
-    monkeypatch.setattr(closure, "_repo_slug", lambda: "owner/repo")
-    monkeypatch.setattr(closure, "_run_gh", lambda *args: None)
-    assert closure._has_closure_marker(4042, 4046) is False
-    assert closure._has_dependency_block_marker(4042, 4046) is False
-    assert closure._has_unreadable_dependency_warning(4042, 4046) is False
+    monkeypatch.setattr(closure.github, "_repo_slug", lambda: "owner/repo")
+    monkeypatch.setattr(closure.github, "_run_gh", lambda *args: None)
+    assert closure.github._has_closure_marker(4042, 4046) is False
+    assert closure.github._has_dependency_block_marker(4042, 4046) is False
+    assert closure.github._has_unreadable_dependency_warning(4042, 4046) is False
 
 
 def test_reopened_blocked_issue_keeps_live_owner_when_deps_finish(
@@ -690,18 +690,18 @@ def test_reopened_blocked_issue_keeps_live_owner_when_deps_finish(
     """A claimed reopened issue is neither relabeled nor closed by the sweep (G2)."""
     closure = importlib.import_module("factory_post_merge_closure")
 
-    monkeypatch.setattr(closure, "_pr_info", lambda _pr: {
+    monkeypatch.setattr(closure.github, "_pr_info", lambda _pr: {
         "branch": "factory/41-4017-kilo-auto", "body": "Closes #4017",
         "state": "MERGED", "head": HEAD, "merge": "merge",
     })
-    monkeypatch.setattr(closure, "_issue_view", lambda _issue: {
+    monkeypatch.setattr(closure.github, "_issue_view", lambda _issue: {
         "state": "OPEN", "body": "Delivered work.\nDepends on #4016",
         "labels": ["enhancement", "factory", "factory:blocked",
                    "ralph-status:blocked", "factory:7"],
     })
-    monkeypatch.setattr(closure, "_closed_by_pr", lambda *_args: False)
-    monkeypatch.setattr(closure, "_has_dependency_block_marker", lambda *_args: True)
-    monkeypatch.setattr(closure, "_native_open_blockers", lambda *_args: [])
+    monkeypatch.setattr(closure.github, "_closed_by_pr", lambda *_args: False)
+    monkeypatch.setattr(closure.github, "_has_dependency_block_marker", lambda *_args: True)
+    monkeypatch.setattr(closure.github, "_native_open_blockers", lambda *_args: [])
     monkeypatch.setattr(
         closure.eligibility, "parse_declared_dependencies", lambda _body: {4016}
     )
@@ -709,8 +709,8 @@ def test_reopened_blocked_issue_keeps_live_owner_when_deps_finish(
         ["app/fix.py"], patch("app/fix.py", ["old = 1"], ["new = 2"])
     ))
     mutations: list[tuple[object, ...]] = []
-    monkeypatch.setattr(closure, "_replace_labels", lambda *args: mutations.append(args))
-    monkeypatch.setattr(closure, "_close_issue", lambda *_args: mutations.append("close"))
+    monkeypatch.setattr(closure.github, "_replace_labels", lambda *args: mutations.append(args))
+    monkeypatch.setattr(closure.github, "_close_issue", lambda *_args: mutations.append("close"))
     assert closure.close_merged_pr_issue(4034) == "active-work"
     assert mutations == []
 
@@ -721,19 +721,19 @@ def test_reopened_blocked_issue_keeps_open_successor_when_deps_finish(
     """An open successor PR protects the reopened issue from dependency closure (G2)."""
     closure = importlib.import_module("factory_post_merge_closure")
 
-    monkeypatch.setattr(closure, "_pr_info", lambda _pr: {
+    monkeypatch.setattr(closure.github, "_pr_info", lambda _pr: {
         "branch": "factory/41-4017-kilo-auto", "body": "Closes #4017",
         "state": "MERGED", "head": HEAD, "merge": "merge",
     })
-    monkeypatch.setattr(closure, "_issue_view", lambda _issue: {
+    monkeypatch.setattr(closure.github, "_issue_view", lambda _issue: {
         "state": "OPEN", "body": "Delivered work.\nDepends on #4016",
         "labels": ["enhancement", "factory", "factory:blocked",
                    "ralph-status:blocked", "factory:unowned"],
     })
-    monkeypatch.setattr(closure, "_closed_by_pr", lambda *_args: False)
-    monkeypatch.setattr(closure, "_has_dependency_block_marker", lambda *_args: True)
-    monkeypatch.setattr(closure, "_issue_has_open_successor_pr", lambda *_args: True)
-    monkeypatch.setattr(closure, "_native_open_blockers", lambda *_args: [])
+    monkeypatch.setattr(closure.github, "_closed_by_pr", lambda *_args: False)
+    monkeypatch.setattr(closure.github, "_has_dependency_block_marker", lambda *_args: True)
+    monkeypatch.setattr(closure.github, "_issue_has_open_successor_pr", lambda *_args: True)
+    monkeypatch.setattr(closure.github, "_native_open_blockers", lambda *_args: [])
     monkeypatch.setattr(
         closure.eligibility, "parse_declared_dependencies", lambda _body: {4016}
     )
@@ -741,8 +741,8 @@ def test_reopened_blocked_issue_keeps_open_successor_when_deps_finish(
         ["app/fix.py"], patch("app/fix.py", ["old = 1"], ["new = 2"])
     ))
     mutations: list[tuple[object, ...]] = []
-    monkeypatch.setattr(closure, "_replace_labels", lambda *args: mutations.append(args))
-    monkeypatch.setattr(closure, "_close_issue", lambda *_args: mutations.append("close"))
+    monkeypatch.setattr(closure.github, "_replace_labels", lambda *args: mutations.append(args))
+    monkeypatch.setattr(closure.github, "_close_issue", lambda *_args: mutations.append("close"))
     assert closure.close_merged_pr_issue(4034) == "successor-open"
     assert mutations == []
 
@@ -754,20 +754,20 @@ def test_reclosed_issue_restores_labels_despite_old_closure_marker(
     closure = importlib.import_module("factory_post_merge_closure")
 
     comments: list[str] = []
-    monkeypatch.setattr(closure, "_pr_info", lambda _pr: {
+    monkeypatch.setattr(closure.github, "_pr_info", lambda _pr: {
         "branch": "factory/41-4017-kilo-auto", "body": "Closes #4017",
         "state": "MERGED", "head": HEAD, "merge": "merge",
     })
-    monkeypatch.setattr(closure, "_issue_view", lambda _issue: {
+    monkeypatch.setattr(closure.github, "_issue_view", lambda _issue: {
         "state": "CLOSED", "body": "Delivered work.\nDepends on #4016",
         "labels": ["enhancement", "factory", "factory:blocked",
                    "ralph-status:blocked", "factory:unowned"],
     })
-    monkeypatch.setattr(closure, "_closed_by_pr", lambda *_args: True)
-    monkeypatch.setattr(closure, "_has_dependency_block_marker", lambda *_args: True)
-    monkeypatch.setattr(closure, "_has_closure_marker", lambda *_args: True)
-    monkeypatch.setattr(closure, "_issue_has_open_successor_pr", lambda *_args: False)
-    monkeypatch.setattr(closure, "_native_open_blockers", lambda *_args: [])
+    monkeypatch.setattr(closure.github, "_closed_by_pr", lambda *_args: True)
+    monkeypatch.setattr(closure.github, "_has_dependency_block_marker", lambda *_args: True)
+    monkeypatch.setattr(closure.github, "_has_closure_marker", lambda *_args: True)
+    monkeypatch.setattr(closure.github, "_issue_has_open_successor_pr", lambda *_args: False)
+    monkeypatch.setattr(closure.github, "_native_open_blockers", lambda *_args: [])
     monkeypatch.setattr(
         closure.eligibility, "parse_declared_dependencies", lambda _body: {4016}
     )
@@ -775,12 +775,12 @@ def test_reclosed_issue_restores_labels_despite_old_closure_marker(
         ["app/fix.py"], patch("app/fix.py", ["old = 1"], ["new = 2"])
     ))
     replaced: list[list[str]] = []
-    monkeypatch.setattr(closure, "_replace_labels", lambda _i, labels: replaced.append(labels))
+    monkeypatch.setattr(closure.github, "_replace_labels", lambda _i, labels: replaced.append(labels))
     monkeypatch.setattr(
-        closure, "_comment_issue", lambda _i, body: comments.append(body)
+        closure.github, "_comment_issue", lambda _i, body: comments.append(body)
     )
     closed_as: list[object] = []
-    monkeypatch.setattr(closure, "_close_issue", lambda *_args: closed_as.append(True))
+    monkeypatch.setattr(closure.github, "_close_issue", lambda *_args: closed_as.append(True))
     assert closure.close_merged_pr_issue(4034) == "closed"
     assert comments == []
     assert closed_as == []
@@ -796,26 +796,26 @@ def test_unreadable_dependency_warning_is_deduplicated(
     """A posted unreadable-dependency warning never reposts on later sweeps (G4)."""
     closure = importlib.import_module("factory_post_merge_closure")
 
-    monkeypatch.setattr(closure, "_pr_info", lambda _pr: {
+    monkeypatch.setattr(closure.github, "_pr_info", lambda _pr: {
         "branch": "factory/33-4025-kilo-auto", "body": "Closes #4025",
         "state": "MERGED", "head": HEAD, "merge": "merge",
     })
-    monkeypatch.setattr(closure, "_issue_view", lambda _issue: {
+    monkeypatch.setattr(closure.github, "_issue_view", lambda _issue: {
         "state": "CLOSED", "body": "Delivered work.\nDepends on #4024",
         "labels": ["enhancement", "factory", "factory:blocked",
                    "ralph-status:blocked", "factory:unowned"],
     })
-    monkeypatch.setattr(closure, "_closed_by_pr", lambda *_args: True)
-    monkeypatch.setattr(closure, "_has_dependency_block_marker", lambda *_args: True)
+    monkeypatch.setattr(closure.github, "_closed_by_pr", lambda *_args: True)
+    monkeypatch.setattr(closure.github, "_has_dependency_block_marker", lambda *_args: True)
     monkeypatch.setattr(
-        closure, "_has_unreadable_dependency_warning", lambda *_args: True
+        closure.github, "_has_unreadable_dependency_warning", lambda *_args: True
     )
-    monkeypatch.setattr(closure, "_run_gh", lambda *args: "[]")
+    monkeypatch.setattr(closure.github, "_run_gh", lambda *args: "[]")
 
     def unreadable_blockers(*_args: object) -> list[int]:
         raise RuntimeError("gh failed")
 
-    monkeypatch.setattr(closure, "_native_open_blockers", unreadable_blockers)
+    monkeypatch.setattr(closure.github, "_native_open_blockers", unreadable_blockers)
     monkeypatch.setattr(
         closure.eligibility, "parse_declared_dependencies", lambda _body: {4024}
     )
@@ -823,11 +823,11 @@ def test_unreadable_dependency_warning_is_deduplicated(
         ["app/fix.py"], patch("app/fix.py", ["old = 1"], ["new = 2"])
     ))
     events: list[tuple[object, ...]] = []
-    monkeypatch.setattr(closure, "_replace_labels", lambda *args: events.append(args))
+    monkeypatch.setattr(closure.github, "_replace_labels", lambda *args: events.append(args))
     monkeypatch.setattr(
-        closure, "_comment_issue", lambda *_args: events.append("comment")
+        closure.github, "_comment_issue", lambda *_args: events.append("comment")
     )
-    monkeypatch.setattr(closure, "_close_issue", lambda *_args: events.append("close"))
+    monkeypatch.setattr(closure.github, "_close_issue", lambda *_args: events.append("close"))
     assert closure.close_merged_pr_issue(4041) == "open-dependency"
     assert events
     labels = events[0][1]
@@ -853,17 +853,17 @@ def test_keyword_closed_multiple_deps_one_open_reopens_blocked(
             "labels": ["enhancement", "factory", "factory:unowned"],
         }
 
-    monkeypatch.setattr(closure, "_pr_info", lambda _pr: {
+    monkeypatch.setattr(closure.github, "_pr_info", lambda _pr: {
         "branch": "factory/8-4027-kilo-auto", "body": "Closes #4027",
         "state": "MERGED", "head": HEAD, "merge": "merge",
     })
-    monkeypatch.setattr(closure, "_issue_view", issue_view)
-    monkeypatch.setattr(closure, "_closed_by_pr", lambda *_args: True)
-    monkeypatch.setattr(closure, "_has_dependency_block_marker", lambda *_args: False)
-    monkeypatch.setattr(closure, "_has_closure_marker", lambda *_args: False)
-    monkeypatch.setattr(closure, "_issue_has_open_successor_pr", lambda *_args: False)
-    monkeypatch.setattr(closure, "_run_gh", lambda *args: "[]")
-    monkeypatch.setattr(closure, "_native_open_blockers", lambda *_args: [])
+    monkeypatch.setattr(closure.github, "_issue_view", issue_view)
+    monkeypatch.setattr(closure.github, "_closed_by_pr", lambda *_args: True)
+    monkeypatch.setattr(closure.github, "_has_dependency_block_marker", lambda *_args: False)
+    monkeypatch.setattr(closure.github, "_has_closure_marker", lambda *_args: False)
+    monkeypatch.setattr(closure.github, "_issue_has_open_successor_pr", lambda *_args: False)
+    monkeypatch.setattr(closure.github, "_run_gh", lambda *args: "[]")
+    monkeypatch.setattr(closure.github, "_native_open_blockers", lambda *_args: [])
     monkeypatch.setattr(
         closure.eligibility, "parse_declared_dependencies", lambda _body: {4023, 4026}
     )
@@ -871,12 +871,12 @@ def test_keyword_closed_multiple_deps_one_open_reopens_blocked(
         ["app/fix.py"], patch("app/fix.py", ["old = 1"], ["new = 2"])
     ))
     monkeypatch.setattr(
-        closure, "_comment_issue", lambda _i, body: comments.append(body)
+        closure.github, "_comment_issue", lambda _i, body: comments.append(body)
     )
     replaced: list[list[str]] = []
-    monkeypatch.setattr(closure, "_replace_labels", lambda _i, labels: replaced.append(labels))
+    monkeypatch.setattr(closure.github, "_replace_labels", lambda _i, labels: replaced.append(labels))
     closed_as: list[object] = []
-    monkeypatch.setattr(closure, "_close_issue", lambda *_args: closed_as.append(True))
+    monkeypatch.setattr(closure.github, "_close_issue", lambda *_args: closed_as.append(True))
     assert closure.close_merged_pr_issue(4043) == "open-dependency: #4026"
     assert closed_as == []
     assert "factory:blocked" in replaced[0]
@@ -898,11 +898,11 @@ def test_only_own_keyword_closure_may_be_reopened(
     import json
 
     closure = importlib.import_module("factory_post_merge_closure")
-    monkeypatch.setattr(closure, "_repo_slug", lambda: "owner/repo")
-    monkeypatch.setattr(closure, "_run_gh", lambda *_args: json.dumps([[
+    monkeypatch.setattr(closure.github, "_repo_slug", lambda: "owner/repo")
+    monkeypatch.setattr(closure.github, "_run_gh", lambda *_args: json.dumps([[
         {"event": "closed", "commit_id": HEAD}, {"event": event, "commit_id": commit},
     ]]))
-    assert closure._closed_by_pr(4042, {"head": HEAD, "merge": "merge"}) is expected
+    assert closure.github._closed_by_pr(4042, {"head": HEAD, "merge": "merge"}) is expected
 
 
 @pytest.mark.parametrize("path", [".github/workflows/ci.yml", "Makefile"])

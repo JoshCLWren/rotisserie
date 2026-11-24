@@ -66,6 +66,9 @@
 .github/scripts/factory_omniroute_route.py
 .github/scripts/factory_outcome_reconcile.py
 .github/scripts/factory_post_merge_closure.py
+.github/scripts/factory_post_merge_closure_github.py
+.github/scripts/factory_post_merge_closure_policy.py
+.github/scripts/factory_post_merge_closure_testing.py
 .github/scripts/factory_provider_candidates.py
 .github/scripts/factory_provider_registry.py
 .github/scripts/factory_published_model_catalog.py
@@ -102,6 +105,11 @@
 .github/scripts/provision-worker-app.cjs
 .github/scripts/prune-oldest-vcr-image.sh
 .github/scripts/stale_pr_decay.py
+.github/scripts/test_factory_post_merge_closure_acceptance.py
+.github/scripts/test_factory_post_merge_closure_dependencies.py
+.github/scripts/test_factory_post_merge_closure_policy.py
+.github/scripts/test_factory_post_merge_closure_reopen.py
+.github/scripts/test_factory_post_merge_closure_sweep.py
 .github/scripts/validate-free-model-factories.py
 .github/scripts/wait-opencode-model.sh
 .opencode/agents/pr-reviewer.md

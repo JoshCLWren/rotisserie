@@ -62,6 +62,20 @@ def test_dependency_merge_gate_modules_are_staged_from_trusted_main() -> None:
             assert f"cp {dep} " in staging, (name, dep)
 
 
+def test_closure_sibling_modules_are_staged_by_every_worker() -> None:
+    """The staged closure imports its policy and GitHub modules from the same directory."""
+    for name in (
+        "free-model-factory-worker.sh",
+        "free-model-factory-worker-primitives.sh",
+        "nvidia-factory-worker.sh",
+        "omniroute-factory-worker.sh",
+    ):
+        content = (ROOT / ".github/scripts" / name).read_text()
+        staging = content.split("stage_trusted_review_controller() {", 1)[1].split("\n}", 1)[0]
+        for sibling in ("factory_post_merge_closure_policy.py", "factory_post_merge_closure_github.py"):
+            assert f".github/scripts/{sibling} " in staging, (name, sibling)
+
+
 def test_staged_review_controller_starts_without_source_checkout(tmp_path: Path) -> None:
     """The staged review controller must load its implementation-delivery helper.
 
@@ -81,6 +95,8 @@ def test_staged_review_controller_starts_without_source_checkout(tmp_path: Path)
         ".github/scripts/factory_issue_acceptance.py",
         ".github/scripts/factory_implementation_delivery.py",
         ".github/scripts/factory_post_merge_closure.py",
+        ".github/scripts/factory_post_merge_closure_policy.py",
+        ".github/scripts/factory_post_merge_closure_github.py",
         ".github/scripts/factory_worker_slots.py",
         ".github/scripts/factory_provider_registry.py",
         ".github/scripts/factory_work_policy.py",

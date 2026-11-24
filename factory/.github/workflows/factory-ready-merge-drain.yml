@@ -14,6 +14,10 @@ on:
       - '.github/scripts/factory-review-controller.py'
       - '.github/scripts/factory_review_policy.py'
       - '.github/scripts/factory_post_merge_closure.py'
+      - '.github/scripts/factory_post_merge_closure_github.py'
+      - '.github/scripts/factory_post_merge_closure_policy.py'
+      - '.github/scripts/factory_post_merge_closure_testing.py'
+      - '.github/scripts/test_factory_post_merge_closure_*.py'
       - '.github/scripts/factory_migration_lane.py'
 
 env:

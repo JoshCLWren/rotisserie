@@ -13,7 +13,6 @@
   "factory/.github/scripts/factory_fork_control.py": 642,
   "factory/.github/scripts/factory_implementation_delivery.py": 526,
   "factory/.github/scripts/factory_jev_shadow.py": 960,
-  "factory/.github/scripts/factory_post_merge_closure.py": 2951,
   "factory/.github/scripts/factory_review_policy.py": 1148,
   "factory/.github/scripts/factory_rotisserie_adopter.py": 627,
   "factory/.github/scripts/factory_state_ledger.py": 1362,
