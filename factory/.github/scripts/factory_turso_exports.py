@@ -255,9 +255,18 @@ def export_fleet_failover_sources(repo: str, worker: str) -> list[str]:
         raise ValueError("unknown leased worker")
     assigned = names[worker][0]
     caps = load_budgets()
+    from factory_turso_operations import budget_usage
+
     cooling = active_capacity_cooldowns(core.store(), repo)["account"]
+    limited = {
+        source
+        for source, row in budget_usage(core.store(), repo).items()
+        if row["concurrency_limit"] is not None or row["daily_limit"] is not None
+    }
     sources = set(PROVIDERS) | {"opencode-free", "openrouter-free", "kilo-auto"}
-    selected = {assigned} | {s for s in sources - {assigned} if s not in caps and s not in cooling}
+    selected = {assigned} | {
+        s for s in sources - {assigned} if s not in caps and s not in cooling and s not in limited
+    }
     return filter_sources(sorted(selected))
 
 

@@ -361,6 +361,8 @@ def external_lease_action(
         )
     result = core.reconciled_batch(db, statements, lambda: core.event_exists(db, event_id))
     if result is not None and not result[0]:
+        if operation == "handoff":
+            _clear_pending(db, repo, claim_id, fence_params["f_nonce"])
         return {"status": "conflict", "reason": "claim_changed_during_verification"}
     expires = None
     if operation == "renew":

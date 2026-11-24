@@ -30,6 +30,7 @@ NAMESPACE = os.environ.get("FACTORY_TEST_NAMESPACE", "rotisserie-selftest")
 TABLES = (
     "factory_lease",
     "factory_provider_reservation",
+    "factory_provider_budget",
     "factory_backoff",
     "factory_repo_state",
     "factory_model_health",
@@ -79,6 +80,16 @@ def bound(kind: str, path: Path, monkeypatch: Any) -> Iterator[tuple[Any, str]]:
     finally:
         cleanup(db, repo)
         core.use_store(None)
+
+
+def record_usage(db: Any) -> None:
+    """Append this test's rows read and written for the self-test summary."""
+    import json
+
+    target = os.environ.get("FACTORY_TEST_USAGE_FILE")
+    if target:
+        with open(target, "a", encoding="utf-8") as stream:
+            stream.write(json.dumps(db.usage) + "\n")
 
 
 def in_child(env: dict[str, str], function: Callable[..., Any], *args: Any) -> Any:

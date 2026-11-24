@@ -24,6 +24,15 @@ DAILY_CAP_GUARD = (
     " AND event_type = 'worker_assigned' AND source = :source"
     " AND created_at >= unixepoch('now', 'start of day')) < :cap)"
 )
+BUDGET_GUARD = (
+    "(SELECT count(*) FROM factory_provider_reservation WHERE repo = :repo"
+    " AND source = :source AND expires_at > unixepoch()) < coalesce((SELECT concurrency_limit"
+    " FROM factory_provider_budget WHERE repo = :repo AND source = :source), 1000000000)"
+    " AND (SELECT count(*) FROM factory_state_events WHERE repo = :repo"
+    " AND event_type = 'worker_assigned' AND source = :source"
+    " AND created_at >= unixepoch('now', 'start of day')) < coalesce((SELECT daily_limit"
+    " FROM factory_provider_budget WHERE repo = :repo AND source = :source), 1000000000)"
+)
 EXTERNAL_WIP = (
     "(SELECT count(*) FROM factory_lease WHERE repo = :repo AND kind = 'external' AND wip = 1)"
 )
@@ -73,7 +82,7 @@ def claim_statements(
         slot_params = {"distinct": int(distinct), "slot_number": number}
     free_sql, free_params = core.free_keys_guard(held)
     guard = (
-        f"{free_sql} AND {DAILY_CAP_GUARD} AND {slot_sql}"
+        f"{free_sql} AND {DAILY_CAP_GUARD} AND {BUDGET_GUARD} AND {slot_sql}"
         f" AND (:wip_seen IS NULL OR {EXTERNAL_WIP} <= :wip_seen)",
         {
             **free_params,

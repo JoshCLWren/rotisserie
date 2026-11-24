@@ -30,15 +30,16 @@ HEALTH = 811
 METRICS = 840
 DAY = 86400
 PER_DAY = {
-    "dispatch": 450,
-    "run": 445,
-    "status": int(os.environ.get("FACTORY_USAGE_STATUS_PER_DAY", "96")),
-    "retention": 24,
+    "dispatch": int(os.environ.get("FACTORY_USAGE_DISPATCH_PER_DAY", "1237")),
+    "run": int(os.environ.get("FACTORY_USAGE_RUN_PER_DAY", "421")),
+    "status": int(os.environ.get("FACTORY_USAGE_STATUS_PER_DAY", "8")),
+    "retention": 5,
 }
 FREE = {"rows_read": 500_000_000, "rows_written": 10_000_000}
 
 
 def _seed(db: Any, repo: str, workers: list[str]) -> None:
+    roster = [w for ws in support.workers_by_source().values() for w in ws]
     rnd = random.Random(7)
     types = [
         "worker_assigned",
@@ -92,7 +93,7 @@ def _seed(db: Any, repo: str, workers: list[str]) -> None:
             (
                 "INSERT INTO factory_worker_metrics (repo, worker, source, model, attempts,"
                 " productive, updated_at) VALUES (:repo, :w, 'nvidia', :m, 5, 2, unixepoch())",
-                {"repo": repo, "w": workers[n % len(workers)], "m": f"m{n}"},
+                {"repo": repo, "w": roster[n % len(roster)], "m": f"m{n}"},
             )
         )
     for offset in range(0, len(rows), 400):
@@ -136,9 +137,9 @@ def main() -> None:
         kept, _ = operations.filter_workers(repo, workers[:20])
         operations.rank_workers(repo, kept)
         operations.cooling_prs(repo, {1: ("a" * 40, "factory:review")})
-        state["token"] = leases.acquire_lease(repo, worker, [500])
 
     def run() -> None:
+        state["token"] = leases.acquire_lease(repo, worker, [500])
         events.record_lifecycle(repo, "999", worker, "started")
         exports.export_model_exclusions(repo, worker)
         exports.export_candidate_health(repo)

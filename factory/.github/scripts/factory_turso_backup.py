@@ -20,6 +20,7 @@ PAGE = 500
 TABLES = {
     "factory_lease": ("lease_key",),
     "factory_provider_reservation": ("claim_id",),
+    "factory_provider_budget": ("repo", "source"),
     "factory_backoff": ("backoff_key",),
     "factory_repo_state": ("repo",),
     "factory_model_health": ("repo", "source", "model"),
@@ -116,7 +117,8 @@ def main(argv: list[str] | None = None) -> int:
         counts = export(db, args.file, repo=args.repo)
     else:
         counts = restore(args.file, db)
-    print(json.dumps({"command": args.command, "rows": counts, "usage": db.usage}, sort_keys=True))
+    summary = {"mode": args.command, "schema": 1, "status": "ok", "rows": counts, "usage": db.usage}
+    print(json.dumps(summary, sort_keys=True))
     return 0
 
 

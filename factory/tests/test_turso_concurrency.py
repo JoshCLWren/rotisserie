@@ -95,6 +95,28 @@ def test_daily_capped_provider_admits_exactly_one_claim(env) -> None:
     )
 
 
+def test_operator_concurrency_limit_admits_exactly_one_claim(env) -> None:
+    environment, db, repo = env
+    db.batch(
+        [
+            (
+                "INSERT INTO factory_provider_budget (repo, source, concurrency_limit, updated_at)"
+                " VALUES (:r, 'nvidia', 1, unixepoch())",
+                {"r": repo},
+            )
+        ]
+    )
+    same = support.workers_by_source()["nvidia"][:RACERS]
+    calls = [(leases.acquire_lease, repo, w, [TARGET + i]) for i, w in enumerate(same)]
+    assert len([token for token in _race(environment, calls) if token]) == 1
+    assert (
+        support.count(
+            db, "SELECT count(*) AS n FROM factory_provider_reservation WHERE repo = :r", r=repo
+        )
+        == 1
+    )
+
+
 def test_same_provider_slot_race_admits_exactly_one_attempt(env) -> None:
     environment, db, repo = env
     same = support.workers_by_source()["nvidia"][:RACERS]

@@ -64,6 +64,7 @@ def eligibility(db: core.Store, repo: str, workers: list[str]) -> tuple[list[str
     )
     health_rows = [row for rows in results[:-1] for row in rows]
     backoff_rows = results[-1]
+    limits = budget_usage(db, repo)
     models = {(r["source"], r["model"]): r for r in health_rows}
     now = datetime.now(UTC)
     worker_backoffs: dict[str, dict[str, Any]] = {}
@@ -107,9 +108,35 @@ def eligibility(db: core.Store, repo: str, workers: list[str]) -> tuple[list[str
             or (health["status"] in {"unavailable", "cooling"} and until and until > now)
         ):
             rejected.append(f"{worker}: model {model} {health['status']}")
+        elif source in limits and limits[source]["full"]:
+            rejected.append(f"{worker}: provider {source} full")
+        elif source in limits and limits[source]["daily_exhausted"]:
+            rejected.append(f"{worker}: provider {source} daily budget exhausted")
         else:
             kept.append(worker)
     return kept, rejected
+
+
+def budget_usage(db: core.Store, repo: str) -> dict[str, dict[str, Any]]:
+    """Operator limits per source with current use; the acquisition batch re-checks both."""
+    rows = db.read(
+        "SELECT b.source, b.concurrency_limit, b.daily_limit,"
+        " (SELECT count(*) FROM factory_provider_reservation r WHERE r.repo = b.repo"
+        " AND r.source = b.source AND r.expires_at > unixepoch()) AS active,"
+        " (SELECT count(*) FROM factory_state_events e WHERE e.repo = b.repo"
+        " AND e.event_type = 'worker_assigned' AND e.source = b.source"
+        " AND e.created_at >= unixepoch('now', 'start of day')) AS today"
+        " FROM factory_provider_budget b WHERE b.repo = :repo",
+        {"repo": repo},
+    )
+    return {
+        str(r["source"]): {
+            **r,
+            "full": r["concurrency_limit"] is not None and r["active"] >= r["concurrency_limit"],
+            "daily_exhausted": r["daily_limit"] is not None and r["today"] >= r["daily_limit"],
+        }
+        for r in rows
+    }
 
 
 def eligible_source(db: core.Store, repo: str, worker: str) -> str | None:
