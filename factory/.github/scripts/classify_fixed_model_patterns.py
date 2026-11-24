@@ -156,11 +156,24 @@ PROVIDER_RETRY_RE = re.compile(
     r"^(?:\d{4}-\d{2}-\d{2}T\S+Z\s+)?! retrying \(attempt \d+\): (?P<message>[^\n]*)$", re.M
 )
 PROVIDER_429_RE = re.compile(r"\b429\b|too many requests", re.I)
+_STAMP_PREFIX = re.compile(r"^\d{4}-\d{2}-\d{2}T\S+Z\s+")
+_RETRY_TAIL = re.compile(r"(?i)^(?:\S*error\b|error:|provider request failed|.*\b429\b)")
 
 
 def provider_retry_outcome(text: str) -> str | None:
-    """Throttle or quota when the session's last provider retry was an HTTP 429."""
-    retries = list(PROVIDER_RETRY_RE.finditer(re.sub(r"\x1b\[[0-9;]*m", "", text)))
+    """Throttle or quota when the session ended on an HTTP 429 retry.
+
+    OpenCode retries a 429 and often recovers. Any model output after the
+    last retry, before the worker's next own line, proves the retry succeeded.
+    """
+    text = re.sub(r"\x1b\[[0-9;]*m", "", text)
+    retries = list(PROVIDER_RETRY_RE.finditer(text))
     if not retries or not PROVIDER_429_RE.search(retries[-1]["message"]):
         return None
+    for raw in text[retries[-1].end():].splitlines():
+        line = _STAMP_PREFIX.sub("", raw).strip()
+        if line.startswith("[factory:"):
+            break
+        if line and not _RETRY_TAIL.match(line):
+            return None
     return "provider_quota" if QUOTA_RE.search(retries[-1]["message"]) else "provider_throttle"

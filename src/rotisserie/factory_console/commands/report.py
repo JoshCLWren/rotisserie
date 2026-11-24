@@ -100,9 +100,7 @@ def cmd_report(context: Context, arguments: argparse.Namespace) -> Outcome:
 
     # What is broken?
     failed = [run for run in workers if string(run, "conclusion") == "failure"][:15]
-    found = _failure_reasons(github, failed)
-    capacity = Counter({key: n for key, n in found.items() if key[0].startswith(NO_CAPACITY)})
-    problems = found - capacity
+    capacity, problems = split_capacity(_failure_reasons(github, failed))
     console.line()
     console.line(console.bold("Where it is breaking"))
     if failed:
@@ -198,6 +196,14 @@ def _failure_reasons(github: GitHub, runs: list[Obj]) -> Counter[tuple[str, str]
 
 
 NO_CAPACITY = "no capacity: "
+
+
+def split_capacity(
+    found: Counter[tuple[str, str]],
+) -> tuple[Counter[tuple[str, str]], Counter[tuple[str, str]]]:
+    """Capacity exits apart from real failures: (no capacity, failures)."""
+    capacity = Counter({key: n for key, n in found.items() if key[0].startswith(NO_CAPACITY)})
+    return capacity, found - capacity
 
 
 def plain_failure(message: str) -> str:

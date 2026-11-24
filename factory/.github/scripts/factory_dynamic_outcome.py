@@ -81,7 +81,7 @@ _STEP_METADATA = re.compile(
 )
 
 
-_RETRY_OVERRIDABLE = frozenset({"no_work", "work_failure", "unknown_failure"})
+_RETRY_OVERRIDABLE = frozenset({"work_failure", "unknown_failure"})
 _PROSE_PROVIDER_CLASSES = frozenset({"provider_throttle", "provider_quota", "model_unavailable"})
 _EXIT = re.compile(r"\[factory:(?P<worker>\d+)\](?:\[[^\]\n]+\])*\s+agent exit status (?P<status>\d+) for ")
 _ZERO_EXIT_REFUSAL = "agent exited 0 after a provider account refusal"

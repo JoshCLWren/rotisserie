@@ -88,6 +88,8 @@ def _stage(labels: set[str]) -> str:
 def judge(action: str, kind: str, pr: Obj, worker: WorkerOutcome | None) -> tuple[str, str]:
     """Whether the action's goal holds for the target now: (goal, explanation)."""
     goal = GOALS.get(action, "the item moved forward")
+    if worker is not None and worker.result is Result.NO_CAPACITY:
+        return "not-met", f"{worker.message}; the item stays queued"
     if kind == "issue":
         if worker is not None and worker.result is Result.DELIVERED:
             return "met", f"pull request #{worker.pr} was delivered"

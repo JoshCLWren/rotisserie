@@ -13,6 +13,11 @@ record_terminal_outcome() {
   detail="${detail//$'\n'/ }"
   detail="${detail//$'\t'/ }"
   printf '%s\t%s\n' "$outcome" "$detail" > "$TERMINAL_OUTCOME_FILE"
+  # The trusted classifier reads only the job log, and it counts a control
+  # plane failure only from the worker's own [factory:W] line.
+  if [[ "$outcome" == control_plane_failure ]] && declare -F log >/dev/null; then
+    log "control_plane_failure: ${detail}"
+  fi
 }
 
 record_agent_failure_outcome() {

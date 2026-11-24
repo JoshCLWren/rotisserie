@@ -1,10 +1,15 @@
 from __future__ import annotations
 
+import io
+from collections import Counter
 from pathlib import Path
 
 from rotisserie.factory_console.commands._shared import OUTCOME_WORDS
-from rotisserie.factory_console.commands.report import plain_failure
-from rotisserie.factory_console.tracker import EXIT_CODES, Result, parse_outcome
+from rotisserie.factory_console.commands.report import plain_failure, split_capacity
+from rotisserie.factory_console.commands.watch import show_no_capacity
+from rotisserie.factory_console.service.outcomes import judge
+from rotisserie.factory_console.tracker import EXIT_CODES, Result, WorkerOutcome, parse_outcome
+from rotisserie.factory_console.ui import Console
 from rotisserie.factory_console.verdicts import outcome_class
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -60,3 +65,38 @@ def test_runs_before_the_class_line_still_give_a_class() -> None:
     assert outcome_class(failed) == {"class": "control_plane_failure"}
     assert outcome_class("[factory-outcome] idle: No code delivered\n") == {"class": "no_work"}
     assert outcome_class("no outcome here") == {}
+
+
+def test_outcomes_name_the_capacity_reason() -> None:
+    worker = WorkerOutcome(Result.NO_CAPACITY, f"No capacity: {REASON}")
+    assert judge("review", "pr", {}, worker) == (
+        "not-met",
+        f"No capacity: {REASON}; the item stays queued",
+    )
+    assert judge("implement", "issue", {}, worker)[1].startswith("No capacity: No reviewer")
+
+
+def test_report_lists_capacity_exits_apart_from_failures() -> None:
+    found = Counter(
+        {
+            (plain_failure(f"No capacity: {REASON}"), "NVIDIA"): 3,
+            (plain_failure("No verified code; worker failed: work_failure"), "Kilo"): 2,
+        }
+    )
+    capacity, problems = split_capacity(found)
+    assert list(capacity.values()) == [3]
+    assert list(problems) == [("model could not finish the work", "Kilo")]
+
+
+def test_watch_shows_no_capacity_with_its_reason() -> None:
+    stream = io.StringIO()
+    shown = show_no_capacity(
+        Console(stream, env={}),
+        WorkerOutcome(Result.NO_CAPACITY, f"No capacity: {REASON}"),
+        {"worker_url": "https://github.com/acme/widgets/actions/runs/1"},
+    )
+    text = stream.getvalue()
+    assert shown.result is Result.NO_CAPACITY
+    assert shown.exit_code == 3
+    assert "No capacity: no eligible model was free" in text
+    assert f"Reason: {REASON}" in text

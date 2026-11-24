@@ -176,8 +176,8 @@ def _prefixed(stamp: str, message: str) -> str:
     return f"{stamp} [factory:{WORKER}][source:nvidia][model:{NVIDIA}] {message}\n"
 
 
-def _nvidia_session(exit_status: int, *, last_retry_ok: bool = False, tail: str = "") -> str:
-    log = (
+def _nvidia_session(exit_status: int, *, before: str = "", after: str = "") -> str:
+    return (
         f"Factory {WORKER} assigned dynamic provider slot: source=nvidia configured=true\n"
         + _prefixed("2026-11-24T12:40:20Z", "checked out pr #5671 on factory/work")
         + _prefixed(
@@ -185,40 +185,57 @@ def _nvidia_session(exit_status: int, *, last_retry_ok: bool = False, tail: str 
             f"FACTORY_EXECUTION_CANDIDATE: source=nvidia model={NVIDIA} runtime=nvidia/{NVIDIA}",
         )
         + "2026-11-24T12:40:36Z > build · nvidia/nemotron-3-nano-omni-30b-a3b-reasoning\n"
+        + before
         + "2026-11-24T12:41:08Z "
         + RETRY_429.format(n=2)
         + "\n"
         + "2026-11-24T12:41:09Z "
         + RETRY_429.format(n=3)
         + "\n"
+        + after
+        + _prefixed("2026-11-24T12:41:30Z", f"agent exit status {exit_status} for pr #5671")
     )
-    if last_retry_ok:
-        log += (
-            "2026-11-24T12:41:10Z ! retrying (attempt 4): Provider request failed with HTTP 503\n"
-        )
-    log += tail
-    log += _prefixed("2026-11-24T12:41:30Z", f"agent exit status {exit_status} for pr #5671")
-    return log
 
 
-def test_nvidia_429_then_exit_1_is_throttle() -> None:
-    result = dynamic.classify(_nvidia_session(1))
+# Run 45395552539: OpenCode recovered from the 429s and the model kept working.
+RECOVERED = (
+    "2026-11-24T12:41:15Z $ git checkout pr-5671\n"
+    "2026-11-24T12:41:15Z Switched to branch 'pr-5671'\n"
+    "2026-11-24T12:41:16Z > build · nvidia/nemotron-3-nano-omni-30b-a3b-reasoning\n"
+)
+
+
+def test_session_ending_on_429_after_exit_1_is_throttle() -> None:
+    assert dynamic.classify(_nvidia_session(1))["outcome_class"] == "provider_throttle"
+
+
+def test_session_ending_on_429_is_throttle_not_work_failure() -> None:
+    result = dynamic.classify(_nvidia_session(0, before="2026-11-24T12:41:00Z tests failed\n"))
     assert result["outcome_class"] == "provider_throttle"
+    assert result["detail"] == "the session's last provider retry was an HTTP 429 response"
 
 
-def test_nvidia_429_session_that_ended_in_test_failure_is_throttle() -> None:
-    result = dynamic.classify(_nvidia_session(0, tail="2026-11-24T12:41:20Z tests failed\n"))
-    assert result["outcome_class"] == "provider_throttle"
-
-
-def test_nvidia_429_with_missing_semantic_verdict_is_throttle() -> None:
-    tail = _prefixed(
-        "2026-11-24T12:41:20Z",
+def test_recovery_session_ending_on_429_with_missing_verdict_is_throttle() -> None:
+    log = _nvidia_session(0) + _prefixed(
+        "2026-11-24T12:41:40Z",
         "semantic_review_recovery_failed: review model did not produce an authoritative "
         "terminal verdict for PR #5671",
     )
-    result = dynamic.classify(_nvidia_session(0, tail=tail))
-    assert result["outcome_class"] == "provider_throttle"
+    assert dynamic.classify(log)["outcome_class"] == "provider_throttle"
+
+
+def test_recovered_429_then_test_failure_stays_work_failure() -> None:
+    log = _nvidia_session(0, after=RECOVERED + "2026-11-24T12:41:20Z tests failed\n")
+    assert dynamic.classify(log)["outcome_class"] == "work_failure"
+
+
+def test_recovered_429_in_an_approved_review_stays_no_work() -> None:
+    log = _nvidia_session(0, after="2026-11-24T12:41:20Z FACTORY_GATE_READY\n")
+    assert dynamic.classify(log)["outcome_class"] == "no_work"
+
+
+def test_idle_session_ending_on_429_stays_no_work() -> None:
+    assert dynamic.classify(_nvidia_session(0))["outcome_class"] == "no_work"
 
 
 def test_429_quoted_by_the_agent_is_not_a_provider_response() -> None:
@@ -237,18 +254,13 @@ def test_429_quoted_by_the_agent_is_not_a_provider_response() -> None:
     assert dynamic.classify(log)["outcome_class"] == "work_failure"
 
 
-def test_recovered_429_retry_does_not_override() -> None:
-    log = _nvidia_session(0, last_retry_ok=True, tail="2026-11-24T12:41:20Z tests failed\n")
-    assert dynamic.classify(log)["outcome_class"] == "work_failure"
-
-
 def test_daily_limit_429_is_quota() -> None:
-    tail = (
+    after = (
         "2026-11-24T12:41:12Z ! retrying (attempt 5): HTTP 429: Rate limit exceeded: "
         "free-models-per-day-high-balance.\n"
     )
-    result = dynamic.classify(_nvidia_session(1, tail=tail))
-    assert result["outcome_class"] == "provider_quota"
+    log = _nvidia_session(0, before="2026-11-24T12:41:00Z tests failed\n", after=after)
+    assert dynamic.classify(log)["outcome_class"] == "provider_quota"
 
 
 def _attempt(log: str, outcome: dict[str, object]) -> list[dict[str, object]]:
@@ -260,17 +272,19 @@ def _attempt(log: str, outcome: dict[str, object]) -> list[dict[str, object]]:
 
 
 def test_unproven_final_attempt_takes_the_terminal_provider_class() -> None:
-    log = _nvidia_session(1).replace("2026-11-24T12:40:21Z", "2026-11-24T12:40:21.0000000Z")
+    log = _nvidia_session(1, after=RECOVERED).replace(
+        "2026-11-24T12:40:21Z", "2026-11-24T12:40:21.0000000Z"
+    )
     events = _attempt(
         log,
         {
             "source": "nvidia",
             "model": NVIDIA,
-            "outcome_class": "provider_throttle",
+            "outcome_class": "provider_failure",
             "exact_model_proven": False,
         },
     )
-    assert [event["outcome_class"] for event in events] == ["provider_throttle"]
+    assert [event["outcome_class"] for event in events] == ["provider_failure"]
 
 
 def test_no_change_attempt_with_429_retries_is_throttle() -> None:
@@ -290,3 +304,31 @@ def test_no_change_attempt_with_429_retries_is_throttle() -> None:
     )
     assert events[0]["outcome_class"] == "provider_throttle"
     assert events[0]["evidence"] == "provider_retry"
+
+
+def test_recorded_control_plane_failure_reaches_the_classified_log(tmp_path: Path) -> None:
+    script = (
+        "set -euo pipefail\n"
+        f"WORKER={WORKER} SOURCE=nvidia MODEL={NVIDIA}\n"
+        f"TERMINAL_OUTCOME_FILE={tmp_path}/outcome\n"
+        "log() { printf '[factory:%s][source:%s][model:%s] %s\\n' "
+        '"$WORKER" "$SOURCE" "$MODEL" "$*"; }\n'
+        f"source {SCRIPTS}/factory-worker-outcome.sh\n"
+        "record_terminal_outcome control_plane_failure "
+        "'trusted review controller failed for PR #5671 with exit status 1'\n"
+        "record_terminal_outcome work_failure 'tests failed'\n"
+    )
+    out = subprocess.run(["bash", "-c", script], capture_output=True, text=True, check=True).stdout
+    assert out.splitlines() == [
+        f"[factory:{WORKER}][source:nvidia][model:{NVIDIA}] control_plane_failure: "
+        "trusted review controller failed for PR #5671 with exit status 1"
+    ]
+    log = (
+        _nvidia_session(0, after=RECOVERED).replace(
+            _prefixed("2026-11-24T12:41:30Z", "agent exit status 0 for pr #5671"), ""
+        )
+        + _prefixed("2026-11-24T12:41:30Z", "agent exit status 0 for pr #5671")
+        + "2026-11-24T12:41:40Z "
+        + out
+    )
+    assert dynamic.classify(log)["outcome_class"] == "control_plane_failure"
