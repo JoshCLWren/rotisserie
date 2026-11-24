@@ -108,7 +108,7 @@ def test_quota_never_grows_a_streak_and_cools_the_account_until_reset(nvidia_wor
     assert until.hour == 0 and until.minute == 0 and until > datetime.now(UTC)
 
 
-def test_throttle_sets_a_short_cooldown_from_the_marker_hint(nvidia_worker):
+def test_throttle_cools_only_the_refused_model(nvidia_worker):
     conn = Recorder()
     epoch = int((datetime.now(UTC) + timedelta(seconds=90)).timestamp())
     hint = {
@@ -120,10 +120,9 @@ def test_throttle_sets_a_short_cooldown_from_the_marker_hint(nvidia_worker):
         "reset_source": "header",
     }
     assert project(conn, 21, outcome(21, "provider_throttle", quota_hints=[hint]))
-    ((state, until),) = conn.kv("factory-provider-backoff-v1:").values()
-    assert state[0]["reset_source"] == "header"
-    assert int(until.timestamp()) == epoch
+    assert not conn.kv("factory-provider-backoff-v1:")
     assert not conn.kv("factory-model-backoff-v1:")
+    assert [(a[2], a[3]) for a in conn.health()] == [("vendor/m", "provider_throttle")]
 
 
 def test_real_failure_still_grows_a_capped_streak(nvidia_worker):
