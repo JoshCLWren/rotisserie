@@ -12,8 +12,8 @@
 # HIGH PRIORITY: each open one needs a structured outcome entry (fixed or
 # rebutted) in the git-excluded outcome file. Before FACTORY_GATE_READY the
 # wrapper posts those outcomes as thread replies and blocks gate-ready when any
-# open current-head Greptile finding has no valid outcome. The wrapper never
-# resolves threads; Greptile resolves its own. PR-Agent output is advisory.
+# open current-head Greptile finding has no valid outcome. Only the trusted
+# self-heal sweep resolves threads, once a fix is in the head. PR-Agent: advisory.
 
 FACTORY_GREPTILE_LOGIN_RE='^greptile-apps(\[bot\])?$'
 FACTORY_REVIEW_FINDINGS_BODY_LIMIT="${FACTORY_REVIEW_FINDINGS_BODY_LIMIT:-6000}"
@@ -488,8 +488,8 @@ factory_greptile_reply_body() {
 # (GREPTILE_SUMMARY_*) gets a PR comment. A thread reply is skipped only when
 # a reply with the identical marker (thread, outcome, head, content digest)
 # already sits after Greptile's latest comment on that thread ($3), so a
-# revised answer after Greptile pushback is always posted. Never resolves
-# threads. Returns non-zero when any post fails.
+# revised answer after Greptile pushback is always posted. Never resolves threads
+# (factory_self_heal.py does). Returns non-zero when any post fails.
 factory_post_greptile_outcome_replies() {
   local valid="$1" head="$2" threads_doc="${3:-}" status=0 thread outcome text commit title marker body
   local repo="${GITHUB_REPOSITORY:?GITHUB_REPOSITORY is required}"
@@ -545,7 +545,7 @@ factory_review_findings_mission() {
   open_ids="$(jq -r '[.[].id] | join(", ")' "${out}.open.json" 2>/dev/null || true)"
   [[ -f "${out}.open.json" ]] || open_ids='UNKNOWN (fetch incomplete; inspect threads with gh and cover every unresolved Greptile thread)'
   [[ -n "$open_ids" ]] || open_ids='none'
-  printf '%s\n' "REVIEW FINDINGS (fetched by the trusted wrapper and written to ${out}). Greptile (greptile-apps[bot]) findings are HIGH PRIORITY, must-address review feedback: fix each OPEN one in code, or rebut it with concrete evidence. Record every outcome in ${FACTORY_GREPTILE_OUTCOMES_BASENAME} at the repository root (git-excluded; never commit it) as JSON: {\"outcomes\":[{\"thread_id\":\"PRRT_...\",\"outcome\":\"fixed\",\"explanation\":\"what changed and where\"},{\"thread_id\":\"PRRT_...\",\"outcome\":\"rebutted\",\"evidence\":\"file:line, test output, or spec showing the finding does not apply\"}]}. A fixed entry needs your fix in this run's diff (or a \"commit\" SHA already on this branch); a rebutted entry needs at least 40 characters of evidence. Required thread ids (OPEN Greptile findings): ${open_ids}. A GREPTILE_SUMMARY_* id is a finding listed only in the Greptile PR-body summary for this head; use that id as thread_id and the wrapper posts its outcome as a PR comment. Before FACTORY_GATE_READY the wrapper posts these outcomes as replies on each thread and refuses gate-ready if any open Greptile finding (including one that arrives during your run) has no valid entry. Do not post or resolve Greptile thread replies yourself; Greptile resolves its own threads. Other unresolved threads follow the normal fix-or-rebut rule. PR-Agent check output is lower-priority advisory input. Findings file contents follow.
+  printf '%s\n' "REVIEW FINDINGS (fetched by the trusted wrapper and written to ${out}). Greptile (greptile-apps[bot]) findings are HIGH PRIORITY, must-address review feedback: fix each OPEN one in code, or rebut it with concrete evidence. Record every outcome in ${FACTORY_GREPTILE_OUTCOMES_BASENAME} at the repository root (git-excluded; never commit it) as JSON: {\"outcomes\":[{\"thread_id\":\"PRRT_...\",\"outcome\":\"fixed\",\"explanation\":\"what changed and where\"},{\"thread_id\":\"PRRT_...\",\"outcome\":\"rebutted\",\"evidence\":\"file:line, test output, or spec showing the finding does not apply\"}]}. A fixed entry needs your fix in this run's diff (or a \"commit\" SHA already on this branch); a rebutted entry needs at least 40 characters of evidence. Required thread ids (OPEN Greptile findings): ${open_ids}. A GREPTILE_SUMMARY_* id is a finding listed only in the Greptile PR-body summary for this head; use that id as thread_id and the wrapper posts its outcome as a PR comment. Before FACTORY_GATE_READY the wrapper posts these outcomes as replies on each thread and refuses gate-ready if any open Greptile finding (including one that arrives during your run) has no valid entry. Do not post or resolve Greptile thread replies yourself; the factory resolves an answered thread once your fix is in the head. Other unresolved threads follow the normal fix-or-rebut rule. PR-Agent check output is lower-priority advisory input. Findings file contents follow.
 ----- BEGIN REVIEW FINDINGS -----
 ${content}
 ----- END REVIEW FINDINGS -----"

@@ -17,7 +17,15 @@ from datetime import UTC, datetime
 from typing import Any
 
 from rotisserie.factory_console.github import GitHub, GitHubError, string
-from rotisserie.factory_console.service import doctor, failures, fleet, reliability, review, stalls
+from rotisserie.factory_console.service import (
+    doctor,
+    failures,
+    fleet,
+    reliability,
+    review,
+    self_heal,
+    stalls,
+)
 from rotisserie.factory_console.service import recap_build as build
 from rotisserie.factory_console.service.report import search
 from rotisserie.factory_console.tracker import WORKER_WORKFLOW, Clock
@@ -36,6 +44,7 @@ class Recap:
     main: str
     merged: dict[str, list[dict[str, object]]]
     needs_you: list[dict[str, object]]
+    healed: list[dict[str, object]]
     went_wrong: dict[str, object]
     providers: dict[str, list[dict[str, object]]]
     stuck: list[dict[str, object]]
@@ -51,6 +60,7 @@ class Recap:
             "main": self.main,
             "merged": self.merged,
             "needs_you": self.needs_you,
+            "healed": self.healed,
             "went_wrong": self.went_wrong,
             "providers": self.providers,
             "stuck": self.stuck,
@@ -87,6 +97,7 @@ def assemble(sources: build.Sources) -> Recap:
         main=main,
         merged=groups,
         needs_you=needs,
+        healed=build.healed(sources),
         went_wrong=wrong,
         providers=build.providers(sources),
         stuck=build.stuck(sources),
@@ -110,6 +121,9 @@ def gather(
     def pulls() -> None:
         sources.pulls = review.open_pulls(github)
         sources.stalls = stalls.scan(github, sources.pulls)
+
+    def healed() -> None:
+        sources.healed = self_heal.recent(github, since=since)
 
     def claims() -> None:
         sources.claims = search(
@@ -137,6 +151,7 @@ def gather(
         "worker runs": worker_runs,
         "merged pull requests": merged,
         "open pull requests": pulls,
+        "self-heals": healed,
         "claims": claims,
         "reliability snapshot": stats,
         "provider switches": switches,

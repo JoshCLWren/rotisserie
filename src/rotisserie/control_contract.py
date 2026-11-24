@@ -32,6 +32,7 @@ READ_ONLY = frozenset(
     (
         "status",
         "recap",
+        "heal",
         "report",
         "failures",
         "stats",
@@ -100,6 +101,7 @@ _READ_PARAMETERS = {
     "follow": {"target"},
     "report": {"since"},
     "recap": {"since"},
+    "heal": {"since"},
     "failures": {"since"},
     "stats": {"window"},
     "store": {"mode", "run"},
@@ -170,8 +172,9 @@ def read_command(name: str, query: Mapping[str, str], *, trusted: bool = False) 
         if mode not in ("selftest", "export", "migrate"):
             raise InvalidRequest("Invalid store mode")
         args.extend((mode, "--run", _match(_string(query, "run", required=True), RUN_ID, "run")))
-    elif name in ("report", "failures", "recap"):
-        since = _string(query, "since") or ("10h" if name == "failures" else "12h")
+    elif name in ("report", "failures", "recap", "heal"):
+        default = {"failures": "10h", "heal": "24h"}.get(name, "12h")
+        since = _string(query, "since") or default
         args.extend(("--since", _match(since, re.compile(r"^[0-9]{1,3}[hd]$"), "since")))
     elif name == "outcomes":
         args.extend(("--since", "2h", "--limit", "40"))

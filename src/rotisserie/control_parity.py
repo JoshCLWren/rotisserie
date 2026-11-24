@@ -14,6 +14,7 @@ CONTROLS: dict[str, tuple[str, ...]] = {
     "cancel": ("write:cancel",),
     "report": ("read:report",),
     "recap": ("read:recap",),
+    "heal": ("read:heal",),
     "stats": ("read:stats",),
     "settings": ("read:settings", "write:settings"),
     "prioritize": ("write:prioritize",),

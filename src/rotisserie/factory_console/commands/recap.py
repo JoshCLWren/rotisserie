@@ -54,6 +54,12 @@ def render(console: Console, data: dict[str, object]) -> None:
             console.line(f"  {console.warn_mark} {row['text']}")
             if row.get("action"):
                 console.line(f"      {row['action']}")
+    healed = _rows(data.get("healed"))
+    if healed:
+        console.line()
+        console.line(console.bold(f"Fixed by itself ({len(healed)})"))
+        for row in healed:
+            console.line(f"  {console.ok_mark} {row['text']}")
     _render_wrong(console, data["went_wrong"])
     _render_providers(console, data["providers"])
     stuck = _rows(data["stuck"])

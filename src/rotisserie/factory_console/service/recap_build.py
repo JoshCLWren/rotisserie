@@ -24,6 +24,7 @@ from rotisserie.factory_console.service.failures import (
 from rotisserie.factory_console.service.fleet import FleetState
 from rotisserie.factory_console.service.report import OUTCOME_WORDS, provider_rows
 from rotisserie.factory_console.service.review import BLOCKED
+from rotisserie.factory_console.service.self_heal import Heal
 from rotisserie.factory_console.service.stalls import Stall
 from rotisserie.factory_console.work import Item
 
@@ -57,6 +58,7 @@ class Sources:
     findings: list[Finding] = field(default_factory=list)
     pulls: list[Obj] = field(default_factory=list)
     stalls: list[Stall] = field(default_factory=list)
+    healed: list[Heal] = field(default_factory=list)
     claims: list[Obj] = field(default_factory=list)
     stats: Obj | None = None
     fleet: FleetState | None = None
@@ -120,6 +122,8 @@ def needs_you(sources: Sources) -> list[dict[str, object]]:
             add("doctor", f"{finding.check.capitalize()}: {finding.text}", finding.hint)
     pulls = _titles(sources.pulls)
     for stall in sources.stalls:
+        if stall.auto:
+            continue
         pr = pulls.get(stall.pr, {})
         add(
             "deadlock",
@@ -158,6 +162,14 @@ def needs_you(sources: Sources) -> list[dict[str, object]]:
             FIXES["provider_quota"],
         )
     return rows
+
+
+def healed(sources: Sources) -> list[dict[str, object]]:
+    """What the factory cleared by itself, one plain line each."""
+    return [
+        {"kind": heal.kind, "text": heal.text, "at": heal.at, "url": heal.url or None}
+        for heal in sources.healed
+    ]
 
 
 def _out_of_quota(row: WorkerFailure) -> bool:

@@ -19,6 +19,7 @@ from rotisserie.factory_console.service import (
     recap,
     reliability,
     review,
+    self_heal,
     stalls,
 )
 from rotisserie.factory_console.service import recap_build as build
@@ -332,6 +333,7 @@ def test_a_failed_read_is_named_and_the_rest_still_reads(monkeypatch: pytest.Mon
     monkeypatch.setattr(failures, "worker_failures", lambda *_a, **_k: [])
     monkeypatch.setattr(review, "open_pulls", lambda *_a: [])
     monkeypatch.setattr(stalls, "scan", lambda *_a: [])
+    monkeypatch.setattr(self_heal, "recent", lambda *_a, **_k: [])
     monkeypatch.setattr(
         recap, "search", lambda _g, query: [pr(1, "Add search")] if "merged" in query else []
     )

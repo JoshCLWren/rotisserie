@@ -190,6 +190,11 @@ jobs:
             review_pr="$(jq -er '.number' <<< "$FACTORY_ASSIGNMENT")"
             review_authors="$(python3 .github/scripts/factory_review_model_guard.py authors --repo "$GITHUB_REPOSITORY" --pr "$review_pr")" \
               || review_authors='[]'
+            # A model whose repair verdict named no finding sits out the next review.
+            if avoided="$(python3 .github/scripts/factory_self_heal.py --repo "$GITHUB_REPOSITORY" avoided-reviewers --pr "$review_pr")" &&
+               jq -e 'type == "array"' <<< "$avoided" >/dev/null 2>&1; then
+              review_authors="$(jq -cn --argjson a "$review_authors" --argjson b "$avoided" '($a + $b) | unique' 2>/dev/null || echo "$review_authors")"
+            fi
           fi
           jq -e 'type == "array" and all(.[]; type == "string")' <<< "$review_authors" >/dev/null || review_authors='[]'
           echo "review_authors=$(jq -c . <<< "$review_authors")" >> "$GITHUB_OUTPUT"
