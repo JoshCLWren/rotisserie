@@ -113,6 +113,28 @@ def _issue_view(issue_number: int) -> dict[str, object]:
     }
 
 
+def _reopened_by_person(issue_number: int) -> bool | str:
+    """Whether a person (not a bot) made the issue's latest reopen; "unknown" on failure."""
+    owner, name = _repo_slug().split("/", 1)
+    query = (
+        "query($owner:String!,$name:String!,$number:Int!){repository(owner:$owner,name:$name)"
+        "{issue(number:$number){timelineItems(last:1,itemTypes:[REOPENED_EVENT])"
+        "{nodes{... on ReopenedEvent{actor{__typename login}}}}}}}"
+    )
+    try:
+        raw = _run_gh(
+            "api", "graphql", "-f", f"query={query}",
+            "-F", f"owner={owner}", "-F", f"name={name}", "-F", f"number={issue_number}",
+        )
+        nodes = json.loads(raw)["data"]["repository"]["issue"]["timelineItems"]["nodes"]
+    except (RuntimeError, ValueError, KeyError, TypeError):
+        return "unknown"
+    if not nodes:
+        return False
+    actor = nodes[-1].get("actor") or {}
+    return actor.get("__typename") == "User"
+
+
 def _issue_has_open_successor_pr(issue_number: int, merged_pr: int) -> bool | str:
     """Return whether another open PR also claims the issue.
 
