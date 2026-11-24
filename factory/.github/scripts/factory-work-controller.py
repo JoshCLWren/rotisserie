@@ -33,6 +33,8 @@ from factory_discovery import canonical_target, discover, update_labels
 from factory_state_ledger import acquire_lease, release_lease, renew_verified_workers, worker_claim, external_wip_count
 from factory_state_ledger import enabled as ledger_enabled
 from factory_adopter import MARKER_PREFIX, repository
+import factory_assign_trace as trace
+from factory_pr_merge_state import fill_merge_state
 REPO = repository()
 GH_TIMEOUT_SECONDS = env_positive_int("FACTORY_GH_TIMEOUT_SECONDS", 120)
 ASSIGNMENT_WRITER_WORKFLOW_PATH = ".github/workflows/fixed-model-factory-dispatch.yml"
@@ -103,10 +105,10 @@ def list_prs() -> list[dict[str, Any]]:
     if re.fullmatch(r'pr:[1-9][0-9]*', hint):
         number = int(hint.split(':')[1])
         return discover(REPO, 'pr', lambda: [canonical_target('pr', live_pr_state(number))])
-    return discover(REPO, 'pr', lambda: cast(list[dict[str, Any]], gh_json([
+    return discover(REPO, 'pr', lambda: fill_merge_state(cast(list[dict[str, Any]], gh_json([
         'pr', 'list', '--repo', REPO, '--state', 'open', '--limit', '500',
         '--json', 'number,title,body,labels,headRefName,headRefOid,createdAt,updatedAt,isDraft,mergeable,mergeStateStatus,isCrossRepository',
-    ])))
+    ])), live_pr_state))
 
 
 def rotisserie_issue_intake(issues: list[dict[str, Any]], prs: list[dict[str, Any]], *, operator_force: bool = False) -> set[int] | None:
@@ -508,7 +510,7 @@ def assign_candidate(
     the durable lease marker.
     """
     if os.environ.get('GITHUB_ACTIONS', '').strip().lower() == 'true' and not dispatcher_identity_verified():
-        return False
+        return trace.skip(candidate.number, 'dispatcher workflow identity not verified')
     owner = f'factory:{worker}'
     numbers = [candidate.number]
     if candidate.kind == 'pr' and candidate.linked_issue is not None:
@@ -520,19 +522,18 @@ def assign_candidate(
             numbers.insert(0, candidate.linked_issue)
     for number in numbers:
         if not target_still_unowned(number):
-            return False
+            return trace.skip(candidate.number, f'#{number} is owned or blocked on GitHub')
     # The ranked snapshot may have been taken before a CI run started. Do not
     # allocate a store lease to a PR that is currently waiting on CI.
     if candidate.kind == 'pr' and candidate.stage in STAGE_LABELS:
         if not candidate_is_live_executable(candidate):
-            return False
+            return trace.skip(candidate.number, 'waiting on CI or ready')
     if candidate.kind == 'issue' and issue_has_open_blocker(candidate.number, live=True):
         # A fresh dependency was added after ranking; never convert an
         # advisory store cache hit into a blocked GitHub lease mutation.
-        return False
-
+        return trace.skip(candidate.number, 'open dependency blocker')
     if worker_has_active_lease(worker):
-        return False
+        return trace.skip(candidate.number, f'Factory {worker} already owns a GitHub target')
 
     # Acquire one atomic worker + issue/PR reservation before mutating GitHub.
     # GitHub live checks remain required; a store conflict never grants a claim.
@@ -542,11 +543,11 @@ def assign_candidate(
             external_wip_seen=EXTERNAL_WIP_SEEN if candidate.kind == 'issue' else None,
         )
     except Exception as exc:
-        paused = type(exc).__name__ in ('ClaimsPaused', 'StoreBlocked')
-        print(f'[factory-controller] New claims paused: {exc}' if paused else f'[factory-controller] Factory store unavailable; refusing duplicate-risk assignment ({type(exc).__name__})', file=sys.stderr)
-        return False
+        if type(exc).__name__ not in ('ClaimsPaused', 'StoreBlocked'):
+            raise RuntimeError(f'factory store unavailable during assignment ({type(exc).__name__})') from exc
+        return trace.skip(candidate.number, f'new claims paused: {exc}')
     if claim_token is None:
-        return False
+        return trace.skip(candidate.number, trace.store_conflict(REPO, worker, numbers))
 
     def release_verified_claims(claimed_numbers: list[int]) -> None:
         """Release only labels this worker can still prove it owns."""
@@ -1437,6 +1438,7 @@ def assign_from_pool(worker: str, kinds: tuple[str, ...] | None = None,
     named: bool = False,
 ) -> Candidate | None:
     """Rank the shared pool for a worker already proven eligible."""
+    trace.reset()
     # Trusted dispatcher batches run these two full-repository reconciliations
     # once before iterating workers. Standalone/manual assignment still checks
     # them here. Every actual claim remains live-verified in assign_candidate.
@@ -1549,7 +1551,7 @@ def assign_from_pool(worker: str, kinds: tuple[str, ...] | None = None,
             cooling = cooling_prs(REPO, lookup)
             if cooling:
                 print(f"[factory-controller] exact-head retry cooling: {sorted(cooling)}", file=sys.stderr)
-                candidates = [c for c in candidates if c.number not in cooling]
+                candidates = [c for c in candidates if c.number not in cooling or trace.skip(c.number, 'exact-head retry cooling')]
         except Exception as exc:
             print(f"[factory-controller] store retry read deferred ({type(exc).__name__})", file=sys.stderr)
     candidates = order_candidates_for_worker(
@@ -1632,11 +1634,10 @@ def assign_from_pool(worker: str, kinds: tuple[str, ...] | None = None,
         candidate = candidates[index]
         index += 1
         if not candidate_is_live_executable(candidate):
+            trace.skip(candidate.number, 'blocked, ready, or waiting on CI')
             continue
-        if (
-            candidate.kind == "issue"
-            and issue_excludes_worker_on_strike_retry(candidate.number, worker)
-        ):
+        if candidate.kind == "issue" and issue_excludes_worker_on_strike_retry(candidate.number, worker):
+            trace.skip(candidate.number, f'strike retry excludes Factory {worker}')
             continue
         action = jev_action if jev_used and jev_pr == candidate.number else None
         if target is not None:
@@ -2794,15 +2795,12 @@ def main() -> int:
         if skip_reason is not None:
             print(f'[factory-controller] {skip_reason}; skipping dispatch', file=sys.stderr)
             # A busy/paused/capped worker says nothing about the shared pool.
-            print(json.dumps({'kind': 'none', 'reason': 'worker_unavailable'}))
+            print(json.dumps({'kind': 'none', 'reason': 'worker_unavailable', 'detail': skip_reason}))
             return 0
-        candidate = assign_from_pool(
-            args.worker,
-            kinds=tuple(args.kinds) if args.kinds else None,
-            batch_reconciled=args.batch_reconciled,
-        )
+        kinds = tuple(args.kinds) if args.kinds else None
+        candidate = assign_from_pool(args.worker, kinds=kinds, batch_reconciled=args.batch_reconciled)
         if candidate is None:
-            print(json.dumps({'kind': 'none', 'reason': 'no_work'}))
+            print(json.dumps({'kind': 'none', 'reason': 'no_work', 'detail': trace.summary()}))
             return 0
         print(json.dumps(assignment_context(candidate, args.worker)))
         return 0

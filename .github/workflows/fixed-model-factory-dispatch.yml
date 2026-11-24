@@ -656,7 +656,7 @@ jobs:
           export FACTORY_ATTEMPT_HISTORY_CACHE="$history_cache_dir/comments.json"
           dispatch_assigned_worker() {
             local worker="$1"
-            local assignment kind reason attempt=1
+            local assignment kind reason detail attempt=1
 
             if ! assignment="$(python3 "$controller" assign --worker "$worker" --batch-reconciled)"; then
               echo "Factory ${worker}: controller assignment failed" >&2
@@ -666,11 +666,12 @@ jobs:
             case "$kind" in
               none)
                 reason="$(jq -r '.reason // "no_work"' <<< "$assignment" 2>/dev/null || echo no_work)"
+                detail="$(jq -r '.detail // "no detail reported"' <<< "$assignment" 2>/dev/null || echo 'no detail reported')"
                 if [[ "$reason" == "worker_unavailable" ]]; then
                   unavailable_count=$(( ${unavailable_count:-0} + 1 ))
-                  echo "Factory ${worker}: unavailable this tick; trying next worker"
+                  echo "Factory ${worker}: unavailable this tick (${detail}); trying next worker"
                 else
-                  echo "Factory ${worker}: no executable control-plane assignment"
+                  echo "Factory ${worker}: no executable control-plane assignment (${reason}: ${detail})"
                 fi
                 return 0
                 ;;
