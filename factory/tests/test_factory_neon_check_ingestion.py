@@ -28,7 +28,7 @@ class RecordingConnection:
         self.statements: list[str] = []
 
     async def fetchval(self, query: str, repo: str, pr: int, sha: str, run_id: int) -> int | None:
-        assert (repo, pr, sha) == ("JoshCLWren/comic-pile", 567, "a" * 40)
+        assert (repo, pr, sha) == ("acme/widgets", 567, "a" * 40)
         self.statements.append(query)
         if run_id <= self.last_run:
             return None
@@ -39,7 +39,7 @@ class RecordingConnection:
 def test_review_cooldown_requires_a_restricted_connection(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.delenv("FACTORY_STATE_DSN_FILE", raising=False)
     with pytest.raises(RuntimeError, match="requires restricted Neon"):
-        operations.ingest_check("JoshCLWren/comic-pile", review_event())
+        operations.ingest_check("acme/widgets", review_event())
 
 
 def test_successful_ci_does_not_query_or_write_neon() -> None:
@@ -51,7 +51,7 @@ def test_successful_ci_does_not_query_or_write_neon() -> None:
         ("Local Ollama Review", "cancelled"),
     ):
         assert asyncio.run(operations._ingest_check(
-            conn, "JoshCLWren/comic-pile",
+            conn, "acme/widgets",
             review_event(name=name, conclusion=conclusion),
         )) == 0
     assert conn.statements == []
@@ -60,9 +60,9 @@ def test_successful_ci_does_not_query_or_write_neon() -> None:
 def test_failed_review_is_exact_head_and_idempotent_by_run() -> None:
     conn = RecordingConnection()
     event = review_event()
-    assert asyncio.run(operations._ingest_check(conn, "JoshCLWren/comic-pile", event)) == 1
-    assert asyncio.run(operations._ingest_check(conn, "JoshCLWren/comic-pile", event)) == 0
-    assert asyncio.run(operations._ingest_check(conn, "JoshCLWren/comic-pile", review_event(run_id=124))) == 1
+    assert asyncio.run(operations._ingest_check(conn, "acme/widgets", event)) == 1
+    assert asyncio.run(operations._ingest_check(conn, "acme/widgets", event)) == 0
+    assert asyncio.run(operations._ingest_check(conn, "acme/widgets", review_event(run_id=124))) == 1
     assert all("factory_pr_stage_retry" in sql for sql in conn.statements)
     assert all("factory_check_projection" not in sql for sql in conn.statements)
     assert all("last_run_id<EXCLUDED.last_run_id" in sql for sql in conn.statements)

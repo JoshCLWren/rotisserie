@@ -35,6 +35,7 @@
 
 # Enable globstar for recursive glob patterns in case statements
 shopt -s globstar
+export FACTORY_MARKER_PREFIX="${FACTORY_MARKER_PREFIX:-$(python3 "$(dirname "${BASH_SOURCE[0]}")/factory_adopter.py" marker-prefix 2>/dev/null || python3 .github/scripts/factory_adopter.py marker-prefix)}"
 
 FACTORY_FAST_CHECK_TIMEOUT="${FACTORY_FAST_CHECK_TIMEOUT:-600}"
 FACTORY_FAST_CHECK_DB_ERROR_RE='(ConnectionRefusedError|could not connect to server|Connect call failed|connection to server at .* failed|OSError: \[Errno 111\]|asyncpg\.exceptions\.(CannotConnectNowError|InvalidPasswordError|ConnectionDoesNotExistError))'
@@ -339,7 +340,7 @@ factory_run_fast_checks() {
 # trusted (github-actions) comment repeats it.
 factory_neutralize_markers() {
   printf '%s' "$1" | sed -e 's/<!--/\&lt;!--/g' -e 's/-->/--\&gt;/g' \
-    -e 's/comic-pile-factory-/comic-pile-factory‑/g' -e 's/```/` ` `/g'
+    -e "s/${FACTORY_MARKER_PREFIX:?}-factory-/${FACTORY_MARKER_PREFIX}-factory‑/g" -e 's/```/` ` `/g'
 }
 
 # Tell the next worker why this diff was not pushed. Best effort.
@@ -348,7 +349,7 @@ factory_report_fast_check_failure() {
   local kind="$1" number="$2" log="$3" body tail_text
   tail_text="$(tail -n 80 "$log" 2>/dev/null | cut -c1-400)"
   tail_text="$(factory_neutralize_markers "$tail_text")"
-  body="$(printf '<!-- comic-pile-factory-fast-checks-failed-v1 -->\n### Factory pre-push fast checks failed\n\nFactory `%s` did not push its %s change for #%s because the trusted pre-push fast checks failed (see docs/AUTONOMOUS_FACTORY_POLICY.md, "Pre-push fast checks"). The working tree was reset; the next attempt must fix these failures.\n\n<details><summary>Fast-check log tail</summary>\n\n```text\n%s\n```\n</details>\n' \
-    "${WORKER:-agent}" "$kind" "$number" "$tail_text")"
+  body="$(printf '<!-- %s-factory-fast-checks-failed-v1 -->\n### Factory pre-push fast checks failed\n\nFactory `%s` did not push its %s change for #%s because the trusted pre-push fast checks failed (see docs/AUTONOMOUS_FACTORY_POLICY.md, "Pre-push fast checks"). The working tree was reset; the next attempt must fix these failures.\n\n<details><summary>Fast-check log tail</summary>\n\n```text\n%s\n```\n</details>\n' \
+    "${FACTORY_MARKER_PREFIX:?}" "${WORKER:-agent}" "$kind" "$number" "$tail_text")"
   gh issue comment "$number" --body "$body" >/dev/null 2>&1 || true
 }

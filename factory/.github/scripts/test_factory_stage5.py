@@ -56,7 +56,7 @@ def no_diff_marker(
     issue_number: int, epoch: int, worker: str = "opencode-nvidia-factory-6"
 ) -> str:
     return (
-        "<!-- comic-pile-factory-claim-released-v3:"
+        "<!-- widgets-factory-claim-released-v3:"
         f"issue-{issue_number}:{worker}:{epoch}:no-persisted-change-handoff -->"
     )
 

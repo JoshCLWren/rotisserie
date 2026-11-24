@@ -25,11 +25,11 @@ from factory_work_policy import (
     matching_pr_no_diff_attempts,
     parse_no_diff_attempts_from_comments,
 )
-from factory_adopter import repository
+from factory_adopter import MARKER_PREFIX, repository
 
 REPO = repository()
 SHA_RE = re.compile(r"^[0-9a-f]{40}$")
-RETIRE_MARKER = "comic-pile-factory-no-progress-retired-v1"
+RETIRE_MARKER = f"{MARKER_PREFIX}-factory-no-progress-retired-v1"
 STAGES = {"factory:review", "factory:changes-requested"}
 OWNER_RE = re.compile(r"^factory:(?:local|[1-9][0-9]*)$")
 

@@ -93,7 +93,7 @@ def test_worker_ownership_check_is_independent_of_narrow_candidate_view(controll
 
     monkeypatch.setattr(controller, 'gh_json', _record_ownership_observation)
     assert controller.worker_has_active_lease('54') is True
-    assert observed == [['api', 'repos/JoshCLWren/comic-pile/issues?state=open&labels=factory%3A54&per_page=1']]
+    assert observed == [['api', 'repos/acme/widgets/issues?state=open&labels=factory%3A54&per_page=1']]
 
 
 def test_obsolete_neon_discovery_producers_are_removed():

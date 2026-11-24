@@ -31,24 +31,24 @@ from factory_attempt_history import read_comment_history
 from factory_discovery import canonical_target, discover, update_labels
 from factory_state_ledger import acquire_lease, release_lease, renew_verified_workers, worker_claim, external_wip_count
 from factory_state_ledger import enabled as ledger_enabled
-from factory_adopter import repository
+from factory_adopter import MARKER_PREFIX, repository
 REPO = repository()
 GH_TIMEOUT_SECONDS = env_positive_int("FACTORY_GH_TIMEOUT_SECONDS", 120)
 ASSIGNMENT_WRITER_WORKFLOW_PATH = ".github/workflows/fixed-model-factory-dispatch.yml"
 ROTISSERIE_CONTROL_PATH = Path(".github/factory-rotisserie-control.json")
 STRIKE_RESET_RE = re.compile(
-    r"comic-pile-factory-strike-reset-v1:issue-(?P<issue>\d+):pr-(?P<pr>\d+):"
+    rf"{MARKER_PREFIX}-factory-strike-reset-v1:issue-(?P<issue>\d+):pr-(?P<pr>\d+):"
     r"excluded-producer-(?P<worker>\d+|unknown)"
 )
 IMPLEMENT_CLAIM_RE = re.compile(
-    r"comic-pile-factory-implement-claim-v3:issue-(?P<issue>\d+):"
+    rf"{MARKER_PREFIX}-factory-implement-claim-v3:issue-(?P<issue>\d+):"
     r"opencode-(?:free-model|nvidia|omniroute)-factory-(?P<worker>\d+):"
 )
 LEASE_ACTIVITY_PATTERNS = (
-    re.compile(r"comic-pile-factory-implement-(?:claim|progress)-v3:issue-\d+:[^:>]+:(\d{10})"),
-    re.compile(r"comic-pile-factory-fix-(?:claim|progress)-v3:[^:>]+:[^:>]+:(\d{10})"),
-    re.compile(r"comic-pile-factory-review-claim-v2:[^:>]+:[^:>]+:(\d{10})"),
-    re.compile(r"comic-pile-factory-controller-claim-v1:(?:issue|pr)-\d+:\d+:(\d{10})"),
+    re.compile(rf"{MARKER_PREFIX}-factory-implement-(?:claim|progress)-v3:issue-\d+:[^:>]+:(\d{{10}})"),
+    re.compile(rf"{MARKER_PREFIX}-factory-fix-(?:claim|progress)-v3:[^:>]+:[^:>]+:(\d{{10}})"),
+    re.compile(rf"{MARKER_PREFIX}-factory-review-claim-v2:[^:>]+:[^:>]+:(\d{{10}})"),
+    re.compile(rf"{MARKER_PREFIX}-factory-controller-claim-v1:(?:issue|pr)-\d+:\d+:(\d{{10}})"),
 )
 # Bound on exact-head contributor reads per dispatch pass. Resolving provenance
 # costs one paginated comment read per review-stage candidate, so the pass is
@@ -470,7 +470,7 @@ def record_controller_lease_activity(
 ) -> None:
     """Persist a trusted lease timestamp and optional decision provenance."""
     epoch = int(time.time())
-    marker = f'<!-- comic-pile-factory-controller-claim-v1:{kind}-{number}:{worker}:{epoch}'
+    marker = f'<!-- {MARKER_PREFIX}-factory-controller-claim-v1:{kind}-{number}:{worker}:{epoch}'
     for field, value in (('source', source), ('action', action)):
         if value is None:
             continue
@@ -1855,7 +1855,7 @@ def record_claim_released(number: int, worker: str, kind: str, reason: str) -> N
     epoch = int(time.time())
     worker_id = f'opencode-free-model-factory-{worker}'
     marker = (
-        f'<!-- comic-pile-factory-claim-released-v3:'
+        f'<!-- {MARKER_PREFIX}-factory-claim-released-v3:'
         f'{kind}-{number}:{worker_id}:{epoch}:{reason} -->'
     )
     run_gh(['issue', 'comment', str(number), '--repo', REPO, '--body', marker])
@@ -2464,7 +2464,7 @@ def operator_forced_claim(number: int, worker: str) -> bool:
     except RuntimeError:
         return False
     pattern = re.compile(
-        r'comic-pile-factory-controller-claim-v1:(?:issue|pr)-' + str(number) + ':' + re.escape(worker) + r':\d{10}(?P<fields>[^>]*)-->'
+        rf'{MARKER_PREFIX}-factory-controller-claim-v1:(?:issue|pr)-' + str(number) + ':' + re.escape(worker) + r':\d{10}(?P<fields>[^>]*)-->'
     )
     latest: str | None = None
     for comment in flatten_pages(pages):

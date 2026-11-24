@@ -122,7 +122,7 @@ def _run_script(
             "GH_CAPTURE": str(capture),
             "RUNNER_TEMP": str(tmp_path),
             "GITHUB_STEP_SUMMARY": str(summary),
-            "GITHUB_REPOSITORY": "JoshCLWren/comic-pile",
+            "GITHUB_REPOSITORY": "acme/widgets",
             "GITHUB_RUN_ID": str(random.randint(10**10, 10**11)),
             **env,
         },

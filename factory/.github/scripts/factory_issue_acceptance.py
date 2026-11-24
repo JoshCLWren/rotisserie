@@ -5,7 +5,12 @@ import json
 import re
 import sys
 from collections.abc import Iterable, Mapping
+from pathlib import Path
 from typing import Any
+
+# Callers load this module by file path, so its directory may not be on sys.path.
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from factory_adopter import MARKER_PREFIX  # noqa: E402
 
 PREFIX = "FACTORY_ACCEPTANCE_V1="
 HEADINGS = ("scope", "implementation required", "requirements", "acceptance", "verification before", "required evidence", "completion evidence", "expected behavior", "outcome")
@@ -93,7 +98,7 @@ def marker(issue: int, head: str, body: str) -> str:
         Standalone machine-readable acceptance marker.
     """
     return (
-        "<!-- comic-pile-factory-acceptance-v1:"
+        f"<!-- {MARKER_PREFIX}-factory-acceptance-v1:"
         f"issue-{issue}:head-{head}:digest-{digest(body)} -->"
     )
 

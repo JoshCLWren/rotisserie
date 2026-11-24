@@ -2,16 +2,16 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
 const test = require('node:test');
+process.env.GITHUB_REPOSITORY = 'acme/widgets';
 const visibility = require('./factory-visibility.cjs');
-const { reconcileMissingPrLabels } = visibility;
-const { BLOCKED_LABELS, hasManualOnlyDirective } = visibility._test;
+const { reconcileMissingPrLabels, _test: { BLOCKED_LABELS, hasManualOnlyDirective } } = visibility;
 
 const sha = 'a'.repeat(40);
 const MANUAL_ONLY = '<!-- factory-execution:manual-only -->';
 const pr = (number = 1) => ({
   number, state: 'open', draft: false, user: { login: 'JoshCLWren' },
   body: '',
-  head: { sha, repo: { full_name: 'JoshCLWren/comic-pile' } },
+  head: { sha, repo: { full_name: 'acme/widgets' } },
 });
 
 async function run({
@@ -63,7 +63,7 @@ async function run({
   };
   const github = { rest: { issues, pulls } };
   await reconcileMissingPrLabels({ github, openPullRequests: snapshot, context: {
-    eventName: event, repo: { owner: 'JoshCLWren', repo: 'comic-pile' },
+    eventName: event, repo: { owner: 'acme', repo: 'widgets' },
     payload: { pull_request: prs[0], action },
   } });
   return { writes, reads, gets, labelReads, repoLabelReads };
@@ -439,7 +439,7 @@ test('dependency bots, deleted heads, drafts, and closed PRs are excluded', asyn
 
 test('only trusted current-head review verdicts recover a missing stage', async () => {
   const comment = (head, verdict, association, day) => ({
-    body: `<!-- comic-pile-factory-review-v2:${head}:${verdict} -->`,
+    body: `<!-- widgets-factory-review-v2:${head}:${verdict} -->`,
     author_association: association, created_at: `2026-09-${day}T00:00:00Z`,
   });
   const { writes } = await run({ comments: [
@@ -452,7 +452,7 @@ test('only trusted current-head review verdicts recover a missing stage', async 
 
 test('current-head changes-required verdict requests repair', async () => {
   const { writes } = await run({ comments: [{
-    body: `<!-- comic-pile-factory-review-v2:${sha}:changes-required -->`,
+    body: `<!-- widgets-factory-review-v2:${sha}:changes-required -->`,
     author_association: 'OWNER', created_at: '2026-09-20T00:00:00Z',
   }] });
   assert.ok(writes[0].labels.includes('factory:changes-requested'));
@@ -461,7 +461,7 @@ test('current-head changes-required verdict requests repair', async () => {
 for (const event of ['schedule', 'pull_request_target']) {
   test(`${event} enrolls a first-time fork with the normal review gates`, async () => {
     const fork = { ...pr(), body: 'Closes #3893', user: { login: 'first-timer' },
-      head: { sha, ref: 'fix/issue-3893', repo: { full_name: 'first-timer/comic-pile' } } };
+      head: { sha, ref: 'fix/issue-3893', repo: { full_name: 'first-timer/widgets' } } };
     const { writes } = await run({ prs: [fork], event, labels: ['bug'] });
     assert.deepEqual(new Set(writes[0].labels),
       new Set(['bug', 'factory', 'factory:review', 'factory:unowned']));
@@ -470,7 +470,7 @@ for (const event of ['schedule', 'pull_request_target']) {
 
 for (const previous of ['factory:ci', 'factory:ready']) {
   test(`a contributor push invalidates ${previous} while preserving ownership`, async () => {
-    const fork = { ...pr(), head: { sha, repo: { full_name: 'contributor/comic-pile' } } };
+    const fork = { ...pr(), head: { sha, repo: { full_name: 'contributor/widgets' } } };
     const { writes } = await run({ prs: [fork], event: 'pull_request_target', action: 'synchronize',
       labels: ['factory', previous, 'factory:local', 'bug'] });
     assert.deepEqual(new Set(writes[0].labels),
@@ -507,7 +507,7 @@ test('enrollment keeps local+ready when the lease lands between decision and wri
           ...pr(pull_number),
           mergeable: true,
           mergeable_state: 'clean',
-          head: { sha, repo: { full_name: 'JoshCLWren/comic-pile' }, ref: 'local-factory/x' },
+          head: { sha, repo: { full_name: 'acme/widgets' }, ref: 'local-factory/x' },
         },
         headers: {},
         status: 200,
@@ -518,7 +518,7 @@ test('enrollment keeps local+ready when the lease lands between decision and wri
     github: { rest: { issues, pulls } },
     context: {
       eventName: 'pull_request_target',
-      repo: { owner: 'JoshCLWren', repo: 'comic-pile' },
+      repo: { owner: 'acme', repo: 'widgets' },
       payload: { pull_request: pr(), action: 'unlabeled' },
     },
   });
@@ -547,7 +547,7 @@ test('enrollment still defaults missing ownership to unowned without a local lea
           ...pr(pull_number),
           mergeable: true,
           mergeable_state: 'clean',
-          head: { sha, repo: { full_name: 'JoshCLWren/comic-pile' }, ref: 'local-factory/x' },
+          head: { sha, repo: { full_name: 'acme/widgets' }, ref: 'local-factory/x' },
         },
         headers: {},
         status: 200,
@@ -558,7 +558,7 @@ test('enrollment still defaults missing ownership to unowned without a local lea
     github: { rest: { issues, pulls } },
     context: {
       eventName: 'pull_request_target',
-      repo: { owner: 'JoshCLWren', repo: 'comic-pile' },
+      repo: { owner: 'acme', repo: 'widgets' },
       payload: { pull_request: pr(), action: 'unlabeled' },
     },
   });
@@ -588,7 +588,7 @@ test('enrollment push invalidates ready under a local lease but keeps the owner'
           ...pr(pull_number),
           mergeable: true,
           mergeable_state: 'clean',
-          head: { sha, repo: { full_name: 'JoshCLWren/comic-pile' }, ref: 'local-factory/x' },
+          head: { sha, repo: { full_name: 'acme/widgets' }, ref: 'local-factory/x' },
         },
         headers: {},
         status: 200,
@@ -599,7 +599,7 @@ test('enrollment push invalidates ready under a local lease but keeps the owner'
     github: { rest: { issues, pulls } },
     context: {
       eventName: 'pull_request_target',
-      repo: { owner: 'JoshCLWren', repo: 'comic-pile' },
+      repo: { owner: 'acme', repo: 'widgets' },
       payload: { pull_request: pr(), action: 'synchronize' },
     },
   });

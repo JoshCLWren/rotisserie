@@ -242,14 +242,14 @@ def test_event_pruning_retains_recent_worker_lifecycle_and_coordination(monkeypa
         executions.append((statement, args, one))
         return {"deleted": 17}
     monkeypatch.setattr(cache, "_run", fake_run)
-    assert cache._prune_retired_events("JoshCLWren/comic-pile", 500) == 17
+    assert cache._prune_retired_events("acme/widgets", 500) == 17
     sql, args, one = executions[0]
     assert one is True
     assert args == (
-        "factory-github-get-v1:JoshCLWren/comic-pile:",
-        "factory-projection-v1:JoshCLWren/comic-pile:",
-        ["JoshCLWren/comic-pile:open-issues", "JoshCLWren/comic-pile:open-prs"],
-        "JoshCLWren/comic-pile", 500,
+        "factory-github-get-v1:acme/widgets:",
+        "factory-projection-v1:acme/widgets:",
+        ["acme/widgets:open-issues", "acme/widgets:open-prs"],
+        "acme/widgets", 500,
     )
     assert "event_type='cache_refresh'" in sql
     assert "event_type='target_reconciled'" in sql
@@ -270,7 +270,7 @@ def test_event_pruning_retains_recent_worker_lifecycle_and_coordination(monkeypa
     # No LIKE wildcards that could turn underscores in repository names into patterns.
     assert "LIKE" not in sql
     with pytest.raises(ValueError, match="batch"):
-        cache._prune_retired_events("JoshCLWren/comic-pile", 1001)
+        cache._prune_retired_events("acme/widgets", 1001)
     with pytest.raises(ValueError, match="scope"):
         cache._prune_retired_events("other-repo", 100)
 
@@ -294,10 +294,10 @@ def test_retired_check_projection_cleanup_is_scoped_and_bounded(monkeypatch):
     monkeypatch.setattr(cache, "_run", fake_run)
     # Exercise the actual validator. The previous raw-regex double escape
     # rejected every normal owner/repository and broke the live status job.
-    assert cache._prune_retired_check_projection("JoshCLWren/comic-pile") == 250
+    assert cache._prune_retired_check_projection("acme/widgets") == 250
     assert cache._prune_retired_check_projection("other-owner/repo_name") == 250
     sql, args, one = calls[0]
-    assert args == ("JoshCLWren/comic-pile", 250)
+    assert args == ("acme/widgets", 250)
     assert one is True
     assert "WHERE repo=$1" in sql
     assert "checks.repo=$1" in sql
@@ -307,7 +307,7 @@ def test_retired_check_projection_cleanup_is_scoped_and_bounded(monkeypatch):
                       "factory_state_events", "factory_state_kv"):
         assert protected not in sql
     with pytest.raises(ValueError, match="batch"):
-        cache._prune_retired_check_projection("JoshCLWren/comic-pile", 1001)
+        cache._prune_retired_check_projection("acme/widgets", 1001)
     with pytest.raises(ValueError, match="scope"):
         cache._prune_retired_check_projection("another-repo", 250)
 
@@ -318,11 +318,11 @@ def test_prune_is_bounded_to_retired_discovery_without_coordination(monkeypatch)
         executed.append((statement, args, one))
         return {"deleted": 4}
     monkeypatch.setattr(cache, "_run", fake_run)
-    assert cache._prune_obsolete_discovery("JoshCLWren/comic-pile", 200) == 4
+    assert cache._prune_obsolete_discovery("acme/widgets", 200) == 4
     query, args, one = executed[0]
-    assert args == ("factory-github-get-v1:JoshCLWren/comic-pile:",
-                    "factory-projection-v1:JoshCLWren/comic-pile:",
-                    ["JoshCLWren/comic-pile:open-issues", "JoshCLWren/comic-pile:open-prs"], 200)
+    assert args == ("factory-github-get-v1:acme/widgets:",
+                    "factory-projection-v1:acme/widgets:",
+                    ["acme/widgets:open-issues", "acme/widgets:open-prs"], 200)
     assert one is True
     assert "DELETE FROM public.factory_state_kv" in query
     assert "left(cache_key, length($1))=$1" in query
@@ -331,7 +331,7 @@ def test_prune_is_bounded_to_retired_discovery_without_coordination(monkeypatch)
     assert "LIMIT $4" in query
     assert "refresh_until IS NULL OR" in query
     with pytest.raises(ValueError, match="batch"):
-        cache._prune_obsolete_discovery("JoshCLWren/comic-pile", 1001)
+        cache._prune_obsolete_discovery("acme/widgets", 1001)
 
 
 def test_prune_cli_cleans_in_batches_with_upper_limit(monkeypatch, tmp_path):

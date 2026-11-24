@@ -882,7 +882,7 @@ def test_keyword_closed_multiple_deps_one_open_reopens_blocked(
     assert "factory:blocked" in replaced[0]
     assert "ralph-status:blocked" in replaced[0]
     assert "factory:unowned" in replaced[0]
-    assert any("comic-pile-factory-dependency-block-v1:pr-4043:issue-4027:deps-4026"
+    assert any("widgets-factory-dependency-block-v1:pr-4043:issue-4027:deps-4026"
                in body for body in comments)
     assert any("#4026" in body for body in comments)
 

@@ -66,7 +66,7 @@ replace_labels() {
 record_no_diff_attempt() {
   local number="$1" epoch marker
   epoch="$(date +%s)"
-  marker="<!-- comic-pile-factory-claim-released-v3:issue-${number}:${WORKER_ID}:${epoch}:no-persisted-change-handoff -->"
+  marker="<!-- ${FACTORY_MARKER_PREFIX:?}-factory-claim-released-v3:issue-${number}:${WORKER_ID}:${epoch}:no-persisted-change-handoff -->"
   gh issue comment "$number" --body "$marker" >/dev/null 2>&1
 }
 
@@ -88,7 +88,7 @@ release_target() {
   local stage epoch marker
   stage="$(current_stage "$number" "$fallback_stage")"
   epoch="$(date +%s)"
-  marker="<!-- comic-pile-factory-claim-released-v3:${target_kind}-${number}:${WORKER_ID}:${epoch}:${reason} -->"
+  marker="<!-- ${FACTORY_MARKER_PREFIX:?}-factory-claim-released-v3:${target_kind}-${number}:${WORKER_ID}:${epoch}:${reason} -->"
   replace_labels "$number" 'factory:unowned' "$stage"
   gh issue comment "$number" --body "$marker" >/dev/null 2>&1 || true
   log "released ${target_kind} #${number} to factory:unowned at ${stage} (${reason})"
@@ -163,7 +163,7 @@ claim_issue() {
     + ["factory", $owner, "factory:building"] | unique' <<< "$labels")"
   gh api --method PUT "repos/${GITHUB_REPOSITORY}/issues/${number}/labels" --input - <<< "{\"labels\":${target}}" >/dev/null
   epoch="$(date +%s)"
-  marker="<!-- comic-pile-factory-implement-claim-v3:issue-${number}:${WORKER_ID}:${epoch}:attempt-1 -->"
+  marker="<!-- ${FACTORY_MARKER_PREFIX:?}-factory-implement-claim-v3:issue-${number}:${WORKER_ID}:${epoch}:attempt-1 -->"
   gh issue comment "$number" --body "$marker" >/dev/null 2>&1 || true
 }
 
@@ -195,7 +195,7 @@ record_pr_provenance() {
   fi
   head="$(git rev-parse HEAD)"
   epoch="$(date +%s)"
-  marker="<!-- comic-pile-factory-pr-provenance-v1:pr-${pr}:issue-${issue}:${WORKER_ID}:${epoch}:${head} -->"
+  marker="<!-- ${FACTORY_MARKER_PREFIX:?}-factory-pr-provenance-v1:pr-${pr}:issue-${issue}:${WORKER_ID}:${epoch}:${head} -->"
   if ! gh issue comment "$pr" --body "$marker" >/dev/null 2>&1; then
     log "unable to persist provenance for PR #${pr}; refusing handoff" >&2
     return 1
@@ -383,7 +383,7 @@ persist_pr_changes() {
 stage_trusted_review_controller() {
   if [[ -z "${TRUSTED_REVIEW_CONTROLLER:-}" ]]; then
     local trusted_dir
-    trusted_dir="$(mktemp -d "${RUNNER_TEMP:-/tmp}/comic-pile-review-controller.XXXXXX")"
+    trusted_dir="$(mktemp -d "${RUNNER_TEMP:-/tmp}/factory-review-controller.XXXXXX")"
     cp .github/scripts/factory-review-controller.py "$trusted_dir/factory-review-controller.py"
     cp .github/scripts/factory_adopter.py "$trusted_dir/factory_adopter.py"
     cp .github/scripts/factory_post_merge_closure.py .github/scripts/factory_post_merge_closure_policy.py .github/scripts/factory_post_merge_closure_github.py "$trusted_dir/"

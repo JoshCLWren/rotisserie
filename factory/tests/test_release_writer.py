@@ -297,7 +297,7 @@ class TestReleaseWriterValidation:
         """
         payload = _valid_payload()
         result = release_writer._validate_release(json.dumps(payload))
-        assert result["source_repository"] == "JoshCLWren/comic-pile"
+        assert result["source_repository"] == "acme/widgets"
         assert result["source_pr_number"] == 123
         assert result["source_merge_sha"] == "abcdef1234567890"
         assert result["visibility"] == "public"
@@ -424,12 +424,12 @@ class TestReleaseWriterCheck:
                     release_writer, "_token", return_value="test-token"
                 ):
                     release_writer._check(
-                        "JoshCLWren/comic-pile", "123", "abcdef1234567890"
+                        "acme/widgets", "123", "abcdef1234567890"
                     )
             mock_request.assert_called_once()
             args, kwargs = mock_request.call_args
             assert args[0] == "GET"
-            assert "source_repository=JoshCLWren%2Fcomic-pile" in args[1]
+            assert "source_repository=acme%2Fwidgets" in args[1]
             assert "source_pr_number=123" in args[1]
             assert "source_merge_sha=abcdef1234567890" in args[1]
 
@@ -717,7 +717,7 @@ def _public_provenance() -> dict[str, object]:
 def _valid_payload() -> dict[str, object]:
     """Return a valid release payload for testing."""
     return {
-        "source_repository": "JoshCLWren/comic-pile",
+        "source_repository": "acme/widgets",
         "source_pr_number": 123,
         "source_merge_sha": "abcdef1234567890",
         "merged_at": "2024-01-01T00:00:00Z",
@@ -789,10 +789,10 @@ class TestReleaseWriterMeaningfulContent:
             None.
         """
         payload = _valid_payload()
-        payload["title"] = "[Queue search](https://github.com/JoshCLWren/comic-pile/pull/123)"
+        payload["title"] = "[Queue search](https://github.com/acme/widgets/pull/123)"
         result = release_writer._validate_release(json.dumps(payload))
         assert result["title"] == (
-            "[Queue search](https://github.com/JoshCLWren/comic-pile/pull/123)"
+            "[Queue search](https://github.com/acme/widgets/pull/123)"
         )
 
     def test_publish_allows_short_internal_records(self) -> None:
@@ -906,7 +906,7 @@ class TestReleaseWriterReaderFacingCopy:
         """
         payload = _valid_payload()
         payload["title"] = (
-            "[#1551](https://github.com/JoshCLWren/comic-pile/pull/1551) roll fix"
+            "[#1551](https://github.com/acme/widgets/pull/1551) roll fix"
         )
         stderr = _capture_stderr(release_writer._validate_release, json.dumps(payload))
         assert "title must use reader-facing product language" in stderr
@@ -947,7 +947,7 @@ class TestReleaseWriterReaderFacingCopy:
             None.
         """
         payload = {
-            "source_repository": "JoshCLWren/comic-pile",
+            "source_repository": "acme/widgets",
             "source_pr_number": 1241,
             "source_merge_sha": "abcdef1234567890",
             "merged_at": "2024-01-01T00:00:00Z",
@@ -1014,12 +1014,12 @@ class TestReleaseWriterRetract:
                     release_writer, "_token", return_value="test-token"
                 ):
                     release_writer._retract(
-                        "JoshCLWren/comic-pile", "123", "abcdef1234567890"
+                        "acme/widgets", "123", "abcdef1234567890"
                     )
             assert mock_request.call_count == 2
             source_args = mock_request.call_args_list[0][0]
             assert source_args[0] == "GET"
-            assert "source_repository=JoshCLWren%2Fcomic-pile" in source_args[1]
+            assert "source_repository=acme%2Fwidgets" in source_args[1]
             assert "source_pr_number=123" in source_args[1]
             assert "source_merge_sha=abcdef1234567890" in source_args[1]
             retract_args = mock_request.call_args_list[1][0]
@@ -1049,7 +1049,7 @@ class TestReleaseWriterRetract:
                 ):
                     stderr = _capture_stderr(
                         release_writer._retract,
-                        "JoshCLWren/comic-pile",
+                        "acme/widgets",
                         "123",
                         "abcdef1234567890",
                     )
@@ -1715,7 +1715,7 @@ class TestReleaseWriterEngineeringClassification:
         Returns:
             None.
         """
-        repository = "JoshCLWren/comic-pile"
+        repository = "acme/widgets"
         number = 100
 
         def fake_read(url: str):
@@ -1765,7 +1765,7 @@ class TestReleaseWriterEngineeringClassification:
         Returns:
             None.
         """
-        repository = "JoshCLWren/comic-pile"
+        repository = "acme/widgets"
         number = 101
 
         def fake_read(url: str):

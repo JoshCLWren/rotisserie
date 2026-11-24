@@ -458,7 +458,7 @@ def test_strike_retry_excludes_only_failed_producer_until_new_implementation_cla
     controller: types.ModuleType, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     reset = {
-        "body": "<!-- comic-pile-factory-strike-reset-v1:issue-77:pr-88:excluded-producer-12 -->",
+        "body": "<!-- widgets-factory-strike-reset-v1:issue-77:pr-88:excluded-producer-12 -->",
         "performed_via_github_app": {"slug": "github-actions"},
     }
     monkeypatch.setattr(controller, "gh_json", lambda *args, **kwargs: [[reset]])
@@ -466,7 +466,7 @@ def test_strike_retry_excludes_only_failed_producer_until_new_implementation_cla
     assert controller.issue_excludes_worker_on_strike_retry(77, "13") is False
 
     claim = {
-        "body": "<!-- comic-pile-factory-implement-claim-v3:issue-77:opencode-free-model-factory-13:1780000000:attempt-1 -->",
+        "body": "<!-- widgets-factory-implement-claim-v3:issue-77:opencode-free-model-factory-13:1780000000:attempt-1 -->",
         "performed_via_github_app": {"slug": "github-actions"},
     }
     monkeypatch.setattr(controller, "gh_json", lambda *args, **kwargs: [[reset, claim]])
@@ -508,7 +508,7 @@ def trusted_comment(body: str) -> dict[str, Any]:
 def contributor_marker(pr: int, head: str, worker: str) -> str:
     """Return the exact marker the controller writes at push time."""
     return (
-        "<!-- comic-pile-factory-head-contributor-v1:"
+        "<!-- widgets-factory-head-contributor-v1:"
         f"pr-{pr}:head-{head}:worker-{worker}:epoch-1234567890 -->"
     )
 
@@ -1674,7 +1674,7 @@ def test_lease_marker_records_decision_provenance(
         35001, "6", "pr", action="ci-repair", source="jev", head=head
     )
     body = captured[0][-1]
-    assert body.startswith("<!-- comic-pile-factory-controller-claim-v1:pr-35001:6:")
+    assert body.startswith("<!-- widgets-factory-controller-claim-v1:pr-35001:6:")
     assert f":source=jev:action=ci-repair:head={head}" in body
     assert body.endswith(" -->")
 
@@ -1689,7 +1689,7 @@ def test_issue_lease_marker_records_jev_selection_provenance(
     )
     controller.record_controller_lease_activity(35002, "6", "issue", source="jev")
     body = captured[0][-1]
-    assert body.startswith("<!-- comic-pile-factory-controller-claim-v1:issue-35002:6:")
+    assert body.startswith("<!-- widgets-factory-controller-claim-v1:issue-35002:6:")
     assert ":source=jev" in body
     assert body.endswith(" -->")
 

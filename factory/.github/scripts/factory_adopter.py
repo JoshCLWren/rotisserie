@@ -2,7 +2,9 @@
 
 The runtime never assumes which repository it serves. The identity comes from
 GITHUB_REPOSITORY (always set in Actions) or the adopter's own
-.rotisserie/config.toml, located by ROTISSERIE_CONFIG.
+.rotisserie/config.toml, located by ROTISSERIE_CONFIG. Comment markers the
+factory writes on GitHub start with marker_prefix(), derived from the
+repository name, so an adopter's existing markers stay recognizable.
 """
 
 from __future__ import annotations
@@ -15,6 +17,7 @@ from pathlib import Path
 from typing import Any
 
 SLUG_RE = re.compile(r"[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+")
+MARKER_PREFIX_RE = re.compile(r"[a-z0-9]+(?:-[a-z0-9]+)*")
 
 
 class AdopterConfigError(RuntimeError):
@@ -51,3 +54,38 @@ def repository() -> str:
             f"in {config_path()}"
         )
     return slug
+
+
+def marker_prefix(slug: str | None = None) -> str:
+    """Return the comment-marker prefix.
+
+    FACTORY_MARKER_PREFIX wins when set; otherwise the repository name,
+    lowercased, with each run of other characters replaced by one hyphen.
+    The result is always regex- and sed-safe. factory-visibility.cjs mirrors
+    this rule.
+    """
+    override = "" if slug else os.environ.get("FACTORY_MARKER_PREFIX", "").strip()
+    if override:
+        prefix = override
+    else:
+        name = (slug or repository()).rsplit("/", 1)[-1]
+        prefix = re.sub(r"[^a-z0-9]+", "-", name.lower()).strip("-")
+    if not MARKER_PREFIX_RE.fullmatch(prefix):
+        raise AdopterConfigError(f"invalid marker prefix {prefix!r}")
+    return prefix
+
+
+def __getattr__(name: str) -> str:
+    """Resolve ``from factory_adopter import MARKER_PREFIX`` at the importer's import time."""
+    if name == "MARKER_PREFIX":
+        return marker_prefix()
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+
+
+if __name__ == "__main__":
+    import sys
+
+    commands = {"repository": repository, "marker-prefix": marker_prefix}
+    if len(sys.argv) != 2 or sys.argv[1] not in commands:
+        raise SystemExit(f"usage: factory_adopter.py {'|'.join(commands)}")
+    print(commands[sys.argv[1]]())

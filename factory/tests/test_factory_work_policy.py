@@ -787,7 +787,7 @@ def test_pr_no_diff_retry_suppression_expires_with_reset_window():
         {
             "author_association": "OWNER",
             "body": (
-                "<!-- comic-pile-factory-claim-released-v3:pr-2264:worker:"
+                "<!-- widgets-factory-claim-released-v3:pr-2264:worker:"
                 f"{expired}:repair-no-persisted-change-handoff -->"
             ),
         }
@@ -817,7 +817,7 @@ def _generation_attempts(
         {
             "author_association": "OWNER",
             "body": (
-                "<!-- comic-pile-factory-claim-released-v3:"
+                "<!-- widgets-factory-claim-released-v3:"
                 f"pr-{number}:worker:{now - offset}:{reason}"
                 f":sha={sha}:stage={stage}:conflicted={int(conflicted)} -->"
             ),
@@ -834,7 +834,7 @@ def test_legacy_unscoped_pr_markers_do_not_suppress_known_head():
         {
             "author_association": "OWNER",
             "body": (
-                "<!-- comic-pile-factory-claim-released-v3:pr-2264:worker:"
+                "<!-- widgets-factory-claim-released-v3:pr-2264:worker:"
                 f"{now - offset}:repair-no-persisted-change-handoff -->"
             ),
         }
@@ -1245,7 +1245,7 @@ def test_genuine_head_changes_do_not_consume_review_failure_budget() -> None:
     comments = [{
         "author_association": "OWNER",
         "body": (
-            "<!-- comic-pile-factory-claim-released-v3:pr-2264:worker:"
+            "<!-- widgets-factory-claim-released-v3:pr-2264:worker:"
             "2000000000:semantic-review-head-changed -->"
         ),
     }]

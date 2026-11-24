@@ -62,7 +62,7 @@ def test_unpublished_latest_platform_package_falls_back_to_previous_v2(tmp_path:
         "@opencode/cli@2.2.7",
         "@opencode/cli@2.2.6",
     ]
-    assert (tmp_path / "github_path").read_text().strip().endswith("comic-pile-opencode-v2/bin")
+    assert (tmp_path / "github_path").read_text().strip().endswith("factory-opencode-v2/bin")
     assert (tmp_path / "home/.config/opencode/opencode.json").is_file()
 
 

@@ -22,7 +22,7 @@ spec.loader.exec_module(ops)
 WORKER = "1327811785100"
 MODEL = "hy4-flash-free"
 RUNTIME = f"opencode-go/{MODEL}"
-REPO = "JoshCLWren/comic-pile"
+REPO = "acme/widgets"
 FUTURE = datetime(2099, 11, 23, tzinfo=timezone.utc)
 
 

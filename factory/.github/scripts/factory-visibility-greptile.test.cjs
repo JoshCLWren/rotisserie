@@ -2,7 +2,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
 const test = require('node:test');
-
+process.env.GITHUB_REPOSITORY = 'acme/widgets';
 const reconcile = require('./factory-visibility.cjs');
 const {
   trusted,
@@ -45,7 +45,7 @@ function thread({ login = 'greptile-apps', isResolved = false, isOutdated = fals
 }
 
 function summaryBody({ commit = HEAD, findings = [] } = {}) {
-  const items = findings.map((f, i) => `${i + 1}. <img alt="P1" src="https://x/p1.svg" align="top">&nbsp;**${f.title}** ${f.discussionId ? `<a href="https://github.com/JoshCLWren/comic-pile/pull/100#discussion_r${f.discussionId}">▶</a>` : ''}`);
+  const items = findings.map((f, i) => `${i + 1}. <img alt="P1" src="https://x/p1.svg" align="top">&nbsp;**${f.title}** ${f.discussionId ? `<a href="https://github.com/acme/widgets/pull/100#discussion_r${f.discussionId}">▶</a>` : ''}`);
   return [
     'Author text mentioning `<!-- greptile_comment -->` inline.',
     '<!-- greptile_comment -->',
@@ -53,7 +53,7 @@ function summaryBody({ commit = HEAD, findings = [] } = {}) {
     '',
     ...items,
     '',
-    `<sub>Reviews (3) · Last reviewed commit: ["fix"](https://github.com/joshclwren/comic-pile/commit/${commit}) · Reviewed by Greptile</sub>`,
+    `<sub>Reviews (3) · Last reviewed commit: ["fix"](https://github.com/acme/widgets/commit/${commit}) · Reviewed by Greptile</sub>`,
     '<!-- /greptile_comment -->',
   ].join('\n');
 }
@@ -119,7 +119,7 @@ function githubFor({
               number: params.pull_number,
               state: 'open',
               body,
-              head: { sha: liveHead, ref: 'factory/49-3154-greptile', repo: { full_name: 'JoshCLWren/comic-pile' } },
+              head: { sha: liveHead, ref: 'factory/49-3154-greptile', repo: { full_name: 'acme/widgets' } },
             },
           };
         },
@@ -143,13 +143,13 @@ function greptileReview(overrides = {}) {
 function reviewContext(review, { headSha = HEAD } = {}) {
   return {
     eventName: 'pull_request_review',
-    repo: { owner: 'JoshCLWren', repo: 'comic-pile' },
+    repo: { owner: 'acme', repo: 'widgets' },
     payload: {
       action: 'submitted',
-      repository: { full_name: 'JoshCLWren/comic-pile' },
+      repository: { full_name: 'acme/widgets' },
       pull_request: {
         number: 100,
-        head: { ref: 'factory/49-3154-greptile', sha: headSha, repo: { full_name: 'JoshCLWren/comic-pile' } },
+        head: { ref: 'factory/49-3154-greptile', sha: headSha, repo: { full_name: 'acme/widgets' } },
         labels: [{ name: 'factory' }, { name: 'factory:review' }, { name: 'factory:unowned' }],
       },
       review,
@@ -160,15 +160,15 @@ function reviewContext(review, { headSha = HEAD } = {}) {
 function editedContext(body, { changes = { body: { from: 'old' } } } = {}) {
   return {
     eventName: 'pull_request_target',
-    repo: { owner: 'JoshCLWren', repo: 'comic-pile' },
+    repo: { owner: 'acme', repo: 'widgets' },
     payload: {
       action: 'edited',
       changes,
-      repository: { full_name: 'JoshCLWren/comic-pile' },
+      repository: { full_name: 'acme/widgets' },
       pull_request: {
         number: 100,
         body,
-        head: { ref: 'factory/49-3154-greptile', sha: HEAD, repo: { full_name: 'JoshCLWren/comic-pile' } },
+        head: { ref: 'factory/49-3154-greptile', sha: HEAD, repo: { full_name: 'acme/widgets' } },
         labels: [{ name: 'factory' }, { name: 'factory:review' }],
       },
     },
@@ -192,7 +192,7 @@ test('reviewer-bot allowlist is separate from marker trust', () => {
   assert.equal(isRepairRoutingReviewer(greptileReview()), true);
   // Greptile is a routing signal only; it must never become a trusted marker author.
   assert.equal(trusted(greptileReview()), false);
-  assert.equal(trusted({ ...greptileReview(), body: '<!-- comic-pile-factory-ready-v1:x -->' }), false);
+  assert.equal(trusted({ ...greptileReview(), body: '<!-- widgets-factory-ready-v1:x -->' }), false);
   assert.equal(TRUSTED_APP_SLUGS.has('greptile-apps'), false);
   assert.equal(isRepairRoutingReviewer({ user: { login: 'greptile-apps' } }), false);
   assert.equal(isRepairRoutingReviewer({ user: { login: 'coderabbitai[bot]' } }), false);
@@ -514,7 +514,7 @@ test('summary-only finding answered by a trusted outcome comment after the revie
     user: { login: 'github-actions[bot]', type: 'Bot' },
     author_association: 'NONE',
     created_at: '2026-10-18T16:10:00Z',
-    body: `<!-- comic-pile-factory-greptile-outcome-v1:${id}:rebutted:${HEAD}:abc -->`,
+    body: `<!-- widgets-factory-greptile-outcome-v1:${id}:rebutted:${HEAD}:abc -->`,
   };
   const checkRuns = [{ name: 'Greptile Review', completed_at: '2026-10-18T16:05:00Z' }];
   assert.equal((await runWith(editedContext(body), { body, threads: [], checkRuns, issueComments: [answer] })).calls.length, 0);
@@ -529,11 +529,11 @@ test('summary-only finding answered by a trusted outcome comment after the revie
 test('a thread reply (pull_request_review_comment) recomputes routing', async () => {
   const context = {
     eventName: 'pull_request_review_comment',
-    repo: { owner: 'JoshCLWren', repo: 'comic-pile' },
+    repo: { owner: 'acme', repo: 'widgets' },
     payload: {
       action: 'created',
-      repository: { full_name: 'JoshCLWren/comic-pile' },
-      pull_request: { number: 100, head: { ref: 'factory/49-3154-greptile', sha: HEAD, repo: { full_name: 'JoshCLWren/comic-pile' } } },
+      repository: { full_name: 'acme/widgets' },
+      pull_request: { number: 100, head: { ref: 'factory/49-3154-greptile', sha: HEAD, repo: { full_name: 'acme/widgets' } } },
     },
   };
   const pushback = thread({ replies: [actions('Rebuttal'), comment('greptile-apps', 'I still think this leaks.')] });

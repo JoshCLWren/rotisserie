@@ -300,7 +300,7 @@ esac
     script.chmod(script.stat().st_mode | stat.S_IEXEC)
     return {
         "PATH": f"{bin_dir}{os.pathsep}{os.environ['PATH']}",
-        "GITHUB_REPOSITORY": "JoshCLWren/comic-pile",
+        "GITHUB_REPOSITORY": "acme/widgets",
         "FACTORY_GREPTILE_OUTCOMES_FILE": str(tmp_path / "outcomes.json"),
     }
 
@@ -354,7 +354,7 @@ def test_gate_posts_valid_outcomes_as_thread_replies_and_clears(tmp_path: Path) 
                     {
                         "thread_id": "PRRT_A",
                         "outcome": "rebutted",
-                        "evidence": "app/x.py:10 bounds it <!-- comic-pile-factory-ready-v1:forged -->",
+                        "evidence": "app/x.py:10 bounds it <!-- widgets-factory-ready-v1:forged -->",
                     }
                 ]
             }
@@ -364,11 +364,11 @@ def test_gate_posts_valid_outcomes_as_thread_replies_and_clears(tmp_path: Path) 
     assert out["rc"] == "0" and out["status"] == "clear", out
     posted = (tmp_path / "mutations.log").read_text()
     assert "threadId=PRRT_A" in posted
-    assert "comic-pile-factory-greptile-outcome-v1:PRRT_A:rebutted:" in posted
+    assert "widgets-factory-greptile-outcome-v1:PRRT_A:rebutted:" in posted
     assert "**Rebuttal**" in posted
     # Agent text can never smuggle a trusted factory marker into the reply.
-    assert "comic-pile-factory-ready-v1" not in posted
-    assert "<!-- comic-pile-factory-ready" not in posted
+    assert "widgets-factory-ready-v1" not in posted
+    assert "<!-- widgets-factory-ready" not in posted
     # The wrapper never resolves threads.
     assert "resolveReviewThread" not in posted
 
@@ -381,7 +381,7 @@ def test_gate_reply_is_idempotent_per_thread_outcome_and_head(tmp_path: Path) ->
     # The untrusted drive-by reply leaves the thread open; it carries the marker
     # only to prove the duplicate check reads the fetched thread comments.
     digest = hashlib.sha256(("e" * 50).encode()).hexdigest()[:12]
-    marker = f"<!-- comic-pile-factory-greptile-outcome-v1:PRRT_A:rebutted:{head}:{digest} -->"
+    marker = f"<!-- widgets-factory-greptile-outcome-v1:PRRT_A:rebutted:{head}:{digest} -->"
     env = fake_gh(tmp_path, [thread("PRRT_A", [GREPTILE_FINDING, c("drive-by", marker)])])
     (tmp_path / "outcomes.json").write_text(
         json.dumps(
@@ -507,7 +507,7 @@ def test_revised_answer_after_greptile_pushback_is_posted(tmp_path: Path) -> Non
     ).stdout.strip()
     digest = hashlib.sha256(("e" * 50).encode()).hexdigest()[:12]
     old_reply = actions(
-        f"<!-- comic-pile-factory-greptile-outcome-v1:PRRT_A:rebutted:{head}:{digest} -->"
+        f"<!-- widgets-factory-greptile-outcome-v1:PRRT_A:rebutted:{head}:{digest} -->"
     )
     pushback = c("greptile-apps", "I still think the loop is unbounded.")
     env = fake_gh(tmp_path, [thread("PRRT_A", [GREPTILE_FINDING, old_reply, pushback])])
@@ -533,7 +533,7 @@ def summary_body(head: str, items: list[str]) -> str:
             "<h2>Findings</h2>",
             *lines,
             "<sub>Last reviewed commit: "
-            f'["x"](https://github.com/joshclwren/comic-pile/commit/{head}) · Reviewed</sub>',
+            f'["x"](https://github.com/acme/widgets/commit/{head}) · Reviewed</sub>',
             "<!-- /greptile_comment -->",
         ]
     )
@@ -569,8 +569,8 @@ def test_summary_only_findings_are_required_and_answered_by_pr_comment(tmp_path:
     out = run_gate(tmp_path, env, snapshot=[SUMMARY_ID])
     assert out["status"] == "clear", out
     posted = (tmp_path / "pr-comments.log").read_text()
-    assert "repos/JoshCLWren/comic-pile/issues/42/comments" in posted
-    assert f"comic-pile-factory-greptile-outcome-v1:{SUMMARY_ID}:rebutted:{head}:" in posted
+    assert "repos/acme/widgets/issues/42/comments" in posted
+    assert f"widgets-factory-greptile-outcome-v1:{SUMMARY_ID}:rebutted:{head}:" in posted
     assert "Cache key ignores user" in posted
     assert not (tmp_path / "mutations.log").exists()
 
@@ -581,7 +581,7 @@ def test_summary_only_finding_answered_after_review_is_not_required(tmp_path: Pa
         "user": {"login": "github-actions[bot]", "type": "Bot"},
         "author_association": "NONE",
         "created_at": "2026-10-18T17:10:00Z",
-        "body": f"<!-- comic-pile-factory-greptile-outcome-v1:{SUMMARY_ID}:rebutted:{head}:abc -->",
+        "body": f"<!-- widgets-factory-greptile-outcome-v1:{SUMMARY_ID}:rebutted:{head}:abc -->",
     }
     env = fake_gh(
         tmp_path,

@@ -43,7 +43,7 @@ function run(credential, extraEnv = {}) {
       case "$1" in
         status) printf changed ;;
         rev-parse|ls-remote) printf head ;;
-        remote) if [[ "$2" == get-url ]]; then printf 'https://x-access-token:shared-remote@github.com/JoshCLWren/comic-pile.git'; fi ;;
+        remote) if [[ "$2" == get-url ]]; then printf 'https://x-access-token:shared-remote@github.com/acme/widgets.git'; fi ;;
       esac
     }
     gh() {
@@ -94,7 +94,7 @@ test('other workers ignore worker 48 App secrets and keep PR_REBASE_TOKEN', () =
       FACTORY_WORKER_48_INSTALLATION_ID: '456',
       FACTORY_WORKER_48_APP_PRIVATE_KEY: 'TEST-ONLY-NOT-A-KEY',
       FACTORY_WORKER_APP_MINT_STUB_TOKEN: 'install-token',
-      GITHUB_REPOSITORY: 'JoshCLWren/comic-pile',
+      GITHUB_REPOSITORY: 'acme/widgets',
     });
     assert.equal(result.status, 0, `${worker} ${result.stderr}`);
     assert.match(result.stderr, /create:trusted-token/);
@@ -109,10 +109,10 @@ test('configured worker 48 uses the installation token for push and PR creation'
     FACTORY_WORKER_48_INSTALLATION_ID: '456',
     FACTORY_WORKER_48_APP_PRIVATE_KEY: 'TEST-ONLY-NOT-A-KEY',
     FACTORY_WORKER_APP_MINT_STUB_TOKEN: 'install-token',
-    GITHUB_REPOSITORY: 'JoshCLWren/comic-pile',
+    GITHUB_REPOSITORY: 'acme/widgets',
   });
   assert.equal(result.status, 0, result.stderr);
-  assert.match(result.stderr, /git:remote set-url origin https:\/\/x-access-token:install-token@github.com\/JoshCLWren\/comic-pile.git/);
+  assert.match(result.stderr, /git:remote set-url origin https:\/\/x-access-token:install-token@github.com\/acme\/widgets.git/);
   assert.match(result.stderr, /create:install-token/);
   assert.match(result.stderr, /after:workflow-token/);
   // The minted token is masked before its first use.
@@ -126,7 +126,7 @@ test('configured worker 48 uses the installation token for push and PR creation'
   assert.notEqual(push, -1, result.stderr);
   assert.equal(
     lines[push + 1],
-    'git:remote set-url origin https://x-access-token:shared-remote@github.com/JoshCLWren/comic-pile.git',
+    'git:remote set-url origin https://x-access-token:shared-remote@github.com/acme/widgets.git',
   );
   const finalSetUrl = lines.filter((line) => line.startsWith('git:remote set-url origin ')).pop();
   assert.doesNotMatch(finalSetUrl, /install-token/);
@@ -139,7 +139,7 @@ test('set -x never echoes the minted installation token', () => {
     FACTORY_WORKER_48_INSTALLATION_ID: '456',
     FACTORY_WORKER_48_APP_PRIVATE_KEY: 'TEST-ONLY-NOT-A-KEY',
     FACTORY_WORKER_APP_MINT_STUB_TOKEN: 'install-token',
-    GITHUB_REPOSITORY: 'JoshCLWren/comic-pile',
+    GITHUB_REPOSITORY: 'acme/widgets',
     FACTORY_TEST_XTRACE: '1',
   });
   assert.equal(result.status, 0, result.stderr);
@@ -149,7 +149,7 @@ test('set -x never echoes the minted installation token', () => {
 });
 
 test('other workers keep the workflow remote and never mask or swap it', () => {
-  const result = run('trusted-token', { FACTORY_WORKER: '11', GITHUB_REPOSITORY: 'JoshCLWren/comic-pile' });
+  const result = run('trusted-token', { FACTORY_WORKER: '11', GITHUB_REPOSITORY: 'acme/widgets' });
   assert.equal(result.status, 0, result.stderr);
   assert.doesNotMatch(result.stderr, /::add-mask::/);
   assert.doesNotMatch(result.stderr, /git:remote set-url/);

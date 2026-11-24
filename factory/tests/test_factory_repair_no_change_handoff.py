@@ -115,7 +115,7 @@ def test_primitives_do_not_rewrite_no_diff_exhaustion_as_blocked() -> None:
     # through the caller-selected fallback stage (covered functionally below).
     assert text.count("stage='factory:blocked'") == 1
     assert "quarantining" not in text
-    assert "comic-pile-factory-claim-released-v3" in text
+    assert "${FACTORY_MARKER_PREFIX:?}-factory-claim-released-v3" in text
     assert "no-persisted-change-handoff" in text
     assert "pr_no_diff_generation_fields" in text
     assert "sha=" in text

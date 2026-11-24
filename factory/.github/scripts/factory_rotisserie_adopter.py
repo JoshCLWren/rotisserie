@@ -37,7 +37,7 @@ from factory_work_policy import (
     provenance_lane,
     producer_worker_from_pr,
 )
-from factory_adopter import repository
+from factory_adopter import MARKER_PREFIX, repository
 
 DIMENSIONS = ["completion", "eligibility", "ownership", "ranking", "recovery", "review"]
 
@@ -68,7 +68,7 @@ def _revision_id(sha: str) -> dict[str, object]:
 
 
 def _worker_id(value: str) -> dict[str, str]:
-    return {"namespace": "comic-pile-factory", "value": value}
+    return {"namespace": f"{MARKER_PREFIX}-factory", "value": value}
 
 
 def _validate(view: dict[str, Any]) -> None:
@@ -245,7 +245,7 @@ def graph_snapshot(view: dict[str, Any]) -> dict[str, object]:
         "capacities": [],
         "boundaries": [
             {
-                "id": f"comic-pile-policy-{issue['number']}",
+                "id": f"{MARKER_PREFIX}-policy-{issue['number']}",
                 "work": _work_id(int(issue["number"])),
                 "kind": "human_approval",
                 "satisfied_by": None,
@@ -305,7 +305,7 @@ def intake_verdicts(
             "pull_requests": prs,
         }
     )
-    with tempfile.TemporaryDirectory(prefix="comic-pile-rotisserie-intake-") as directory:
+    with tempfile.TemporaryDirectory(prefix="rotisserie-intake-") as directory:
         root = Path(directory)
         snapshot_path = root / "snapshot.json"
         config_path = root / "operator.toml"
@@ -460,7 +460,7 @@ def legacy_decisions(view: dict[str, Any]) -> dict[str, object]:
         if isinstance(lease, dict) and int(lease["acquired_at"]) <= at < int(lease["expires_at"]):
             owner = owner_of(_labels(issue))
             if owner and owner != "factory:unowned":
-                active_owner = f"comic-pile-factory:{owner.removeprefix('factory:')}"
+                active_owner = f"{MARKER_PREFIX}-factory:{owner.removeprefix('factory:')}"
         observations.append(
             {
                 "dimension": "ownership",
@@ -543,7 +543,7 @@ def legacy_decisions(view: dict[str, Any]) -> dict[str, object]:
         )
     return {
         "schema_version": 1,
-        "source": "comic-pile-factory",
+        "source": f"{MARKER_PREFIX}-factory",
         "revision": revision,
         "dimensions": DIMENSIONS,
         "observations": observations,
@@ -589,7 +589,7 @@ def main() -> int:
             return 0
         if args.rotisserie_config is None:
             raise AdopterInputError("--rotisserie-config is required with --shadow")
-        with tempfile.TemporaryDirectory(prefix="comic-pile-rotisserie-") as directory:
+        with tempfile.TemporaryDirectory(prefix="rotisserie-") as directory:
             root = Path(directory)
             baseline = root / "legacy.json"
             snapshot = root / "snapshot.json"

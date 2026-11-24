@@ -62,7 +62,7 @@ def releases(
     return [
         {
             "body": (
-                "<!-- comic-pile-factory-claim-released-v3:"
+                "<!-- widgets-factory-claim-released-v3:"
                 f"{kind}-{PR if kind == 'pr' else ISSUE}:"
                 f"opencode-free-model-factory-75:{NOW - 60 + n}:"
                 f"{reason}:sha={sha}:stage=factory:changes-requested:"
@@ -130,7 +130,7 @@ def test_issue_reset_only_clears_prior_issue_debt() -> None:
     newer_issue = [
         {
             "body": (
-                f"<!-- comic-pile-factory-claim-released-v3:issue-{ISSUE}:"
+                f"<!-- widgets-factory-claim-released-v3:issue-{ISSUE}:"
                 f"opencode-free-model-factory-20:{NOW - 1}:"
                 "no-persisted-change-handoff -->"
             )

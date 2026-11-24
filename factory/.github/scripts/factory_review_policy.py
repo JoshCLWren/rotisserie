@@ -1,10 +1,10 @@
 """Pure semantic review authorization policy for Rotisserie factories."""
 from __future__ import annotations
-
 import re
 from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
 from typing import Any, Literal
+from factory_adopter import MARKER_PREFIX
 
 TRUSTED_COMMENT_LOGIN = "github-actions[bot]"
 TRUSTED_COMMENT_ASSOCIATIONS = frozenset({"OWNER", "MEMBER", "COLLABORATOR"})
@@ -13,7 +13,7 @@ TRUSTED_COMMENT_ASSOCIATIONS = frozenset({"OWNER", "MEMBER", "COLLABORATOR"})
 TRUSTED_MARKER_APP_SLUGS = frozenset({"github-actions"})
 
 REVIEW_MARKER_RE = re.compile(
-    r"^<!-- comic-pile-factory-semantic-review-v1:"
+    rf"^<!-- {MARKER_PREFIX}-factory-semantic-review-v1:"
     r"pr-(?P<pr>\d+):head-(?P<head>[0-9a-f]{40}):"
     r"reviewer-(?P<reviewer>\d+|local-[a-z0-9-]{3,80}|external-[a-z0-9-]{3,80}):producer-(?P<producer>\d+|unknown):"
     r"verdict-(?P<verdict>approve|repair|reject|obsolete|duplicate|superseded|delivered) -->$"
@@ -24,7 +24,7 @@ BODY_PRODUCER_RE = re.compile(
     r"(?P<worker>\d+)\s*$"
 )
 HEAD_CONTRIBUTOR_RE = re.compile(
-    r"^<!-- comic-pile-factory-head-contributor-v1:"
+    rf"^<!-- {MARKER_PREFIX}-factory-head-contributor-v1:"
     r"pr-(?P<pr>\d+):head-(?P<head>[0-9a-f]{40}):"
     r"worker-(?P<worker>\d+):epoch-(?P<epoch>\d+) -->$"
 )
@@ -42,13 +42,13 @@ _MODEL_FAMILY_SUFFIXES = (
     "-max",
 )
 AGENT_MODEL_AUTHOR_RE = re.compile(
-    r"^<!-- comic-pile-agent-model-author-v1:"
+    rf"^<!-- {MARKER_PREFIX}-agent-model-author-v1:"
     rf"pr-(?P<pr>\d+):head-(?P<head>[0-9a-f]{{40}}):"
     rf"model-(?P<model>{_MODEL_TOKEN}):"
     rf"agent-(?P<agent>{_MODEL_TOKEN}) -->$"
 )
 AGENT_MODEL_REVIEW_RE = re.compile(
-    r"^<!-- comic-pile-agent-model-review-v1:"
+    rf"^<!-- {MARKER_PREFIX}-agent-model-review-v1:"
     rf"pr-(?P<pr>\d+):head-(?P<head>[0-9a-f]{{40}}):"
     rf"author-(?P<author>{_MODEL_TOKEN}):"
     rf"reviewer-(?P<reviewer>{_MODEL_TOKEN}):"
@@ -60,7 +60,7 @@ AGENT_MODEL_REVIEW_RE = re.compile(
 # model is known, whether or not the head's author is known. v1 records (above)
 # carry the author too; both count as reviewer-model evidence.
 AGENT_MODEL_REVIEW_V2_RE = re.compile(
-    r"^<!-- comic-pile-agent-model-review-v2:"
+    rf"^<!-- {MARKER_PREFIX}-agent-model-review-v2:"
     rf"pr-(?P<pr>\d+):head-(?P<head>[0-9a-f]{{40}}):"
     rf"reviewer-(?P<reviewer>{_MODEL_TOKEN}):"
     rf"reviewer-agent-(?P<reviewer_agent>{_MODEL_TOKEN}):"
@@ -132,7 +132,7 @@ def review_marker(
         raise ValueError(f"unsupported verdict: {verdict}")
     producer_value = producer or "unknown"
     return (
-        "<!-- comic-pile-factory-semantic-review-v1:"
+        f"<!-- {MARKER_PREFIX}-factory-semantic-review-v1:"
         f"pr-{pr}:head-{head}:reviewer-{reviewer}:producer-{producer_value}:"
         f"verdict-{verdict} -->"
     )
@@ -235,7 +235,7 @@ def head_contributor_marker(
     body text, and commit messages from ever reading as trusted provenance.
     """
     return (
-        "<!-- comic-pile-factory-head-contributor-v1:"
+        f"<!-- {MARKER_PREFIX}-factory-head-contributor-v1:"
         f"pr-{pr}:head-{head}:worker-{worker}:epoch-{epoch} -->"
     )
 
@@ -482,7 +482,7 @@ def agent_model_author_marker(*, pr: int, head: str, model: str, agent: str) -> 
     model_token = model_record_token(model)
     agent_token = marker_model_token(agent)
     return (
-        "<!-- comic-pile-agent-model-author-v1:"
+        f"<!-- {MARKER_PREFIX}-agent-model-author-v1:"
         f"pr-{pr}:head-{head}:model-{model_token}:agent-{agent_token} -->"
     )
 
@@ -525,7 +525,7 @@ def agent_model_review_marker(
 
     """
     return (
-        "<!-- comic-pile-agent-model-review-v1:"
+        f"<!-- {MARKER_PREFIX}-agent-model-review-v1:"
         f"pr-{pr}:head-{head}:author-{marker_model_token(author_model)}:"
         f"reviewer-{marker_model_token(reviewer_model)}:"
         f"author-agent-{marker_model_token(author_agent)}:"
@@ -801,7 +801,7 @@ def reviewer_model_marker(*, pr: int, head: str, reviewer_model: str, reviewer_a
 
     """
     return (
-        "<!-- comic-pile-agent-model-review-v2:"
+        f"<!-- {MARKER_PREFIX}-agent-model-review-v2:"
         f"pr-{pr}:head-{head}:reviewer-{model_record_token(reviewer_model)}:"
         f"reviewer-agent-{marker_model_token(reviewer_agent)}:verdict-approve -->"
     )
@@ -1059,7 +1059,7 @@ def owner_attested_head_identity(
 
 # Review findings ------------------------------------------------------------
 
-AUTHORITATIVE_DIFF_EVIDENCE = "# comic-pile-factory-authoritative-diff-evidence"
+AUTHORITATIVE_DIFF_EVIDENCE = f"# {MARKER_PREFIX}-factory-authoritative-diff-evidence"
 
 # Lines a review transcript carries that are not findings: the model
 # narrating its next step ("Let me check the PR", "I'll start by reading"),

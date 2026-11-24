@@ -108,7 +108,7 @@ def _run_timer(tmp_path: Path, delay: str) -> tuple[subprocess.CompletedProcess[
         "PATH": f"{tmp_path}:{os.environ.get('PATH', '')}",
         "TRACE": str(trace),
         "DELAY_SECONDS": delay,
-        "GITHUB_REPOSITORY": "JoshCLWren/comic-pile",
+        "GITHUB_REPOSITORY": "acme/widgets",
     }
     result = subprocess.run(
         ["bash", "-euo", "pipefail", "-c", timer_step()["run"]],
@@ -129,7 +129,7 @@ def test_successor_waits_and_dispatches_one_roster_cycle(tmp_path: Path, delay: 
     assert calls == [
         f"sleep {delay}",
         "gh workflow run fixed-model-factory-dispatch.yml "
-        "--repo JoshCLWren/comic-pile --ref main -f mode=roster",
+        "--repo acme/widgets --ref main -f mode=roster",
     ]
 
 

@@ -62,21 +62,21 @@ def test_live_capture_contract() -> None:
             {
                 "user": {"login": "github-actions[bot]"},
                 "author_association": "NONE",
-                "body": "<!-- comic-pile-factory-semantic-review-v1:pr-20:head-"
+                "body": "<!-- widgets-factory-semantic-review-v1:pr-20:head-"
                 + ("a" * 40)
                 + ":reviewer-9:producer-8:verdict-approve -->",
             },
             {
                 "user": {"login": "github-actions[bot]"},
                 "author_association": "NONE",
-                "body": "<!-- comic-pile-factory-head-contributor-v1:pr-20:head-"
+                "body": "<!-- widgets-factory-head-contributor-v1:pr-20:head-"
                 + ("a" * 40)
                 + ":worker-8:epoch-17 -->",
             },
             {
                 "user": {"login": "github-actions[bot]"},
                 "author_association": "NONE",
-                "body": "<!-- comic-pile-factory-head-contributor-v1:pr-20:head-"
+                "body": "<!-- widgets-factory-head-contributor-v1:pr-20:head-"
                 + ("9" * 40)
                 + ":worker-6:epoch-19 -->",
             },
@@ -100,7 +100,7 @@ def test_untrusted_authors_cannot_supply_contributor_provenance() -> None:
     """Only controller-trusted comment authors feed captured provenance."""
     capture = load_capture()
     marker = (
-        "<!-- comic-pile-factory-head-contributor-v1:pr-20:head-"
+        "<!-- widgets-factory-head-contributor-v1:pr-20:head-"
         + ("a" * 40)
         + ":worker-8:epoch-17 -->"
     )

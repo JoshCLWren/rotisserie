@@ -26,7 +26,7 @@ def builder() -> ModuleType:
 
 
 def test_hosted_page_reuses_canonical_local_ui_without_local_session() -> None:
-    page = builder().render("JoshCLWren/comic-pile")
+    page = builder().render("acme/widgets")
     assert "Rotisserie · Control room" in page
     assert 'data-view="queue"' in page
     assert 'data-view="workers"' in page
@@ -35,7 +35,7 @@ def test_hosted_page_reuses_canonical_local_ui_without_local_session() -> None:
     assert "window.hostedRequest(path,body)" in page
     assert "__SESSION_TOKEN__" not in page
     assert "__REPOSITORY__" not in page
-    assert 'const TOKEN=null, REPO="JoshCLWren/comic-pile";' in page
+    assert 'const TOKEN=null, REPO="acme/widgets";' in page
     assert "GitHub Pages · Published snapshot" in page
     assert "https://comic-pile.vercel.app" in page
     assert "https://raw.githubusercontent.com" in page
@@ -55,7 +55,7 @@ def test_hosted_scripts_parse_without_dependencies(tmp_path: Path) -> None:
     node = shutil.which("node")
     if node is None:
         pytest.skip("Node not installed")
-    page = builder().render("JoshCLWren/comic-pile")
+    page = builder().render("acme/widgets")
     scripts = re.findall(r"<script>(.*?)</script>", page, re.DOTALL)
     assert len(scripts) >= 2
     for i, script in enumerate(scripts):

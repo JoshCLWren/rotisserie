@@ -14,6 +14,7 @@ from factory_post_merge_closure_policy import (
     eligibility,
     linked_issue,
 )
+from factory_adopter import MARKER_PREFIX
 
 
 def _run_gh(*args: str) -> str:
@@ -281,7 +282,7 @@ def _has_dependency_block_marker(issue_number: int, pr_number: int) -> bool:
     """Return whether the issue carries this PR's dependency-block marker."""
     try:
         prefix = (
-            f"comic-pile-factory-dependency-block-v1:pr-{pr_number}:"
+            f"{MARKER_PREFIX}-factory-dependency-block-v1:pr-{pr_number}:"
             f"issue-{issue_number}:"
         )
         return any(prefix in body for body in _issue_comment_bodies(issue_number))
@@ -367,7 +368,7 @@ def dependency_block_marker(pr_number: int, issue_number: int, blockers: list[in
     """
     deps = "-".join(str(number) for number in sorted(blockers))
     return (
-        f"<!-- comic-pile-factory-dependency-block-v1:pr-{pr_number}:"
+        f"<!-- {MARKER_PREFIX}-factory-dependency-block-v1:pr-{pr_number}:"
         f"issue-{issue_number}:deps-{deps} -->"
     )
 

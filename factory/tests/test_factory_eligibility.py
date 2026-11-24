@@ -425,11 +425,11 @@ def test_stale_claim_history_cannot_starve_an_unowned_issue(monkeypatch) -> None
     _legacy_intake(monkeypatch)
     controller = _controller()
     history = "\n".join(
-        "<!-- comic-pile-factory-implement-claim-v3:issue-2553:opencode-free-model-factory-58:"
+        "<!-- widgets-factory-implement-claim-v3:issue-2553:opencode-free-model-factory-58:"
         "1750000000:attempt-1 -->"
         for _ in range(5)
     ) + (
-        "\n<!-- comic-pile-factory-claim-released-v3:issue-2553:"
+        "\n<!-- widgets-factory-claim-released-v3:issue-2553:"
         "opencode-free-model-factory-58:1750000000:controller-release -->\n"
     )
     issues = [

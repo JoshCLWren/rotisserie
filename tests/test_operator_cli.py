@@ -215,7 +215,7 @@ def test_decide_cli_projects_snapshot_without_initializing_graph_state(
         "--snapshot",
         str(tmp_path / "graph.json"),
         "--revision",
-        "comic-pile-snapshot-1",
+        "widgets-snapshot-1",
         "--at",
         "10",
     )
@@ -223,7 +223,7 @@ def test_decide_cli_projects_snapshot_without_initializing_graph_state(
     assert code == EXIT_OK
     decisions = output["evidence"]["decisions"]  # type: ignore[index]
     assert decisions["source"] == "rotisserie"
-    assert decisions["revision"] == "comic-pile-snapshot-1"
+    assert decisions["revision"] == "widgets-snapshot-1"
     assert {item["dimension"] for item in decisions["observations"]} == {
         "eligibility",
         "ownership",
@@ -487,7 +487,7 @@ def test_shadow_cli_reports_and_persists_adopter_divergence(capsys: object, tmp_
     candidate = tmp_path / "rotisserie.json"
     common = {
         "schema_version": 1,
-        "revision": "comic-pile-snapshot-1",
+        "revision": "widgets-snapshot-1",
         "observations": [
             {
                 "dimension": "eligibility",
@@ -498,7 +498,7 @@ def test_shadow_cli_reports_and_persists_adopter_divergence(capsys: object, tmp_
             }
         ],
     }
-    baseline.write_text(json.dumps({**common, "source": "comic-pile-factory"}))
+    baseline.write_text(json.dumps({**common, "source": "widgets-factory"}))
     candidate.write_text(
         json.dumps(
             {
@@ -559,7 +559,7 @@ def test_shadow_cli_accepts_one_stream_and_rejects_revision_mismatch(
             json.dumps(
                 {
                     "schema_version": 1,
-                    "source": "comic-pile-factory",
+                    "source": "widgets-factory",
                     "revision": "old",
                     "observations": [],
                 }
@@ -585,7 +585,7 @@ def test_shadow_project_cli_atomically_projects_and_compares_adopter_input(
     capsys: object, tmp_path: Path
 ) -> None:
     config = local_example(tmp_path)
-    revision = "comic-pile-snapshot-1"
+    revision = "widgets-snapshot-1"
     code, projected = invoke(
         capsys,
         config,
@@ -600,7 +600,7 @@ def test_shadow_project_cli_atomically_projects_and_compares_adopter_input(
     assert code == EXIT_OK
     baseline_data = projected["evidence"]["decisions"]  # type: ignore[index]
     assert isinstance(baseline_data, dict)
-    baseline_data["source"] = "comic-pile-factory"
+    baseline_data["source"] = "widgets-factory"
     baseline = tmp_path / "legacy.json"
     baseline.write_text(json.dumps(baseline_data), encoding="utf-8")
 
@@ -644,7 +644,7 @@ def test_shadow_project_cli_rejects_revision_mismatch_before_projection(
         json.dumps(
             {
                 "schema_version": 1,
-                "source": "comic-pile-factory",
+                "source": "widgets-factory",
                 "revision": "snapshot-old",
                 "observations": [],
             }
@@ -681,7 +681,7 @@ def matching_shadow_report(revision: str) -> dict[str, object]:
     ]
     return {
         "schema_version": 1,
-        "baseline": {"source": "comic-pile-factory", "revision": revision},
+        "baseline": {"source": "widgets-factory", "revision": revision},
         "candidate": {"source": "rotisserie", "revision": revision},
         "compared": len(dimensions),
         "dimensions": dimensions,

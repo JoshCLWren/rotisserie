@@ -22,13 +22,14 @@ A ``--sweep`` mode heals any issue stranded by an older merge: it walks
 recently merged factory PRs and applies the same closure to quiescent open
 issues that no active work signal protects.
 
-The canonical closure marker schema is::
+The canonical closure marker schema, where ``<prefix>`` is
+``factory_adopter.marker_prefix()``, is::
 
-    <!-- comic-pile-factory-merge-closure-v1:pr-<pr>:issue-<issue> -->
+    <!-- <prefix>-factory-merge-closure-v1:pr-<pr>:issue-<issue> -->
 
 The unreadable-dependency warning carries the stable retryable marker::
 
-    <!-- comic-pile-factory-dependency-unreadable-v1:pr-<pr>:issue-<issue> -->
+    <!-- <prefix>-factory-dependency-unreadable-v1:pr-<pr>:issue-<issue> -->
 
 """
 

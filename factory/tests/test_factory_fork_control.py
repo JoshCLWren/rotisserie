@@ -122,7 +122,7 @@ def test_execution_rejects_writer_credentials(monkeypatch: pytest.MonkeyPatch) -
 def test_receipt_requires_controller_bot_and_app(login: str, app: str | None) -> None:
     """Copying a receipt marker or bot display name cannot authorize persistence."""
     row = {"user": {"login": login}, "performed_via_github_app": {"slug": app},
-           "body": f"<!-- comic-pile-factory-fork-dispatch-v1:pr-3897:head-{'a' * 40}:worker-46:nonce-{'b' * 32} -->"}
+           "body": f"<!-- widgets-factory-fork-dispatch-v1:pr-3897:head-{'a' * 40}:worker-46:nonce-{'b' * 32} -->"}
     with pytest.raises(ValueError, match="receipt"):
         control._receipt([row], 3897, "46", "b" * 32)
     row["user"] = {"login": "github-actions[bot]"}
@@ -131,8 +131,8 @@ def test_receipt_requires_controller_bot_and_app(login: str, app: str | None) ->
 
 
 @pytest.mark.parametrize("field,value", [
-    ("repository", {"full_name": "attacker/comic-pile"}),
-    ("head_repository", {"full_name": "attacker/comic-pile"}),
+    ("repository", {"full_name": "attacker/widgets"}),
+    ("head_repository", {"full_name": "attacker/widgets"}),
     ("event", "pull_request"), ("head_branch", "poison"),
     ("workflow_id", 999), ("status", "in_progress"),
     ("display_title", "Factory 46 · fake"),
@@ -248,9 +248,9 @@ def test_stale_run_cannot_release_a_newer_dispatch(monkeypatch: pytest.MonkeyPat
     )
     monkeypatch.setattr(control, "_comments", lambda pr: [
         {"user": {"login": "github-actions[bot]"}, "performed_via_github_app": {"slug": "github-actions"},
-         "body": f"<!-- comic-pile-factory-fork-dispatch-v1:pr-3897:head-{'a' * 40}:worker-46:nonce-{'b' * 32} -->"},
+         "body": f"<!-- widgets-factory-fork-dispatch-v1:pr-3897:head-{'a' * 40}:worker-46:nonce-{'b' * 32} -->"},
         {"user": {"login": "github-actions[bot]"}, "performed_via_github_app": {"slug": "github-actions"},
-         "body": f"<!-- comic-pile-factory-fork-dispatch-v1:pr-3897:head-{'a' * 40}:worker-46:nonce-{'c' * 32} -->"},
+         "body": f"<!-- widgets-factory-fork-dispatch-v1:pr-3897:head-{'a' * 40}:worker-46:nonce-{'c' * 32} -->"},
     ])
     monkeypatch.setattr(control, "_post", lambda *args: pytest.fail("stale run released a newer claim"))
     monkeypatch.setattr(control, "_set_state", lambda *args: pytest.fail("stale run rewrote newer state"))
@@ -262,7 +262,7 @@ def test_handled_failure_is_marked_complete(monkeypatch: pytest.MonkeyPatch) -> 
     posted: list[str] = []
     monkeypatch.setattr(control, "_post", lambda pr, body: posted.append(body))
     control._mark_completed(3897, "b" * 32, "a" * 40, "no-change")
-    assert posted == [f"<!-- comic-pile-factory-fork-completed-v1:nonce-{'b' * 32}:head-{'a' * 40}:result-no-change -->"]
+    assert posted == [f"<!-- widgets-factory-fork-completed-v1:nonce-{'b' * 32}:head-{'a' * 40}:result-no-change -->"]
 
 
 def test_completed_failure_run_is_skipped_on_resweep(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -273,7 +273,7 @@ def test_completed_failure_run_is_skipped_on_resweep(monkeypatch: pytest.MonkeyP
     monkeypatch.setattr(control, "_receipt", lambda comments, pr, worker, nonce_arg: "a" * 40)
     monkeypatch.setattr(control, "_comments", lambda pr: [
         {"user": {"login": "github-actions[bot]"}, "performed_via_github_app": {"slug": "github-actions"},
-         "body": f"<!-- comic-pile-factory-fork-completed-v1:nonce-{nonce}:head-{'a' * 40}:result-no-change -->"},
+         "body": f"<!-- widgets-factory-fork-completed-v1:nonce-{nonce}:head-{'a' * 40}:result-no-change -->"},
     ])
     monkeypatch.setattr(control, "_gh", lambda args, payload=None: {"id": 1, "path": control.EXECUTION_PATH, "event": "workflow_dispatch", "head_branch": "main"})
     assert control._persist(123) == {"status": "already-completed", "pr": 3897}

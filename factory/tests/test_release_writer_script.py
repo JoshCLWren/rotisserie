@@ -41,7 +41,7 @@ def test_recent_filters_unmerged_and_sorts_by_exact_merge_time(monkeypatch, caps
 
     monkeypatch.setattr(release_writer, "_github_request", fake_github_request)
 
-    release_writer._recent("JoshCLWren/comic-pile", "2")
+    release_writer._recent("acme/widgets", "2")
 
     result = json.loads(capsys.readouterr().out)
     assert [item["number"] for item in result] == [12, 11]
@@ -75,7 +75,7 @@ def test_recent_paginates_until_all_closed_prs_are_seen(monkeypatch, capsys):
 
     monkeypatch.setattr(release_writer, "_github_request", fake_github_request)
 
-    release_writer._recent("JoshCLWren/comic-pile", "1")
+    release_writer._recent("acme/widgets", "1")
 
     result = json.loads(capsys.readouterr().out)
     assert result[0]["number"] == 101
@@ -95,7 +95,7 @@ def test_skip_records_hidden_internal_release(monkeypatch, capsys):
     release_writer._skip(
         json.dumps(
             {
-                "source_repository": "JoshCLWren/comic-pile",
+                "source_repository": "acme/widgets",
                 "source_pr_number": 1177,
                 "source_merge_sha": "d" * 40,
                 "merged_at": "2026-08-14T01:00:00Z",
@@ -131,14 +131,14 @@ def test_pr_emits_trimmed_pull_context(monkeypatch, capsys):
             "merged": True,
             "merged_at": "2026-08-11T21:51:56Z",
             "merge_commit_sha": "7d5f47717550357ac5193bcb7caa4bd66a3b48fa",
-            "html_url": "https://github.com/JoshCLWren/comic-pile/pull/1082",
+            "html_url": "https://github.com/acme/widgets/pull/1082",
             "user": {"login": "JoshCLWren", "other": "ignored"},
             "unwanted": "secret-detail",
         }
 
     monkeypatch.setattr(release_writer, "_github_request", fake_github_request)
 
-    release_writer._pr("JoshCLWren/comic-pile", "1082")
+    release_writer._pr("acme/widgets", "1082")
 
     result = json.loads(capsys.readouterr().out)
     assert result["number"] == 1082
@@ -148,7 +148,7 @@ def test_pr_emits_trimmed_pull_context(monkeypatch, capsys):
     assert result["author"] == "JoshCLWren"
     assert "unwanted" not in result
     assert seen_urls[0].endswith("/pulls/1082")
-    assert seen_urls[0].startswith("https://api.github.com/repos/JoshCLWren/comic-pile")
+    assert seen_urls[0].startswith("https://api.github.com/repos/acme/widgets")
 
 
 def test_pr_rejects_bad_input(monkeypatch, capsys):
@@ -169,12 +169,12 @@ def test_pr_rejects_bad_input(monkeypatch, capsys):
     assert "repository must use owner/name form" in capsys.readouterr().err
 
     with pytest.raises(SystemExit) as excinfo:
-        release_writer._pr("JoshCLWren/comic-pile", "abc")
+        release_writer._pr("acme/widgets", "abc")
     assert excinfo.value.code == 2
     assert "PR number must be an integer" in capsys.readouterr().err
 
     with pytest.raises(SystemExit) as excinfo:
-        release_writer._pr("JoshCLWren/comic-pile", "0")
+        release_writer._pr("acme/widgets", "0")
     assert excinfo.value.code == 2
     assert "PR number must be a positive integer" in capsys.readouterr().err
 
@@ -201,7 +201,7 @@ def test_files_emits_changed_file_summary(monkeypatch, capsys):
 
     monkeypatch.setattr(release_writer, "_github_request", fake_github_request)
 
-    release_writer._files("JoshCLWren/comic-pile", "1120")
+    release_writer._files("acme/widgets", "1120")
 
     result = json.loads(capsys.readouterr().out)
     assert result[0]["filename"] == "scripts/release_writer.py"
@@ -282,7 +282,7 @@ def test_issues_extracts_linked_references(monkeypatch, capsys):
         _issue_responder(seen_urls, issues, pull),
     )
 
-    release_writer._issues("JoshCLWren/comic-pile", "1082")
+    release_writer._issues("acme/widgets", "1082")
 
     result = json.loads(capsys.readouterr().out)
     assert [item["number"] for item in result] == [1066, 1067, 1070]
@@ -313,7 +313,7 @@ def test_issues_records_parent_and_dependency_relationships(monkeypatch, capsys)
         _issue_responder(seen_urls, issues, pull),
     )
 
-    release_writer._issues("JoshCLWren/comic-pile", "2910")
+    release_writer._issues("acme/widgets", "2910")
 
     result = json.loads(capsys.readouterr().out)
     relationships = {item["number"]: item["relationship"] for item in result}
@@ -342,7 +342,7 @@ def test_issues_reports_deferred_ui_scope_fences(monkeypatch, capsys):
         _issue_responder(seen_urls, issues, pull),
     )
 
-    release_writer._issues("JoshCLWren/comic-pile", "2910")
+    release_writer._issues("acme/widgets", "2910")
 
     result = json.loads(capsys.readouterr().out)
     assert result[0]["scope_fences"] == [
@@ -366,7 +366,7 @@ def test_issues_marks_unresolvable_references_unavailable(monkeypatch, capsys):
         _issue_responder(seen_urls, issues, pull),
     )
 
-    release_writer._issues("JoshCLWren/comic-pile", "500")
+    release_writer._issues("acme/widgets", "500")
 
     result = json.loads(capsys.readouterr().out)
     assert result[0] == {"number": 499, "unavailable": True}
@@ -385,7 +385,7 @@ def test_issues_bounds_long_issue_bodies(monkeypatch, capsys):
         _issue_responder(seen_urls, issues, pull),
     )
 
-    release_writer._issues("JoshCLWren/comic-pile", "600")
+    release_writer._issues("acme/widgets", "600")
 
     result = json.loads(capsys.readouterr().out)
     assert len(result[0]["body"]) == release_writer._MAX_ISSUE_BODY
@@ -400,7 +400,7 @@ def test_issues_skips_own_pr_number(monkeypatch, capsys):
         release_writer, "_github_request", _issue_responder(seen_urls, {}, pull)
     )
 
-    release_writer._issues("JoshCLWren/comic-pile", "42")
+    release_writer._issues("acme/widgets", "42")
 
     result = json.loads(capsys.readouterr().out)
     assert result == []
@@ -418,7 +418,7 @@ def test_issues_excludes_ordinal_markers(monkeypatch, capsys):
         release_writer, "_github_request", _issue_responder(seen_urls, {}, pull)
     )
 
-    release_writer._issues("JoshCLWren/comic-pile", "100")
+    release_writer._issues("acme/widgets", "100")
 
     result = json.loads(capsys.readouterr().out)
     assert result == []
@@ -437,7 +437,7 @@ def test_issues_keeps_real_references_after_ordinal_markers(monkeypatch, capsys)
         release_writer, "_github_request", _issue_responder(seen_urls, issues, pull)
     )
 
-    release_writer._issues("JoshCLWren/comic-pile", "100")
+    release_writer._issues("acme/widgets", "100")
 
     result = json.loads(capsys.readouterr().out)
     assert [item["number"] for item in result] == [1070]
@@ -455,7 +455,7 @@ def test_issues_excludes_version_step_markers(monkeypatch, capsys):
         release_writer, "_github_request", _issue_responder(seen_urls, {}, pull)
     )
 
-    release_writer._issues("JoshCLWren/comic-pile", "100")
+    release_writer._issues("acme/widgets", "100")
 
     result = json.loads(capsys.readouterr().out)
     assert result == []
@@ -474,7 +474,7 @@ def test_issues_keeps_real_references_after_version_step_markers(monkeypatch, ca
         release_writer, "_github_request", _issue_responder(seen_urls, issues, pull)
     )
 
-    release_writer._issues("JoshCLWren/comic-pile", "100")
+    release_writer._issues("acme/widgets", "100")
 
     result = json.loads(capsys.readouterr().out)
     assert [item["number"] for item in result] == [1070]
@@ -497,7 +497,7 @@ def test_issues_excludes_parenthesized_version_step_markers(monkeypatch, capsys)
         release_writer, "_github_request", _issue_responder(seen_urls, issues, pull)
     )
 
-    release_writer._issues("JoshCLWren/comic-pile", "100")
+    release_writer._issues("acme/widgets", "100")
 
     result = json.loads(capsys.readouterr().out)
     assert [item["number"] for item in result] == [1070]
@@ -516,7 +516,7 @@ def test_issues_excludes_unbalanced_parenthesized_markers(monkeypatch, capsys):
         release_writer, "_github_request", _issue_responder(seen_urls, issues, pull)
     )
 
-    release_writer._issues("JoshCLWren/comic-pile", "100")
+    release_writer._issues("acme/widgets", "100")
     result = json.loads(capsys.readouterr().out)
     assert [item["number"] for item in result] == [1070]
 

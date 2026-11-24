@@ -97,7 +97,7 @@ def test_sanitizer_redacts_git_and_bearer_credentials(tmp_path: Path) -> None:
     source = tmp_path / "raw.log"
     target = tmp_path / "safe.log"
     source.write_text(
-        "origin https://x-access-token:github_pat_secret123@github.com/JoshCLWren/comic-pile.git\n"
+        "origin https://x-access-token:github_pat_secret123@github.com/acme/widgets.git\n"
         "Authorization: Bearer super-secret-value\n"
     )
     result = run_bash(f"factory_sanitize_review_log {source!s} {target!s}")

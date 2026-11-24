@@ -100,7 +100,7 @@ class FactoryPostMergeClosureDependencyTests(ClosureIssueMixin, unittest.TestCas
         mock_close.assert_not_called()
         self.assertEqual(len(comments), 1)
         self.assertIn(
-            "comic-pile-factory-dependency-block-v1:pr-4024:issue-4010:deps-4008",
+            f"{github.MARKER_PREFIX}-factory-dependency-block-v1:pr-4024:issue-4010:deps-4008",
             comments[0],
         )
         self.assertIn("#4008", comments[0])

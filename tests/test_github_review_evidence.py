@@ -15,7 +15,7 @@ from rotisserie.domain.model import RepositoryId
 REPO = RepositoryId("github.com", "org", "repo")
 HEAD = "a" * 40
 OTHER_HEAD = "b" * 40
-NAMESPACE = "comic-pile-factory"
+NAMESPACE = "widgets-factory"
 WORKER_NS = "factory-worker"
 
 CONTROLLER_POLICY = TrustedCommentPolicy(
@@ -69,10 +69,10 @@ def test_parse_head_contributor_marker_round_trips() -> None:
 @pytest.mark.parametrize(
     "line",
     [
-        "<!-- comic-pile-factory-head-contributor-v1:pr-1:head-short:worker-1:epoch-1 -->",
+        "<!-- widgets-factory-head-contributor-v1:pr-1:head-short:worker-1:epoch-1 -->",
         "<!-- other-namespace-head-contributor-v1:pr-1:head-" + HEAD + ":worker-1:epoch-1 -->",
         "not a marker at all",
-        "<!-- comic-pile-factory-head-contributor-v1:pr-1:head-" + HEAD + ":worker-1 -->",
+        "<!-- widgets-factory-head-contributor-v1:pr-1:head-" + HEAD + ":worker-1 -->",
     ],
 )
 def test_parse_head_contributor_marker_rejects_malformed_lines(line: str) -> None:
@@ -101,7 +101,7 @@ def test_untrusted_authors_are_ignored() -> None:
         {
             "user": {"login": "worker-app[bot]"},
             "author_association": "OWNER",
-            "performed_via_github_app": {"slug": "comic-pile-worker"},
+            "performed_via_github_app": {"slug": "widgets-worker"},
             "body": contributor_marker(pr=7, head=HEAD, worker="60"),
         },
     ]
@@ -226,7 +226,7 @@ def test_caller_producer_without_attestation_is_reported_unattested() -> None:
 @pytest.mark.parametrize(
     "kwargs",
     [
-        {"namespace": "Comic_Pile", "worker_namespace": WORKER_NS},
+        {"namespace": "Wid_Gets", "worker_namespace": WORKER_NS},
         {"namespace": NAMESPACE, "worker_namespace": "  "},
         {"namespace": NAMESPACE, "worker_namespace": WORKER_NS, "verdicts": frozenset({"repair"})},
     ],

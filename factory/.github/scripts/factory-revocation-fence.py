@@ -13,10 +13,11 @@ from pathlib import Path
 from typing import Any
 
 from factory_review_policy import performed_via_untrusted_app
+from factory_adopter import MARKER_PREFIX
 
 BRANCH_RE = re.compile(r"^factory/(?P<worker>[0-9]+)-(?P<issue>[0-9]+)-")
 PROVENANCE_RE = re.compile(
-    r"<!--\s*comic-pile-factory-pr-provenance-v1:"
+    rf"<!--\s*{MARKER_PREFIX}-factory-pr-provenance-v1:"
     r"pr-(?P<pr>[0-9]+):issue-(?P<issue>[0-9]+):"
     r"(?P<worker_id>opencode-(?:free-model|nvidia|omniroute)-factory-(?P<worker>[0-9]+)):"
     r"(?P<epoch>[0-9]{10}):(?P<head>[0-9a-f]{40})\s*-->"
@@ -108,7 +109,7 @@ class FenceTests(unittest.TestCase):
     HEAD = "a" * 40
     BRANCH = "factory/39-1477-opencode-free"
     MARKER = (
-        "<!-- comic-pile-factory-pr-provenance-v1:"
+        f"<!-- {MARKER_PREFIX}-factory-pr-provenance-v1:"
         f"pr-1517:issue-1477:opencode-free-model-factory-39:1787060686:{HEAD} -->"
     )
 
@@ -124,7 +125,7 @@ class FenceTests(unittest.TestCase):
         comments = [
             self.trusted_comment(self.MARKER),
             self.trusted_comment(
-                "<!-- comic-pile-factory-claim-released-v3:"
+                f"<!-- {MARKER_PREFIX}-factory-claim-released-v3:"
                 "issue-1477:opencode-free-model-factory-39:1787060687:pr-opened-handoff -->"
             ),
         ]
@@ -155,11 +156,11 @@ class FenceTests(unittest.TestCase):
     def test_genuinely_revoked_assignment_is_closed(self) -> None:
         comments = [
             self.trusted_comment(
-                "<!-- comic-pile-factory-implement-claim-v3:"
+                f"<!-- {MARKER_PREFIX}-factory-implement-claim-v3:"
                 "issue-1477:opencode-free-model-factory-39:1787060000:attempt-1 -->"
             ),
             self.trusted_comment(
-                "<!-- comic-pile-factory-claim-released-v3:"
+                f"<!-- {MARKER_PREFIX}-factory-claim-released-v3:"
                 "issue-1477:opencode-free-model-factory-39:1787060100:cancelled-worker -->"
             ),
         ]

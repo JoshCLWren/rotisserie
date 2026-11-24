@@ -21,7 +21,7 @@ assert spec is not None and spec.loader is not None
 operations = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(operations)
 
-REPO = "JoshCLWren/comic-pile"
+REPO = "acme/widgets"
 
 
 class FakeConnection:

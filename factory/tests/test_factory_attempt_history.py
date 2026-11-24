@@ -41,7 +41,7 @@ def _attempt(identity: int, epoch: int) -> dict[str, object]:
     return {
         "id": identity, "author_association": "OWNER",
         "body": (
-            "<!-- comic-pile-factory-claim-released-v3:pr-2264:worker:"
+            "<!-- widgets-factory-claim-released-v3:pr-2264:worker:"
             f"{epoch}:review-agent-failed:sha={HEAD}:stage=factory:review:conflicted=0 -->"
         ),
     }
@@ -271,8 +271,8 @@ def test_targeted_pr_retry_history_reads_only_its_own_comment_pages(
     assert records[0].number == 2264
     assert records[0].kind == "pr"
     assert len(endpoints) == 1
-    assert "repos/JoshCLWren/comic-pile/issues/2264/comments?since=" in endpoints[0]
-    assert "repos/JoshCLWren/comic-pile/issues/comments?" not in endpoints[0]
+    assert "repos/acme/widgets/issues/2264/comments?since=" in endpoints[0]
+    assert "repos/acme/widgets/issues/comments?" not in endpoints[0]
 
 
 def test_targeted_pr_snapshot_does_not_masquerade_as_full_retry_history(

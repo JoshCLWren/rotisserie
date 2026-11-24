@@ -12,6 +12,7 @@ from factory_post_merge_closure_github import (
     _has_unreadable_dependency_warning,
 )
 from factory_post_merge_closure import close_merged_pr_issue
+from factory_post_merge_closure_policy import MERGE_CLOSURE_MARKER
 from factory_post_merge_closure_testing import ClosureIssueMixin
 
 
@@ -101,7 +102,7 @@ class FactoryPostMergeClosureReopenTests(ClosureIssueMixin, unittest.TestCase):
         self.assertNotIn("ralph-status:blocked", replaced)
         self.assertIn("factory", replaced)
         self.assertEqual(len(comments), 1)
-        self.assertIn("comic-pile-factory-merge-closure-v1:pr-4034:issue-4017", comments[0])
+        self.assertIn(f"{MERGE_CLOSURE_MARKER}:pr-4034:issue-4017", comments[0])
 
     def test_repeated_sweep_does_not_repeat_closure_comment(self) -> None:
         """A sweep that re-visits an already-closed issue does not repost the closure comment (G3)."""

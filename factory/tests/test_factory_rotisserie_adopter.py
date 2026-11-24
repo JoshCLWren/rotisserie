@@ -43,7 +43,7 @@ def test_one_capture_generates_both_versioned_shadow_inputs() -> None:
         "eligibility", "ranking", "ownership", "review", "completion", "recovery"
     }
     assert snapshot["schema_version"] == 1
-    assert {item["id"]["repository"]["name"] for item in snapshot["works"]} == {"comic-pile"}
+    assert {item["id"]["repository"]["name"] for item in snapshot["works"]} == {"widgets"}
 
 
 def test_fixture_covers_exact_head_review_completion_and_lease_recovery() -> None:
@@ -140,7 +140,7 @@ def test_projection_pressure_uses_factory_wip_policy() -> None:
     assert adapter.FACTORY_PR_WIP_LIMIT >= 8
 
 
-def test_graph_priorities_preserve_comicpile_provenance_order() -> None:
+def test_graph_priorities_preserve_adopter_provenance_order() -> None:
     adapter = load_adapter()
     view = json.loads(FIXTURE.read_text(encoding="utf-8"))
     first, second = view["issues"][:2]
@@ -177,7 +177,7 @@ def test_manual_gate_mapping() -> None:
     assert observations[("eligibility", "work:3002")]["reasons"] == ["human_boundary"]
     assert snapshot["boundaries"] == [
         {
-            "id": "comic-pile-policy-3002",
+            "id": "widgets-policy-3002",
             "work": snapshot["works"][1]["id"],
             "kind": "human_approval",
             "satisfied_by": None,

@@ -359,8 +359,7 @@ def test_retry_history_uses_the_controllers_trusted_marker_parser() -> None:
     core = runtime.module("factory_work_policy")
     epoch = int(NOW.timestamp()) - 60
     marker = (
-        f"<!-- comic-pile-factory-claim-released-v3:issue-7:3:{epoch}:"
-        "no-persisted-change-handoff -->"
+        f"<!-- widgets-factory-claim-released-v3:issue-7:3:{epoch}:no-persisted-change-handoff -->"
     )
     pages = [
         [
