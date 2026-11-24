@@ -86,6 +86,10 @@ CREATE TABLE IF NOT EXISTS factory_model_health (
     updated_at INTEGER NOT NULL,
     PRIMARY KEY (repo, source, model)
 ) STRICT;
+-- Only blocking rows are indexed: dispatch reads them, never the healthy majority.
+CREATE INDEX IF NOT EXISTS idx_factory_model_health_blocking
+    ON factory_model_health (repo, cooldown_until)
+    WHERE status IN ('retired', 'unavailable', 'cooling');
 
 -- Exact-head PR stage retry not-before; a new head SHA is a new row.
 CREATE TABLE IF NOT EXISTS factory_pr_stage_retry (
@@ -144,12 +148,19 @@ CREATE TABLE IF NOT EXISTS factory_state_events (
 ) STRICT;
 CREATE INDEX IF NOT EXISTS idx_factory_events_type_time
     ON factory_state_events (repo, event_type, created_at);
+-- Partial indexes keep model attempts (most rows) out of lookups that never read them.
 CREATE INDEX IF NOT EXISTS idx_factory_events_run
-    ON factory_state_events (repo, run_id);
+    ON factory_state_events (repo, run_id) WHERE event_type <> 'model_attempt';
 CREATE INDEX IF NOT EXISTS idx_factory_events_model
-    ON factory_state_events (source, model, created_at);
+    ON factory_state_events (source, model, created_at)
+    WHERE event_type IN ('worker_failed', 'worker_completed');
 CREATE INDEX IF NOT EXISTS idx_factory_events_worker
-    ON factory_state_events (repo, worker, created_at);
+    ON factory_state_events (repo, worker, created_at)
+    WHERE event_type IN ('worker_failed', 'worker_completed');
+-- The provider daily cap counts today's assignments inside every acquisition.
+CREATE INDEX IF NOT EXISTS idx_factory_events_assigned
+    ON factory_state_events (repo, source, created_at)
+    WHERE event_type = 'worker_assigned';
 
 -- Raw model attempts older than the retention window, counted per UTC day.
 CREATE TABLE IF NOT EXISTS factory_model_attempt_daily (

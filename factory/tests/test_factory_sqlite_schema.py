@@ -91,12 +91,25 @@ def test_strict_columns_and_json_reject_bad_values() -> None:
             "idx_factory_events_type_time",
         ),
         (
-            "SELECT worker FROM factory_state_events WHERE repo=? AND run_id=?",
+            "SELECT worker FROM factory_state_events WHERE repo=? AND run_id=?"
+            " AND event_type <> 'model_attempt'",
             "idx_factory_events_run",
         ),
         (
-            "SELECT 1 FROM factory_state_events WHERE source=? AND model=? AND created_at>?",
+            "SELECT 1 FROM factory_state_events WHERE source=? AND model=? AND created_at>?"
+            " AND event_type IN ('worker_failed', 'worker_completed')",
             "idx_factory_events_model",
+        ),
+        (
+            "SELECT count(*) FROM factory_state_events WHERE repo=? AND event_type='worker_assigned'"
+            " AND source=? AND created_at>=?",
+            "idx_factory_events_assigned",
+        ),
+        (
+            "SELECT source, model FROM factory_model_health WHERE repo=?"
+            " AND status IN ('retired', 'unavailable', 'cooling')"
+            " AND (status='retired' OR cooldown_until>?)",
+            "idx_factory_model_health_blocking",
         ),
         (
             "SELECT 1 FROM factory_lease WHERE claim_id=?",
