@@ -7,7 +7,9 @@ the hosted database in a throwaway namespace and publishes a JSON summary.
 ``export`` starts ``factory-state-export.yml``, which copies the store into a
 SQLite file, encrypts it with the adopter's ``FACTORY_EXPORT_KEY`` secret and
 publishes it with a JSON summary; ``download`` saves the file here and decrypts
-it with the same key from this machine's ``FACTORY_EXPORT_KEY``.
+it with the same key from this machine's ``FACTORY_EXPORT_KEY``. ``migrate``
+starts ``factory-store-migrate.yml``, which copies the Neon state into the
+store (or, as a dry run, only counts it) and publishes a JSON summary of counts.
 """
 
 from __future__ import annotations
@@ -21,10 +23,15 @@ from rotisserie.factory_console.github import GitHub, GitHubError, obj, string
 from rotisserie.factory_console.service import bridge
 from rotisserie.factory_console.tracker import Clock
 
-WORKFLOWS = {"selftest": "factory-turso-selftest.yml", "export": "factory-state-export.yml"}
+WORKFLOWS = {
+    "selftest": "factory-turso-selftest.yml",
+    "export": "factory-state-export.yml",
+    "migrate": "factory-store-migrate.yml",
+}
 SUMMARIES = {
     "selftest": "factory-turso-selftest-{run_id}",
     "export": "factory-state-export-summary-{run_id}",
+    "migrate": "factory-store-migrate-{run_id}",
 }
 EXPORT_FILE = "factory-state-export-{run_id}"
 KEY_VARIABLE = "FACTORY_EXPORT_KEY"
@@ -35,13 +42,24 @@ TIMEOUT = 1800.0
 
 def _mode(mode: str) -> str:
     if mode not in WORKFLOWS:
-        raise ValueError("mode is selftest or export")
+        raise ValueError("mode is selftest, export or migrate")
     return mode
 
 
-def start(github: GitHub, mode: str, *, measure: bool = False) -> dict[str, object]:
-    inputs = {"measure": "true"} if measure and _mode(mode) == "selftest" else {}
-    run_id, url = bridge._start(github, WORKFLOWS[_mode(mode)], inputs)
+def _inputs(mode: str, *, measure: bool, dry_run: bool) -> dict[str, str]:
+    """Workflow inputs; a migration always names ``dry_run``, so nothing relies on a default."""
+    if _mode(mode) == "selftest":
+        return {"measure": "true"} if measure else {}
+    if mode == "migrate":
+        return {"dry_run": "true" if dry_run else "false"}
+    return {}
+
+
+def start(
+    github: GitHub, mode: str, *, measure: bool = False, dry_run: bool = True
+) -> dict[str, object]:
+    inputs = _inputs(mode, measure=measure, dry_run=dry_run)
+    run_id, url = bridge._start(github, WORKFLOWS[mode], inputs)
     return {"status": "started", "mode": mode, "bridge": {"run_id": run_id, "url": url}}
 
 
@@ -51,13 +69,14 @@ def run(
     mode: str,
     *,
     measure: bool = False,
+    dry_run: bool = True,
     started: dict[str, object] | None = None,
 ) -> dict[str, object]:
-    inputs = {"measure": "true"} if measure and _mode(mode) == "selftest" else {}
+    inputs = _inputs(mode, measure=measure, dry_run=dry_run)
     result = bridge.run(
         github,
         clock,
-        WORKFLOWS[_mode(mode)],
+        WORKFLOWS[mode],
         inputs,
         artifact=SUMMARIES[mode],
         timeout=TIMEOUT,

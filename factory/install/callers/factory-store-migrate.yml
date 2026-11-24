@@ -1,0 +1,23 @@
+name: Factory Store Migrate
+on:
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: Only read Neon and report what would be copied (uncheck to copy into the factory store)
+        type: boolean
+        default: true
+        required: false
+permissions:
+  contents: read
+concurrency:
+  group: factory-store-migrate
+  cancel-in-progress: false
+jobs:
+  rotisserie:
+    uses: JoshCLWren/rotisserie/.github/workflows/factory-store-migrate.yml@main
+    with:
+      dry_run: ${{ inputs.dry_run == true }}
+    secrets:
+      NEON_API_KEY: ${{ secrets.NEON_API_KEY }}
+      FACTORY_TURSO_URL: ${{ secrets.FACTORY_TURSO_URL }}
+      FACTORY_TURSO_TOKEN: ${{ secrets.FACTORY_TURSO_TOKEN }}

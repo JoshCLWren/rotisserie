@@ -83,6 +83,7 @@ WRITE_OPERATIONS = frozenset(
         "backoffs_reset",
         "store_selftest",
         "store_export",
+        "store_migrate",
     )
 )
 MAX_BODY = 4096
@@ -166,7 +167,7 @@ def read_command(name: str, query: Mapping[str, str], *, trusted: bool = False) 
         args.extend((_match(_string(query, "target", required=True), TARGET, "target"), "--once"))
     elif name == "store":
         mode = _string(query, "mode", required=True)
-        if mode not in ("selftest", "export"):
+        if mode not in ("selftest", "export", "migrate"):
             raise InvalidRequest("Invalid store mode")
         args.extend((mode, "--run", _match(_string(query, "run", required=True), RUN_ID, "run")))
     elif name in ("report", "failures", "recap"):
@@ -314,6 +315,11 @@ def write_command(data: Mapping[str, Any]) -> list[str]:
         return ["backoffs", "reset", "--quota-only", "--yes", "--via", "github"]
     if name in ("store_selftest", "store_export"):
         return ["store", name.removeprefix("store_"), "--no-wait"]
+    if name == "store_migrate":
+        dry_run = data.get("dry_run", True)
+        if not isinstance(dry_run, bool):
+            raise InvalidRequest("Invalid dry_run")
+        return ["store", "migrate", "--no-wait", *(["--dry-run"] if dry_run else [])]
     return _labels(data)
 
 

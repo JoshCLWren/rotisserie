@@ -11,6 +11,15 @@ such change must be called out here and in its release notes.
 
 ### Added
 
+- `baste store migrate [--dry-run]` copies the factory's Neon state into the
+  libSQL (Turso) store through the new `factory-store-migrate.yml` workflow
+  (#257). The dry run writes nothing and reports the projection key count, the
+  provider budget rows that hold a setting and every Neon table's row count.
+  The real run copies leases, backoffs, health resets, events and the typed
+  tables, never overwrites a stored row, counts every copied row back, and
+  refuses to report success on a mismatch. The Diagnostics page has Migrate
+  store (dry run) and Migrate store, and Read store run now picks the run kind
+  from a list. Adopters re-run the installer to add the caller.
 - `baste --progress` writes one JSON line per step to stderr. `baste unstick`
   reports each step: reading open work, checks and claims, the plan counts,
   and one line per action with its GitHub run link or its error. A failed
