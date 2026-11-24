@@ -93,7 +93,9 @@ def run(namespace: str, *, measure: bool) -> dict[str, object]:
         "FACTORY_TEST_USAGE_FILE": str(work / "usage.jsonl"),
     }
     report = work / "junit.xml"
-    stale = sweep(_store())
+    store = _store()
+    libsql.ensure_schema(store)
+    stale = sweep(store)
     started = datetime.now(UTC)
     tests = subprocess.run(
         [
@@ -144,13 +146,34 @@ def run(namespace: str, *, measure: bool) -> dict[str, object]:
     return summary
 
 
+def crashed(exc: BaseException) -> dict[str, object]:
+    """A summary for a run that stopped before its tests; never carries the store URL."""
+    message = f"{type(exc).__name__}: {exc}"
+    url = os.environ.get("FACTORY_TEST_LIBSQL_URL", "")
+    if url:
+        message = message.replace(url, "<store>")
+    return {
+        "mode": "selftest",
+        "schema": 1,
+        "status": "failed",
+        "error": message[:500],
+        "passed": 0,
+        "failed": 0,
+        "skipped": 0,
+        "finished_at": datetime.now(UTC).isoformat(),
+    }
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--namespace", required=True)
     parser.add_argument("--out", type=Path, required=True)
     parser.add_argument("--measure", action="store_true")
     args = parser.parse_args(argv)
-    summary = run(args.namespace, measure=args.measure)
+    try:
+        summary = run(args.namespace, measure=args.measure)
+    except Exception as exc:
+        summary = crashed(exc)
     args.out.write_text(json.dumps(summary, sort_keys=True, indent=2), encoding="utf-8")
     print(
         f"[factory-store] self-test {summary['status']}: {summary['passed']} passed, "
