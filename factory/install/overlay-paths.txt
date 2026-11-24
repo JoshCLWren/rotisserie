@@ -108,6 +108,7 @@
 .github/scripts/test_factory_post_merge_closure_acceptance.py
 .github/scripts/test_factory_post_merge_closure_dependencies.py
 .github/scripts/test_factory_post_merge_closure_policy.py
+.github/scripts/test_factory_post_merge_closure_person_reopen.py
 .github/scripts/test_factory_post_merge_closure_reopen.py
 .github/scripts/test_factory_post_merge_closure_sweep.py
 .github/scripts/validate-free-model-factories.py

@@ -7,6 +7,7 @@ from datetime import datetime, timezone
 
 import factory_post_merge_closure_github as github
 from factory_post_merge_closure import close_merged_pr_issue
+from factory_post_merge_closure_testing import NoPersonReopenMixin
 from factory_post_merge_closure_policy import (
     EPIC_ACCEPTANCE_LABELS,
     MERGE_CLOSURE_MARKER,
@@ -22,7 +23,7 @@ from factory_post_merge_closure_policy import (
 )
 
 
-class FactoryPostMergeClosurePolicyTests(unittest.TestCase):
+class FactoryPostMergeClosurePolicyTests(NoPersonReopenMixin, unittest.TestCase):
     """Cover issue linking, labeling, quiescence, and #2167 acceptance regressions."""
 
     def test_branch_shape_resolves_issue(self) -> None:

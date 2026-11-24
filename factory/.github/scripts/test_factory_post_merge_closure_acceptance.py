@@ -7,6 +7,7 @@ import unittest
 import factory_implementation_delivery as implementation_delivery
 import factory_post_merge_closure_github as github
 from factory_post_merge_closure import close_merged_pr_issue
+from factory_post_merge_closure_testing import NoPersonReopenMixin
 from factory_post_merge_closure_policy import (
     _child_numbers,
     _issue_is_acceptance_parent,
@@ -15,7 +16,7 @@ from factory_post_merge_closure_policy import (
 )
 
 
-class FactoryPostMergeClosureAcceptanceTests(unittest.TestCase):
+class FactoryPostMergeClosureAcceptanceTests(NoPersonReopenMixin, unittest.TestCase):
     """Cover the #1620 explicit product-acceptance closure contract."""
 
     # Issue #1620 closure-critical contract: explicit product acceptance.

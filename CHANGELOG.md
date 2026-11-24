@@ -52,6 +52,10 @@ such change must be called out here and in its release notes.
 
 ### Fixed
 
+- The post-merge closer no longer closes an issue a person reopened. Before,
+  it closed ComicPile #5695 again because an earlier merged PR said "Closes",
+  although the reproduction still failed. A reopen by the factory itself (for
+  dependency blocks) still allows closure (#212).
 - A claim on a named issue or PR (label claim or `rotisserie factory claim`)
   is no longer judged by factory intake. Capacity, backpressure, ranking and
   "offered now" checks applied, so ComicPile #5695, a reopened production bug,

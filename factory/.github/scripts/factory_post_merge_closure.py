@@ -68,6 +68,7 @@ SELF_TEST_MODULES = (
     "test_factory_post_merge_closure_dependencies",
     "test_factory_post_merge_closure_sweep",
     "test_factory_post_merge_closure_reopen",
+    "test_factory_post_merge_closure_person_reopen",
 )
 
 
@@ -129,7 +130,7 @@ def close_merged_pr_issue(
     Returns:
         One of ``closed``, ``already-closed``, ``no-linked-issue``,
         ``protected-issue``, ``successor-open``, ``active-work``,
-        ``manual-only-issue``, ``acceptance-parent-incomplete``,
+        ``manual-only-issue``, ``reopened-by-person``, ``acceptance-parent-incomplete``,
         ``acceptance-parent-requires-verdict``, ``not-merged``,
         ``not-delivered:<reason>``, ``delivery-unverified:<reason>``,
         ``open-dependency`` or ``open-dependency: #N``, or ``dry-run:<action>``.
@@ -152,6 +153,11 @@ def close_merged_pr_issue(
         # controlled — including an operator production-acceptance or cutover
         # parent — is never completed by merge automation.
         return "manual-only-issue"
+    if str(issue["state"]) != CLOSED_STATE:
+        # A person who reopened the issue says the merged PR did not finish it.
+        reopened = github._reopened_by_person(issue_number)
+        if reopened:
+            return "reopened-by-person" if reopened is True else "reopen-lookup-failed"
     if _acceptance_parent_has_incomplete_gates(labels, issue_body, issue_number):
         return "acceptance-parent-incomplete"
     if _issue_is_acceptance_parent(labels, issue_body):
