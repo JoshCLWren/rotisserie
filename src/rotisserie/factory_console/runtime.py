@@ -35,6 +35,7 @@ RUNTIME_MODULES = (
     "factory_branch_sync",
     "factory_main_health",
     "factory_review_policy",
+    "factory_self_heal_rules",
     "factory_review_exclusion",
     "factory_label_policy",
     "factory_adopter",

@@ -11,6 +11,18 @@ such change must be called out here and in its release notes.
 
 ### Added
 
+- The factory clears three stalls by itself on each dispatcher pass
+  (`factory_self_heal.py sweep`). A PR whose repair verdict named no finding
+  goes back to review once, and the next review avoids the model that wrote
+  the verdict. A bot reviewer's thread that the factory answered "Fixed" with
+  a commit in the current head is resolved; a thread a person started or joined
+  is never touched. A `factory:merge-conflict` PR that GitHub can now merge
+  gets main merged in, once per head, never while a worker or person holds it;
+  a real conflict stays with merge-conflict work. Each action leaves a factory
+  comment on the PR and an event in the factory store. `baste heal` lists them,
+  `baste recap` has a "Fixed by itself" section, and both control rooms show a
+  "Fixed by itself" panel. Stalls the factory clears no longer appear under
+  "Needs you".
 - `baste store migrate [--dry-run]` copies the factory's Neon state into the
   libSQL (Turso) store through the new `factory-store-migrate.yml` workflow
   (#257). The dry run writes nothing and reports the projection key count, the

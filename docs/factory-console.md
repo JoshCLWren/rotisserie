@@ -343,6 +343,25 @@ Starting sends one forced, targeted request per task (the same as
 `run PROVIDER MODEL --force --target pr:N --action ACTION`). Outside a terminal
 it starts nothing unless you pass `--yes`.
 
+### What the factory clears by itself
+
+The dispatcher runs `factory_self_heal.py sweep` on every pass:
+
+- A PR in `factory:changes-requested` whose newest review verdict names no
+  finding goes back to `factory:review`, once per verdict. The next review
+  avoids the model that wrote the empty verdict, when a handoff note names it.
+- A thread that a bot reviewer started, that the factory answered "**Fixed**
+  in `<sha>`", and whose fix commit is in the current head, is resolved. A
+  thread a person started or joined, and a rebuttal, stay open.
+- A `factory:merge-conflict` PR that GitHub now reports as mergeable gets main
+  merged in, at most once per head, never while a worker or person holds it.
+  GitHub still reporting a conflict means the change needs code judgment, so
+  merge-conflict work takes it.
+
+Each action posts a factory comment on the PR and records an event in the
+factory store. `baste heal [--since 24h]` lists them; `baste recap` shows them
+under "Fixed by itself".
+
 ## Closing work that should not be done
 
 `baste close pr:N [pr:M …] --reason TEXT` is for work you

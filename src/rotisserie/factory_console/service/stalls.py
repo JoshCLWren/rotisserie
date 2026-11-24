@@ -1,26 +1,26 @@
-"""Review deadlocks the factory does not get out of by itself.
+"""Review deadlocks, and which of them the factory clears by itself.
 
 Two shapes were found by hand on an adopter (#177):
 
 * **Answered thread** (#5688): a reviewer bot left a thread on the current
   head, a factory worker replied "**Fixed** in <sha>", and nobody resolved the
   thread. The merge gate denies any head with an unresolved, current-head
-  thread, so the PR can never pass until a person (or the reviewer, on its next
-  pass) resolves it.
+  thread. The factory's self-heal sweep now resolves such a thread when a bot
+  started it, no person took part, and the fix is in the head.
 * **Empty repair verdict** (#5684): the PR was sent to repair on a semantic
   verdict that holds only tool output and narration, so repair workers have
-  nothing to fix. The controller now refuses such verdicts, but PRs already
-  sent to repair stay there.
+  nothing to fix. The self-heal sweep now moves it back to review once.
 
-This module only reads. Callers decide what to show or do.
+The rules live in ``factory_self_heal_rules`` so this check and the factory's
+action always agree. This module only reads. Callers decide what to show or do.
 """
 
 from __future__ import annotations
 
 import json
-import re
 from collections.abc import Sequence
 from dataclasses import asdict, dataclass
+from types import ModuleType
 
 from rotisserie.factory_console import runtime
 from rotisserie.factory_console.github import GitHub, Obj, label_names, obj, string
@@ -29,9 +29,7 @@ from rotisserie.factory_console.service import review
 CHANGES_REQUESTED = "factory:changes-requested"
 # The stages where either deadlock holds a PR.
 WATCHED_STAGES = frozenset({"factory:review", "factory:ci", "factory:ready", CHANGES_REQUESTED})
-# The merge gate ignores this retired reviewer's threads; so does this check.
-IGNORED_REVIEWERS = frozenset({"coderabbitai", "coderabbitai[bot]"})
-FACTORY_REPLY = re.compile(r"^\*\*Fixed\*\* in `?[0-9a-f]{7,40}`?")
+SELF_HEAL = "The factory clears this by itself on its next dispatcher pass; `baste heal` shows it."
 
 THREADS = """
 query($owner: String!, $name: String!, $number: Int!) {
@@ -40,12 +38,13 @@ query($owner: String!, $name: String!, $number: Int!) {
       reviewThreads(first: 100) {
         pageInfo { hasNextPage }
         nodes {
+          id
           isResolved
           isOutdated
           path
           comments(first: 100) {
             pageInfo { hasNextPage }
-            nodes { url body author { login } commit { oid } }
+            nodes { url body author { login __typename } commit { oid } }
           }
         }
       }
@@ -62,15 +61,10 @@ class Stall:
     text: str
     hint: str
     url: str
+    auto: bool = False  # the factory's self-heal sweep clears it
 
     def to_dict(self) -> dict[str, object]:
         return asdict(self)
-
-
-def _login(node: object) -> str:
-    author = node.get("author") if isinstance(node, dict) else None
-    login = author.get("login") if isinstance(author, dict) else None
-    return login if isinstance(login, str) else ""
 
 
 def answered_threads(github: GitHub, number: int, head: str) -> list[Stall]:
@@ -105,38 +99,23 @@ def answered_threads(github: GitHub, number: int, head: str) -> list[Stall]:
             where = str(thread.get("path") or "a file")
             found.append(_unchecked(number, f"its thread on {where} has more than 100 comments"))
             continue
-        comments = page.get("nodes")
-        if not isinstance(comments, list) or not comments:
+        answered = _rules().answered_thread(thread, head)
+        if answered is None:
             continue
-        reviewer = _login(comments[0])
-        if reviewer in IGNORED_REVIEWERS:
-            continue
-        on_head = any(
-            isinstance(comment, dict) and obj(comment.get("commit")).get("oid") == head
-            for comment in comments
+        who = answered.reviewer or "a reviewer"
+        text = (
+            f"PR #{number}: {who}'s thread on {answered.path} was answered 'Fixed' by the "
+            "factory but is still unresolved, so the merge gate denies this head."
         )
-        last = comments[-1] if isinstance(comments[-1], dict) else {}
-        answered = _login(last).startswith("github-actions") and FACTORY_REPLY.match(
-            string(last, "body")
-        )
-        if not (on_head and answered and len(comments) > 1):
-            continue
-        path = str(thread.get("path") or "a file")
-        found.append(
-            Stall(
-                pr=number,
-                kind="answered-thread",
-                text=(
-                    f"PR #{number}: {reviewer or 'a reviewer'}'s thread on {path} was answered "
-                    "'Fixed' by the factory but is still unresolved, so the merge gate denies "
-                    "this head."
-                ),
-                hint=(
-                    "Check the fix and resolve the thread, or ask the reviewer to review again "
-                    "(it resolves its own threads)."
-                ),
-                url=string(last, "url"),
+        if answered.resolvable:
+            hint = f"{SELF_HEAL} It resolves the thread once {answered.fix[:12]} is in the head."
+        else:
+            hint = (
+                "A person started or joined this thread, so the factory leaves it to you: check "
+                "the fix and resolve the thread, or ask the reviewer to review again."
             )
+        found.append(
+            Stall(number, "answered-thread", text, hint, answered.url, answered.resolvable)
         )
     return found
 
@@ -157,43 +136,27 @@ def _review_again(number: int) -> str:
     return f"Review it again: {command} ({choose}; add --take-over if a worker holds it)"
 
 
-def _excerpt(body: str) -> str:
-    if "```text\n" not in body:
-        return ""
-    return body.split("```text\n", 1)[1].rsplit("\n```", 1)[0]
+def _rules() -> ModuleType:
+    return runtime.module("factory_self_heal_rules")
 
 
 def empty_repair_verdict(
     records: Sequence[Obj], number: int, stage: str, *, url: str = ""
 ) -> Stall | None:
-    """The PR is in repair on a verdict that names no finding."""
+    """The PR is in repair on a verdict that names no finding, and was not healed yet."""
     if stage != CHANGES_REQUESTED:
         return None
-    policy = runtime.module("factory_review_policy")
-    trusted = set(policy.controller_comment_bodies(records))
-    for record in reversed(list(records)):
-        body = string(record, "body")
-        if body not in trusted:
-            continue
-        marker = policy.parse_review_marker(body.splitlines()[0] if body else "")
-        if not marker or int(marker["pr"]) != number:
-            continue
-        verdict = marker["verdict"]
-        if verdict not in ("repair", "reject"):
-            return None  # the newest verdict did not send it to repair
-        if policy.has_actionable_review_findings(_excerpt(body)):
-            return None
-        return Stall(
-            pr=number,
-            kind="empty-repair-verdict",
-            text=(
-                f"PR #{number} is in repair on a {verdict} verdict that names no finding "
-                "(only tool output and narration), so repair workers have nothing to fix."
-            ),
-            hint=_review_again(number),
-            url=string(record, "html_url") or url,
-        )
-    return None
+    found = _rules().empty_verdict(records, number)
+    if found is None:
+        return None
+    text = (
+        f"PR #{number} is in repair on a {found.verdict} verdict that names no finding "
+        "(only tool output and narration), so repair workers have nothing to fix."
+    )
+    if found.healed:
+        text += " The factory already sent it back to review once for this verdict."
+    hint = _review_again(number) if found.healed else f"{SELF_HEAL} Or now: {_review_again(number)}"
+    return Stall(number, "empty-repair-verdict", text, hint, found.url or url, not found.healed)
 
 
 def inspect(

@@ -90,6 +90,9 @@
 .github/scripts/factory_rotisserie_control.py
 .github/scripts/factory_runtime_model_select.py
 .github/scripts/factory_runtime_view.py
+.github/scripts/factory_self_heal.py
+.github/scripts/factory_self_heal_actions.py
+.github/scripts/factory_self_heal_rules.py
 .github/scripts/factory_settings.py
 .github/scripts/factory_snapshot_age.py
 .github/scripts/factory_source_budget.py

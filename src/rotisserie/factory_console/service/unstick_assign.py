@@ -16,13 +16,17 @@ Ranked = list[tuple[str, str, str]]
 
 
 def review_excluded_models(github: GitHub, pr: int) -> tuple[str, ...]:
-    """Models that may not review the PR: the current head's author, by the shared rule."""
-    from rotisserie.factory_console.service.review import excluded_models
+    """Models that may not review the PR: the current head's author, by the shared rule,
+    and any model whose empty repair verdict the factory's self-heal cleared."""
+    from rotisserie.factory_console.service.review import comment_records, excluded_models
 
     try:
-        return excluded_models(github, pr).excluded
+        records = comment_records(github, pr)
+        excluded = excluded_models(github, pr, records=records).excluded
     except GitHubError, ValueError:
         return ()
+    avoided = runtime.module("factory_self_heal_rules").avoided_reviewers(records, pr=pr)
+    return tuple(dict.fromkeys((*excluded, *avoided)))
 
 
 def authored(model: str, authors: tuple[str, ...]) -> bool:

@@ -24,6 +24,7 @@ from rotisserie.factory_console.commands.db_usage import cmd_db_usage
 from rotisserie.factory_console.commands.estimate import cmd_estimate, cmd_estimate_history
 from rotisserie.factory_console.commands.failures import cmd_failures
 from rotisserie.factory_console.commands.fleet import cmd_models, cmd_providers
+from rotisserie.factory_console.commands.heal import cmd_heal
 from rotisserie.factory_console.commands.health import (
     _show_rate_limits,
     cmd_doctor,
@@ -162,6 +163,7 @@ def _help_text() -> str:
             "    (next, wait-for-work, reserve-next, renew, release, handoff: --via github runs",
             "     the repository's installed workflow when this machine has no claim store)",
             "  baste unstick       start the workers that clear the bottleneck",
+            "  baste heal          what the factory cleared by itself",
             "  baste outcomes      did the requested work actually happen",
             "  baste checks pr:N   why its checks fail",
             "  baste conflicts pr:N  what main changed under it",
@@ -251,6 +253,7 @@ HANDLERS = {
     "backoffs": cmd_backoffs,
     "db-usage": cmd_db_usage,
     "recap": cmd_recap,
+    "heal": cmd_heal,
     "store": cmd_store,
 }
 
