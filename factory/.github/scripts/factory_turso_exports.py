@@ -431,10 +431,11 @@ def export_reliability(repo: str) -> dict[str, Any]:
     statements = [
         (
             "SELECT source, model, event_type, outcome_class,"
-            " (detail ->> 'delivery_outcome') = 'persisted' AS delivered, count(*) AS n"
+            " (detail ->> 'delivery_outcome') = 'persisted' AS delivered,"
+            " detail ->> 'action_kind' AS action_kind, count(*) AS n"
             " FROM factory_state_events WHERE repo = :repo AND subject_type = 'worker'"
             " AND event_type IN ('worker_completed', 'worker_idle', 'worker_failed')"
-            " AND created_at > unixepoch() - :window GROUP BY 1, 2, 3, 4, 5",
+            " AND created_at > unixepoch() - :window GROUP BY 1, 2, 3, 4, 5, 6",
             {"repo": repo, "window": seconds[name]},
         )
         for name in RELIABILITY_WINDOWS

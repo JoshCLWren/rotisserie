@@ -7,7 +7,6 @@ are never an eligibility condition; actual invocation proves callability.
 from __future__ import annotations
 
 import argparse
-import hashlib
 import json
 import os
 import sys
@@ -17,6 +16,7 @@ from collections.abc import Mapping
 from pathlib import Path
 from typing import Any
 
+from factory_model_track_record import pick
 from factory_provider_candidates import ADAPTERS, discover
 from factory_provider_registry import PROVIDERS, missing_credentials
 
@@ -99,8 +99,8 @@ def select(
         raise CandidateUnavailableError(
             f"{source}: catalog contained no eligible candidates outside cooldown"
         )
-    digest = hashlib.sha256(f"{source}:{worker}:{rotation}".encode()).digest()
-    candidate = candidates[int.from_bytes(digest[:8], "big") % len(candidates)]
+    model, why = pick(source, [c.model for c in candidates], f"{source}:{worker}:{rotation}")
+    candidate = next(c for c in candidates if c.model == model)
     return {
         "source": source,
         "model": candidate.model,
@@ -109,6 +109,7 @@ def select(
         "branch_suffix": source,
         "reason": "selected-from-live-provider-catalog",
         "catalog_listed": True,
+        "selection_reason": why,
     }
 
 

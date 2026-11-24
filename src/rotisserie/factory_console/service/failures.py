@@ -44,6 +44,7 @@ class WorkerFailure:
     provider: str
     model: str
     target: str
+    selection: str = ""
 
     def to_dict(self) -> dict[str, object]:
         return asdict(self)
@@ -165,6 +166,7 @@ def read_failure(tracker: Tracker, run: Obj) -> WorkerFailure | None:
         provider=provider,
         model=recorded.get("model", ""),
         target=recorded.get("target", ""),
+        selection=recorded.get("selection", ""),
     )
 
 

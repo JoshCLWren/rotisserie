@@ -131,6 +131,8 @@ def record_runtime_outcome(
             "delivery_pr": outcome.get("delivery_pr") if delivered else None,
             "selected_kind": outcome.get("selected_kind"),
             "selected_number": outcome.get("selected_number"),
+            "action_kind": outcome.get("action_kind"),
+            "selection_reason": outcome.get("selection_reason"),
             "persisted_work": bool(outcome.get("persisted_work")),
             "model_failures": outcome.get("model_failures") or [],
             "trusted_source_switch": outcome.get("trusted_source_switch") is True,

@@ -91,6 +91,7 @@ def test_cli_accepts_fixture_with_published_price(tmp_path: Path) -> None:
     assert json.loads(out.stdout) == {
         "source": "openrouter-free", "model": "example/free:free",
         "runtime_model": "openrouter/example/free:free", "catalog_listed": True,
+        "selection_reason": "uniform: no eligible openrouter-free model has 3+ trials in 7d",
     }
 
 

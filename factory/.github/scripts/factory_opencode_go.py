@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import argparse
-import hashlib
 import json
 import os
 import sys
@@ -108,10 +107,12 @@ def choose(payload: Mapping[str, Any], worker: str, rotation: int = 0, excluded:
     else:
         # Spread automatic Go requests across every currently eligible free model.
         # The run-scoped rotation changes on each Actions run, unlike a worker pin.
-        seed = hashlib.sha256(f"{SOURCE}:{worker}:{rotation}".encode()).digest()
-        model = available[int.from_bytes(seed[:8], "big") % len(available)]
+        from factory_model_track_record import pick
+
+        model, why = pick(SOURCE, available, f"{SOURCE}:{worker}:{rotation}")
     return {"source": SOURCE, "provider": PROVIDER, "model": model,
-            "runtime_model": f"{PROVIDER}/{model}", "reason": "verified-Go-free-model"}
+            "runtime_model": f"{PROVIDER}/{model}", "reason": "verified-Go-free-model",
+            **({"selection_reason": why} if required_model is None else {})}
 
 
 def main() -> int:

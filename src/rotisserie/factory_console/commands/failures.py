@@ -65,6 +65,8 @@ def cmd_failures(context: Context, arguments: argparse.Namespace) -> Outcome:
                 if part
             )
             console.line(f"    {details}  {run.url}")
+            if run.selection:
+                console.line(f"      chosen by {run.selection}")
         if len(entry.runs) > RUNS_PER_GROUP:
             console.note(f"    and {len(entry.runs) - RUNS_PER_GROUP} more (see --json)")
     data: dict[str, object] = {

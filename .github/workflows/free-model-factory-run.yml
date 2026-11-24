@@ -464,6 +464,28 @@ jobs:
           echo "$bin_dir" >> "$GITHUB_PATH"
           "$bin_dir/kilo" --version
 
+      # One GitHub read of the hourly published reliability counts; no store rows.
+      # Advisory only: without it every selector keeps its uniform pick.
+      - name: Load model track record
+        if: steps.lane.outputs.configured == 'true'
+        continue-on-error: true
+        shell: bash
+        env:
+          FACTORY_ASSIGNMENT: ${{ inputs.assignment }}
+        run: |
+          set -Eeuo pipefail
+          kind="$(python3 .github/scripts/factory_model_track_record.py kind)"
+          [[ "$kind" =~ ^[a-z-]*$ ]] || kind=''
+          echo "FACTORY_ACTION_KIND=$kind" >> "$GITHUB_ENV"
+          stats="$RUNNER_TEMP/factory-track-record.json"
+          if gh api -H 'Accept: application/vnd.github.raw+json' \
+              "repos/${GITHUB_REPOSITORY}/contents/factory-stats.json?ref=factory-status-live" > "$stats" &&
+             jq -e '.models | type == "array"' "$stats" >/dev/null; then
+            echo "FACTORY_TRACK_RECORD_FILE=$stats" >> "$GITHUB_ENV"
+          else
+            echo "::warning::Model track record unavailable; selection stays uniform"
+          fi
+
       - name: Select execution candidate at dispatch time
         id: executor
         if: steps.lane.outputs.configured == 'true'
@@ -676,6 +698,15 @@ jobs:
             echo '::error::Selected model differs from explicit requested model'
             exit 1
           fi
+          selection_reason="$(jq -r '.selection_reason // "requested model"' <<< "$selection")"
+          echo "[factory-model-selection] $(jq -cn --arg s "$selected_source" --arg m "$model" \
+            --arg k "${FACTORY_ACTION_KIND:-}" --arg r "$selection_reason" \
+            '{source: $s, model: $m, kind: $k, reason: $r}')"
+          # Markdown backticks in this printf format are intentional.
+          # shellcheck disable=SC2016
+          printf '### Model selection\n\n`%s` / `%s` for `%s`: %s\n' \
+            "$selected_source" "$model" "${FACTORY_ACTION_KIND:-unknown}" "$selection_reason" \
+            >> "$GITHUB_STEP_SUMMARY"
           configure_adapter="$(python3 - "$selected_source" <<'PY'
           import sys
           sys.path.insert(0, ".github/scripts")

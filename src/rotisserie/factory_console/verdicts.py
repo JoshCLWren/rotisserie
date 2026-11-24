@@ -118,6 +118,7 @@ def outcome_class(log: str) -> dict[str, str]:
             found = {
                 key: str(data.get(key) or "") for key in ("class", "source", "model", "target")
             }
+            found |= {key: str(data[key]) for key in ("kind", "selection") if data.get(key)}
     if found.get("class"):
         return found
     verdict = None

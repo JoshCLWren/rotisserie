@@ -9,6 +9,20 @@ from typing import Any
 RELIABILITY_WINDOWS = {"24h": "24 hours", "7d": "7 days"}
 
 
+def _tally(window: dict[str, Any], row: dict[str, Any], count: int) -> None:
+    window["runs"] += count
+    if row["event_type"] == "worker_completed":
+        window["completed"] += count
+        if row.get("delivered"):
+            window["delivered"] += count
+    elif row["event_type"] == "worker_idle":
+        window["idle"] += count
+    else:
+        window["failed"] += count
+        reason = str(row.get("outcome_class") or "unknown_failure")
+        window["failures"][reason] = window["failures"].get(reason, 0) + count
+
+
 def summarize_reliability(rows: list[dict[str, Any]], health: list[dict[str, Any]],
                           generated_at: datetime) -> dict[str, Any]:
     """Aggregate trusted terminal worker events into per-model reliability.
@@ -27,17 +41,12 @@ def summarize_reliability(rows: list[dict[str, Any]], health: list[dict[str, Any
         })
         window = entry["windows"][row["window"]]
         count = int(row.get("n") or 1)
-        window["runs"] += count
-        if row["event_type"] == "worker_completed":
-            window["completed"] += count
-            if row.get("delivered"):
-                window["delivered"] += count
-        elif row["event_type"] == "worker_idle":
-            window["idle"] += count
-        else:
-            window["failed"] += count
-            reason = str(row.get("outcome_class") or "unknown_failure")
-            window["failures"][reason] = window["failures"].get(reason, 0) + count
+        _tally(window, row, count)
+        kind = row.get("action_kind")
+        if isinstance(kind, str) and kind:
+            kinds = window.setdefault("kinds", {})
+            _tally(kinds.setdefault(kind, {"runs": 0, "delivered": 0, "completed": 0, "idle": 0,
+                                            "failed": 0, "failures": {}}), row, count)
     for row in health:
         key = (str(row["source"]), str(row["model"]))
         entry = models.setdefault(key, {

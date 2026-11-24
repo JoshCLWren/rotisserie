@@ -81,7 +81,8 @@ class Hub:
             return (
                 f"2026-11-24T12:00:01Z [factory-outcome] no_capacity: No capacity: {REVIEW_ERROR}\n"
                 '2026-11-24T12:00:01Z [factory-outcome-class] {"class":"no_capacity",'
-                '"source":"nvidia","model":"","target":"pr:5671"}\n'
+                '"source":"nvidia","model":"","target":"pr:5671","kind":"review",'
+                '"selection":"nvidia / lab/m: explore: 0 trials in 7d"}\n'
             )
         return (
             "2026-11-24T11:00:01Z [factory-outcome] failed: No verified saved code or PR "
@@ -101,10 +102,12 @@ def test_failed_runs_carry_step_error_class_provider_target_and_link() -> None:
     assert first.error == REVIEW_ERROR
     assert first.outcome_class == "no_capacity"
     assert first.target == "pr:5671"
+    assert first.selection == "nvidia / lab/m: explore: 0 trials in 7d"
     assert first.url == "https://github.com/acme/widgets/actions/runs/1"
     assert first.provider
     assert second.outcome_class == "control_plane_failure"
     assert second.target == ""
+    assert second.selection == ""
     groups = failures.group(found)
     assert len(groups) == 1
     assert groups[0].to_dict()["classes"] == {"no_capacity": 1, "control_plane_failure": 1}

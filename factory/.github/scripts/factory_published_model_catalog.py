@@ -9,7 +9,6 @@ selects only OpenRouter's provider-designated :free endpoints.
 from __future__ import annotations
 
 import argparse
-import hashlib
 import json
 import sys
 import urllib.error
@@ -74,6 +73,15 @@ def choose_model(
     exclusions: set[str] | None = None,
     rotation: int = 0,
 ) -> str:
+    return choose(source, worker, catalog, exclusions, rotation)[0]
+
+
+def choose(
+    source: str, worker: str, catalog: Mapping[str, Any],
+    exclusions: set[str] | None = None,
+    rotation: int = 0,
+) -> tuple[str, str]:
+    """The model and why it was picked."""
     if not worker.isdecimal():
         raise ValueError("worker must be a numeric slot ID")
     candidates = [
@@ -82,9 +90,9 @@ def choose_model(
     ]
     if not candidates:
         raise PublishedCatalogUnavailableError(f"{source}: no eligible catalog candidates available")
-    # Reproducible within a run, diversified across Actions runs.
-    seed = hashlib.sha256(f"{source}:{worker}:{rotation}".encode()).digest()
-    return candidates[int.from_bytes(seed[:8], "big") % len(candidates)]
+    from factory_model_track_record import pick
+
+    return pick(source, candidates, f"{source}:{worker}:{rotation}")
 
 
 def published_catalog(source: str, *, timeout: float = 20) -> dict[str, Any]:
@@ -137,7 +145,7 @@ def main(argv: list[str] | None = None) -> int:
             if not isinstance(models, list) or not all(isinstance(x, str) for x in models):
                 raise PublishedCatalogUnavailableError("store model exclusions are invalid")
             excluded = set(models)
-        model = choose_model(args.source, args.worker, catalog, excluded, args.rotation)
+        model, why = choose(args.source, args.worker, catalog, excluded, args.rotation)
     except (PublishedCatalogUnavailableError, ValueError, OSError, json.JSONDecodeError) as exc:
         print(f"factory catalog: {exc}", file=sys.stderr)
         return 1
@@ -149,6 +157,7 @@ def main(argv: list[str] | None = None) -> int:
         "source": args.source, "model": model,
         "runtime_model": f"{runtime_provider}/{model}",
         "catalog_listed": True,
+        "selection_reason": why,
     }))
     return 0
 

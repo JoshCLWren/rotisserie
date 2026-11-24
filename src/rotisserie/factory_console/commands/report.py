@@ -184,6 +184,16 @@ _window = reliability.window
 _count = reliability.count
 
 
+def _by_action(kinds: Obj) -> list[tuple[str, int, int]]:
+    """Per action: runs that succeeded (a PR for implement, else completed) of all runs."""
+    found = []
+    for kind, raw in sorted(kinds.items()):
+        counts = obj(raw)
+        done = _count(counts, "delivered" if kind == "implement" else "completed")
+        found.append((kind, done, _count(counts, "runs")))
+    return found
+
+
 def cmd_stats(context: Context, arguments: argparse.Namespace) -> Outcome:
     console = context.console
     stats = _load_stats(context.github)
@@ -227,6 +237,7 @@ def cmd_stats(context: Context, arguments: argparse.Namespace) -> Outcome:
             else ""
         )
         delivered = _count(counts, "delivered")
+        by_action = _by_action(obj(counts.get("kinds")))
         rows.append(
             [
                 string(entry, "model")[:40],
@@ -235,6 +246,7 @@ def cmd_stats(context: Context, arguments: argparse.Namespace) -> Outcome:
                 str(delivered),
                 str(_count(counts, "failed")),
                 OUTCOME_WORDS.get(top, top.replace("_", " ")),
+                ", ".join(f"{kind} {done}/{runs}" for kind, done, runs in by_action),
                 _health_word(health, context.clock.now()),
             ]
         )
@@ -247,11 +259,16 @@ def cmd_stats(context: Context, arguments: argparse.Namespace) -> Outcome:
                 "failed": _count(counts, "failed"),
                 "top_failure": top or None,
                 "health": status or None,
+                "by_action": [
+                    {"action": kind, "succeeded": done, "runs": runs}
+                    for kind, done, runs in by_action
+                ],
             }
         )
     rows.sort(key=lambda row: (-int(row[3]), int(row[4]), -int(row[2])))
     console.table(
-        ["Model", "Provider", "Runs", "PRs", "Failed", "Most common failure", "Now"], rows
+        ["Model", "Provider", "Runs", "PRs", "Failed", "Most common failure", "By action", "Now"],
+        rows,
     )
     if not rows:
         console.line("  No model ran in this window.")
