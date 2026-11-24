@@ -10,6 +10,11 @@ const SIGN_IN_NEEDED = "Sign in with GitHub to use this. It needs a live Rotisse
 function hostedRead(path) {
   const parsed = new URL(path, location.origin);
   const name = parsed.pathname.replace(/^\/api\//, "");
+  if (parsed.searchParams.get("fresh") === "1") {
+    clearLive();
+    clearPublic();
+  }
+  parsed.searchParams.delete("fresh");
   if (CONTRACT.public_reads.includes(name)) return publicRead(name, parsed.searchParams);
   if (!CONTRACT.live_reads.includes(name)) return Promise.reject(Error("Unknown read operation."));
   if (!signedIn()) {
@@ -36,6 +41,11 @@ document.addEventListener("click", event => {
   const button = event.target.closest && event.target.closest("button");
   if (button && /(^|-)refresh$/.test(button.id || "")) clearLive();
 }, true);
-onSignedOut(clearLive);
+onSignedOut(() => {
+  clearLive();
+  if (window.rotisserieForget) window.rotisserieForget();
+});
+// The page keys stored live reads by this viewer, so one person never sees another's.
+window.hostedViewer = () => (signedIn() && identity) || "public";
 document.getElementById("github-connect").addEventListener("click", connect);
 bootstrapSession();

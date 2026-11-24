@@ -15,6 +15,8 @@ from collections.abc import Sequence
 from datetime import UTC, datetime
 from typing import cast
 
+from rotisserie.factory_console.read_cache import ReadCache, classify
+
 type JSON = dict[str, JSON] | list[JSON] | str | int | float | bool | None
 type Obj = dict[str, JSON]
 
@@ -127,6 +129,42 @@ class GitHub:
         self.executable = executable
         self.timeout = timeout
         self.calls = 0
+        self.cache: ReadCache | None = None
+        self.cached_reads = False
+
+    def use_cache(self, cache: ReadCache, *, reads: bool) -> None:
+        """Writes always invalidate ``cache``; only a pure read may be served from it."""
+        self.cache = cache
+        self.cached_reads = reads
+
+    def _call(
+        self,
+        args: Sequence[str],
+        *,
+        stdin: str | None = None,
+        allow_exit_one: bool = False,
+        final: str = "",
+    ) -> str:
+        cache = self.cache
+        if cache is None:
+            return self._raw(args, stdin, allow_exit_one)
+        kind = classify(args)
+        if kind == "write":
+            self.cached_reads = False
+            cache.invalidate()
+            try:
+                return self._raw(args, stdin, allow_exit_one)
+            finally:
+                cache.invalidate()
+        if kind != "cache" or not self.cached_reads or stdin is not None or allow_exit_one:
+            return self._raw(args, stdin, allow_exit_one)
+        key = json.dumps([self.repo, final, *args])
+        return cache.read_through(key, lambda: self._run(args), final=bool(final))
+
+    def _raw(self, args: Sequence[str], stdin: str | None, allow_exit_one: bool) -> str:
+        if allow_exit_one:
+            return self._run(args, stdin=stdin, allow_exit_one=True)
+        return self._run(args) if stdin is None else self._run(args, stdin=stdin)
 
     def _run(
         self, args: Sequence[str], *, stdin: str | None = None, allow_exit_one: bool = False
@@ -155,13 +193,21 @@ class GitHub:
             raise error
         return completed.stdout
 
-    def api(self, path: str, *, method: str = "GET", fields: dict[str, str] | None = None) -> JSON:
+    def api(
+        self,
+        path: str,
+        *,
+        method: str = "GET",
+        fields: dict[str, str] | None = None,
+        final: str = "",
+    ) -> JSON:
+        """``final`` names a version of ``path`` whose response can never change."""
         args = ["api", path]
         if method != "GET":
             args[1:1] = ["--method", method]
         for key, value in (fields or {}).items():
             args += ["-f", f"{key}={value}"]
-        output = self._run(args)
+        output = self._call(args, final=final)
         if not output.strip():
             return None
         try:
@@ -172,27 +218,29 @@ class GitHub:
     def repo_api(self, path: str, **kwargs: object) -> JSON:
         method = kwargs.get("method", "GET")
         fields = kwargs.get("fields")
+        final = kwargs.get("final", "")
         return self.api(
             f"repos/{self.repo}/{path}",
             method=str(method),
             fields=cast(dict[str, str] | None, fields),
+            final=str(final),
         )
 
-    def text(self, path: str) -> str:
+    def text(self, path: str, *, final: str = "") -> str:
         """Fetch a text endpoint such as job logs, with terminal escapes removed."""
-        output = self._run(["api", "--allow-escape-sequences", f"repos/{self.repo}/{path}"])
-        return ANSI.sub("", output)
+        args = ["api", "--allow-escape-sequences", f"repos/{self.repo}/{path}"]
+        return ANSI.sub("", self._call(args, final=final))
 
     def gh(self, *args: str, stdin: str | None = None, allow_exit_one: bool = False) -> str:
         if allow_exit_one:
-            return self._run(list(args), stdin=stdin, allow_exit_one=True)
-        return self._run(list(args), stdin=stdin)
+            return self._call(list(args), stdin=stdin, allow_exit_one=True)
+        return self._call(list(args), stdin=stdin)
 
     def workflow_run(self, workflow: str, inputs: dict[str, str], *, ref: str = "main") -> str:
         args = ["workflow", "run", workflow, "--repo", self.repo, "--ref", ref]
         for key, value in inputs.items():
             args += ["-f", f"{key}={value}"]
-        return self._run(args)
+        return self._call(args)
 
     def whoami(self) -> str:
         user = self.api("user")

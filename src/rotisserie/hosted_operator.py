@@ -25,17 +25,20 @@ from rotisserie.control_contract import (
     request_id,
     write_command,
 )
+from rotisserie.web_jobs import shared
 
 Runner = Callable[[str, list[str]], dict[str, Any]]
 EXIT_REJECTED = 2
 READ_TIMEOUT = 240
 WRITE_TIMEOUT = 840
+# The reads of one batch run one after another and share their GitHub answers.
+BATCH_SHARE_SECONDS = 600
 
 
-def _default_runner(timeout: int) -> Runner:
+def _default_runner(timeout: int, *, share: int = 0) -> Runner:
     from rotisserie.web import invoke
 
-    return lambda repository, args: invoke(repository, args, timeout=timeout)
+    return lambda repository, args: invoke(repository, shared(args, share), timeout=timeout)
 
 
 def _body(raw: str) -> dict[str, Any]:
@@ -91,12 +94,13 @@ def main(argv: list[str] | None = None, *, runner: Runner | None = None) -> int:
     parser.add_argument("--output", type=Path, required=True)
     arguments = parser.parse_args(argv)
     repository = os.environ.get("GITHUB_REPOSITORY", "")
-    timeout = READ_TIMEOUT if arguments.mode == "read" else WRITE_TIMEOUT
+    read = arguments.mode == "read"
+    timeout = READ_TIMEOUT if read else WRITE_TIMEOUT
     envelope = execute(
         arguments.mode,
         os.environ.get("ROTISSERIE_REQUEST", ""),
         repository,
-        runner or _default_runner(timeout),
+        runner or _default_runner(timeout, share=BATCH_SHARE_SECONDS if read else 0),
     )
     arguments.output.write_text(json.dumps(envelope, default=str), encoding="utf-8")
     summary = envelope.get("error") or (

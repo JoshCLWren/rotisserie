@@ -259,7 +259,9 @@ def test_browser_requires_local_origin_session_and_bounded_operations() -> None:
         assert send("GET", "/api/status", headers=foreign_origin)[0] == 403
         assert send("GET", "/api/status", headers={**auth, "Host": "localhost"})[0] == 403
         assert send("GET", "/api/status", headers=auth)[0] == 200
-        assert calls == [("acme/widgets", ["status"])]
+        assert calls == [("acme/widgets", ["--max-age", "60", "status"])]
+        assert send("GET", "/api/status?fresh=1", headers=auth)[0] == 200
+        assert calls[-1] == ("acme/widgets", ["status"])
         page_status, page = send("GET", "/")
         assert page_status == 200
         assert "unit-test-session" in page

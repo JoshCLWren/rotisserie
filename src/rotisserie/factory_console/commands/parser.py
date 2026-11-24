@@ -42,6 +42,9 @@ def add_parser(
     factory.add_argument(
         "--progress", action="store_true", help="write one JSON line per step to stderr"
     )
+    factory.add_argument(
+        "--max-age", type=int, default=0, help="reads: reuse cached GitHub answers"
+    )
     commands = factory.add_subparsers(dest="factory_command", metavar="COMMAND")
 
     run = commands.add_parser(

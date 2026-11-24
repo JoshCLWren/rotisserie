@@ -42,7 +42,10 @@ def test_hosted_page_reuses_canonical_local_ui_without_local_session() -> None:
     assert 'const AUTH_BASE = "";' in page
     assert "Sign-in is not configured." in page
     assert "https://raw.githubusercontent.com" in page
-    assert "localStorage" not in page
+    # Only panel read results persist; the dashboard session stays in sessionStorage.
+    assert page.count("localStorage.setItem(") == 1
+    assert "localStorage.setItem(key,blob)" in page
+    assert "sessionStorage.setItem(SESSION_KEY" in page
     assert "Sign in with GitHub" in page
     assert "personal-access-tokens" not in page
     assert "Paste a short-lived" not in page
