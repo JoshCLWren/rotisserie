@@ -51,7 +51,7 @@ async def project_runtime(conn: Any, repo: str, run_id: int, outcome: dict[str, 
     delivered = (persisted and outcome.get("delivery_outcome") == "persisted"
                  and str(outcome.get("delivery_pr") or "").isdecimal())
     completed = classification == "success" or delivered
-    failed = classification not in {"success", "no_work", "unconfigured"} and not delivered
+    failed = classification not in {"success", "no_work", "no_capacity", "unconfigured"} and not delivered
     observed = datetime.now(timezone.utc)
     # A trusted job-log collector can attest multiple attempted free models.
     # This evidence belongs to this same idempotent runtime transaction.

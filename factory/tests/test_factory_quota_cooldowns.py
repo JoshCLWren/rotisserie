@@ -443,3 +443,11 @@ def test_agent_prose_never_becomes_a_reset_hint():
     assert reset.refusal_evidence(log) == (
         "HTTP 429 Too Many Requests\nError: Rate limit exceeded: free-models-per-day-high-balance"
     )
+
+
+def test_no_capacity_is_never_a_worker_failure(nvidia_worker):
+    conn = Recorder()
+    assert project(conn, 31, outcome(31, "no_capacity"))
+    (metrics,) = [a for q, a in conn.writes if "INSERT INTO public.factory_worker_metrics" in q]
+    assert metrics[6] == 0
+    assert not conn.kv("factory-worker-backoff-v1:")
