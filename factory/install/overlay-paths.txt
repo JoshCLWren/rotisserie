@@ -110,6 +110,7 @@
 .github/scripts/factory_state_operations_reliability.py
 .github/scripts/factory_state_operations_runtime.py
 .github/scripts/factory_state_operations_slots.py
+.github/scripts/factory_state_retention.py
 .github/scripts/factory_work_policy.py
 .github/scripts/factory_work_policy_assignment.py
 .github/scripts/factory_work_policy_backlog.py

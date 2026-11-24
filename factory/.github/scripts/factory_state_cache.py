@@ -342,7 +342,9 @@ def main(argv: list[str]) -> int:
         retired_checks += count
         if count < 250:
             break
-    print(f"[factory-state] pruned {retired_kv} discovery rows, {retired_events} obsolete events, and {retired_checks} retired check observations")
+    from factory_state_retention import prune_model_attempts
+    rolled = prune_model_attempts(repo)
+    print(f"[factory-state] pruned {retired_kv} discovery rows, {retired_events} obsolete events, and {retired_checks} retired check observations; rolled {rolled} old model attempts into daily counts")
     return 0
 
 
