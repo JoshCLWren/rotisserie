@@ -4,14 +4,16 @@ from __future__ import annotations
 
 import http.client
 import json
+import sys
 import threading
+import time
 from http.server import ThreadingHTTPServer
 from pathlib import Path
 from typing import Any
 
 import pytest
 
-from rotisserie import cli, web
+from rotisserie import cli, web, web_jobs
 
 
 @pytest.mark.parametrize(
@@ -84,7 +86,10 @@ def test_claim_finish_and_label_doctor_writes_return_at_once(
 
 
 def test_page_has_a_control_for_each_new_operation() -> None:
-    page = (Path(web.__file__).parent / "web_ui.html").read_text(encoding="utf-8")
+    page = "\n".join(
+        (Path(web.__file__).parent / name).read_text(encoding="utf-8")
+        for name in ("web_ui.html", "web_ui.js")
+    )
     for marker in (
         'data-item-read="follow"',
         'data-item-read="runs"',
@@ -217,7 +222,12 @@ def test_browser_requires_local_origin_session_and_bounded_operations() -> None:
         calls.append((repo, argv))
         return {"exit_code": 0, "result": "completed", "command": argv[0]}
 
-    handler = web.make_handler("acme/widgets", "unit-test-session", runner=runner)
+    def command(repo: str, argv: list[str]) -> list[str]:
+        calls.append((repo, argv))
+        return [sys.executable, "-c", 'print(\'{"result": "completed"}\')']
+
+    jobs = web_jobs.Jobs("acme/widgets", command=command)
+    handler = web.make_handler("acme/widgets", "unit-test-session", runner=runner, jobs=jobs)
     server = ThreadingHTTPServer(("127.0.0.1", 0), handler)
     thread = threading.Thread(target=server.serve_forever, daemon=True)
     thread.start()
@@ -260,8 +270,15 @@ def test_browser_requires_local_origin_session_and_bounded_operations() -> None:
             {"operation": "run", "provider": "opencode-go", "model": "auto"},
             auth,
         )
-        assert status == 200
-        assert json.loads(body)["result"] == "completed"
+        assert status == 202
+        job = json.loads(body)["job"]
+        assert send("GET", f"/api/jobs/{job}")[0] == 403
+        view: dict[str, Any] = {"state": "running"}
+        deadline = time.monotonic() + 10
+        while view["state"] == "running" and time.monotonic() < deadline:
+            view = json.loads(send("GET", f"/api/jobs/{job}", headers=auth)[1])
+        assert view["state"] == "finished"
+        assert view["result"] == {"result": "completed", "exit_code": 0}
         assert calls[-1][1] == ["run", "opencode-go", "auto", "--no-wait", "--yes"]
         assert (
             send("POST", "/api/command", {"operation": "close", "target": "pr:1"}, auth)[0] == 400

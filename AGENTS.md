@@ -109,7 +109,8 @@ When editing:
 - Every new or changed `baste` command also gets a working control
   in both user interfaces in the same PR: add it to the shared allowlist
   (`src/rotisserie/control_contract.py`), give it a control in
-  `src/rotisserie/web_ui.html`, and map it in `src/rotisserie/control_parity.py`.
+  `src/rotisserie/web_ui.html` (its script is `src/rotisserie/web_ui.js`), and map
+  it in `src/rotisserie/control_parity.py`.
   The hosted control room (`factory/scripts/hosted_control_room.js` and
   `factory/scripts/hosted/`) routes it from the contract. A server allowlist
   entry alone does not count. `tests/test_control_parity.py` fails for any

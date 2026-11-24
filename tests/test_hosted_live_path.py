@@ -155,3 +155,10 @@ def test_signed_out_reads_published_db_usage(results: dict[str, Any]) -> None:
     findings = results["signedOutDoctor"]["value"]["findings"]
     assert findings[-1]["check"] == "Database usage (published)"
     assert findings[-1]["status"] == "warn"
+
+
+def test_the_operator_run_link_shows_before_the_first_poll(results: dict[str, Any]) -> None:
+    links = results["runLinks"]
+    assert links, "no run link was shown while the write ran"
+    assert links[0]["href"].startswith("https://github.com/acme/widgets/actions/runs/")
+    assert links[0]["polls"] == 0

@@ -81,7 +81,7 @@ The intended result is a system that can:
 | `src/rotisserie/operator/` | Versioned local configuration, durable simulation state, records, metrics, and diagnostics |
 | `src/rotisserie/cli.py` | One-operation CLI with dry-run mutation plans and stable JSON output |
 | `src/rotisserie/factory_console/` | `baste` operator console ([docs](docs/factory-console.md)) |
-| `src/rotisserie/web.py` + `web_ui.html` | Local-only browser control room over the same factory CLI (`rotisserie web`) |
+| `src/rotisserie/web.py` + `web_ui.html` + `web_ui.js` | Local-only browser control room over the same factory CLI (`rotisserie web`) |
 | `prototype/` | Dependency and eligibility migration evidence with domain compatibility tests |
 | `tests/` | Rotisserie repository-safety guards |
 | `.github/workflows/ci.yml` | Read-only Rotisserie CI |

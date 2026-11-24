@@ -2,7 +2,7 @@
 
 ## Hosted control room (GitHub Pages)
 
-An adopter's hosted dashboard (its GitHub Pages site) is generated from the **same** `src/rotisserie/web_ui.html` as `rotisserie web`.
+An adopter's hosted dashboard (its GitHub Pages site) is generated from the **same** `src/rotisserie/web_ui.html` and `web_ui.js` as `rotisserie web`.
 The public GitHub Pages interface reads sanitized factory snapshots from the
 `factory-status-live` branch, and does not use a separate controller or
 database. The publishing workflow preserves the previous detailed status HTML

@@ -18,6 +18,8 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 UI = ROOT / "src" / "rotisserie" / "web_ui.html"
+SCRIPT = ROOT / "src" / "rotisserie" / "web_ui.js"
+SCRIPT_TAG = '<script src="/web_ui.js"></script>'
 CONTRACT = ROOT / "src" / "rotisserie" / "control_contract.py"
 ADAPTER = Path(__file__).with_name("hosted_control_room.js")
 PARTS = tuple(
@@ -69,14 +71,16 @@ def render(repo: str, auth_url: str = "") -> str:
     auth_origin = "/".join(auth_url.split("/")[:3]) if auth_url else ""
     page = UI.read_text(encoding="utf-8")
     page = page.replace("__SESSION_TOKEN__", "null").replace("__REPOSITORY__", json.dumps(repo))
-    page, count = REQUEST.subn(
-        "async function request(path,body){return window.hostedRequest(path,body)}", page
+    script, count = REQUEST.subn(
+        "async function request(path,body){return window.hostedRequest(path,body)}",
+        SCRIPT.read_text(encoding="utf-8"),
     )
-    if count != 1:
+    if count != 1 or page.count(SCRIPT_TAG) != 1 or not script.startswith('"use strict";'):
         raise RuntimeError("Local control-room request contract changed; refusing to publish")
+    # The hosted CSP allows inline scripts only, so the page carries its script.
     page = page.replace(
-        '<script>\n"use strict";',
-        "<script>\n" + adapter(auth_url) + '\n</script>\n<script>\n"use strict";',
+        SCRIPT_TAG,
+        "<script>\n" + adapter(auth_url) + "\n</script>\n<script>\n" + script + "</script>",
         1,
     )
     page = page.replace("Local operator session", "Hosted factory dashboard")

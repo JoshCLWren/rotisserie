@@ -8,6 +8,7 @@ prints one JSON document at the end instead.
 
 from __future__ import annotations
 
+import json
 import os
 import sys
 import time
@@ -57,8 +58,10 @@ class Console:
         json_mode: bool = False,
         verbose: bool = False,
         env: dict[str, str] | None = None,
+        progress: TextIO | None = None,
     ) -> None:
         self.stream = stream or sys.stdout
+        self.progress = progress
         self.json_mode = json_mode
         self.verbose = verbose
         values = dict(os.environ) if env is None else env
@@ -162,6 +165,14 @@ class Console:
         if now - self._last_live >= interval:
             self._last_live = now
             self.line(f"... {text}")
+
+    def step(self, text: str, **fields: object) -> None:
+        """One step of a long command: a JSON line on the progress stream, else a live line."""
+        if self.progress is not None:
+            self.progress.write(json.dumps({"step": text, **fields}, default=str) + "\n")
+            self.progress.flush()
+        elif self.interactive and not self.json_mode:
+            self.waiting(text)
 
     def finish(self) -> None:
         self._clear_live()

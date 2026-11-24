@@ -16,6 +16,7 @@ function element() {
 
 function environment(service) {
   const elements = {};
+  const polls = () => [...service.runs.values()].slice(-1).reduce((sum, run) => sum + run.polls, 0);
   const storage = new Map();
   if (service.session) storage.set("rotisserie-github-admin-session", service.session);
   const body = {classes: new Set()};
@@ -23,6 +24,7 @@ function environment(service) {
   const document = {
     body,
     getElementById: id => (elements[id] = elements[id] || element()),
+    createElement: tag => ({tag, href: "", textContent: ""}),
     addEventListener() {}
   };
   const json = (status, data) => ({ok: status < 400, status, json: async () => data});
@@ -70,6 +72,13 @@ function environment(service) {
     }
   };
   context.window = context;
+  const status = document.getElementById("operation-status");
+  status.links = [];
+  status.append = (...parts) => {
+    for (const part of parts) {
+      if (typeof part === "object") status.links.push({href: part.href, polls: polls()});
+    }
+  };
   vm.createContext(context);
   vm.runInContext(adapterSource, context);
   return {context, elements, body};
@@ -166,7 +175,9 @@ async function main() {
   out.badModel = await settle(hosted("/api/command", {operation: "run", provider: "p", model: "nope"}));
   out.offModel = await settle(hosted("/api/command", {operation: "run", provider: "p", model: "off-model"}));
   out.dispatchesAfterRejectedModels = service.dispatched.map(d => d.operation);
+  env.elements["operation-status"].links.length = 0;
   out.goodRun = await settle(hosted("/api/command", {operation: "run", provider: "p", model: "good-model"}));
+  out.runLinks = env.elements["operation-status"].links.slice();
   out.estimateNeon = await settle(hosted("/api/command", {operation: "estimate_neon", target: "issue:5"}));
   const before = service.dispatched.length;
   out.estimatePending = await settle(hosted("/api/estimate?target=issue%3A5&run=77"));

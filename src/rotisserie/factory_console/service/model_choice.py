@@ -11,6 +11,7 @@ from datetime import datetime
 from rotisserie.factory_console import runtime
 from rotisserie.factory_console.github import GitHub
 from rotisserie.factory_console.service import catalog, fleet, providers, reliability
+from rotisserie.factory_console.service.steps import Step, quiet
 
 
 def choose_models(
@@ -19,12 +20,14 @@ def choose_models(
     now: datetime,
     provider: str | None,
     model: str | None,
+    step: Step = quiet,
 ) -> tuple[str, list[tuple[str, str, str]], tuple[str, ...]]:
     """Ranked (provider key, model, why) choices, best first."""
     if provider and model:
         found = runtime.resolve_provider(provider)
         runtime.validate_model(found, model)
         return "you chose it", [(found.key, model, "you chose it")], ()
+    step("Reading the published model track records", phase="models")
     stats = reliability.load_stats(github)
     if stats is None:
         return (
@@ -32,6 +35,7 @@ def choose_models(
             [],
             ("no reliability snapshot to pick a model from; name PROVIDER MODEL",),
         )
+    step("Checking which providers are set up", phase="models")
     setup = providers.provider_setup(github, variables)
     named = runtime.resolve_provider(provider).key if provider else None
     ready = {
@@ -42,6 +46,7 @@ def choose_models(
     if named:
         ready &= {named}
     switched = fleet.state(variables)
+    step("Checking which models each provider still offers", phase="models")
     choices = reliability.pick_models(
         stats,
         ready=ready,
