@@ -21,8 +21,10 @@ supplies its own values through configuration.
 - Do not use Rotisserie or any autonomous worker to implement Rotisserie issues
   unless the user explicitly requests it.
 - `.github/workflows/ci.yml` and the manually dispatched, issue-9-only
-  `.github/workflows/canary-merge.yml` are the only active workflows. Any
-  further activation requires an approved issue that changes the boundary.
+  `.github/workflows/canary-merge.yml` are the only active workflows. Every
+  other file in `.github/workflows/` is a reusable factory workflow whose only
+  trigger is `workflow_call`; it never runs in Rotisserie. Any further
+  activation requires an approved issue that changes the boundary.
 - Active workflows must not use schedules. Only the approved canary may receive
   its tested `contents: write` and `pull-requests: write` scopes; all other
   active workflows remain read-only. Keep `tests/test_rotisserie_actions.py`
@@ -36,11 +38,15 @@ supplies its own values through configuration.
 
 ## Factory runtime boundary
 
-`factory/` holds the factory runtime that adopter repositories install. Its
-`.github/workflows/` files are templates: they never run in Rotisserie and do
-not count as active workflows. They run in adopter repositories through
-`factory/install/install.py`, pinned to a Rotisserie commit. Adopter-specific
-values belong in the adopter's `.rotisserie/config.toml`, not in `factory/`.
+`factory/` holds the factory runtime that adopter repositories install. The
+factory workflows are reusable workflows in the root `.github/workflows/`, with
+only an `on: workflow_call` trigger: they never run in Rotisserie and do not
+count as active workflows. `factory/install/install.py` writes the thin callers
+from `factory/install/callers/` into an adopter; each caller keeps the
+triggers, permissions, concurrency and secrets, and calls the reusable workflow
+at a Rotisserie ref. Adopter-specific values belong in the adopter's
+`.rotisserie/config.toml`, repository variables, or caller inputs, never in a
+reusable workflow or in `factory/`.
 Run the factory suite from `factory/` (`uv run --locked pytest -n auto`).
 
 ## Architecture boundaries

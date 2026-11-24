@@ -1,0 +1,48 @@
+name: Rotisserie External Claim Controller
+run-name: External ${{ inputs.operation }} · ${{ github.actor }} / ${{ inputs.client }}
+on:
+  workflow_dispatch:
+    inputs:
+      operation:
+        type: choice
+        options: [reserve-next, renew, release, handoff]
+        required: true
+      client:
+        description: Stable non-secret ID, e.g. codebuff-phone
+        type: string
+        required: true
+      capabilities:
+        description: Comma-separated actions the agent can perform, blank means all
+        type: string
+        required: false
+      target:
+        description: Optional expected top offer (issue:N or pr:N)
+        type: string
+        required: false
+      claim_id:
+        description: Claim UUID for renew, release or handoff
+        type: string
+        required: false
+      evidence:
+        description: Same-repository GitHub evidence URL for handoff
+        type: string
+        required: false
+permissions:
+  contents: read
+  issues: write
+  pull-requests: write
+  checks: read
+  statuses: read
+  actions: read
+jobs:
+  rotisserie:
+    uses: JoshCLWren/rotisserie/.github/workflows/rotisserie-external-claim.yml@main
+    with:
+      operation: ${{ inputs.operation }}
+      client: ${{ inputs.client }}
+      capabilities: ${{ inputs.capabilities }}
+      target: ${{ inputs.target }}
+      claim_id: ${{ inputs.claim_id }}
+      evidence: ${{ inputs.evidence }}
+    secrets:
+      NEON_API_KEY: ${{ secrets.NEON_API_KEY }}

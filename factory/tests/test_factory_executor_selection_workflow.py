@@ -4,7 +4,7 @@ from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[1]
-WORKFLOW = ROOT / ".github" / "workflows" / "free-model-factory-run.yml"
+WORKFLOW = ROOT.parent / ".github" / "workflows" / "free-model-factory-run.yml"
 
 
 def _dispatch_selector(workflow: str) -> str:
@@ -201,7 +201,7 @@ def test_unavailability_health_is_persisted_from_the_log_not_a_snapshot(
     assert result.returncode == 0, result.stderr
     assert not capture.exists()
 
-    sys.path.insert(0, str(WORKFLOW.parents[1] / "scripts"))
+    sys.path.insert(0, str(WORKFLOW.parents[2] / "factory" / ".github" / "scripts"))
     import factory_state_ledger as ledger
     import factory_state_operations as operations
 

@@ -21,16 +21,44 @@ FORBIDDEN_TEXT: tuple[str, ...] = (
 )
 
 
+def _triggers(source: str) -> set[str]:
+    block = re.search(r"(?m)^on:\n((?:(?:  .*)?\n)+)", source)
+    assert block is not None
+    return set(re.findall(r"(?m)^  ([a-z_]+):", block.group(1)))
+
+
+def _reusable() -> list[Path]:
+    return [
+        path
+        for path in sorted(WORKFLOWS.iterdir())
+        if path.is_file() and path.name not in ALLOWED_WORKFLOWS
+    ]
+
+
 def test_only_approved_rotisserie_workflows_are_active() -> None:
-    """Keep imported legacy automation outside the executable directory."""
-    active = {path.name for path in WORKFLOWS.iterdir() if path.is_file()}
-    assert active == ALLOWED_WORKFLOWS
+    """Every other workflow is reusable: adopters call it, Rotisserie never triggers it."""
+    for path in WORKFLOWS.iterdir():
+        assert path.suffix == ".yml", path
+    reusable = _reusable()
+    assert len(reusable) > 30
+    for path in reusable:
+        assert _triggers(path.read_text(encoding="utf-8")) == {"workflow_call"}, path.name
+
+
+def test_reusable_factory_workflows_stay_generic() -> None:
+    """Adopter-specific values come from callers, variables or config, never source."""
+    for path in _reusable():
+        source = path.read_text(encoding="utf-8").lower()
+        for forbidden in ("comic-pile", "comic_pile", "comicpile", "joshclwren/comic-pile"):
+            assert forbidden not in source, f"{path} contains {forbidden}"
+        assert "\nconcurrency:" not in source or path.name == "free-model-factory-run.yml", path
+        assert "\nrun-name:" not in source, path
 
 
 def test_active_actions_have_no_schedule_or_legacy_repository_coupling() -> None:
     """Reject schedules and legacy repository coupling."""
     for path in WORKFLOWS.iterdir():
-        if not path.is_file():
+        if not path.is_file() or path.name not in ALLOWED_WORKFLOWS:
             continue
         source = path.read_text(encoding="utf-8").lower()
         forbidden_text = FORBIDDEN_TEXT

@@ -47,7 +47,7 @@ def test_cloudflare_requires_token_and_account():
 
 
 def test_workflow_filters_before_leasing():
-    source = (ROOT / ".github/workflows/fixed-model-factory-dispatch.yml").read_text()
+    source = (ROOT.parent / ".github/workflows/fixed-model-factory-dispatch.yml").read_text()
     assert "FACTORY_HAS_AI_GATEWAY_API_KEY" in source
     assert source.index("factory_dispatch_credential_filter.py filter") < source.index(
         'dispatch_assigned_worker "$worker"'

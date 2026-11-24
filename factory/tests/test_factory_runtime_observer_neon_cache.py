@@ -1,12 +1,14 @@
 """Contract tests for using Neon to avoid per-worker full comment scans."""
 from pathlib import Path
 
+from tests.workflow_files import adopter_view
 
-WORKFLOW = Path(".github/workflows/fixed-model-runtime-observer.yml")
+
+WORKFLOW = Path("../.github/workflows/fixed-model-runtime-observer.yml")
 
 
 def test_only_trusted_workflow_run_publisher_receives_neon_cache() -> None:
-    workflow = WORKFLOW.read_text(encoding="utf-8")
+    workflow = adopter_view(WORKFLOW.name)
     classifier, publisher = workflow.split("  publish-runtime-outcome:", 1)
     assert "factory-state-cache" not in classifier
     assert "NEON_API_KEY" not in classifier
@@ -20,7 +22,7 @@ def test_only_trusted_workflow_run_publisher_receives_neon_cache() -> None:
 
 def test_observer_persists_neon_outcome_without_registry_comments() -> None:
     """Issue #1093 is retired: the observer's durable record is Neon only."""
-    workflow = WORKFLOW.read_text(encoding="utf-8")
+    workflow = adopter_view(WORKFLOW.name)
     publisher = workflow.split("  publish-runtime-outcome:", 1)[1]
     assert "issues/1093" not in publisher
     assert "issues/comments" not in publisher

@@ -1,0 +1,11 @@
+name: DeepSeek OpenCode Free anonymous versus existing-key comparison
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  rotisserie:
+    uses: JoshCLWren/rotisserie/.github/workflows/deepseek-free-auth-comparison.yml@main
+    secrets:
+      OPENCODE_API_KEY: ${{ secrets.OPENCODE_API_KEY }}
+      OPENCODE_ZEN_API_KEY: ${{ secrets.OPENCODE_ZEN_API_KEY }}

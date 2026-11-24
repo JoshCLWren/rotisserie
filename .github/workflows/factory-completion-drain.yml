@@ -1,0 +1,47 @@
+# Terminal outcomes are persisted by trusted Entry before this explicit signal.
+# The canonical dispatcher's hourly watchdog recovers missed signals. This
+# bridge neither discovers demand nor owns a lease or a shared-writer lock.
+name: Factory Completion Drain
+on:
+  workflow_call:
+    inputs:
+      source_run_id:
+        type: string
+        required: false
+
+env:
+  # Operator settings (rotisserie factory settings) reach every factory script.
+  FACTORY_REPO_VARS: >-
+    {"FACTORY_SLOTS_PER_PROVIDER": "${{ vars.FACTORY_SLOTS_PER_PROVIDER }}", "FACTORY_PR_WIP_LIMIT": "${{ vars.FACTORY_PR_WIP_LIMIT }}", "FACTORY_REVIEW_BACKLOG_LIMIT": "${{ vars.FACTORY_REVIEW_BACKLOG_LIMIT }}", "FACTORY_OMNIROUTE_FREE_ENTRY_CAP": "${{ vars.FACTORY_OMNIROUTE_FREE_ENTRY_CAP }}", "FACTORY_NO_DIFF_RETRY_LIMIT": "${{ vars.FACTORY_NO_DIFF_RETRY_LIMIT }}", "FACTORY_NO_DIFF_RETRY_RESET_SECONDS": "${{ vars.FACTORY_NO_DIFF_RETRY_RESET_SECONDS }}", "FACTORY_REVIEW_FAILURE_COOLDOWN_SECONDS": "${{ vars.FACTORY_REVIEW_FAILURE_COOLDOWN_SECONDS }}", "FACTORY_FIXED_LEASE_TTL_SECONDS": "${{ vars.FACTORY_FIXED_LEASE_TTL_SECONDS }}", "FACTORY_LOCAL_LEASE_TTL_SECONDS": "${{ vars.FACTORY_LOCAL_LEASE_TTL_SECONDS }}", "FACTORY_PRIORITY_ORDER": "${{ vars.FACTORY_PRIORITY_ORDER }}"}
+
+permissions:
+  actions: write
+  contents: read
+
+jobs:
+  drain:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Wake canonical dispatcher once
+        id: wakeups
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SOURCE_RUN_ID: ${{ inputs.source_run_id }}
+        run: |
+          set -Eeuo pipefail
+          [[ -z "$SOURCE_RUN_ID" || "$SOURCE_RUN_ID" =~ ^[1-9][0-9]*$ ]] || exit 1
+          # A terminal outcome is already persisted by Entry. Installation
+          # quota exhaustion must defer this advisory wake, not manufacture a
+          # failed model or repeatedly retry the same GitHub API request.
+          if result="$(gh workflow run fixed-model-factory-dispatch.yml \
+            --repo "$GITHUB_REPOSITORY" --ref main -f mode=roster \
+            -f source_run_id="$SOURCE_RUN_ID" 2>&1)"; then
+            echo "dispatcher_wakeups=1 source_run_id=${SOURCE_RUN_ID:-manual}"
+          elif grep -Eiq "rate limit exceeded|secondary rate limit|abuse detection" <<< "$result"; then
+            echo "::warning::Installation GitHub API rate-limited; deferring completion wake to roster successor/hourly watchdog"
+            echo "dispatcher_wakeups=0 deferred=github_api_rate_limit source_run_id=${SOURCE_RUN_ID:-manual}"
+            echo "Completion wake deferred by GitHub API rate limit; terminal outcome remains persisted." >> "$GITHUB_STEP_SUMMARY"
+          else
+            printf "%s\n" "$result" >&2
+            exit 1
+          fi

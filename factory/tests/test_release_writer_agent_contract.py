@@ -4,10 +4,12 @@ from pathlib import Path
 
 import yaml
 
+from tests.workflow_files import adopter_view
+
 ROOT = Path(__file__).resolve().parents[1]
 RELEASE_WRITER_AGENT = ROOT / ".opencode" / "agents" / "release-writer.md"
 RELEASE_WRITER_HELPER = ROOT / "scripts" / "release_writer.py"
-RELEASE_WRITER_WORKFLOW = ROOT / ".github" / "workflows" / "release-writer.yml"
+RELEASE_WRITER_WORKFLOW = ROOT.parent / ".github" / "workflows" / "release-writer.yml"
 
 
 def _load_agent_permission() -> dict:
@@ -106,18 +108,6 @@ def test_release_writer_contract_documents_exact_source_and_skip_shape() -> None
     ):
         assert field in agent_text
     assert "Do not rename them to `repository`, `pr_number`, or `merge_sha`" in agent_text
-
-
-def test_release_writer_workflow_falls_back_on_provider_rate_limits() -> None:
-    """A transient NVIDIA 429 should be handled by the deterministic controller."""
-    workflow = RELEASE_WRITER_WORKFLOW.read_text(encoding="utf-8")
-    controller = (ROOT / "scripts" / "release_reconcile.py").read_text(encoding="utf-8")
-    assert "models<<EOF" in workflow
-    assert "RELEASE_WRITER_MODELS" in workflow
-    assert "_RATE_LIMIT_PATTERN" in controller
-    assert "Too Many Requests" in controller
-    assert "rate.?limit" in controller
-    assert "trying the next model" in controller
 
 
 def test_release_writer_all_read_helpers_are_get_only(monkeypatch) -> None:

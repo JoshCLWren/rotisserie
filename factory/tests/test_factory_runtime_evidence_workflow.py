@@ -3,7 +3,7 @@ from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[1]
-WORKFLOW = ROOT / ".github" / "workflows" / "free-model-factory-run.yml"
+WORKFLOW = ROOT.parent / ".github" / "workflows" / "free-model-factory-run.yml"
 WORKER = ROOT / ".github" / "scripts" / "free-model-factory-worker.sh"
 
 
@@ -16,7 +16,7 @@ def test_terminal_step_summarizes_normalized_attempt_evidence() -> None:
     assert "Provisional attempt outcome: `%s`" in workflow
     assert "attempt_outcome='classification_pending'" in workflow
     assert "attempt_outcome='success'" not in workflow
-    entry = (ROOT / ".github/workflows/free-model-factory-entry.yml").read_text()
+    entry = (ROOT.parent / ".github/workflows/free-model-factory-entry.yml").read_text()
     assert 'verdict="code_delivered"' in entry
     assert 'retry_gh_api "$RUNNER_TEMP/factory-delivery-pr.json"' in entry
     assert '"repos/$GITHUB_REPOSITORY/pulls/$delivery_pr"' in entry

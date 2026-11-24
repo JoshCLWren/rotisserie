@@ -58,8 +58,8 @@ def test_select_canonical_published_model_and_honor_cooldowns():
 
 
 def test_github_actions_secret_and_dynamic_provider_path():
-    run = (ROOT / ".github/workflows/free-model-factory-run.yml").read_text()
-    dispatch = (ROOT / ".github/workflows/fixed-model-factory-dispatch.yml").read_text()
+    run = (ROOT.parent / ".github/workflows/free-model-factory-run.yml").read_text()
+    dispatch = (ROOT.parent / ".github/workflows/fixed-model-factory-dispatch.yml").read_text()
     assert "POLLINATIONS_API_KEY: ${{ secrets.POLLINATIONS_API_KEY }}" in run
     assert "FACTORY_HAS_POLLINATIONS_API_KEY: ${{ secrets.POLLINATIONS_API_KEY != '' }}" in dispatch
     assert 'factory_runtime_model_select.py' in run

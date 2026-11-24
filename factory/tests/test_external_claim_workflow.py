@@ -6,12 +6,14 @@ import importlib.util
 import sys
 from pathlib import Path
 
+from tests.workflow_files import adopter_view
+
 ROOT = Path(__file__).resolve().parents[1]
-WORKFLOW = ROOT / ".github/workflows/rotisserie-external-claim.yml"
+WORKFLOW = ROOT.parent / ".github/workflows/rotisserie-external-claim.yml"
 
 
 def test_manual_neon_claim_workflow_is_a_controller_not_a_factory_worker() -> None:
-    content = WORKFLOW.read_text(encoding="utf-8")
+    content = adopter_view(WORKFLOW.name)
     assert "on:\n  workflow_dispatch:" in content
     assert "schedule:" not in content
     assert "workflow_run:" not in content
@@ -40,18 +42,23 @@ def test_manual_neon_claim_workflow_is_a_controller_not_a_factory_worker() -> No
 
 
 def test_installed_workflow_has_pinned_authoritative_runtime() -> None:
-    path = ROOT / "install/install.py"
-    spec = importlib.util.spec_from_file_location("external_claim_installer", path)
+    import importlib.util
+    import sys
+
+    spec = importlib.util.spec_from_file_location("external_claim_installer", ROOT / "install" / "install.py")
     assert spec is not None and spec.loader is not None
     installer = importlib.util.module_from_spec(spec)
     sys.modules[spec.name] = installer
     spec.loader.exec_module(installer)
     sha = "f" * 40
-    rendered = installer.render(WORKFLOW.read_text(), source="org/rotisserie", ref=sha)
-    assert f"ref: {sha}" in rendered
-    assert "repository: org/rotisserie" in rendered
-    assert "bash .rotisserie/runtime/factory/install/overlay.sh" in rendered
-    assert rendered.index("Check out Rotisserie factory runtime") < rendered.index(
+    caller = (ROOT / "install" / "callers" / WORKFLOW.name).read_text()
+    rendered = installer.render(caller, source="org/rotisserie", ref=sha)
+    assert f"uses: org/rotisserie/.github/workflows/{WORKFLOW.name}@{sha}" in rendered
+    reusable = WORKFLOW.read_text()
+    assert "repository: ${{ job.workflow_repository }}" in reusable
+    assert "ref: ${{ job.workflow_sha }}" in reusable
+    assert "bash .rotisserie/runtime/factory/install/overlay.sh" in reusable
+    assert "persist-credentials: false" in reusable
+    assert reusable.index("Check out Rotisserie factory runtime") < reusable.index(
         "Configure shared restricted Neon authority"
     )
-    assert "persist-credentials: false" in rendered

@@ -1,0 +1,13 @@
+name: Rebase Open Factory PRs
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: auto-rebase-open-prs-main
+  cancel-in-progress: false
+jobs:
+  rotisserie:
+    uses: JoshCLWren/rotisserie/.github/workflows/auto-rebase-open-prs.yml@main
+    secrets:
+      PR_REBASE_TOKEN: ${{ secrets.PR_REBASE_TOKEN }}

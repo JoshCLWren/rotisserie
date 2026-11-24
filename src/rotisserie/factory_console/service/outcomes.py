@@ -20,6 +20,7 @@ from rotisserie.factory_console.github import (
     Obj,
     integer,
     items,
+    job_name,
     label_names,
     obj,
     string,
@@ -125,7 +126,7 @@ def validation_failure(tracker: Tracker, jobs: list[Obj]) -> str:
 
     The detail is otherwise only in /tmp on the runner. Empty when not found.
     """
-    session = next((job for job in jobs if string(job, "name").endswith("/ factory")), None)
+    session = next((job for job in jobs if job_name(job).endswith("/ factory")), None)
     if session is None:
         return ""
     try:
@@ -219,7 +220,7 @@ def _follow(github: GitHub, tracker: Tracker, run: Obj) -> list[RequestOutcome]:
         return early("cancelled", "a newer scheduler pass replaced it", "not-started", "")
     jobs = tracker.jobs(run_id)
     if target is None:
-        dispatch = next((job for job in jobs if string(job, "name") == "dispatch"), None)
+        dispatch = next((job for job in jobs if job_name(job) == "dispatch"), None)
         log = tracker.log(integer(dispatch, "id") or 0) if dispatch else ""
         started = routine_assignments(log, requested)
         if not started:

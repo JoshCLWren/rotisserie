@@ -14,15 +14,17 @@ from pathlib import Path
 import pytest
 import yaml
 
+from tests.workflow_files import adopter_view, own_steps
 
-WORKFLOWS = Path(__file__).resolve().parents[1] / ".github" / "workflows"
+
+WORKFLOWS = Path(__file__).resolve().parents[2] / ".github" / "workflows"
 DISPATCHER_PATH = WORKFLOWS / "fixed-model-factory-dispatch.yml"
 SUCCESSOR_PATH = WORKFLOWS / "fixed-model-factory-roster-successor.yml"
 LEASE_GROUP = "fixed-model-factory-dispatch"
 
 
 def load_workflow(path: Path) -> dict:
-    return yaml.safe_load(path.read_text(encoding="utf-8"))
+    return yaml.safe_load(adopter_view(path.name))
 
 
 def timer_step() -> dict:
@@ -34,7 +36,7 @@ def test_dispatcher_releases_both_locks_before_roster_delay() -> None:
     job = dispatcher["jobs"]["dispatch"]
     assert job["concurrency"]["group"] == LEASE_GROUP
 
-    steps = job["steps"]
+    steps = own_steps(job)
     cadence = next(
         step for step in steps
         if step.get("name") == "Queue roster successor outside assignment lease lock"

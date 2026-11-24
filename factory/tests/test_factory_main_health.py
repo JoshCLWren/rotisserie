@@ -6,9 +6,11 @@ import importlib.util
 from pathlib import Path
 from types import ModuleType
 
+from tests.workflow_files import adopter_view
+
 REPO_ROOT = Path(__file__).resolve().parents[1]
 SCRIPT = REPO_ROOT / ".github" / "scripts" / "factory_main_health.py"
-WORKFLOWS = REPO_ROOT / ".github" / "workflows"
+WORKFLOWS = REPO_ROOT.parent / ".github" / "workflows"
 SHA = "a" * 40
 
 
@@ -116,8 +118,8 @@ def test_duplicate_paginated_runs_are_counted_once() -> None:
 
 def test_held_workflow_recovery_is_unbounded_and_observable() -> None:
     """Held PR workflows remain recoverable after their first hour."""
-    drain = (WORKFLOWS / "factory-ready-merge-drain.yml").read_text(encoding="utf-8")
-    guard = (WORKFLOWS / "fixed-model-pr-repair-guard.yml").read_text(encoding="utf-8")
+    drain = adopter_view("factory-ready-merge-drain.yml")
+    guard = adopter_view("fixed-model-pr-repair-guard.yml")
 
     assert "actions/runs?status=action_required&per_page=100" in drain
     assert "gh api --paginate --slurp" in drain
@@ -135,7 +137,7 @@ def test_held_workflow_recovery_is_unbounded_and_observable() -> None:
 
 def test_merge_drain_can_approve_and_dispatch_workflow_recovery() -> None:
     """The drain token has the least privilege needed for Actions recovery."""
-    drain = (WORKFLOWS / "factory-ready-merge-drain.yml").read_text(encoding="utf-8")
+    drain = adopter_view("factory-ready-merge-drain.yml")
 
     permissions = drain.split("permissions:", maxsplit=1)[1].split(
         "concurrency:", maxsplit=1
@@ -155,7 +157,7 @@ def test_held_run_recovery_covers_every_factory_stage() -> None:
     import re
     import subprocess
 
-    drain = (WORKFLOWS / "factory-ready-merge-drain.yml").read_text(encoding="utf-8")
+    drain = adopter_view("factory-ready-merge-drain.yml")
     step = drain.split("Recover held or missing workflow runs on factory PR heads", 1)[1]
     match = re.search(r'pulls\?state=open&per_page=100" \\\s*--jq \'([^\']+)\'', step)
     assert match is not None

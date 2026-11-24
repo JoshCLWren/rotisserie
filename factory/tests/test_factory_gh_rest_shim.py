@@ -289,7 +289,7 @@ def test_successful_required_checks_pass_through(tmp_path: Path) -> None:
 def test_dispatcher_and_worker_install_rest_shim() -> None:
     """Both control-plane assignment and lease consumption use the REST shim."""
     dispatcher = (
-        REPO_ROOT / ".github/workflows/fixed-model-factory-dispatch.yml"
+        REPO_ROOT.parent / ".github/workflows/fixed-model-factory-dispatch.yml"
     ).read_text(encoding="utf-8")
     worker = (
         REPO_ROOT / ".github/scripts/free-model-factory-worker.sh"

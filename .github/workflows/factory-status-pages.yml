@@ -1,0 +1,339 @@
+# GitHub ran the */15 schedule only 3 times in ~14 hours on one adopter, so the
+# reliability snapshot went stale for hours. The scheduler finishes every few
+# minutes: after it, publish only when the snapshot is actually stale.
+# Separate groups: GitHub keeps one pending run per group, so frequent
+# scheduler-triggered refreshes would otherwise cancel a queued push run and
+# its Pages deployment.
+name: Factory Status Pages
+on:
+  workflow_call:
+    secrets:
+      NEON_API_KEY:
+        required: false
+      OMNIROUTE_API_KEY:
+        required: false
+      OMNIROUTE_MANAGEMENT_API_KEY:
+        required: false
+
+env:
+  ROTISSERIE_ADMIN_GITHUB_IDS: ${{ vars.ROTISSERIE_ADMIN_GITHUB_IDS }}
+  # Operator settings (rotisserie factory settings) reach every factory script.
+  FACTORY_REPO_VARS: >-
+    {"FACTORY_SLOTS_PER_PROVIDER": "${{ vars.FACTORY_SLOTS_PER_PROVIDER }}", "FACTORY_PR_WIP_LIMIT": "${{ vars.FACTORY_PR_WIP_LIMIT }}", "FACTORY_REVIEW_BACKLOG_LIMIT": "${{ vars.FACTORY_REVIEW_BACKLOG_LIMIT }}", "FACTORY_OMNIROUTE_FREE_ENTRY_CAP": "${{ vars.FACTORY_OMNIROUTE_FREE_ENTRY_CAP }}", "FACTORY_NO_DIFF_RETRY_LIMIT": "${{ vars.FACTORY_NO_DIFF_RETRY_LIMIT }}", "FACTORY_NO_DIFF_RETRY_RESET_SECONDS": "${{ vars.FACTORY_NO_DIFF_RETRY_RESET_SECONDS }}", "FACTORY_REVIEW_FAILURE_COOLDOWN_SECONDS": "${{ vars.FACTORY_REVIEW_FAILURE_COOLDOWN_SECONDS }}", "FACTORY_FIXED_LEASE_TTL_SECONDS": "${{ vars.FACTORY_FIXED_LEASE_TTL_SECONDS }}", "FACTORY_LOCAL_LEASE_TTL_SECONDS": "${{ vars.FACTORY_LOCAL_LEASE_TTL_SECONDS }}", "FACTORY_PRIORITY_ORDER": "${{ vars.FACTORY_PRIORITY_ORDER }}"}
+
+permissions:
+  contents: write
+  issues: read
+  pull-requests: read
+  actions: read
+  pages: write
+  id-token: write
+
+jobs:
+  freshness:
+    runs-on: ubuntu-latest
+    outputs:
+      stale: ${{ steps.age.outputs.stale }}
+    steps:
+      - id: age
+        name: Skip a scheduler-triggered refresh while the snapshot is fresh
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EVENT: ${{ github.event_name }}
+        run: |
+          set -euo pipefail
+          if [[ "$EVENT" != "workflow_run" ]]; then
+            echo "stale=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          generated="$(gh api "repos/${GITHUB_REPOSITORY}/contents/factory-stats.json?ref=factory-status-live" \
+            --jq '.content' 2>/dev/null | base64 -d 2>/dev/null | jq -r '.generated_at // empty' 2>/dev/null || true)"
+          if [[ -z "$generated" ]]; then
+            echo "stale=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          age=$(( $(date -u +%s) - $(date -u -d "$generated" +%s) ))
+          echo "reliability snapshot age: ${age}s"
+          if (( age > 840 )); then echo "stale=true"; else echo "stale=false"; fi >> "$GITHUB_OUTPUT"
+
+  publish-live-dashboard:
+    needs: freshness
+    if: needs.freshness.outputs.stale == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Set up factory Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: '3.14'
+      - uses: actions/checkout@v7
+        with:
+          ref: main
+      - name: Check out Rotisserie factory runtime
+        uses: actions/checkout@v7
+        with:
+          repository: ${{ job.workflow_repository }}
+          ref: ${{ job.workflow_sha }}
+          path: .rotisserie/runtime
+          persist-credentials: false
+      - name: Overlay Rotisserie factory runtime
+        run: bash .rotisserie/runtime/factory/install/overlay.sh .
+
+      - name: Configure shared Neon factory discovery cache
+        uses: ./.github/actions/factory-state-cache
+        with:
+          neon-api-key: ${{ secrets.NEON_API_KEY }}
+          neon-project-id: ${{ vars.NEON_PROJECT_ID }}
+
+      - name: Prune retired discovery and audit events
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          if [[ -z "${FACTORY_STATE_DSN_FILE:-}" ]]; then
+            echo "::warning::Factory Neon unavailable; bounded retention deferred"
+            exit 0
+          fi
+          python3 .github/scripts/factory_state_cache.py prune-obsolete
+
+      - name: Install Neon-first GitHub read shim
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          real_gh="$(command -v gh)"
+          shim_dir="$RUNNER_TEMP/factory-gh-rest"
+          mkdir -p "$shim_dir"
+          cp .github/scripts/factory-gh-rest-shim.sh "$shim_dir/gh"
+          chmod +x "$shim_dir/gh"
+          echo "FACTORY_REAL_GH=$real_gh" >> "$GITHUB_ENV"
+          echo "$shim_dir" >> "$GITHUB_PATH"
+
+      - name: Restore immutable delivery attribution
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          mkdir -p site
+          if gh api "repos/${GITHUB_REPOSITORY}/contents/funnel-cache.json?ref=factory-status-live" \
+            --jq '.content' > "$RUNNER_TEMP/funnel-cache.b64"; then
+            base64 --decode "$RUNNER_TEMP/funnel-cache.b64" > site/funnel-cache.json
+          fi
+
+      - name: Generate factory dashboard
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PYTHONPATH: .github/scripts
+          # The dashboard asks for the same inventory during demand and
+          # rendering. Share it within this trusted job, not in Neon.
+          FACTORY_DISCOVERY_DIR: ${{ runner.temp }}/factory-discovery
+          OMNIROUTE_API_KEY: ${{ secrets.OMNIROUTE_API_KEY }}
+          OMNIROUTE_MANAGEMENT_API_KEY: ${{ secrets.OMNIROUTE_MANAGEMENT_API_KEY }}
+          OMNIROUTE_BASE_URL: ${{ vars.OMNIROUTE_BASE_URL }}
+        run: python3 .github/scripts/generate_factory_status_dashboard.py
+
+      - name: Build the hosted canonical Rotisserie control room
+        run: |
+          set -euo pipefail
+          cp site/index.html site/legacy-dashboard.html
+          python3 .rotisserie/runtime/factory/scripts/build_hosted_control_room.py \
+            --repo "$GITHUB_REPOSITORY" --output site/index.html
+
+      - name: Export provider and model reliability counts
+        continue-on-error: true
+        env:
+          PYTHONPATH: .github/scripts
+        run: |
+          set -Eeuo pipefail
+          # Counts of trusted worker outcomes only; read by `rotisserie factory stats`.
+          python3 .github/scripts/factory_state_operations.py export-reliability > site/factory-stats.json.tmp
+          mv site/factory-stats.json.tmp site/factory-stats.json
+
+      - name: Publish live dashboard snapshot
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          branch='factory-status-live'
+          main_sha="$(git rev-parse HEAD)"
+
+          if ! gh api "repos/${GITHUB_REPOSITORY}/git/ref/heads/${branch}" >/dev/null 2>&1; then
+            gh api --method POST "repos/${GITHUB_REPOSITORY}/git/refs" \
+              -f "ref=refs/heads/${branch}" \
+              -f "sha=${main_sha}" >/dev/null
+          fi
+
+          # Large dashboard pages cannot fit in one Linux command argument.
+          # Build the GitHub Contents API request as a file and stream it to gh.
+          publish_snapshot() {
+            local filepath="$1" destination="$2" message="$3" existing_sha="$4"
+            local payload_file
+            payload_file="$(mktemp "$RUNNER_TEMP/factory-status-payload.XXXXXX")"
+            python3 - "$filepath" "$branch" "$message" "$existing_sha" "$payload_file" <<'PY'
+          import base64
+          import json
+          import sys
+          from pathlib import Path
+
+          source, branch, message, sha, destination = sys.argv[1:]
+          request = {
+              "branch": branch,
+              "message": message,
+              "content": base64.b64encode(Path(source).read_bytes()).decode("ascii"),
+          }
+          if sha:
+              request["sha"] = sha
+          Path(destination).write_text(json.dumps(request, separators=(",", ":")))
+          PY
+            gh api --method PUT "repos/${GITHUB_REPOSITORY}/contents/${destination}" --input "$payload_file" --jq '.commit.sha'
+            rm -f "$payload_file"
+          }
+
+          existing_sha="$(gh api "repos/${GITHUB_REPOSITORY}/contents/index.html?ref=${branch}" --jq '.sha' 2>/dev/null || true)"
+          publish_snapshot site/index.html index.html 'chore: refresh factory dashboard' "$existing_sha"
+
+          # Public normalized counts keyed by immutable merged SHA, never logs
+          # or credentials. Update only when attribution changed.
+          if [[ -f site/funnel-cache.json ]]; then
+            cache_sha="$(gh api "repos/${GITHUB_REPOSITORY}/contents/funnel-cache.json?ref=${branch}" --jq '.sha' 2>/dev/null || true)"
+            local_sha="$(git hash-object site/funnel-cache.json)"
+            if [[ "$cache_sha" != "$local_sha" ]]; then
+              publish_snapshot site/funnel-cache.json funnel-cache.json 'chore: cache merged factory attribution' "$cache_sha"
+            fi
+          fi
+          if [[ -s site/factory-stats.json ]]; then
+            stats_sha="$(gh api "repos/${GITHUB_REPOSITORY}/contents/factory-stats.json?ref=${branch}" --jq '.sha' 2>/dev/null || true)"
+            publish_snapshot site/factory-stats.json factory-stats.json 'chore: refresh factory reliability counts' "$stats_sha"
+          fi
+          snapshot_sha="$(gh api "repos/${GITHUB_REPOSITORY}/contents/factory-status-snapshot.json?ref=${branch}" --jq '.sha' 2>/dev/null || true)"
+          publish_snapshot site/factory-status-snapshot.json factory-status-snapshot.json 'chore: refresh public factory state snapshot' "$snapshot_sha"
+          legacy_sha="$(gh api "repos/${GITHUB_REPOSITORY}/contents/legacy-dashboard.html?ref=${branch}" --jq '.sha' 2>/dev/null || true)"
+          publish_snapshot site/legacy-dashboard.html legacy-dashboard.html 'chore: preserve detailed legacy metrics' "$legacy_sha"
+
+  build-pages-shell:
+    if: github.event_name == 'push'
+    needs: publish-live-dashboard
+    runs-on: ubuntu-latest
+    steps:
+      - name: Build live dashboard shell
+        run: |
+          mkdir -p site
+          cat > site/index.html <<'HTML'
+          <!doctype html>
+          <html lang="en">
+            <head>
+              <meta charset="utf-8">
+              <meta name="viewport" content="width=device-width,initial-scale=1">
+              <title>Rotisserie Factory</title>
+              <style>
+                body { font: 16px system-ui, sans-serif; margin: 0; background: #0b1020; color: #eef2ff; }
+                main { min-height: 100vh; display: grid; place-items: center; padding: 2rem; text-align: center; }
+                code { color: #a5b4fc; }
+              </style>
+            </head>
+            <body>
+              <main id="status">Loading the live factory dashboard…</main>
+              <script>
+                (() => {
+                  const source = 'https://raw.githubusercontent.com/${{ github.repository }}/factory-status-live/index.html';
+                  const status = document.querySelector('#status');
+                  const load = async () => {
+                    try {
+                      const response = await fetch(`${source}?v=${Date.now()}`, { cache: 'no-store' });
+                      if (!response.ok) throw new Error(`live snapshot returned ${response.status}`);
+                      const html = await response.text();
+                      const marker = 'Rotisserie · Control room';
+                      if (!html.includes(marker)) throw new Error('live snapshot is not the factory dashboard');
+                      const refreshingHtml = html.replace(
+                        '</head>',
+                        '<meta http-equiv="refresh" content="60"></head>',
+                      );
+                      document.open();
+                      document.write(refreshingHtml);
+                      document.close();
+                    } catch (error) {
+                      status.textContent = `Could not load the live dashboard: ${error}. Retrying…`;
+                      setTimeout(load, 15000);
+                    }
+                  };
+                  load();
+                })();
+              </script>
+            </body>
+          </html>
+          HTML
+
+      - name: Configure Pages
+        uses: actions/configure-pages@v6
+
+      - name: Verify Pages publishing mode
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          config="$(gh api "repos/${GITHUB_REPOSITORY}/pages")"
+          echo "Pages configuration: $(jq -c '{build_type,status,html_url,source}' <<<"$config")"
+          build_type="$(jq -r '.build_type // "unknown"' <<<"$config")"
+          if [[ "$build_type" != "workflow" ]]; then
+            echo "::error::GitHub Pages build_type is '$build_type'; expected 'workflow'. Set Settings > Pages > Source to GitHub Actions."
+            exit 1
+          fi
+
+      - name: Upload dashboard shell
+        uses: actions/upload-pages-artifact@v5
+        with:
+          path: site
+
+  deploy:
+    if: github.event_name == 'push'
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    runs-on: ubuntu-latest
+    needs: build-pages-shell
+    steps:
+      - name: Set up factory Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: '3.14'
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v5
+
+      - name: Verify public shell and live snapshot
+        env:
+          PAGE_URL: ${{ steps.deployment.outputs.page_url }}
+        run: |
+          set -euo pipefail
+          page_url="${PAGE_URL%/}/?factory-pages-check=${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          live_url="https://raw.githubusercontent.com/${GITHUB_REPOSITORY}/factory-status-live/index.html?factory-live-check=${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          marker='Rotisserie · Control room'
+          loader='factory-status-live/index.html'
+
+          for _ in {1..18}; do
+            shell="$(curl --fail --silent --show-error --location \
+              -H 'Cache-Control: no-cache' -H 'Pragma: no-cache' "$page_url" 2>/dev/null || true)"
+            live="$(curl --fail --silent --show-error --location \
+              -H 'Cache-Control: no-cache' -H 'Pragma: no-cache' "$live_url" 2>/dev/null || true)"
+            snapshot_url="https://raw.githubusercontent.com/${GITHUB_REPOSITORY}/factory-status-live/factory-status-snapshot.json?factory-live-check=${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+            snapshot="$(curl --fail --silent --show-error --location \
+              -H 'Cache-Control: no-cache' -H 'Pragma: no-cache' "$snapshot_url" 2>/dev/null || true)"
+            generated="$(jq -r '.generated_at // empty' <<<"$snapshot" 2>/dev/null || true)"
+
+            if grep -Fq "$loader" <<<"$shell" \
+              && grep -Fq "$marker" <<<"$live" \
+              && [[ -n "$generated" ]] \
+              && python3 - "$generated" <<'PY'
+          from datetime import datetime, timezone
+          import sys
+
+          generated = datetime.fromisoformat(sys.argv[1].replace("Z", "+00:00"))
+          age = (datetime.now(timezone.utc) - generated).total_seconds()
+          raise SystemExit(0 if -60 <= age <= 1800 else 1)
+          PY
+            then
+              echo "Verified Pages shell at $PAGE_URL with live snapshot generated $generated."
+              exit 0
+            fi
+            sleep 10
+          done
+
+          echo "::error::Pages is not serving the live dashboard shell or the live snapshot is stale."
+          exit 1

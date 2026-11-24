@@ -1,0 +1,119 @@
+name: Fixed Model Factory Dispatcher
+run-name: Factory dispatch · ${{ inputs.source_run_id && format('completion {0}', inputs.source_run_id) || inputs.target || inputs.provider || inputs.mode || github.event_name }}
+on:
+  schedule:
+    - cron: '7 * * * *'
+  workflow_dispatch:
+    inputs:
+      measure:
+        description: Count trusted Neon operations for this cycle without logging SQL
+        required: false
+        default: false
+        type: boolean
+      source_run_id:
+        description: Advisory Entry completion that woke this scheduling cycle
+        required: false
+        type: string
+      mode:
+        description: Dispatch strategy when no explicit worker is supplied
+        required: true
+        default: smoke
+        type: choice
+        options:
+          - smoke
+          - roster
+      worker:
+        description: Optional active external Factory; blank runs the strategy smoke set
+        required: false
+        type: string
+      provider:
+        description: Select existing provider lane; opencode-go uses opencode-free worker
+        required: false
+        type: string
+      model:
+        description: Exact runtime provider/model ID, or auto for a provider's eligible model
+        required: false
+        default: auto
+        type: string
+      force_slot:
+        description: Override historical slot health only; all live safety gates apply
+        required: false
+        default: false
+        type: boolean
+      slot_index:
+        description: One-based registered slot number; requires force_slot
+        required: false
+        type: string
+      target:
+        description: Optional issue or PR to advance, in the form issue:123 or pr:123
+        required: false
+        type: string
+      action:
+        description: Action to take on the selected target
+        default: advance
+        type: choice
+        options:
+          - advance
+          - implement
+          - merge-conflict
+          - ci-repair
+          - review-findings
+          - review
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/fixed-model-factory-dispatch.yml'
+      - '.github/workflows/free-model-factory-entry.yml'
+      - '.github/factory-rotisserie-control.json'
+      - '.github/factory-quota-pauses.json'
+      - '.github/factory-source-budgets.json'
+permissions:
+  contents: write
+  actions: write
+  issues: write
+  pull-requests: write
+  checks: read
+concurrency:
+  group: ${{ inputs.target && format('factory-target-{0}-{1}', inputs.target, inputs.action || 'advance') || inputs.provider && format('factory-provider-{0}-{1}', inputs.provider, inputs.model || 'auto') || inputs.measure && format('factory-measure-{0}', github.run_id) || 'fixed-model-factory-dispatch-ingress' }}
+  queue: single
+  cancel-in-progress: false
+jobs:
+  rotisserie:
+    uses: JoshCLWren/rotisserie/.github/workflows/fixed-model-factory-dispatch.yml@main
+    with:
+      measure: ${{ inputs.measure == true }}
+      source_run_id: ${{ inputs.source_run_id }}
+      mode: ${{ inputs.mode }}
+      worker: ${{ inputs.worker }}
+      provider: ${{ inputs.provider }}
+      model: ${{ inputs.model }}
+      force_slot: ${{ inputs.force_slot == true }}
+      slot_index: ${{ inputs.slot_index }}
+      target: ${{ inputs.target }}
+      action: ${{ inputs.action }}
+    secrets:
+      AION_API_KEY: ${{ secrets.AION_API_KEY }}
+      AI_GATEWAY_API_KEY: ${{ secrets.AI_GATEWAY_API_KEY }}
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      COHERE_API_KEY: ${{ secrets.COHERE_API_KEY }}
+      FACTORY_READER_APP_ID: ${{ secrets.FACTORY_READER_APP_ID }}
+      FACTORY_READER_APP_PRIVATE_KEY: ${{ secrets.FACTORY_READER_APP_PRIVATE_KEY }}
+      GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+      GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+      LOCAL_OLLAMA_URL: ${{ secrets.LOCAL_OLLAMA_URL }}
+      MISTRAL_API_KEY: ${{ secrets.MISTRAL_API_KEY }}
+      NEON_API_KEY: ${{ secrets.NEON_API_KEY }}
+      NVIDIA_API_KEY: ${{ secrets.NVIDIA_API_KEY }}
+      OLLAMA_API_KEY: ${{ secrets.OLLAMA_API_KEY }}
+      OMNIROUTE_API_KEY: ${{ secrets.OMNIROUTE_API_KEY }}
+      OPENCODE_GO_CLIENT_ID: ${{ secrets.OPENCODE_GO_CLIENT_ID }}
+      OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+      OPENROUTER_JEV_API_KEY: ${{ secrets.OPENROUTER_JEV_API_KEY }}
+      ORCAROUTER_API_KEY: ${{ secrets.ORCAROUTER_API_KEY }}
+      POLLINATIONS_API_KEY: ${{ secrets.POLLINATIONS_API_KEY }}
+      PR_REBASE_TOKEN: ${{ secrets.PR_REBASE_TOKEN }}
+      REQUESTY_API_KEY: ${{ secrets.REQUESTY_API_KEY }}
+      REVIEW_PROVIDER_URL: ${{ secrets.REVIEW_PROVIDER_URL }}
+      ROTISSERIE_DEPLOY_KEY: ${{ secrets.ROTISSERIE_DEPLOY_KEY }}
+      TYPHOON_API_KEY: ${{ secrets.TYPHOON_API_KEY }}
+      Z_AI_API_KEY: ${{ secrets.Z_AI_API_KEY }}

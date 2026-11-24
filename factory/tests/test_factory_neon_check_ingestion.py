@@ -69,7 +69,7 @@ def test_failed_review_is_exact_head_and_idempotent_by_run() -> None:
 
 
 def test_check_completion_wakeup_skips_neon_except_review_failure() -> None:
-    workflow = (ROOT / ".github/workflows/factory-check-projection.yml").read_text()
+    workflow = (ROOT.parent / ".github/workflows/factory-check-projection.yml").read_text()
     assert "head_repository.full_name == github.repository" in workflow
     assert "pull_requests[0].number != null" in workflow
     assert 'if: env.REVIEW_FAILURE == \'true\'' in workflow

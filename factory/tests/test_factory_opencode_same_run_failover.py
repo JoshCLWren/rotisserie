@@ -5,7 +5,7 @@ from pathlib import Path
 import yaml
 
 ROOT = Path(__file__).resolve().parents[1]
-WORKFLOW = ROOT / ".github/workflows/free-model-factory-run.yml"
+WORKFLOW = ROOT.parent / ".github/workflows/free-model-factory-run.yml"
 SELECTOR = ROOT / ".github/scripts/factory_live_opencode.py"
 
 

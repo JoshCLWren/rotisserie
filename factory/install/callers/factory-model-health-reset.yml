@@ -1,0 +1,21 @@
+name: Factory Model Health Reset
+on:
+  workflow_dispatch:
+    inputs:
+      include_retired:
+        description: Also clear retired HTTP 410 model records
+        type: boolean
+        default: false
+        required: false
+permissions:
+  contents: read
+concurrency:
+  group: factory-model-health-reset
+  cancel-in-progress: false
+jobs:
+  rotisserie:
+    uses: JoshCLWren/rotisserie/.github/workflows/factory-model-health-reset.yml@main
+    with:
+      include_retired: ${{ inputs.include_retired == true }}
+    secrets:
+      NEON_API_KEY: ${{ secrets.NEON_API_KEY }}

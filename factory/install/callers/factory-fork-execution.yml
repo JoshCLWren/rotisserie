@@ -1,0 +1,34 @@
+name: Factory Fork Execution
+run-name: Factory ${{ inputs.worker }} · fork repair · PR ${{ inputs.pr }} · ${{ inputs.nonce }}
+on:
+  workflow_dispatch:
+    inputs:
+      pr:
+        required: true
+        type: string
+      head:
+        required: true
+        type: string
+      worker:
+        required: true
+        type: string
+      nonce:
+        required: true
+        type: string
+permissions:
+  contents: read
+  issues: read
+  pull-requests: read
+  actions: read
+  checks: read
+concurrency:
+  group: factory-fork-execution-${{ inputs.pr }}
+  cancel-in-progress: false
+jobs:
+  rotisserie:
+    uses: JoshCLWren/rotisserie/.github/workflows/factory-fork-execution.yml@main
+    with:
+      pr: ${{ inputs.pr }}
+      head: ${{ inputs.head }}
+      worker: ${{ inputs.worker }}
+      nonce: ${{ inputs.nonce }}

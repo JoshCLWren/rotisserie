@@ -116,7 +116,7 @@ def test_trusted_ollama_review_wakes_canonical_merge_only_when_ready() -> None:
     """A valid Qwen review should not sit until the next factory schedule."""
     reviewer = (SCRIPTS / "local-ollama-review.sh").read_text()
     workflow = (
-        Path(__file__).resolve().parents[1]
+        Path(__file__).resolve().parents[2]
         / ".github"
         / "workflows"
         / "local-ollama-review.yml"

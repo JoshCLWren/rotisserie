@@ -1,0 +1,21 @@
+name: Fixed Model Factory Roster Successor
+run-name: Roster wakeup after ${{ inputs.delay_seconds }}s
+on:
+  workflow_dispatch:
+    inputs:
+      delay_seconds:
+        description: Validated delay before the next roster-mode dispatcher run
+        required: true
+        type: string
+permissions:
+  contents: read
+  actions: write
+concurrency:
+  group: fixed-model-factory-roster-successor
+  queue: single
+  cancel-in-progress: false
+jobs:
+  rotisserie:
+    uses: JoshCLWren/rotisserie/.github/workflows/fixed-model-factory-roster-successor.yml@main
+    with:
+      delay_seconds: ${{ inputs.delay_seconds }}

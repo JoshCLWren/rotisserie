@@ -240,7 +240,7 @@ def test_dispatch_fallback_skips_cooling_lane_and_is_attested() -> None:
 
 
 def test_dispatch_selection_falls_back_across_fleet_in_workflow() -> None:
-    workflow = (ROOT / ".github/workflows/free-model-factory-run.yml").read_text()
+    workflow = (ROOT.parent / ".github/workflows/free-model-factory-run.yml").read_text()
     step = workflow.split("- name: Select execution candidate at dispatch time", 1)[1]
     step = step.split("- name:", 1)[0]
     assert "fleet_fallback()" in step

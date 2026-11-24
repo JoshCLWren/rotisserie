@@ -13,7 +13,7 @@ from pathlib import Path
 import pytest
 
 ROOT = Path(__file__).resolve().parents[1]
-WORKFLOW = ROOT / ".github/workflows/factory-issue-pr-state-reconciler.yml"
+WORKFLOW = ROOT.parent / ".github/workflows/factory-issue-pr-state-reconciler.yml"
 BRANCH = "factory/39-1477-opencode-free"
 REPO = "acme/widgets"
 HEAD = "a" * 40

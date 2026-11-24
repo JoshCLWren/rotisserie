@@ -1,0 +1,19 @@
+name: PR-Agent Advisory Review
+on:
+  pull_request:
+    types: [opened, reopened, ready_for_review, synchronize]
+permissions:
+  contents: read
+  pull-requests: write
+  issues: write
+  checks: write
+concurrency:
+  group: pr-agent-review-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+jobs:
+  rotisserie:
+    uses: JoshCLWren/rotisserie/.github/workflows/pr-agent-review.yml@main
+    secrets:
+      ORCAROUTER_API_KEY: ${{ secrets.ORCAROUTER_API_KEY }}
+      REQUESTY_API_KEY: ${{ secrets.REQUESTY_API_KEY }}
+      ROUTEWAY_API_KEY: ${{ secrets.ROUTEWAY_API_KEY }}

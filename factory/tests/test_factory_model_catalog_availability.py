@@ -8,9 +8,11 @@ from pathlib import Path
 
 import pytest
 
+from tests.workflow_files import adopter_view
+
 ROOT = Path(__file__).resolve().parents[1]
 WAIT_SCRIPT = ROOT / ".github/scripts/wait-opencode-model.sh"
-WORKFLOW = ROOT / ".github/workflows/free-model-factory-run.yml"
+WORKFLOW = ROOT.parent / ".github/workflows/free-model-factory-run.yml"
 
 
 @pytest.mark.parametrize(
@@ -64,7 +66,7 @@ def test_model_preflight_distinguishes_model_absence_from_catalog_failure(
         assert "did not expose" in result.stderr
 
 
-WORKER = WORKFLOW.parents[1] / "scripts" / "free-model-factory-worker.sh"
+WORKER = WORKFLOW.parents[2] / "factory" / ".github" / "scripts" / "free-model-factory-worker.sh"
 
 
 def _failover_selector() -> str:
@@ -87,7 +89,7 @@ def test_factory_workflow_records_precise_preflight_outcome() -> None:
 
 
 def test_catalog_preflight_hands_selected_model_directly_to_real_work() -> None:
-    workflow = WORKFLOW.read_text(encoding="utf-8")
+    workflow = adopter_view(WORKFLOW.name)
     prework = workflow.split("      - name: Run continuous fixed-model factory session", 1)[0]
     # No pre-work model ceiling or inference probe: real work is the test.
     assert "max_candidates=5" not in prework
@@ -105,6 +107,6 @@ def test_model_rotation_is_bound_to_trusted_fleet_admission() -> None:
     assert '--eligible-sources-file "$RUNNER_TEMP/factory-fleet-sources.json"' in selector
     assert '--exclusions-file "$RUNNER_TEMP/factory-neon-model-exclusions.json"' in selector
     assert "--blocked-provider" in selector
-    workflow = WORKFLOW.read_text(encoding="utf-8")
+    workflow = adopter_view(WORKFLOW.name)
     assert "export-fleet-failover-sources" in workflow
     assert "FACTORY_FLEET_SOURCES: ${{ needs.validate_assignment.outputs.fleet_sources }}" in workflow

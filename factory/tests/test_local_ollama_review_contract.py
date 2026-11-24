@@ -115,7 +115,7 @@ def test_reject_requires_actionable_reason_and_cannot_fake_approval() -> None:
 def test_script_uses_controller_and_never_claims_truncated_or_stale_review() -> None:
     """Keep exact-head and merge authorization behind the trusted controller."""
     script = (ROOT / ".github/scripts/local-ollama-review.sh").read_text()
-    workflow = (ROOT / ".github/workflows/local-ollama-review.yml").read_text()
+    workflow = (ROOT.parent / ".github/workflows/local-ollama-review.yml").read_text()
     assert 'ISSUE="4825"' not in script
     assert 'local_review_contract.py target' in script
     assert '--expected-head "$HEAD"' in script

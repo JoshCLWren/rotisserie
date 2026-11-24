@@ -1,0 +1,138 @@
+name: Fixed Model Runtime Observer
+on:
+  workflow_call:
+    secrets:
+      NEON_API_KEY:
+        required: false
+
+env:
+  # Operator settings (rotisserie factory settings) reach every factory script.
+  FACTORY_REPO_VARS: >-
+    {"FACTORY_SLOTS_PER_PROVIDER": "${{ vars.FACTORY_SLOTS_PER_PROVIDER }}", "FACTORY_PR_WIP_LIMIT": "${{ vars.FACTORY_PR_WIP_LIMIT }}", "FACTORY_REVIEW_BACKLOG_LIMIT": "${{ vars.FACTORY_REVIEW_BACKLOG_LIMIT }}", "FACTORY_OMNIROUTE_FREE_ENTRY_CAP": "${{ vars.FACTORY_OMNIROUTE_FREE_ENTRY_CAP }}", "FACTORY_NO_DIFF_RETRY_LIMIT": "${{ vars.FACTORY_NO_DIFF_RETRY_LIMIT }}", "FACTORY_NO_DIFF_RETRY_RESET_SECONDS": "${{ vars.FACTORY_NO_DIFF_RETRY_RESET_SECONDS }}", "FACTORY_REVIEW_FAILURE_COOLDOWN_SECONDS": "${{ vars.FACTORY_REVIEW_FAILURE_COOLDOWN_SECONDS }}", "FACTORY_FIXED_LEASE_TTL_SECONDS": "${{ vars.FACTORY_FIXED_LEASE_TTL_SECONDS }}", "FACTORY_LOCAL_LEASE_TTL_SECONDS": "${{ vars.FACTORY_LOCAL_LEASE_TTL_SECONDS }}", "FACTORY_PRIORITY_ORDER": "${{ vars.FACTORY_PRIORITY_ORDER }}"}
+
+permissions:
+  contents: read
+  actions: read
+  issues: read
+  pull-requests: read
+
+jobs:
+  classifier-tests:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Set up factory Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: '3.14'
+      - uses: actions/checkout@v7
+      - name: Check out Rotisserie factory runtime
+        uses: actions/checkout@v7
+        with:
+          repository: ${{ job.workflow_repository }}
+          ref: ${{ job.workflow_sha }}
+          path: .rotisserie/runtime
+          persist-credentials: false
+      - name: Overlay Rotisserie factory runtime
+        run: bash .rotisserie/runtime/factory/install/overlay.sh .
+      - name: Test fixed-model runtime classifier
+        run: python .github/scripts/classify-fixed-model-run.py --self-test
+
+  publish-runtime-outcome:
+    if: >-
+      github.event_name == 'workflow_run' &&
+      github.event.workflow_run.head_repository.full_name == github.repository
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ github.token }}
+      RUN_ID: ${{ github.event.workflow_run.id }}
+      RUN_URL: ${{ github.event.workflow_run.html_url }}
+    steps:
+      - name: Set up factory Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: '3.14'
+      - uses: actions/checkout@v7
+        with:
+          ref: main
+      - name: Check out Rotisserie factory runtime
+        uses: actions/checkout@v7
+        with:
+          repository: ${{ job.workflow_repository }}
+          ref: ${{ job.workflow_sha }}
+          path: .rotisserie/runtime
+          persist-credentials: false
+      - name: Overlay Rotisserie factory runtime
+        run: bash .rotisserie/runtime/factory/install/overlay.sh .
+
+      - name: Read fixed-model job log
+        id: runtime
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          jobs="$(gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${RUN_ID}/jobs?per_page=100")"
+          job_id="$(jq -r '[.jobs[] | select(.name | ltrimstr("rotisserie / ") == "run / factory") | .id][0] // empty' <<< "$jobs")"
+          if [[ -z "$job_id" ]]; then
+            echo 'No fixed-model execution job exists for this run; nothing lane-specific can be published.'
+            echo 'publish=false' >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          gh run view "$RUN_ID" --repo "$GITHUB_REPOSITORY" --log > "$RUNNER_TEMP/fixed-model.log"
+          python .github/scripts/classify-fixed-model-run.py \
+            --log "$RUNNER_TEMP/fixed-model.log" > "$RUNNER_TEMP/runtime-outcome.json"
+          # Backup and primary collectors must agree: a log claim is not PR
+          # delivery proof. Verify one targeted GitHub PR before persistence.
+          delivery_pr="$(jq -r '.delivery_pr // empty' "$RUNNER_TEMP/runtime-outcome.json")"
+          if [[ -n "$delivery_pr" ]]; then
+            [[ "$delivery_pr" =~ ^[1-9][0-9]*$ ]] || exit 1
+            delivery="$(gh api "repos/$GITHUB_REPOSITORY/pulls/$delivery_pr")"
+            jq -e --arg repo "$GITHUB_REPOSITORY" --argjson number "$delivery_pr" '
+              .number == $number and .head.repo.full_name == $repo and
+              (.state == "open" or .merged == true) and
+              (.head.sha | test("^[0-9a-f]{40}$"))
+            ' <<< "$delivery" >/dev/null || {
+              echo "::error::Unverified PR handoff #$delivery_pr"
+              exit 1
+            }
+          fi
+          worker="$(jq -r '.worker // empty' "$RUNNER_TEMP/runtime-outcome.json")"
+          if [[ -z "$worker" ]]; then
+            echo 'The fixed-model job did not reach lane resolution; no durable worker marker can be identified.'
+            echo 'publish=false' >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          echo "worker=$worker" >> "$GITHUB_OUTPUT"
+          echo 'publish=true' >> "$GITHUB_OUTPUT"
+          cat "$RUNNER_TEMP/runtime-outcome.json"
+
+      - name: Configure shared Neon factory registry cache
+        if: steps.runtime.outputs.publish == 'true'
+        uses: ./.github/actions/factory-state-cache
+        with:
+          neon-api-key: ${{ secrets.NEON_API_KEY }}
+          neon-project-id: ${{ vars.NEON_PROJECT_ID }}
+
+      - name: Summarize observed worker outcome
+        if: steps.runtime.outputs.publish == 'true'
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          # Visibility only. Issue #1093 is retired as a registry: the trusted
+          # job log and the Neon write below are the authoritative record.
+          data="$RUNNER_TEMP/runtime-outcome.json"
+          {
+            echo "### Observed factory worker outcome"
+            echo
+            echo "Agent: \`$(jq -r .outcome_class "$data")\`"
+            echo "Verified delivery: \`$(jq -r '.delivery_outcome // "none"' "$data")\`"
+            echo "PR: \`$(jq -r '.delivery_pr // "none"' "$data")\`"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Persist classified worker completion in Neon
+        if: always() && steps.runtime.outputs.publish == 'true'
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          python3 .github/scripts/factory_state_ledger.py runtime-outcome \
+            --repo "$GITHUB_REPOSITORY" --run-id "$RUN_ID" \
+            --file "$RUNNER_TEMP/runtime-outcome.json"

@@ -1,0 +1,11 @@
+name: Factory Revocation Fence
+on:
+  pull_request_target:
+    types: [opened, reopened, ready_for_review]
+permissions:
+  contents: read
+  issues: write
+  pull-requests: write
+jobs:
+  rotisserie:
+    uses: JoshCLWren/rotisserie/.github/workflows/factory-revocation-fence.yml@main

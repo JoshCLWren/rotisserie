@@ -7,6 +7,8 @@ from pathlib import Path
 
 import pytest
 
+from tests.workflow_files import adopter_view, own_steps
+
 MODULE_PATH = Path(__file__).resolve().parents[1] / ".github/scripts/factory_state_cache.py"
 sys.path.insert(0, str(MODULE_PATH.parent))
 SPEC = importlib.util.spec_from_file_location("factory_state_cache_test", MODULE_PATH)
@@ -120,11 +122,11 @@ def test_workflows_inject_database_only_into_trusted_jobs():
         "factory-status-pages.yml",
         "fixed-model-factory-dispatch-recovery.yml",
     ):
-        workflow = (root / ".github/workflows" / filename).read_text()
+        workflow = (root.parent / ".github/workflows" / filename).read_text()
         assert "uses: ./.github/actions/factory-state-cache" in workflow
         assert "secrets.NEON_API_KEY" in workflow
     # The local independent reviewer must never receive database credentials.
-    local_review = (root / ".github/workflows/local-ollama-review.yml").read_text()
+    local_review = adopter_view("local-ollama-review.yml")
     assert "factory-state-cache" not in local_review
     assert "FACTORY_STATE_DSN_FILE" not in local_review
 
@@ -133,7 +135,7 @@ def test_workflows_inject_database_only_into_trusted_jobs():
     import yaml
 
     reusable = yaml.safe_load(
-        (root / ".github/workflows/free-model-factory-run.yml").read_text()
+        adopter_view("free-model-factory-run.yml")
     )
     model_job = reusable["jobs"]["factory"]
     cleanup_job = reusable["jobs"]["release_pre_session_lease"]
@@ -144,16 +146,16 @@ def test_workflows_inject_database_only_into_trusted_jobs():
     for trusted_job in (cleanup_job, completed_cleanup_job):
         assert any(
             step.get("uses") == "./.github/actions/factory-state-cache"
-            for step in trusted_job["steps"]
+            for step in own_steps(trusted_job)
         )
 
     # The trusted Entry snapshot job reads Neon; the reusable worker never does.
-    entry = (root / ".github/workflows/free-model-factory-entry.yml").read_text()
+    entry = adopter_view("free-model-factory-entry.yml")
     snapshot, collector = entry.split("\n  persist_outcome:", 1)
     preparation = reusable["jobs"]["validate_assignment"]
     assert model_job["needs"] == "validate_assignment"
     assert any(step.get("uses") == "./.github/actions/factory-state-cache"
-               for step in preparation["steps"])
+               for step in own_steps(preparation))
     assert model_job["env"]["FACTORY_MODEL_EXCLUSIONS"] == "${{ needs.validate_assignment.outputs.exclusions }}"
     assert "FACTORY_STATE_DSN_FILE" not in snapshot
     assert "factory-state-cache" in collector
@@ -170,7 +172,7 @@ def test_workflows_inject_database_only_into_trusted_jobs():
     # incorporated refs. Its checkout remains main and never executes model code.
     assert collector_job["permissions"]["contents"] == "write"
     assert collector_job["permissions"]["pull-requests"] == "write"
-    checkout = next(step for step in collector_job["steps"]
+    checkout = next(step for step in own_steps(collector_job)
                     if step.get("uses", "").startswith("actions/checkout@"))
     assert checkout["with"]["ref"] == "main"
     assert checkout["with"]["persist-credentials"] is False
@@ -182,7 +184,7 @@ def test_workflows_inject_database_only_into_trusted_jobs():
 
 
 def test_recovery_watchdog_uses_trusted_bounded_neon_runtime_view() -> None:
-    workflow = (Path(__file__).resolve().parents[1] / ".github/workflows/fixed-model-factory-dispatch-recovery.yml").read_text()
+    workflow = adopter_view("fixed-model-factory-dispatch-recovery.yml")
     assert "from factory_runtime_view import export_view" in workflow
     assert "--view /tmp/factory-runtime-view.json" in workflow
     assert "uses: ./.github/actions/factory-state-cache" in workflow
@@ -359,19 +361,18 @@ def test_prune_cli_cleans_in_batches_with_upper_limit(monkeypatch, tmp_path):
 
 def test_regular_status_job_prunes_only_in_trusted_controller():
     root = Path(__file__).resolve().parents[1]
-    workflow = (root / ".github/workflows/factory-status-pages.yml").read_text()
+    workflow = adopter_view("factory-status-pages.yml")
     assert "cron: '*/15 * * * *'" in workflow
     # A cleanup implementation merge must kick off the trusted status job.
     # Scheduled Actions can be delayed under heavy repository load.
     push_paths = workflow.split("  push:", 1)[1].split("permissions:", 1)[0]
-    assert "'.github/scripts/factory_state_cache.py'" in push_paths
     assert "'.github/workflows/factory-status-pages.yml'" in push_paths
     assert "Prune retired discovery and audit events" in workflow
     assert "factory_state_cache.py prune-obsolete" in workflow
     assert workflow.index("uses: ./.github/actions/factory-state-cache") < workflow.index("factory_state_cache.py prune-obsolete")
     assert workflow.index("factory_state_cache.py prune-obsolete") < workflow.index("Generate factory dashboard")
     # Cleanup no longer depends on a large scheduled PR-history recovery sweep.
-    reconciliation = (root / ".github/workflows/factory-issue-pr-state-reconciler.yml").read_text()
+    reconciliation = adopter_view("factory-issue-pr-state-reconciler.yml")
     assert "factory_state_cache.py prune-obsolete" not in reconciliation
 
 
@@ -379,7 +380,7 @@ def test_regular_status_job_prunes_only_in_trusted_controller():
 
 def test_factory_dashboard_reuses_one_run_local_inventory():
     root = Path(__file__).resolve().parents[1]
-    workflow = (root / ".github/workflows/factory-status-pages.yml").read_text()
+    workflow = adopter_view("factory-status-pages.yml")
     dashboard = workflow.split("      - name: Generate factory dashboard", 1)[1].split("      - name: Publish live dashboard snapshot", 1)[0]
     assert "FACTORY_DISCOVERY_DIR: ${{ runner.temp }}/factory-discovery" in dashboard
     assert "python3 .github/scripts/generate_factory_status_dashboard.py" in dashboard
@@ -390,7 +391,7 @@ def test_factory_dashboard_reuses_one_run_local_inventory():
 
 def test_runtime_worker_never_reads_or_writes_registry_comments() -> None:
     root = Path(__file__).resolve().parents[1]
-    workflow = (root / ".github/workflows/free-model-factory-run.yml").read_text()
+    workflow = adopter_view("free-model-factory-run.yml")
     # Issue #1093 is retired as a registry: no locator, lookup or write remains.
     assert "issues/1093" not in workflow
     assert "issues/comments" not in workflow

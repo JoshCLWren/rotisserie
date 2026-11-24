@@ -151,14 +151,14 @@ def test_classifier_labels_quota_exhaustion() -> None:
 
 def test_dispatch_workflows_filter_paused_workers() -> None:
     """Paused workers are excluded before entry capacity/dispatch cap is applied."""
-    text = (ROOT / ".github" / "workflows" / "fixed-model-factory-dispatch.yml").read_text(encoding="utf-8")
+    text = (ROOT.parent / ".github" / "workflows" / "fixed-model-factory-dispatch.yml").read_text(encoding="utf-8")
     assert "factory_quota_pause.py filter" in text
     assert text.index("factory_quota_pause.py filter") < text.index('controller" capacity')
 
 
 def test_scheduled_batch_filters_pauses_before_offer_cap() -> None:
     """Scheduled batch must not let paused lanes displace eligible workers inside the cap."""
-    text = (ROOT / ".github" / "workflows" / "fixed-model-factory-dispatch.yml").read_text(encoding="utf-8")
+    text = (ROOT.parent / ".github" / "workflows" / "fixed-model-factory-dispatch.yml").read_text(encoding="utf-8")
     assert "factory_quota_pause.py filter" in text
     # Eligibility filtering (including pauses) happens before the dispatch batch cap.
     assert ".[:$cap]" in text or ".[:$max_per_tick]" in text

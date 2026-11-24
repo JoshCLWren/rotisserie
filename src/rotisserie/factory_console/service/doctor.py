@@ -31,6 +31,7 @@ from rotisserie.factory_console.github import (
     Obj,
     integer,
     items,
+    job_name,
     obj,
     string,
     timestamp,
@@ -173,7 +174,7 @@ MODEL_PICK_SAMPLE = 15
 
 def _first_failed_step(jobs: list[Obj]) -> str:
     """The first failing step of the worker job (else of any job), or ""."""
-    ordered = sorted(jobs, key=lambda job: string(job, "name") != WORKER_JOB)
+    ordered = sorted(jobs, key=lambda job: job_name(job) != WORKER_JOB)
     for job in ordered:
         for step in items(job, "steps"):
             if string(step, "conclusion") == "failure":
@@ -221,7 +222,7 @@ def model_availability(github: GitHub, now: datetime, tracker: Tracker) -> Findi
             other += 1
             continue
         jobs = tracker.jobs(run_id)
-        worker = next((job for job in jobs if string(job, "name") == WORKER_JOB), None)
+        worker = next((job for job in jobs if job_name(job) == WORKER_JOB), None)
         if worker is not None and string(worker, "conclusion") == "success":
             # The worker had a model and ran; the run failed afterwards (its
             # recorded outcome, e.g. no change delivered).

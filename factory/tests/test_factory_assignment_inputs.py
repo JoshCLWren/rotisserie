@@ -82,7 +82,7 @@ def test_unfenced_completion_cannot_release_a_claim(controller, monkeypatch):
 
 def test_dispatcher_deploy_does_not_cancel_work_in_progress():
     """A control-plane deployment must preserve useful active worker sessions."""
-    workflow = (ROOT / '.github/workflows/fixed-model-factory-dispatch.yml').read_text()
+    workflow = (ROOT.parent / '.github/workflows/fixed-model-factory-dispatch.yml').read_text()
     assert 'gh run cancel' not in workflow
     assert 'release_cancelled_worker_leases' not in workflow
 
@@ -91,7 +91,7 @@ def test_trusted_validation_and_health_outputs_are_under_worker_lock():
     """A queued duplicate validates after acquiring its reusable worker lock."""
     import yaml
 
-    workflow = yaml.safe_load((ROOT / '.github/workflows/free-model-factory-run.yml').read_text())
+    workflow = yaml.safe_load((ROOT.parent / '.github/workflows/free-model-factory-run.yml').read_text())
     assert workflow['concurrency']['group'] == 'fixed-model-factory-${{ inputs.worker }}'
     preparation = workflow['jobs']['validate_assignment']
     factory = workflow['jobs']['factory']

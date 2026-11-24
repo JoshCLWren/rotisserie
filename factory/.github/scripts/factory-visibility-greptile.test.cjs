@@ -541,10 +541,9 @@ test('a thread reply (pull_request_review_comment) recomputes routing', async ()
 });
 
 test('reconciler workflow routes review and PR-body edit events in a per-PR group', () => {
-  const workflow = fs.readFileSync(
-    path.join(__dirname, '..', 'workflows', 'factory-issue-pr-state-reconciler.yml'),
-    'utf8',
-  );
+  const name = 'factory-issue-pr-state-reconciler.yml';
+  const workflow = fs.readFileSync(path.join(__dirname, '..', '..', 'install', 'callers', name), 'utf8')
+    + fs.readFileSync(path.join(__dirname, '..', '..', '..', '.github', 'workflows', name), 'utf8');
   assert.match(workflow, /pull_request_review:\s*\n\s*types:\s*\[submitted, dismissed\]/);
   assert.match(workflow, /types:\s*\[opened, reopened, ready_for_review, synchronize, closed, unlabeled, edited\]/);
   assert.match(workflow, /format\('factory-greptile-routing-pr-\{0\}', github\.event\.pull_request\.number\)/);

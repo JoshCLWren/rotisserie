@@ -28,8 +28,8 @@ def test_provider_workers_have_stable_id_and_no_model_field() -> None:
 
 def test_dispatch_and_execution_share_dynamic_slot_registry() -> None:
     """Dispatch and execution both derive workers from the dynamic slot registry."""
-    dispatcher = (ROOT / ".github/workflows/fixed-model-factory-dispatch.yml").read_text()
-    runner = (ROOT / ".github/workflows/free-model-factory-run.yml").read_text()
+    dispatcher = (ROOT.parent / ".github/workflows/fixed-model-factory-dispatch.yml").read_text()
+    runner = (ROOT.parent / ".github/workflows/free-model-factory-run.yml").read_text()
     assert 'python3 "$slots" offer' in dispatcher
     assert "factory_worker_slots.py resolve" in runner
     assert "factory_runtime_model_select.py" in runner
@@ -40,6 +40,6 @@ def test_dispatch_and_execution_share_dynamic_slot_registry() -> None:
 
 def test_free_price_policy_is_not_a_model_selection_gate() -> None:
     """Model selection must not hard-gate on committed free-price policy text."""
-    runner = (ROOT / ".github/workflows/free-model-factory-run.yml").read_text()
+    runner = (ROOT.parent / ".github/workflows/free-model-factory-run.yml").read_text()
     assert "Require Vercel model to remain zero-price" not in runner
     assert "selected-from-live-runtime-catalog" in runner

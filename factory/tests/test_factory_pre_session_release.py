@@ -9,10 +9,10 @@ from typing import cast
 
 import pytest
 import yaml
-
+from tests.workflow_files import own_steps
 
 ROOT = Path(__file__).resolve().parents[1]
-WORKFLOW = ROOT / ".github/workflows/free-model-factory-run.yml"
+WORKFLOW = ROOT.parent / ".github/workflows/free-model-factory-run.yml"
 SCRIPTS = ROOT / ".github/scripts"
 
 
@@ -49,7 +49,7 @@ def test_cleanup_waits_for_factory_and_excludes_started_sessions() -> None:
     assert factory["outputs"]["worker_session_started"] == (
         "${{ steps.worker_session.outputs.started }}"
     )
-    session = next(step for step in factory["steps"] if step.get("id") == "worker_session")
+    session = next(step for step in own_steps(factory) if step.get("id") == "worker_session")
     assert session["run"].index("started=true") < session["run"].index(
         "bash .github/scripts/free-model-factory-worker.sh"
     )
@@ -70,13 +70,13 @@ def test_post_session_cleanup_runs_under_worker_lock() -> None:
     assert workflow["concurrency"]["group"] == "fixed-model-factory-${{ inputs.worker }}"
     assert workflow["concurrency"]["cancel-in-progress"] is False
     assert cleanup["runs-on"] == "ubuntu-latest"
-    assert cleanup["steps"][0]["with"] == {"ref": "main", "persist-credentials": False}
-    assert cleanup["steps"][2]["uses"] == "./.github/actions/factory-state-cache"
-    assert cleanup["steps"][2]["with"] == {
+    assert own_steps(cleanup)[0]["with"] == {"ref": "main", "persist-credentials": False}
+    assert own_steps(cleanup)[2]["uses"] == "./.github/actions/factory-state-cache"
+    assert own_steps(cleanup)[2]["with"] == {
         "neon-api-key": "${{ secrets.NEON_API_KEY }}",
         "neon-project-id": "${{ vars.NEON_PROJECT_ID }}",
     }
-    release = cleanup["steps"][3]
+    release = own_steps(cleanup)[3]
     assert "post-session-exit-run-${GITHUB_RUN_ID}" in release["run"]
     assert "refusing split release" in release["run"]
     assert cleanup["permissions"] == {
@@ -88,7 +88,7 @@ def test_post_session_cleanup_runs_under_worker_lock() -> None:
 def test_post_session_cleanup_executes_token_bound_release(tmp_path: Path) -> None:
     """Run the real job command with a stand-in controller and restricted DSN."""
     workflow = yaml.safe_load(WORKFLOW.read_text(encoding="utf-8"))
-    release = workflow["jobs"]["release_post_session_lease"]["steps"][3]
+    release = own_steps(workflow["jobs"]["release_post_session_lease"])[3]
     _stage_release_scripts(tmp_path)
     worker = _generated_slot_ids(1)[0]
     dsn = tmp_path / "restricted-dsn"
@@ -111,11 +111,11 @@ def test_cleanup_uses_a_fresh_trusted_runner_and_workflow_token() -> None:
     cleanup = workflow["jobs"]["release_pre_session_lease"]
     assert cleanup["runs-on"] == "ubuntu-latest"
     assert "env" not in cleanup
-    checkout = cleanup["steps"][0]
+    checkout = own_steps(cleanup)[0]
     assert checkout["uses"] == "actions/checkout@v7"
     assert checkout["with"] == {"ref": "main", "persist-credentials": False}
-    assert cleanup["steps"][1]["uses"] == "./.github/actions/factory-syntax"
-    neon = cleanup["steps"][2]
+    assert own_steps(cleanup)[1]["uses"] == "./.github/actions/factory-syntax"
+    neon = own_steps(cleanup)[2]
     assert neon["uses"] == "./.github/actions/factory-state-cache"
     assert neon["with"] == {
         "neon-api-key": "${{ secrets.NEON_API_KEY }}",
@@ -124,7 +124,7 @@ def test_cleanup_uses_a_fresh_trusted_runner_and_workflow_token() -> None:
     # The privileged DB action belongs to cleanup, never the model job.
     assert "factory-state-cache" not in json.dumps(workflow["jobs"]["factory"])
     assert "NEON_API_KEY" not in json.dumps(workflow["jobs"]["factory"])
-    release = cleanup["steps"][3]
+    release = own_steps(cleanup)[3]
     assert "FACTORY_STATE_DSN_FILE" in release["run"]
     assert "refusing split release" in release["run"]
     assert release["env"] == {
@@ -137,7 +137,7 @@ def test_cleanup_uses_a_fresh_trusted_runner_and_workflow_token() -> None:
         # even though the same job can release an ordinary issue lease.
         "contents": "read", "issues": "write", "pull-requests": "write",
     }
-    entry = yaml.safe_load((ROOT / ".github/workflows/free-model-factory-entry.yml").read_text())
+    entry = yaml.safe_load((ROOT.parent / ".github/workflows/free-model-factory-entry.yml").read_text())
     assert entry["permissions"]["pull-requests"] == "write"
     assert workflow["permissions"]["pull-requests"] == "write"
 
@@ -148,7 +148,7 @@ def test_cleanup_calls_existing_controller_with_run_provenance(
 ) -> None:
     """Execute the workflow shell against a controller stand-in, without GitHub writes."""
     workflow = yaml.safe_load(WORKFLOW.read_text(encoding="utf-8"))
-    release = workflow["jobs"]["release_pre_session_lease"]["steps"][3]
+    release = own_steps(workflow["jobs"]["release_pre_session_lease"])[3]
     _stage_release_scripts(tmp_path)
     dsn = tmp_path / "restricted-dsn"
     dsn.write_text("not-a-real-connection")
@@ -169,7 +169,7 @@ def test_cleanup_rejects_invalid_worker_before_invoking_controller(
 ) -> None:
     """Malformed dispatch input cannot broaden recovery or execute shell fragments."""
     workflow = yaml.safe_load(WORKFLOW.read_text(encoding="utf-8"))
-    release = workflow["jobs"]["release_pre_session_lease"]["steps"][3]
+    release = own_steps(workflow["jobs"]["release_pre_session_lease"])[3]
     result = subprocess.run(
         ["bash", "-c", release["run"]], cwd=tmp_path,
         env={**os.environ, "FACTORY_WORKER": worker, "GITHUB_RUN_ID": "41323597249"},
@@ -184,7 +184,7 @@ def test_cleanup_rejects_unknown_decimal_worker_before_invoking_controller(
 ) -> None:
     """A well-formed but unprovisioned ID is refused by the real slot resolver."""
     workflow = yaml.safe_load(WORKFLOW.read_text(encoding="utf-8"))
-    release = workflow["jobs"]["release_pre_session_lease"]["steps"][3]
+    release = own_steps(workflow["jobs"]["release_pre_session_lease"])[3]
     controller = _stage_release_scripts(tmp_path)
     controller.write_text("raise AssertionError('controller must not run')\n")
     dsn = tmp_path / "restricted-dsn"
@@ -203,7 +203,7 @@ def test_cleanup_rejects_unknown_decimal_worker_before_invoking_controller(
 def test_cleanup_refuses_label_release_without_neon_connection(tmp_path: Path) -> None:
     """Neon outage must not release GitHub labels while retaining the DB claim."""
     workflow = yaml.safe_load(WORKFLOW.read_text(encoding="utf-8"))
-    release = workflow["jobs"]["release_pre_session_lease"]["steps"][3]
+    release = own_steps(workflow["jobs"]["release_pre_session_lease"])[3]
     controller = tmp_path / ".github/scripts/factory-work-controller.py"
     controller.parent.mkdir(parents=True)
     controller.write_text("raise AssertionError('controller must not run')\n")

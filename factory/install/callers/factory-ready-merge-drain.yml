@@ -1,0 +1,25 @@
+name: Factory Ready Merge Drain
+on:
+  schedule:
+    - cron: '2-57/15 * * * *'
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/factory-ready-merge-drain.yml'
+permissions:
+  actions: write
+  contents: write
+  issues: write
+  pull-requests: write
+  checks: read
+concurrency:
+  group: factory-ready-merge-drain
+  cancel-in-progress: false
+jobs:
+  rotisserie:
+    uses: JoshCLWren/rotisserie/.github/workflows/factory-ready-merge-drain.yml@main
+    secrets:
+      NEON_API_KEY: ${{ secrets.NEON_API_KEY }}
+      OPENROUTER_JEV_API_KEY: ${{ secrets.OPENROUTER_JEV_API_KEY }}
+      PR_REBASE_TOKEN: ${{ secrets.PR_REBASE_TOKEN }}

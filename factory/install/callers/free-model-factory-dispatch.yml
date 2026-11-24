@@ -1,0 +1,16 @@
+name: Fixed Model Factory Dispatcher (compatibility entrypoint)
+on:
+  workflow_dispatch:
+permissions:
+  actions: write
+  checks: read
+  contents: write
+  issues: write
+  pull-requests: write
+concurrency:
+  group: factory-dispatch-compat-ingress
+  queue: single
+  cancel-in-progress: false
+jobs:
+  rotisserie:
+    uses: JoshCLWren/rotisserie/.github/workflows/free-model-factory-dispatch.yml@main

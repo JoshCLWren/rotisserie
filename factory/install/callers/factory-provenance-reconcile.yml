@@ -1,0 +1,25 @@
+name: Factory Provenance Reconcile
+on:
+  workflow_dispatch:
+    inputs:
+      pr:
+        description: Open factory PR whose wrapper-less head needs reconciliation
+        required: true
+        type: string
+      head:
+        description: Exact head SHA you believe is current (optional guard)
+        required: false
+        type: string
+permissions:
+  contents: read
+  issues: write
+  pull-requests: write
+concurrency:
+  group: factory-provenance-reconcile-${{ inputs.pr }}
+  cancel-in-progress: false
+jobs:
+  rotisserie:
+    uses: JoshCLWren/rotisserie/.github/workflows/factory-provenance-reconcile.yml@main
+    with:
+      pr: ${{ inputs.pr }}
+      head: ${{ inputs.head }}

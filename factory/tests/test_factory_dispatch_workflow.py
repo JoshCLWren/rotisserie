@@ -2,9 +2,11 @@
 import re
 from pathlib import Path
 
+from tests.workflow_files import adopter_view, own_steps
+
 
 WORKFLOW = (
-    Path(__file__).resolve().parents[1]
+    Path(__file__).resolve().parents[2]
     / ".github"
     / "workflows"
     / "fixed-model-factory-dispatch.yml"
@@ -15,7 +17,7 @@ SUCCESSOR = WORKFLOW.with_name("fixed-model-factory-roster-successor.yml")
 # Keep dispatcher assertions tied to the checked-in workflow contract.
 # These assertions protect the control-plane race handling, not provider policy.
 def test_push_smoke_workers_are_derived_from_current_provider_rows() -> None:
-    workflow = WORKFLOW.read_text(encoding="utf-8")
+    workflow = adopter_view(WORKFLOW.name)
 
     assert "workers='[\"6\",\"39\",\"46\"]'" not in workflow
     # Smoke batches come from generated provider slots (one offer per
@@ -31,7 +33,7 @@ def test_push_smoke_workers_are_derived_from_current_provider_rows() -> None:
 
 def test_controller_deployment_preserves_active_sessions_and_recovers_leases() -> None:
     """A new controller revision must not cancel useful in-flight work."""
-    workflow = WORKFLOW.read_text(encoding="utf-8")
+    workflow = adopter_view(WORKFLOW.name)
     assert 'gh run cancel' not in workflow
     assert 'release_cancelled_worker_leases' not in workflow
     assert 'python3 "$controller" reconcile' in workflow
@@ -39,28 +41,23 @@ def test_controller_deployment_preserves_active_sessions_and_recovers_leases() -
 
 
 def test_roster_dispatch_mode_cannot_fall_through_to_smoke_selection() -> None:
-    workflow = WORKFLOW.read_text(encoding="utf-8")
+    workflow = adopter_view(WORKFLOW.name)
 
     assert "mode:" in workflow
     assert "default: smoke" in workflow
     assert '"$EVENT_NAME" == workflow_dispatch && "$DISPATCH_MODE" == roster' in workflow
     assert "fixed-model-factory-roster-successor.yml" in workflow
-    assert "-f mode=roster" in SUCCESSOR.read_text(encoding="utf-8")
+    assert "-f mode=roster" in adopter_view(SUCCESSOR.name)
 
 
 def test_recovery_watchdog_dispatches_explicit_roster_mode() -> None:
-    recovery = (
-        Path(__file__).resolve().parents[1]
-        / ".github"
-        / "workflows"
-        / "fixed-model-factory-dispatch-recovery.yml"
-    ).read_text(encoding="utf-8")
+    recovery = adopter_view("fixed-model-factory-dispatch-recovery.yml")
 
     assert "-f mode=roster" in recovery
 
 
 def test_dispatcher_installs_exact_rotisserie_revision_before_assignment() -> None:
-    workflow = WORKFLOW.read_text(encoding="utf-8")
+    workflow = adopter_view(WORKFLOW.name)
 
     pin = "0067e8c49cb3a3142a04f6c56f19795a1e81ad3c"
     assert 'git -C "$checkout" checkout --quiet --detach' in workflow
@@ -73,7 +70,7 @@ def test_dispatcher_installs_exact_rotisserie_revision_before_assignment() -> No
 
 
 def test_roster_chain_is_serialized_and_keeps_hourly_watchdog() -> None:
-    workflow = WORKFLOW.read_text(encoding="utf-8")
+    workflow = adopter_view(WORKFLOW.name)
 
     assert "queue: max" in workflow
     assert "cancel-in-progress: false" in workflow
@@ -85,11 +82,11 @@ def test_roster_chain_is_serialized_and_keeps_hourly_watchdog() -> None:
     assert "sleep 240" not in workflow.split(
         "Queue roster successor outside assignment lease lock", 1
     )[1]
-    assert 'sleep "$DELAY_SECONDS"' in SUCCESSOR.read_text(encoding="utf-8")
+    assert 'sleep "$DELAY_SECONDS"' in adopter_view(SUCCESSOR.name)
 
 
 def test_roster_tick_defaults_to_twelve_workers_with_source_diverse_seed() -> None:
-    workflow = WORKFLOW.read_text(encoding="utf-8")
+    workflow = adopter_view(WORKFLOW.name)
 
     assert 'max_per_tick="${MAX_WORKERS_PER_TICK:-12}"' in workflow
     assert 'max_per_tick="${MAX_WORKERS_PER_TICK:-3}"' not in workflow
@@ -98,7 +95,6 @@ def test_roster_tick_defaults_to_twelve_workers_with_source_diverse_seed() -> No
     assert "The source-diverse offer is generated, not frozen in a TSV." in workflow
     assert 'python3 "$controller" capacity' in workflow
     assert "python3 .github/scripts/factory-work-controller.py stale" in workflow
-    assert ".github/scripts/stale_pr_decay.py" in workflow
     assert 'jq -c --argjson n "$remaining" \'.[0:$n]\'' in workflow
     assert "OmniRoute free-entry cap is exhausted" in workflow
     assert workflow.index("Review aged PRs with Jev without discarding code") < workflow.index(
@@ -113,7 +109,7 @@ def test_roster_tick_defaults_to_twelve_workers_with_source_diverse_seed() -> No
 
 
 def test_dispatch_assigned_worker_counts_successful_entry_dispatches_not_kind_none() -> None:
-    workflow = WORKFLOW.read_text(encoding="utf-8")
+    workflow = adopter_view(WORKFLOW.name)
 
     assert "dispatched_count=0" in workflow
     assert "dispatched_count=$((dispatched_count + 1))" in workflow
@@ -127,7 +123,7 @@ def test_dispatch_assigned_worker_counts_successful_entry_dispatches_not_kind_no
 
 
 def test_dispatch_step_emits_dispatched_count_and_dispatch_failed_outputs() -> None:
-    workflow = WORKFLOW.read_text(encoding="utf-8")
+    workflow = adopter_view(WORKFLOW.name)
 
     dispatch_step = workflow.split("Resolve and dispatch fixed workers", 1)[1].split(
         "Queue roster successor outside assignment lease lock", 1
@@ -140,7 +136,7 @@ def test_dispatch_step_emits_dispatched_count_and_dispatch_failed_outputs() -> N
 
 
 def test_capacity_exhausted_early_exit_is_trustworthy_zero() -> None:
-    workflow = WORKFLOW.read_text(encoding="utf-8")
+    workflow = adopter_view(WORKFLOW.name)
 
     assert "OmniRoute free-entry cap is exhausted" in workflow
     cap_branch = workflow.split("OmniRoute free-entry cap is exhausted", 1)[1][:400]
@@ -149,7 +145,7 @@ def test_capacity_exhausted_early_exit_is_trustworthy_zero() -> None:
 
 
 def test_roster_chain_gates_on_dispatched_count_and_dispatch_failed() -> None:
-    workflow = WORKFLOW.read_text(encoding="utf-8")
+    workflow = adopter_view(WORKFLOW.name)
 
     chain_step = workflow.split("Queue roster successor outside assignment lease lock", 1)[1]
     assert "steps.dispatch_workers.outputs.dispatched_count" in chain_step
@@ -162,11 +158,11 @@ def test_roster_chain_gates_on_dispatched_count_and_dispatch_failed() -> None:
     assert "delay_seconds=240" in chain_step
     assert "sleep 240" not in chain_step
     assert "gh workflow run fixed-model-factory-roster-successor.yml" in chain_step
-    assert "-f mode=roster" in SUCCESSOR.read_text(encoding="utf-8")
+    assert "-f mode=roster" in adopter_view(SUCCESSOR.name)
 
 
 def test_roster_chain_step_still_fires_on_always_for_schedule_or_roster() -> None:
-    workflow = WORKFLOW.read_text(encoding="utf-8")
+    workflow = adopter_view(WORKFLOW.name)
 
     assert (
         "if: always() && (github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && inputs.mode == 'roster'))"
@@ -178,7 +174,7 @@ def test_roster_chain_step_still_fires_on_always_for_schedule_or_roster() -> Non
 
 def test_private_rotisserie_secret_has_safe_ssh_preflight() -> None:
     """Secret parsing and actual repo authorization must precede the pipx install."""
-    workflow = WORKFLOW.read_text(encoding="utf-8")
+    workflow = adopter_view(WORKFLOW.name)
     install = workflow.split("Install pinned Rotisserie decision CLI", 1)[1].split(
         "Ensure GitHub CLI supports JSON PR checks", 1
     )[0]
@@ -197,7 +193,7 @@ def test_private_rotisserie_secret_has_safe_ssh_preflight() -> None:
 
 
 def test_dispatch_fails_closed_when_actions_installation_budget_is_low_or_unreadable() -> None:
-    workflow = WORKFLOW.read_text(encoding="utf-8")
+    workflow = adopter_view(WORKFLOW.name)
     gate = workflow.split("Gate factory dispatch on Actions REST quota", 1)[1].split(
         "Reconcile serialized migration finalization lane", 1
     )[0]
@@ -220,7 +216,7 @@ def test_dispatch_fails_closed_when_actions_installation_budget_is_low_or_unread
 
 
 def test_targeted_dispatch_defers_without_fake_worker_failure_when_rest_quota_is_low() -> None:
-    workflow = WORKFLOW.read_text(encoding="utf-8")
+    workflow = adopter_view(WORKFLOW.name)
     target = workflow.split("- name: Advance selected issue or pull request", 1)[1].split(
         "- name: Report quota-deferred targeted dispatch", 1
     )[0]
@@ -241,7 +237,7 @@ def test_targeted_dispatch_defers_without_fake_worker_failure_when_rest_quota_is
 
 
 def test_dispatch_batch_checks_live_quota_and_defers_roster_until_reset() -> None:
-    workflow = WORKFLOW.read_text(encoding="utf-8")
+    workflow = adopter_view(WORKFLOW.name)
     batch = workflow.split("Dispatching workers through centralized assignment:", 1)[1].split(
         "Queue roster successor outside assignment lease lock", 1
     )[0]
@@ -263,12 +259,7 @@ def test_dispatch_batch_checks_live_quota_and_defers_roster_until_reset() -> Non
 
 def test_trusted_pr_review_events_wake_canonical_roster_after_idle_tick() -> None:
     """New manually authored PRs must not wait for hourly dispatcher recovery."""
-    wake = (
-        Path(__file__).resolve().parents[1]
-        / ".github"
-        / "workflows"
-        / "factory-pr-review-wakeup.yml"
-    ).read_text(encoding="utf-8")
+    wake = adopter_view("factory-pr-review-wakeup.yml")
 
     assert "pull_request_target:" in wake
     for action in ("opened", "reopened", "ready_for_review", "labeled", "synchronize"):
@@ -289,12 +280,7 @@ def test_trusted_pr_review_events_wake_canonical_roster_after_idle_tick() -> Non
 
 def test_event_wakeup_never_checks_out_untrusted_pr_code_or_assigns_workers() -> None:
     """Privileged pull_request_target may only wake the trusted dispatcher."""
-    wake = (
-        Path(__file__).resolve().parents[1]
-        / ".github"
-        / "workflows"
-        / "factory-pr-review-wakeup.yml"
-    ).read_text(encoding="utf-8")
+    wake = adopter_view("factory-pr-review-wakeup.yml")
 
     assert "actions: write" in wake
     assert "pull-requests: read" in wake
@@ -317,7 +303,7 @@ def test_quota_deferred_roster_chains_once_after_verified_reset_without_polling(
     import textwrap
     import time
 
-    workflow = WORKFLOW.read_text(encoding="utf-8")
+    workflow = adopter_view(WORKFLOW.name)
     gate = workflow.split("Gate factory dispatch on Actions REST quota", 1)[1].split(
         "Reconcile serialized migration finalization lane", 1
     )[0]
@@ -405,7 +391,7 @@ def test_non_quota_roster_keeps_normal_cadence_and_stops_on_no_work() -> None:
 
     import yaml
 
-    steps = yaml.safe_load(WORKFLOW.read_text(encoding="utf-8"))["jobs"]["dispatch"]["steps"]
+    steps = yaml.safe_load(adopter_view(WORKFLOW.name))["jobs"]["dispatch"]["steps"]
     script = next(
         step["run"] for step in steps
         if step.get("name") == "Queue roster successor outside assignment lease lock"
@@ -447,7 +433,7 @@ gh() { printf 'gh:%s\\n' "$*"; }
 
 def test_dispatch_batch_reconciles_once_before_per_worker_claims() -> None:
     """Repeated global sweeps must not burn REST calls on each empty worker."""
-    workflow = WORKFLOW.read_text(encoding="utf-8")
+    workflow = adopter_view(WORKFLOW.name)
     prepass = workflow.index('python3 "$controller" reconcile')
     batch = workflow.index('dispatch_assigned_worker "$worker" || dispatch_failures=$((dispatch_failures + 1))')
     assert prepass < batch
@@ -458,7 +444,7 @@ def test_dispatch_batch_reconciles_once_before_per_worker_claims() -> None:
 
 def test_all_cooling_or_quota_exhausted_roster_is_idle_not_failed() -> None:
     """Valid zero-capacity roster preserves model health and ends the chain."""
-    workflow = WORKFLOW.read_text(encoding="utf-8")
+    workflow = adopter_view(WORKFLOW.name)
     resolve_step = workflow.split("      - name: Resolve and dispatch fixed workers", 1)[1].split(
         "      - name: Offer one unclaimed PR to local Ollama reviewer", 1
     )[0]
@@ -472,7 +458,7 @@ def test_all_cooling_or_quota_exhausted_roster_is_idle_not_failed() -> None:
 
 def test_targeted_dispatch_uses_roster_credential_availability() -> None:
     """Targeted issue/PR wakeups must not reject configured providers as missing."""
-    workflow = WORKFLOW.read_text(encoding="utf-8")
+    workflow = adopter_view(WORKFLOW.name)
 
     def provider_flags(step_name: str) -> dict[str, str]:
         step = workflow.split(f"      - name: {step_name}", 1)[1]
@@ -494,7 +480,7 @@ def _run_dispatch_batch(responses: dict[str, str], workers: list[str]) -> list[s
     import os
     import subprocess
 
-    workflow = WORKFLOW.read_text(encoding="utf-8")
+    workflow = adopter_view(WORKFLOW.name)
     step = workflow.split("- name: Resolve and dispatch fixed workers", 1)[1]
     body = step.split("run: |", 1)[1].split("\n      - name:", 1)[0]
     # Indentation is irrelevant to bash here (no heredocs in this region).
@@ -571,10 +557,10 @@ def _run_chain_step(
 
     import yaml
 
-    workflow = yaml.safe_load(WORKFLOW.read_text(encoding="utf-8"))
+    workflow = yaml.safe_load(adopter_view(WORKFLOW.name))
     step = next(
         step
-        for step in workflow["jobs"]["dispatch"]["steps"]
+        for step in own_steps(workflow["jobs"]["dispatch"])
         if step.get("name") == "Queue roster successor outside assignment lease lock"
     )
     log = tmp_path / "gh.log"
@@ -602,7 +588,7 @@ def test_a_tick_with_no_unavailable_worker_and_no_work_ends_the_chain(tmp_path: 
 
 
 def test_dispatch_loop_counts_unavailable_workers() -> None:
-    workflow = WORKFLOW.read_text(encoding="utf-8")
+    workflow = adopter_view(WORKFLOW.name)
     assert "unavailable_count=$(( ${unavailable_count:-0} + 1 ))" in workflow
     assert 'echo "unavailable_count=${unavailable_count}" >> "$GITHUB_OUTPUT"' in workflow
 
@@ -613,8 +599,8 @@ def _run_successor_step(tmp_path: Path, failures: int) -> tuple[int, str, str]:
 
     import yaml
 
-    workflow = yaml.safe_load(SUCCESSOR.read_text(encoding="utf-8"))
-    script = workflow["jobs"]["wait_and_wake"]["steps"][0]["run"]
+    workflow = yaml.safe_load(adopter_view(SUCCESSOR.name))
+    script = own_steps(workflow["jobs"]["wait_and_wake"])[0]["run"]
     log, count = tmp_path / "gh.log", tmp_path / "count"
     gh = tmp_path / "gh"
     gh.write_text(
@@ -660,7 +646,7 @@ def test_roster_successor_gives_up_after_sixty_five_minutes(tmp_path: Path) -> N
 def test_successor_timeout_covers_the_longest_delay_and_retry_window() -> None:
     import yaml
 
-    job = yaml.safe_load(SUCCESSOR.read_text(encoding="utf-8"))["jobs"]["wait_and_wake"]
+    job = yaml.safe_load(adopter_view(SUCCESSOR.name))["jobs"]["wait_and_wake"]
     assert job["timeout-minutes"] * 60 > 3700 + 3900
 
 
@@ -678,7 +664,7 @@ def test_merge_drain_meters_its_github_calls() -> None:
 
 
 def test_chain_and_review_wakeup_dispatches_retry() -> None:
-    dispatch = WORKFLOW.read_text(encoding="utf-8")
+    dispatch = adopter_view(WORKFLOW.name)
     wakeup = WORKFLOW.with_name("factory-pr-review-wakeup.yml").read_text(encoding="utf-8")
     assert dispatch.count("dispatch_with_retry gh workflow run fixed-model-factory-roster-successor.yml") == 2
     assert "dispatch_with_retry gh workflow run fixed-model-factory-dispatch.yml" in wakeup
@@ -708,11 +694,11 @@ def _run_rescue_job(tmp_path: Path, failures: int, delay: str = "240") -> tuple[
 
     import yaml
 
-    workflow = yaml.safe_load(WORKFLOW.read_text(encoding="utf-8"))
+    workflow = yaml.safe_load(adopter_view(WORKFLOW.name))
     job = workflow["jobs"]["chain_rescue"]
     assert job["needs"] == "dispatch"
     assert "concurrency" not in job
-    script = job["steps"][0]["run"]
+    script = own_steps(job)[0]["run"]
     count, log = tmp_path / "count", tmp_path / "gh.log"
     gh, sleep = tmp_path / "gh", tmp_path / "sleep"
     gh.write_text(
@@ -753,9 +739,9 @@ def test_rescue_job_rejects_an_out_of_range_delay(tmp_path: Path) -> None:
 def test_adopters_without_neon_or_push_token_can_run() -> None:
     import yaml
 
-    dispatch = yaml.safe_load(WORKFLOW.read_text(encoding="utf-8"))["jobs"]["dispatch"]
+    dispatch = yaml.safe_load(adopter_view(WORKFLOW.name))["jobs"]["dispatch"]
     assert dispatch["env"]["FACTORY_NEON_LEASE_REQUIRED"] == "${{ secrets.NEON_API_KEY != '' }}"
-    init = next(s for s in dispatch["steps"] if s.get("name") == "Initialize Neon operational state")
+    init = next(s for s in own_steps(dispatch) if s.get("name") == "Initialize Neon operational state")
     assert init["run"].index("skipping operational state bootstrap") < init["run"].index("bootstrap --repo")
     run = WORKFLOW.with_name("free-model-factory-run.yml").read_text(encoding="utf-8")
     assert "PR_REBASE_TOKEN: ${{ secrets.PR_REBASE_TOKEN || github.token }}" in run

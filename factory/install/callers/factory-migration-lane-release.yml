@@ -1,0 +1,16 @@
+name: Factory Migration Lane Release
+on:
+  pull_request_target:
+    types: [closed, converted_to_draft, labeled, unlabeled]
+  workflow_dispatch:
+permissions:
+  contents: read
+  issues: write
+  pull-requests: read
+concurrency:
+  group: ${{ github.event_name == 'pull_request_target' && format('factory-migration-release-pr-{0}', github.event.pull_request.number) || 'factory-migration-release-manual' }}
+  queue: single
+  cancel-in-progress: false
+jobs:
+  rotisserie:
+    uses: JoshCLWren/rotisserie/.github/workflows/factory-migration-lane-release.yml@main

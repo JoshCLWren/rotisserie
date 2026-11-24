@@ -8,6 +8,8 @@ from pathlib import Path
 import pytest
 import yaml
 
+from tests.workflow_files import adopter_view, own_steps
+
 SCRIPTS = Path(__file__).resolve().parents[1] / ".github/scripts"
 sys.path.insert(0, str(SCRIPTS))
 SPEC = importlib.util.spec_from_file_location("factory_state_ledger_test", SCRIPTS / "factory_state_ledger.py")
@@ -129,7 +131,7 @@ def test_timed_out_agent_without_delivery_stays_failed(monkeypatch):
 
 def test_full_session_budget_without_agent_fifty_minute_cap():
     root = Path(__file__).resolve().parents[1]
-    workflow = yaml.safe_load((root / ".github/workflows/free-model-factory-run.yml").read_text())
+    workflow = yaml.safe_load(adopter_view("free-model-factory-run.yml"))
     assert int(workflow["env"]["FACTORY_BUDGET_SECONDS"]) == 6000
     assert workflow["jobs"]["factory"]["timeout-minutes"] == 120
     for name in (
@@ -145,7 +147,7 @@ def test_full_session_budget_without_agent_fifty_minute_cap():
 
 def test_trusted_collector_verifies_code_handoff_before_persistence():
     root = Path(__file__).resolve().parents[1]
-    entry = (root / ".github/workflows/free-model-factory-entry.yml").read_text()
+    entry = adopter_view("free-model-factory-entry.yml")
     assert 'delivery_pr="$(jq -r' in entry
     assert 'retry_gh_api "$RUNNER_TEMP/factory-delivery-pr.json"' in entry
     assert '"repos/$GITHUB_REPOSITORY/pulls/$delivery_pr"' in entry
@@ -156,7 +158,7 @@ def test_trusted_collector_verifies_code_handoff_before_persistence():
     assert "ATTEMPT_COMMENT_ID" not in entry
     assert "issues/comments" not in entry
     assert "Neon terminal classification" in entry
-    observer = (root / ".github/workflows/fixed-model-runtime-observer.yml").read_text()
+    observer = adopter_view("fixed-model-runtime-observer.yml")
     assert 'gh api "repos/$GITHUB_REPOSITORY/pulls/$delivery_pr"' in observer
     assert "pull-requests: read" in observer
     assert "Verified delivery:" in observer
@@ -167,9 +169,9 @@ def test_only_trusted_collectors_and_observer_use_ledger():
     root = Path(__file__).resolve().parents[1]
     controller = (root / ".github/scripts/factory-work-controller.py").read_text()
     collector = (root / ".github/scripts/factory_completion_controller.py").read_text()
-    observer = (root / ".github/workflows/fixed-model-runtime-observer.yml").read_text()
-    untrusted = (root / ".github/workflows/free-model-factory-run.yml").read_text()
-    entry = (root / ".github/workflows/free-model-factory-entry.yml").read_text()
+    observer = adopter_view("fixed-model-runtime-observer.yml")
+    untrusted = adopter_view("free-model-factory-run.yml")
+    entry = adopter_view("free-model-factory-entry.yml")
     assert "acquire_lease(REPO, worker, numbers, FIXED_LEASE_TTL_SECONDS)" in controller
     assert "release_lease(REPO, worker, claim_token, 'claim-rollback')" in controller
     # Registry heartbeat scraping was replaced by durable runtime projections
@@ -184,8 +186,8 @@ def test_only_trusted_collectors_and_observer_use_ledger():
     assert "factory-state-cache" not in str(model_job)
     assert "NEON_API_KEY" not in str(model_job)
     assert any(step.get("uses") == "./.github/actions/factory-state-cache"
-               for step in trusted_cleanup["steps"])
-    assert "validate_assignment:" in (root / ".github/workflows/free-model-factory-run.yml").read_text()
+               for step in own_steps(trusted_cleanup))
+    assert "validate_assignment:" in adopter_view("free-model-factory-run.yml")
     assert "factory-state-cache" in entry.split("  persist_outcome:", 1)[1]
 
 
@@ -202,8 +204,8 @@ def test_trusted_heartbeat_events_extend_current_nonexpired_lease() -> None:
 
 def test_completion_dispatch_persists_real_worker_outcomes() -> None:
     root = Path(__file__).resolve().parents[1]
-    entry = (root / ".github/workflows/free-model-factory-entry.yml").read_text()
-    drain = (root / ".github/workflows/factory-completion-drain.yml").read_text()
+    entry = adopter_view("free-model-factory-entry.yml")
+    drain = adopter_view("factory-completion-drain.yml")
     assert "persist_outcome:" in entry
     assert "needs: run" in entry
     assert "if: ${{ always() }}" in entry
@@ -215,8 +217,8 @@ def test_completion_dispatch_persists_real_worker_outcomes() -> None:
     assert "factory-state-cache" not in drain
     # Model execution is confined to the reusable runner, which has no Neon
     # secret. The separate post-run collector receives the restricted DSN.
-    assert "validate_assignment:" in (root / ".github/workflows/free-model-factory-run.yml").read_text()
-    reusable = yaml.safe_load((root / ".github/workflows/free-model-factory-run.yml").read_text())
+    assert "validate_assignment:" in adopter_view("free-model-factory-run.yml")
+    reusable = yaml.safe_load(adopter_view("free-model-factory-run.yml"))
     assert "factory-state-cache" not in str(reusable["jobs"]["factory"])
     assert "NEON_API_KEY" not in str(reusable["jobs"]["factory"])
 
@@ -248,7 +250,7 @@ def test_terminal_event_idempotency_spans_classification_outcomes() -> None:
 def test_terminal_identity_fallback_uses_attested_run_title() -> None:
     """Actions run GET omits workflow_dispatch inputs for older Entry runs."""
     root = Path(__file__).resolve().parents[1]
-    entry = (root / ".github/workflows/free-model-factory-entry.yml").read_text()
+    entry = adopter_view("free-model-factory-entry.yml")
     assert "INPUT_WORKER: ${{ inputs.worker }}" in entry
     assert 'jq --arg worker "$INPUT_WORKER" ' in entry
     assert "run / factory" in entry
@@ -258,22 +260,20 @@ def test_terminal_identity_fallback_uses_attested_run_title() -> None:
 def test_terminal_collector_can_download_ansi_colored_worker_logs() -> None:
     """The current gh CLI rejects raw job logs containing ANSI escape codes."""
     root = Path(__file__).resolve().parents[1]
-    workflow = (root / ".github/workflows/free-model-factory-entry.yml").read_text()
+    workflow = adopter_view("free-model-factory-entry.yml")
     assert 'retry_gh_api "$RUNNER_TEMP/factory-entry.log" --allow-escape-sequences' in workflow
     assert '"repos/${GITHUB_REPOSITORY}/actions/jobs/${job_id}/logs"' in workflow
     assert 'if gh api "$@" > "$file" 2> "$error_file"; then' in workflow
     assert "factory_state_ledger.py runtime-outcome" in workflow
     # The opt-out is only safe for redirected file output, never terminal output.
-    assert "--allow-escape-sequences" not in (
-        root / ".github/workflows/free-model-factory-run.yml"
-    ).read_text()
+    assert "--allow-escape-sequences" not in adopter_view("free-model-factory-run.yml")
 
 
 def test_completion_persistence_is_not_queued_behind_dispatch() -> None:
     """The only serialized entry signal is for capacity, never event writes."""
     root = Path(__file__).resolve().parents[1]
-    entry = (root / ".github/workflows/free-model-factory-entry.yml").read_text()
-    drain = (root / ".github/workflows/factory-completion-drain.yml").read_text()
+    entry = adopter_view("free-model-factory-entry.yml")
+    drain = adopter_view("factory-completion-drain.yml")
     assert "  persist_outcome:" in entry
     assert "  signal_completion:" in entry
     collector = entry.split("  persist_outcome:", 1)[1]
@@ -327,7 +327,7 @@ def test_trusted_smoke_refinement_never_attributes_unrelated_timeout():
 
 def test_entry_passes_completed_job_log_into_trusted_ledger():
     root = Path(__file__).resolve().parents[1]
-    entry = (root / ".github/workflows/free-model-factory-entry.yml").read_text()
+    entry = adopter_view("free-model-factory-entry.yml")
     assert '--log "$RUNNER_TEMP/factory-entry.log"' in entry
     assert entry.index("factory_dynamic_outcome.py") < entry.index("factory_state_ledger.py runtime-outcome")
 
@@ -444,7 +444,7 @@ def test_successful_dynamic_rotation_persists_failed_models_and_real_final_model
 def test_trusted_terminal_collector_retries_scoped_reads_and_idempotent_writes():
     """A temporary API or Neon outage must not lose a completed worker outcome."""
     root = SCRIPTS.parent.parent
-    entry = (root / ".github/workflows/free-model-factory-entry.yml").read_text()
+    entry = adopter_view("free-model-factory-entry.yml")
     assert "retry_gh_api()" in entry
     assert 'if gh api "$@" > "$file" 2> "$error_file"; then' in entry
     assert 'for attempt in 1 2 3 4; do' in entry

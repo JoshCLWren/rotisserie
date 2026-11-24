@@ -13,6 +13,7 @@ import pytest
 import yaml
 
 FACTORY = Path(__file__).resolve().parents[1]
+REUSABLE = FACTORY.parent / ".github" / "workflows"
 SPEC = importlib.util.spec_from_file_location(
     "rotisserie_install", FACTORY / "install" / "install.py"
 )
@@ -35,72 +36,130 @@ def _git(repo: Path, *args: str) -> str:
     ).stdout
 
 
-def _steps(text: str) -> list[tuple[str, list[dict]]]:
-    workflow = yaml.safe_load(text)
-    return [(name, job.get("steps") or []) for name, job in (workflow.get("jobs") or {}).items()]
+def _load(path: Path) -> dict:
+    return yaml.safe_load(path.read_text(encoding="utf-8"))
+
+
+def _triggers(workflow: dict) -> dict:
+    return workflow.get("on", workflow.get(True)) or {}
+
+
+CALLERS = sorted((FACTORY / "install" / "callers").glob("*.yml"))
+LEVEL = {"none": 0, "read": 1, "write": 2}
+
+
+def _job_permissions(reusable: dict) -> list[dict]:
+    blocks = [reusable.get("permissions") or {}]
+    for job in reusable["jobs"].values():
+        blocks.append(job.get("permissions") or {})
+        local = str(job.get("uses", ""))
+        if local.startswith("./.github/workflows/"):
+            blocks.extend(_job_permissions(_load(REUSABLE / Path(local).name)))
+    return blocks
+
+
+def _secrets_used(name: str) -> set[str]:
+    text = (REUSABLE / name).read_text(encoding="utf-8")
+    used = set(re.findall(r"secrets\.([A-Z0-9_]+)", text)) - {"GITHUB_TOKEN"}
+    for local in re.findall(r"uses: \./\.github/workflows/(\S+)", text):
+        used |= _secrets_used(local)
+    return used
+
+
+@pytest.mark.parametrize("caller", CALLERS, ids=lambda p: p.name)
+def test_caller_is_thin_and_matches_its_reusable_workflow(caller: Path) -> None:
+    workflow = _load(caller)
+    assert set(workflow) - {"name", "run-name", True, "permissions", "concurrency", "jobs"} == set()
+    assert list(workflow["jobs"]) == ["rotisserie"]
+    job = workflow["jobs"]["rotisserie"]
+    assert set(job) <= {"uses", "with", "secrets"}
+    assert job["uses"] == f"JoshCLWren/rotisserie/.github/workflows/{caller.name}@main"
+    reusable = _load(REUSABLE / caller.name)
+    assert list(_triggers(reusable)) == ["workflow_call"]
+    call = _triggers(reusable)["workflow_call"] or {}
+    dispatch = _triggers(workflow).get("workflow_dispatch") or {}
+    assert set(job.get("with") or {}) == set(call.get("inputs") or {}) == set(
+        dispatch.get("inputs") or {}
+    )
+    for name, value in (job.get("with") or {}).items():
+        kind = dispatch["inputs"][name].get("type", "string")
+        assert call["inputs"][name]["type"] == ("boolean" if kind == "boolean" else "string")
+        suffix = " == true }}" if kind == "boolean" else " }}"
+        assert value == f"${{{{ inputs.{name}{suffix}"
+    declared = set(call.get("secrets") or {})
+    assert declared == _secrets_used(caller.name)
+    assert job.get("secrets", {}) == {name: f"${{{{ secrets.{name} }}}}" for name in declared}
+    granted = workflow["permissions"]
+    for block in _job_permissions(reusable):
+        for scope, level in block.items():
+            assert LEVEL[granted.get(scope, "none")] >= LEVEL[level], (scope, level)
+    assert "concurrency" not in reusable and "run-name" not in reusable
+
+
+def test_every_reusable_factory_workflow_has_a_caller_or_a_local_caller() -> None:
+    reusable = {path.name for path in REUSABLE.glob("*.yml")} - {"ci.yml", "canary-merge.yml"}
+    called_locally = {
+        Path(match).name
+        for path in REUSABLE.glob("*.yml")
+        for match in re.findall(r"uses: \./(\.github/workflows/\S+)", path.read_text())
+    }
+    assert reusable == {path.name for path in CALLERS} | called_locally
 
 
 @pytest.mark.parametrize(
-    "template", sorted((FACTORY / ".github" / "workflows").glob("*.yml")), ids=lambda p: p.name
+    "reusable",
+    sorted(set(REUSABLE.glob("*.yml")) - {REUSABLE / "ci.yml", REUSABLE / "canary-merge.yml"}),
+    ids=lambda p: p.name,
 )
-def test_every_adopter_checkout_is_followed_by_the_pinned_runtime(template: Path) -> None:
-    rendered = install.render(
-        template.read_text(encoding="utf-8"), source="example/rotisserie", ref=REF
-    )
-    for job, steps in _steps(rendered):
+def test_every_adopter_checkout_is_followed_by_the_matching_runtime(reusable: Path) -> None:
+    for job, spec in _load(reusable)["jobs"].items():
+        steps = spec.get("steps") or []
+        python = next(
+            (i for i, s in enumerate(steps) if "setup-python" in str(s.get("uses", ""))), None
+        )
         for index, step in enumerate(steps):
-            uses = str(step.get("uses", ""))
+            run = str(step.get("run", ""))
+            if python is None or index < python:
+                assert not re.search(r"\bpython3?\b", run), job
+                assert not str(step.get("uses", "")).startswith("./"), job
             options = step.get("with") or {}
-            if not uses.startswith("actions/checkout") or options.get("repository") not in (
-                None,
-                "${{ github.repository }}",
-            ):
+            if not str(step.get("uses", "")).startswith("actions/checkout") or options.get(
+                "repository"
+            ) not in (None, "${{ github.repository }}"):
                 continue
             runtime, overlay = steps[index + 1], steps[index + 2]
-            assert runtime["with"]["repository"] == "example/rotisserie", job
-            assert runtime["with"]["ref"] == REF, job
+            assert runtime["with"]["repository"] == "${{ job.workflow_repository }}", job
+            assert runtime["with"]["ref"] == "${{ job.workflow_sha }}", job
             assert runtime["with"]["persist-credentials"] is False, job
             assert "secrets." not in str(runtime), job
             assert "overlay.sh" in overlay["run"], job
             assert runtime.get("if") == step.get("if"), job
             assert overlay.get("if") == step.get("if"), job
+        if python is not None:
+            assert str(steps[python]["with"]["python-version"]) == "3.14", job
 
 
-def test_render_preserves_template_text_outside_inserted_steps() -> None:
-    template = (FACTORY / ".github" / "workflows" / "factory-ready-merge-drain.yml").read_text(
-        encoding="utf-8"
+def test_render_points_the_caller_at_the_source_and_ref() -> None:
+    caller = (FACTORY / "install" / "callers" / "factory-ready-merge-drain.yml").read_text()
+    rendered = install.render(caller, source="example/rotisserie", ref=REF)
+    assert f"uses: example/rotisserie/.github/workflows/factory-ready-merge-drain.yml@{REF}" in (
+        rendered
     )
-    rendered = install.render(template, source="example/rotisserie", ref=REF)
-    kept = [line for line in rendered.splitlines() if install.INSTALLED_MARKER not in line]
-    assert all(line in kept for line in template.splitlines())
-
-
-def test_checkout_into_a_subdirectory_overlays_that_directory() -> None:
-    template = (
-        "on: workflow_dispatch\njobs:\n  run:\n    runs-on: ubuntu-latest\n    steps:\n"
-        "      - uses: actions/checkout@v7\n        with:\n          path: factory-control\n"
-        "      - run: echo done\n"
-    )
-    steps = _steps(install.render(template, source="example/rotisserie", ref=REF))[0][1]
-    assert steps[1]["with"]["path"] == "factory-control/.rotisserie/runtime"
-    assert steps[2]["run"].endswith("overlay.sh factory-control")
-    assert steps[3] == {"run": "echo done"}
-
-
-def test_other_repository_checkouts_are_not_overlaid() -> None:
-    template = (
-        "on: workflow_dispatch\njobs:\n  run:\n    runs-on: ubuntu-latest\n    steps:\n"
-        "      - uses: actions/checkout@v7\n        with:\n          repository: someone/else\n"
-    )
-    assert install.render(template, source="example/rotisserie", ref=REF) == template
+    assert rendered.replace(
+        f"example/rotisserie/.github/workflows/factory-ready-merge-drain.yml@{REF}",
+        "JoshCLWren/rotisserie/.github/workflows/factory-ready-merge-drain.yml@main",
+    ) == caller
 
 
 def test_ref_tracks_a_branch_or_pins_an_exact_commit() -> None:
+    caller = CALLERS[0].read_text()
     for ref in ("main", "a" * 40):
-        assert install.render("jobs: {}\n", source="example/rotisserie", ref=ref) == "jobs: {}\n"
-    for bad in ("", "-main", "main branch", "main..evil", "abc123"[:0] + "ref;rm"):
+        assert f"@{ref}" in install.render(caller, source="example/rotisserie", ref=ref)
+    for bad in ("", "-main", "main branch", "main..evil", "ref;rm"):
         with pytest.raises(install.InstallError):
-            install.render("jobs: {}\n", source="example/rotisserie", ref=bad)
+            install.render(caller, source="example/rotisserie", ref=bad)
+    with pytest.raises(install.InstallError):
+        install.render(caller, source="bad source", ref="main")
 
 
 def test_installer_tracks_main_by_default() -> None:
@@ -180,16 +239,30 @@ def test_overlay_refuses_an_adopter_that_still_tracks_factory_code(tmp_path: Pat
     assert tracked.read_text() == "adopter copy\n"
 
 
-def test_install_writes_templates_under_their_own_names(tmp_path: Path) -> None:
+def test_install_writes_callers_under_their_own_names(tmp_path: Path) -> None:
     repo = tmp_path / "adopter"
     repo.mkdir()
     _git(repo, "init", "-q")
-    written = install.install(
+    written, removed = install.install(
         repo, source="example/rotisserie", ref=REF, names=["factory-ready-merge-drain.yml"]
     )
     assert written == [repo / ".github" / "workflows" / "factory-ready-merge-drain.yml"]
+    assert removed == []
     with pytest.raises(install.InstallError):
         install.install(repo, source="example/rotisserie", ref=REF, names=["missing.yml"])
+
+
+def test_full_install_writes_every_caller_and_removes_retired_files(tmp_path: Path) -> None:
+    repo = tmp_path / "adopter"
+    workflows = repo / ".github" / "workflows"
+    workflows.mkdir(parents=True)
+    _git(repo, "init", "-q")
+    (workflows / "free-model-factory-run.yml").write_text("old\n")
+    (workflows / "deploy-production.yml").write_text("adopter\n")
+    written, removed = install.install(repo, source="example/rotisserie", ref=REF)
+    assert {path.name for path in written} == {path.name for path in CALLERS}
+    assert removed == [workflows / "free-model-factory-run.yml"]
+    assert (workflows / "deploy-production.yml").read_text() == "adopter\n"
 
 
 def test_every_factory_script_is_overlaid() -> None:
@@ -205,36 +278,6 @@ def test_every_factory_script_is_overlaid() -> None:
         if f".github/scripts/{path.name}" not in listed
     )
     assert missing == []
-
-
-def test_templates_that_run_factory_tests_are_not_installed_by_default(tmp_path: Path) -> None:
-    runs_tests = sorted(
-        path.name
-        for path in (FACTORY / ".github" / "workflows").glob("*.yml")
-        if re.search(r"\bpytest\b|node --test", path.read_text(encoding="utf-8"))
-    )
-    assert runs_tests == sorted(install.ROTISSERIE_CI_ONLY)
-    repo = tmp_path / "adopter"
-    repo.mkdir()
-    _git(repo, "init", "-q")
-    installed = {path.name for path in install.install(repo, source="example/rotisserie", ref=REF)}
-    assert not installed & install.ROTISSERIE_CI_ONLY
-    assert "factory-ready-merge-drain.yml" in installed
-
-
-def test_conditional_checkout_conditions_the_runtime_steps() -> None:
-    template = (
-        "on: workflow_dispatch\njobs:\n  run:\n    runs-on: ubuntu-latest\n    steps:\n"
-        "      - name: Checkout only on failure\n        if: >-\n          env.FAILED == 'true'\n"
-        "          && github.event_name == 'workflow_run'\n        uses: actions/checkout@v7\n"
-        "      - run: echo done\n"
-    )
-    steps = _steps(install.render(template, source="example/rotisserie", ref=REF))[0][1]
-    condition = "env.FAILED == 'true' && github.event_name == 'workflow_run'"
-    assert steps[0]["if"] == condition
-    assert steps[1]["if"] == condition and steps[1]["with"]["repository"] == "example/rotisserie"
-    assert steps[2]["if"] == condition and "overlay.sh" in steps[2]["run"]
-    assert steps[3] == {"run": "echo done"}
 
 
 ADOPTER_OWNED_DOCS = (

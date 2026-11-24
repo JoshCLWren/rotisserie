@@ -3,6 +3,8 @@ from pathlib import Path
 import importlib.util
 from types import SimpleNamespace
 
+from tests.workflow_files import adopter_view
+
 SCRIPT = Path(__file__).resolve().parents[1] / '.github/scripts/factory_state_metrics.py'
 SPEC = importlib.util.spec_from_file_location('factory_state_metrics_test', SCRIPT)
 assert SPEC and SPEC.loader
@@ -50,7 +52,7 @@ async def test_connection_wrapper_preserves_driver_arguments_and_adds_only_opt_i
 def test_explicit_measurement_cannot_be_evicted_by_unrelated_ingress():
     import yaml
 
-    workflow = yaml.safe_load((SCRIPT.parents[1] / 'workflows/fixed-model-factory-dispatch.yml').read_text())
+    workflow = yaml.safe_load(adopter_view("fixed-model-factory-dispatch.yml"))
     group = workflow['concurrency']['group']
     # A measurement run gets its own run-unique group; targeted work its own
     # target/action group. Neither shares the ingress queue.

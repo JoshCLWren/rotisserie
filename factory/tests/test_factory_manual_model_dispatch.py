@@ -12,6 +12,8 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / ".github/scripts"))
 from factory_opencode_go import GoCatalogError, choose
 
+from tests.workflow_files import adopter_view
+
 
 def sample():
     zero = {"type": "chat", "capabilities": {"tools": {"supported": True}},
@@ -70,9 +72,9 @@ def test_target_only_claims_eligible_go_worker(monkeypatch):
 
 
 def test_model_choice_is_end_to_end_and_never_falls_back():
-    dispatch = (ROOT / ".github/workflows/fixed-model-factory-dispatch.yml").read_text()
-    entry = (ROOT / ".github/workflows/free-model-factory-entry.yml").read_text()
-    runner = (ROOT / ".github/workflows/free-model-factory-run.yml").read_text()
+    dispatch = adopter_view("fixed-model-factory-dispatch.yml")
+    entry = adopter_view("free-model-factory-entry.yml")
+    runner = adopter_view("free-model-factory-run.yml")
     worker = (ROOT / ".github/scripts/free-model-factory-worker.sh").read_text()
     assert "Exact runtime provider/model ID" in dispatch
     assert "dispatch-next" in dispatch

@@ -11,6 +11,8 @@ from urllib.parse import parse_qs, urlsplit
 import pytest
 import yaml
 
+from tests.workflow_files import adopter_view, own_steps
+
 
 ROOT = Path(__file__).resolve().parents[1]
 SCRIPTS = ROOT / ".github/scripts"
@@ -242,12 +244,10 @@ def test_incomplete_or_invalid_history_cannot_become_a_cached_success(
 
 def test_dispatcher_creates_a_new_runner_local_cache_for_its_assignment_step() -> None:
     """Wire the cache into real worker assignment, without leaking it to later passes."""
-    workflow = yaml.safe_load((ROOT / ".github/workflows/fixed-model-factory-dispatch.yml").read_text())
-    step = next(step for step in workflow["jobs"]["dispatch"]["steps"]
+    workflow = yaml.safe_load(adopter_view("fixed-model-factory-dispatch.yml"))
+    step = next(step for step in own_steps(workflow["jobs"]["dispatch"])
                 if step.get("name") == "Resolve and dispatch fixed workers")
     script = step["run"]
-    # The module also belongs to the dispatcher's existing control-plane smoke surface.
-    assert ".github/scripts/factory_attempt_history.py" in workflow.get("on", workflow.get(True))["push"]["paths"]
     assert 'mktemp -d "$RUNNER_TEMP/factory-attempt-history.XXXXXX"' in script
     assert 'export FACTORY_ATTEMPT_HISTORY_CACHE="$history_cache_dir/comments.json"' in script
     assert script.index("export FACTORY_ATTEMPT_HISTORY_CACHE") < script.index('assign --worker "$worker"')

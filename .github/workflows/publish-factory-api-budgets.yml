@@ -1,0 +1,109 @@
+# Publish only after the private authenticated sample artifact is finalized.
+# Cron at :10 raced the :17 observer and repeatedly published stale data.
+name: Publish Factory API Budgets
+on:
+  workflow_call:
+    secrets:
+      FACTORY_OBSERVABILITY_APP_ID:
+        required: false
+      FACTORY_OBSERVABILITY_APP_PRIVATE_KEY:
+        required: false
+      ROTISSERIE_DEPLOY_KEY:
+        required: false
+
+env:
+  # Operator settings (rotisserie factory settings) reach every factory script.
+  FACTORY_REPO_VARS: >-
+    {"FACTORY_SLOTS_PER_PROVIDER": "${{ vars.FACTORY_SLOTS_PER_PROVIDER }}", "FACTORY_PR_WIP_LIMIT": "${{ vars.FACTORY_PR_WIP_LIMIT }}", "FACTORY_REVIEW_BACKLOG_LIMIT": "${{ vars.FACTORY_REVIEW_BACKLOG_LIMIT }}", "FACTORY_OMNIROUTE_FREE_ENTRY_CAP": "${{ vars.FACTORY_OMNIROUTE_FREE_ENTRY_CAP }}", "FACTORY_NO_DIFF_RETRY_LIMIT": "${{ vars.FACTORY_NO_DIFF_RETRY_LIMIT }}", "FACTORY_NO_DIFF_RETRY_RESET_SECONDS": "${{ vars.FACTORY_NO_DIFF_RETRY_RESET_SECONDS }}", "FACTORY_REVIEW_FAILURE_COOLDOWN_SECONDS": "${{ vars.FACTORY_REVIEW_FAILURE_COOLDOWN_SECONDS }}", "FACTORY_FIXED_LEASE_TTL_SECONDS": "${{ vars.FACTORY_FIXED_LEASE_TTL_SECONDS }}", "FACTORY_LOCAL_LEASE_TTL_SECONDS": "${{ vars.FACTORY_LOCAL_LEASE_TTL_SECONDS }}", "FACTORY_PRIORITY_ORDER": "${{ vars.FACTORY_PRIORITY_ORDER }}"}
+
+permissions:
+  contents: read
+
+jobs:
+  publish:
+    # Disabled until dedicated observability App permissions and secrets exist.
+    # Do not generate hourly failure noise before the integration is provisioned.
+    if: >-
+      vars.FACTORY_OBSERVABILITY_ENABLED == 'true' &&
+      (
+        (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main') ||
+        (github.event_name == 'workflow_run' &&
+         github.event.workflow_run.conclusion == 'success' &&
+         github.event.workflow_run.head_branch == 'main')
+      )
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - name: Set up factory Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: '3.14'
+      - name: Checkout pinned, tested Rotisserie publisher
+        uses: actions/checkout@v7
+        with:
+          repository: JoshCLWren/rotisserie
+          ref: 2f642ec2fa7841e4941486d83c4c686c5c61ad2a
+          path: rotisserie
+          ssh-key: ${{ secrets.ROTISSERIE_DEPLOY_KEY }}
+          persist-credentials: false
+
+      - name: Require dedicated GitHub App credentials
+        env:
+          APP_ID: ${{ secrets.FACTORY_OBSERVABILITY_APP_ID }}
+          PRIVATE_KEY: ${{ secrets.FACTORY_OBSERVABILITY_APP_PRIVATE_KEY }}
+        run: |
+          if [[ -z "$APP_ID" || -z "$PRIVATE_KEY" ]]; then
+            echo "::error::FACTORY_OBSERVABILITY_APP_ID and FACTORY_OBSERVABILITY_APP_PRIVATE_KEY must be configured."
+            exit 1
+          fi
+
+      - name: Checkout trusted factory App metadata resolver
+        uses: actions/checkout@v7
+        with:
+          repository: ${{ github.repository }}
+          ref: main
+          path: factory-control
+          persist-credentials: false
+      - name: Check out Rotisserie factory runtime
+        uses: actions/checkout@v7
+        with:
+          repository: ${{ job.workflow_repository }}
+          ref: ${{ job.workflow_sha }}
+          path: factory-control/.rotisserie/runtime
+          persist-credentials: false
+      - name: Overlay Rotisserie factory runtime
+        run: bash factory-control/.rotisserie/runtime/factory/install/overlay.sh factory-control
+
+      - name: Resolve observability App client ID
+        id: app_identity
+        env:
+          FACTORY_APP_ID: ${{ secrets.FACTORY_OBSERVABILITY_APP_ID }}
+          FACTORY_APP_PRIVATE_KEY: ${{ secrets.FACTORY_OBSERVABILITY_APP_PRIVATE_KEY }}
+        run: python3 factory-control/.github/scripts/factory_app_client_id.py
+
+      - name: Mint private artifact reader token
+        uses: actions/create-github-app-token@v3
+        id: reader
+        with:
+          client-id: ${{ steps.app_identity.outputs.client_id }}
+          private-key: ${{ secrets.FACTORY_OBSERVABILITY_APP_PRIVATE_KEY }}
+          owner: ${{ github.repository_owner }}
+          repositories: ${{ github.event.repository.name }}
+          permission-actions: read
+
+      - name: Mint public JSON writer token
+        uses: actions/create-github-app-token@v3
+        id: writer
+        with:
+          client-id: ${{ steps.app_identity.outputs.client_id }}
+          private-key: ${{ secrets.FACTORY_OBSERVABILITY_APP_PRIVATE_KEY }}
+          owner: ${{ github.repository_owner }}
+          repositories: ${{ vars.FACTORY_BUDGETS_PAGES_REPOSITORY || format('{0}.github.io', github.repository_owner) }}
+          permission-contents: write
+
+      - name: Aggregate private observations and publish allowlisted JSON
+        env:
+          FACTORY_SOURCE_TOKEN: ${{ steps.reader.outputs.token }}
+          FACTORY_PUBLISH_TOKEN: ${{ steps.writer.outputs.token }}
+          PYTHONPATH: ${{ github.workspace }}/rotisserie
+        run: python3 -m scripts.sync_factory_quota

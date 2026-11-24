@@ -2,19 +2,17 @@
 
 from pathlib import Path
 
+from tests.workflow_files import adopter_view
+
 
 ROOT = Path(__file__).resolve().parents[1]
-WORKFLOWS = ROOT / ".github" / "workflows"
+WORKFLOWS = ROOT.parent / ".github" / "workflows"
 
 
 def test_publisher_runs_after_observation_not_before_it() -> None:
     """The :10 publisher ran before the :17 observer and reported stale samples."""
-    publisher = (WORKFLOWS / "publish-factory-api-budgets.yml").read_text(
-        encoding="utf-8"
-    )
-    observer = (WORKFLOWS / "factory-api-quota-observation.yml").read_text(
-        encoding="utf-8"
-    )
+    publisher = adopter_view("publish-factory-api-budgets.yml")
+    observer = adopter_view("factory-api-quota-observation.yml")
 
     assert "name: Factory API Quota Observation" in observer
     assert "  workflow_run:" in publisher
@@ -28,9 +26,7 @@ def test_publisher_runs_after_observation_not_before_it() -> None:
 
 def test_publisher_remains_explicitly_enabled_and_separately_scoped() -> None:
     """Event-driven publishing must not loosen source or destination permissions."""
-    publisher = (WORKFLOWS / "publish-factory-api-budgets.yml").read_text(
-        encoding="utf-8"
-    )
+    publisher = adopter_view("publish-factory-api-budgets.yml")
     assert "vars.FACTORY_OBSERVABILITY_ENABLED == 'true'" in publisher
     assert "github.ref == 'refs/heads/main'" in publisher
     assert "permission-actions: read" in publisher

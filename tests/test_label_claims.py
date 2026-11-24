@@ -17,9 +17,8 @@ from rotisserie.factory_console.service import external, frontier, labelclaims, 
 
 REPO = "acme/widgets"
 NOW = datetime(2026, 11, 23, 18, 0, tzinfo=UTC)
-WORKFLOW = (
-    Path(__file__).resolve().parents[1] / "factory/.github/workflows/rotisserie-label-claim.yml"
-)
+WORKFLOW = Path(__file__).resolve().parents[1] / ".github/workflows/rotisserie-label-claim.yml"
+CALLERS = Path(__file__).resolve().parents[1] / "factory/install/callers"
 
 
 class FakeGitHub:
@@ -519,7 +518,7 @@ def test_label_events_pass_the_principal_fence_only_from_trusted_events() -> Non
 
 
 def test_label_claim_workflow_never_runs_pull_request_code() -> None:
-    text = WORKFLOW.read_text()
+    text = (CALLERS / WORKFLOW.name).read_text() + WORKFLOW.read_text()
     assert "pull_request_target:" in text and "issues:" in text
     assert "\n  pull_request:" not in text and "pull_request_review:" not in text
     assert "ref: main" in text and "persist-credentials: false" in text
