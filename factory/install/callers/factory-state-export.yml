@@ -1,0 +1,14 @@
+name: Factory State Export
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: factory-state-export
+  cancel-in-progress: false
+jobs:
+  rotisserie:
+    uses: JoshCLWren/rotisserie/.github/workflows/factory-state-export.yml@main
+    secrets:
+      FACTORY_TURSO_URL: ${{ secrets.FACTORY_TURSO_URL }}
+      FACTORY_TURSO_READ_TOKEN: ${{ secrets.FACTORY_TURSO_READ_TOKEN }}

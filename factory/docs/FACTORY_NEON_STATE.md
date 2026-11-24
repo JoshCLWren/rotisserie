@@ -293,3 +293,22 @@ compared against the database clock, a `repo` column on every table and a
 and backoffs leave the generic key-value table for `factory_lease` and
 `factory_backoff`. The discovery cache, the reconciliation cursor and the
 check projection are not carried over.
+
+## libSQL store (D3)
+
+`factory_libsql.py` and the `factory_turso_*` modules implement the same
+functions on libSQL. Nothing imports them until the cutover (#257) changes
+the imports of `factory_state_ledger.py` and `factory_state_operations.py`.
+Every write is one Hrana batch: BEGIN IMMEDIATE, the statements, COMMIT, in
+one HTTP request. The first statement holds every authorizing check (key
+free, external work in progress, daily cap, slot provider) and each later
+statement runs only if that row carries this call's claim or event identity.
+An external handoff marks the claim pending with a nonce, verifies on
+GitHub with no transaction open, then finalizes only if the nonce and every
+target row still match. A lost response is reconciled by reading the claim
+or event back before one resend. An unreachable or `BLOCKED` store raises,
+so acquisition fails closed.
+
+The trusted environment names the store: `FACTORY_TURSO_URL` with the token
+in the file `FACTORY_TURSO_TOKEN_FILE`, or `FACTORY_STATE_SQLITE` for a
+local file. `FACTORY_STATE_REQUIRED=true` makes an unconfigured store fatal.

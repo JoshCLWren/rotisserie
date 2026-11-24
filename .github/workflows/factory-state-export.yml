@@ -1,0 +1,83 @@
+# Installed by factory/install/install.py in an adopter repository.
+# Copies the factory store into a plain SQLite file with the read-only token
+# and publishes it as a short-lived artifact, with a JSON row-count summary.
+# The file holds claim identities: anyone who can read this repository's
+# Actions artifacts can read it for one day.
+name: Factory State Export
+on:
+  workflow_call:
+    secrets:
+      FACTORY_TURSO_URL:
+        required: false
+      FACTORY_TURSO_READ_TOKEN:
+        required: false
+
+env:
+  # Operator settings (rotisserie factory settings) reach every factory script.
+  FACTORY_REPO_VARS: >-
+    {"FACTORY_SLOTS_PER_PROVIDER": "${{ vars.FACTORY_SLOTS_PER_PROVIDER }}", "FACTORY_PR_WIP_LIMIT": "${{ vars.FACTORY_PR_WIP_LIMIT }}", "FACTORY_REVIEW_BACKLOG_LIMIT": "${{ vars.FACTORY_REVIEW_BACKLOG_LIMIT }}", "FACTORY_OMNIROUTE_FREE_ENTRY_CAP": "${{ vars.FACTORY_OMNIROUTE_FREE_ENTRY_CAP }}", "FACTORY_NO_DIFF_RETRY_LIMIT": "${{ vars.FACTORY_NO_DIFF_RETRY_LIMIT }}", "FACTORY_NO_DIFF_RETRY_RESET_SECONDS": "${{ vars.FACTORY_NO_DIFF_RETRY_RESET_SECONDS }}", "FACTORY_REVIEW_FAILURE_COOLDOWN_SECONDS": "${{ vars.FACTORY_REVIEW_FAILURE_COOLDOWN_SECONDS }}", "FACTORY_FIXED_LEASE_TTL_SECONDS": "${{ vars.FACTORY_FIXED_LEASE_TTL_SECONDS }}", "FACTORY_LOCAL_LEASE_TTL_SECONDS": "${{ vars.FACTORY_LOCAL_LEASE_TTL_SECONDS }}", "FACTORY_PRIORITY_ORDER": "${{ vars.FACTORY_PRIORITY_ORDER }}", "FACTORY_DISABLED_PROVIDERS": "${{ vars.FACTORY_DISABLED_PROVIDERS }}", "FACTORY_DISABLED_MODELS": "${{ vars.FACTORY_DISABLED_MODELS }}", "FACTORY_INCIDENTS": "${{ vars.FACTORY_INCIDENTS }}"}
+
+permissions:
+  contents: read
+
+jobs:
+  export:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Check out Rotisserie factory runtime
+        uses: actions/checkout@v7
+        with:
+          repository: ${{ job.workflow_repository }}
+          ref: ${{ job.workflow_sha }}
+          path: .rotisserie/runtime
+          persist-credentials: false
+      - name: Install Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: '3.14'
+      - name: Export the store to a SQLite file
+        shell: bash
+        working-directory: .rotisserie/runtime/factory
+        env:
+          TURSO_URL: ${{ secrets.FACTORY_TURSO_URL }}
+          TURSO_TOKEN: ${{ secrets.FACTORY_TURSO_READ_TOKEN }}
+        run: |
+          set -Eeuo pipefail
+          if [[ -z "$TURSO_URL" || -z "$TURSO_TOKEN" ]]; then
+            echo "::error::The FACTORY_TURSO_URL and FACTORY_TURSO_READ_TOKEN secrets are required"
+            exit 1
+          fi
+          echo "::add-mask::$TURSO_URL"
+          echo "::add-mask::$TURSO_TOKEN"
+          umask 077
+          token_file="$RUNNER_TEMP/factory-store-read-token"
+          printf '%s' "$TURSO_TOKEN" > "$token_file"
+          mkdir -p "$RUNNER_TEMP/export"
+          status=0
+          FACTORY_TURSO_URL="$TURSO_URL" FACTORY_TURSO_TOKEN_FILE="$token_file" \
+            python3 .github/scripts/factory_turso_backup.py export \
+            --file "$RUNNER_TEMP/export/factory-state.sqlite" \
+            > "$RUNNER_TEMP/factory-state-export.json" || status=$?
+          rm -f "$token_file"
+          if [[ "$status" != 0 ]]; then
+            printf '{"mode":"export","schema":1,"status":"failed"}' \
+              > "$RUNNER_TEMP/factory-state-export.json"
+          fi
+          cat "$RUNNER_TEMP/factory-state-export.json" >> "$GITHUB_STEP_SUMMARY"
+          exit "$status"
+      - name: Publish the SQLite file
+        uses: actions/upload-artifact@v7
+        with:
+          name: factory-state-export-${{ github.run_id }}
+          path: ${{ runner.temp }}/export/factory-state.sqlite
+          retention-days: 1
+          if-no-files-found: error
+      - name: Publish the export summary
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: factory-state-export-summary-${{ github.run_id }}
+          path: ${{ runner.temp }}/factory-state-export.json
+          retention-days: 7
+          if-no-files-found: error
