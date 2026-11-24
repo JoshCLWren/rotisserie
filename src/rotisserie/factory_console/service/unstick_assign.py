@@ -9,8 +9,6 @@ function once that lands.
 
 from __future__ import annotations
 
-import json
-
 from rotisserie.factory_console import runtime
 from rotisserie.factory_console.github import GitHub, GitHubError
 
@@ -18,29 +16,13 @@ Ranked = list[tuple[str, str, str]]
 
 
 def review_excluded_models(github: GitHub, pr: int) -> tuple[str, ...]:
-    """Models that may not review the PR: every recorded author (the worker's current rule).
+    """Models that may not review the PR: the current head's author, by the shared rule."""
+    from rotisserie.factory_console.service.review import excluded_models
 
-    None when the comments are unreadable, as the worker does.
-    """
     try:
-        pages = json.loads(
-            github.gh(
-                "api",
-                "--paginate",
-                "--slurp",
-                f"repos/{github.repo}/issues/{pr}/comments?per_page=100",
-            )
-        )
+        return excluded_models(github, pr).excluded
     except GitHubError, ValueError:
         return ()
-    rows = [
-        item
-        for page in (pages if isinstance(pages, list) else [])
-        for item in (page if isinstance(page, list) else [page])
-        if isinstance(item, dict)
-    ]
-    policy = runtime.module("factory_review_policy")
-    return tuple(policy.known_author_models(policy.controller_comment_bodies(rows), pr=pr))
 
 
 def authored(model: str, authors: tuple[str, ...]) -> bool:
