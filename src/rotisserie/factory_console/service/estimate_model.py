@@ -122,6 +122,7 @@ class Item:
     finished_at: datetime | None
     signals: tuple[str, ...]
     providers: tuple[str, ...] = field(default=())
+    labels_incomplete: bool = False
 
     @property
     def unattended(self) -> bool:
@@ -150,8 +151,8 @@ def build_item(
     winner = max(merged, key=lambda pr: pr.merged or datetime.min.replace(tzinfo=UTC), default=None)
     if winner is not None:
         outcome = "merged"
-    elif issue is not None and issue.state == "open":
-        outcome = "open"
+    elif issue is not None and (issue.state == "open" or issue.reason == "completed"):
+        outcome = "open" if issue.state == "open" else "elsewhere"
     else:
         outcome = "closed"
     labels = set().union(*(thread.labels | thread.labeled for thread in every))
@@ -178,6 +179,7 @@ def build_item(
         finished_at=winner.merged if winner else max(closes, default=None),
         signals=tuple(signals),
         providers=tuple(providers),
+        labels_incomplete=any(thread.labels_incomplete for thread in every),
     )
 
 
@@ -185,7 +187,7 @@ def match(
     target: Features, items: Sequence[Item]
 ) -> tuple[str, list[str], list[Item], list[dict[str, object]]]:
     """The narrowest tier with enough resolved look-alikes, and how many each tier had."""
-    resolved = [item for item in items if item.outcome != "open"]
+    resolved = [item for item in items if item.outcome in ("merged", "closed")]
     tried: list[dict[str, object]] = []
     for name, used in TIERS:
         found = [i for i in resolved if all(i.features.value(f) == target.value(f) for f in used)]
@@ -228,4 +230,5 @@ def chance(similar: Sequence[Item]) -> dict[str, object] | None:
         "n": len(similar),
         "merged": sum(item.outcome == "merged" for item in similar),
         "human_signals": dict(signals),
+        "label_history_incomplete": sum(item.labels_incomplete for item in similar),
     }

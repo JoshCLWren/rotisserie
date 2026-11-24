@@ -13,7 +13,7 @@ import pytest
 from rotisserie import web
 from rotisserie.factory_console.commands.estimate import render
 from rotisserie.factory_console.context import Context
-from rotisserie.factory_console.github import GitHub, GitHubNotFoundError
+from rotisserie.factory_console.github import GitHub, GitHubNotFoundError, GitHubRateLimitError
 from rotisserie.factory_console.service import estimate, estimate_history
 from rotisserie.factory_console.service import estimate_model as model
 from rotisserie.factory_console.tracker import Clock
@@ -57,7 +57,12 @@ def node(
         "body": body,
         "labels": {"nodes": [{"name": name} for name in labels]},
         "comments": {"totalCount": len(rows) if total is None else total, "nodes": rows},
-        "timelineItems": {"nodes": [{"label": {"name": name}} for name in labels]},
+        "early": {
+            "totalCount": len(labels),
+            "nodes": [{"label": {"name": name}} for name in labels],
+        },
+        "late": {"nodes": []},
+        "stateReason": "COMPLETED" if state == "CLOSED" and not pull else None,
     }
     if pull:
         found.update(
@@ -285,3 +290,42 @@ def test_the_web_ui_reads_estimates() -> None:
             web.read_command("estimate", bad)
     with pytest.raises(web.InvalidRequest):
         web.read_command("estimate", {"target": "issue:5", "limit": "3"})
+
+
+def test_an_issue_completed_outside_the_sample_is_not_a_failure() -> None:
+    issue = estimate_history.parse_thread(node(7, pull=False, labels=[]))
+    pull = estimate_history.parse_thread(node(8, pull=True, labels=["via:a/b"]))
+    assert issue is not None and pull is not None
+    patterns = {"claim": model.claim_pattern("widgets"), "author": model.author_pattern("widgets")}
+    found = model.build_item(
+        "issue:7", issue, [pull], issue, category=lambda _: "normal", **patterns
+    )
+    assert found.outcome == "elsewhere"
+    assert model.match(found.features, [found] * 9)[2] == []
+
+
+def test_label_history_reads_both_ends_and_flags_a_gap() -> None:
+    raw = node(7, pull=False, labels=["bug"])
+    raw["early"]["totalCount"] = 250
+    raw["late"]["nodes"] = [{"label": {"name": "factory:blocked"}}]
+    thread = estimate_history.parse_thread(raw)
+    assert thread is not None
+    assert "factory:blocked" in thread.labeled and thread.labels_incomplete
+
+
+class Partial:
+    repo = REPO
+
+    def __init__(self, kind: str) -> None:
+        self.kind = kind
+
+    def gh(self, *args: str, **kwargs: Any) -> str:
+        error = {"type": self.kind, "message": "API rate limit exceeded"}
+        return json.dumps({"data": {"repository": {"n5": None}}, "errors": [error]})
+
+
+def test_graphql_not_found_is_tolerated_but_other_errors_raise() -> None:
+    budget = estimate_history.Budget()
+    assert estimate_history.threads(cast(GitHub, Partial("NOT_FOUND")), budget, [5]) == {}
+    with pytest.raises(GitHubRateLimitError):
+        estimate_history.threads(cast(GitHub, Partial("RATE_LIMITED")), budget, [6])

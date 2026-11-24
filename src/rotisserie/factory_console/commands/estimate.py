@@ -61,7 +61,7 @@ def render(context: Context, data: dict[str, Any]) -> None:
         used = ", ".join(FEATURE_WORDS[name] for name in similar["features"])
         console.line(
             console.bold(f"Similar items: {similar['count']}")
-            + f" of {sample['kept_items']} finished factory items (matched on {used})"
+            + f" of {sample['finished_items']} finished factory items (matched on {used})"
         )
         clock = cast(dict[str, str], data["clock"])
         console.line(f"  Attempts to merge:  {_range(data['attempts'], _count, 'items')}")

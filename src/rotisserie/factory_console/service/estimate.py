@@ -8,7 +8,7 @@ no number.
 
 from __future__ import annotations
 
-from collections import defaultdict
+from collections import Counter, defaultdict
 from datetime import UTC, datetime
 
 from rotisserie.factory_console import runtime
@@ -124,8 +124,18 @@ def estimate(
             f"Only {len(merged)} similar items merged, too few for attempts and time "
             f"(need {model.MIN_SIMILAR})."
         )
+    outcomes = Counter(item.outcome for item in past)
     if similar:
-        notes.append("Items still open are not counted, so the chance of finishing is optimistic.")
+        notes.append(
+            f"Not counted: {outcomes['open']} item(s) still open and {outcomes['elsewhere']} "
+            "issue(s) completed by a PR outside the sample, so the chance is optimistic."
+        )
+    gaps = sum(item.labels_incomplete for item in similar)
+    if gaps:
+        notes.append(
+            f"{gaps} similar item(s) have over 200 label changes; GitHub shows only the first "
+            "and last 100, so an owner claim or factory:blocked in between can be missed."
+        )
     if short:
         notes.append("The GraphQL budget ran low, so fewer items were read than asked.")
     start = mine.first_claim if clock == "claim" else subject.created
@@ -144,6 +154,8 @@ def estimate(
             "requested": sample,
             "scanned_prs": len(pulls),
             "kept_items": len(past),
+            "finished_items": outcomes["merged"] + outcomes["closed"],
+            "outcomes": dict(outcomes),
             "rule": INCLUSION,
             "oldest_finish": _iso(min(finishes, default=None)),
             "newest_finish": _iso(max(finishes, default=None)),

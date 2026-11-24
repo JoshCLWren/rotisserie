@@ -14,7 +14,9 @@ from datetime import datetime
 
 from rotisserie.factory_console.github import (
     GitHub,
+    GitHubError,
     Obj,
+    _classify,
     integer,
     items,
     obj,
@@ -35,7 +37,10 @@ COMMON = f"""
   comments(last: {COMMENT_PAGE}) {{
     totalCount nodes {{ createdAt author {{ __typename login }} body }}
   }}
-  timelineItems(first: 100, itemTypes: [LABELED_EVENT]) {{
+  early: timelineItems(first: 100, itemTypes: [LABELED_EVENT]) {{
+    totalCount nodes {{ ... on LabeledEvent {{ label {{ name }} }} }}
+  }}
+  late: timelineItems(last: 100, itemTypes: [LABELED_EVENT]) {{
     nodes {{ ... on LabeledEvent {{ label {{ name }} }} }}
   }}
 """
@@ -46,7 +51,7 @@ fragment pr on PullRequest {{
   closingIssuesReferences(first: 3) {{ nodes {{ number }} }}
 }}
 """
-FRAGMENTS = f"{PR_FRAGMENT}fragment issue on Issue {{ {COMMON} }}\n"
+FRAGMENTS = f"{PR_FRAGMENT}fragment issue on Issue {{ {COMMON} stateReason }}\n"
 LOOKUP = "... on Issue { ...issue } ... on PullRequest { ...pr }"
 SEARCH = f"""
 query($q: String!, $first: Int!, $after: String) {{
@@ -84,6 +89,8 @@ class Thread:
     linked: int | None
     comments: tuple[Comment, ...]
     truncated: bool = False
+    labels_incomplete: bool = False
+    reason: str = ""
 
 
 @dataclass
@@ -123,7 +130,15 @@ def _graphql(github: GitHub, budget: Budget, query: str, **variables: str | int)
     args = ["api", "graphql", "-f", f"query={query}"]
     for key, value in variables.items():
         args += ["-F" if isinstance(value, int) else "-f", f"{key}={value}"]
-    data = obj(obj(json.loads(github.gh(*args))).get("data"))
+    try:
+        reply = obj(json.loads(github.gh(*args, allow_exit_one=True)))
+    except ValueError:
+        raise GitHubError("GitHub returned something that is not JSON.") from None
+    problems = [row for row in items(reply, "errors") if string(row, "type") != "NOT_FOUND"]
+    if problems or "data" not in reply:
+        message = "; ".join(string(row, "message") for row in problems)
+        raise _classify(message or string(reply, "message") or "GitHub GraphQL request failed")
+    data = obj(reply.get("data"))
     budget.record(data)
     return data
 
@@ -191,11 +206,13 @@ def parse_thread(node: Obj) -> Thread | None:
         if isinstance(merged_by, dict)
         else None,
         labels=frozenset(_names(node, "labels", "")),
-        labeled=frozenset(_names(node, "timelineItems", "label")),
+        labeled=frozenset(_names(node, "early", "label") | _names(node, "late", "label")),
         body_size=len(body),
         linked=linked if pull else None,
         comments=comments,
         truncated=(integer(block, "totalCount") or 0) > len(comments),
+        labels_incomplete=(integer(obj(node.get("early")), "totalCount") or 0) > 200,
+        reason=string(node, "stateReason").lower(),
     )
 
 
