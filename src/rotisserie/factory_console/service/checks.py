@@ -9,6 +9,7 @@ head and pulls the first real error out of each job log.
 from __future__ import annotations
 
 import re
+from collections.abc import Sequence
 from dataclasses import asdict, dataclass
 
 from rotisserie.factory_console.github import (
@@ -27,6 +28,7 @@ RUST_TEST_FAIL = re.compile(r"^(?:\S+ )?test (\S+) \.\.\. FAILED$", re.M)
 PYTEST_FAIL = re.compile(r"^(?:\S+ )?FAILED (\S+)", re.M)
 ERROR_LINE = re.compile(r"^(?:\S+ )?(?:##\[error\]|::error::)(?P<message>.+)$", re.M)
 RUNNER_ROOT = re.compile(r"^.*?/work/[^/]+/[^/]+/")
+TSC = re.compile(r"^(?:\S+ )?(?P<text>(?P<path>[\w./-]+\.tsx?)\(\d+,\d+\): error TS\d+: .+)$", re.M)
 GENERIC = re.compile(r"^Process completed with exit code \d+\.?$")
 
 
@@ -53,6 +55,9 @@ def summarize_log(log: str) -> tuple[str, str, tuple[str, ...]]:
         names = ", ".join(path.rsplit("/", 1)[-1] for path in short[:3])
         more = f" and {len(short) - 3} more" if len(short) > 3 else ""
         return "formatting", f"cargo fmt --check wants changes in {names}{more}", tuple(short)
+    typescript = TSC.search(clean)
+    if typescript:
+        return "compile", typescript.group("text")[:200], (typescript.group("path"),)
     tests = list(dict.fromkeys(RUST_TEST_FAIL.findall(clean) + PYTEST_FAIL.findall(clean)))
     if tests:
         more = f" and {len(tests) - 2} more" if len(tests) > 2 else ""
@@ -80,9 +85,31 @@ def summarize_log(log: str) -> tuple[str, str, tuple[str, ...]]:
 def failing_checks(github: GitHub, number: int, *, read_logs: bool = True) -> list[FailingCheck]:
     """Failing check runs on the PR's current head, each with its first real error."""
     head = string(obj(obj(github.repo_api(f"pulls/{number}")).get("head")), "sha")
+    return failing_checks_at(github, head, read_logs=read_logs)
+
+
+def branch_head(github: GitHub, branch: str) -> str:
+    return string(obj(obj(github.repo_api(f"branches/{branch}")).get("commit")), "sha")
+
+
+def failing_checks_at(
+    github: GitHub, head: str, *, read_logs: bool = True, run_ids: Sequence[int] = ()
+) -> list[FailingCheck]:
+    """Failing checks on one commit, each with its first real error.
+
+    With ``run_ids``, only those workflow runs' jobs count: a branch's product
+    CI, not factory workers that happen to run on the same commit.
+    """
     if not head:
         return []
-    runs = items(github.repo_api(f"commits/{head}/check-runs?per_page=100"), "check_runs")
+    if run_ids:
+        runs = [
+            job
+            for run_id in run_ids
+            for job in items(github.repo_api(f"actions/runs/{run_id}/jobs?per_page=100"), "jobs")
+        ]
+    else:
+        runs = items(github.repo_api(f"commits/{head}/check-runs?per_page=100"), "check_runs")
     found = []
     seen: set[str] = set()
     for run in runs:

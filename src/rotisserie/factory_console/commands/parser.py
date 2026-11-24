@@ -441,8 +441,8 @@ def add_parser(subcommands: argparse._SubParsersAction[argparse.ArgumentParser])
     fix.add_argument("--log", help="append each result (JSON lines) to this audit file")
     _common(fix)
 
-    red = commands.add_parser("checks", help="why a pull request's checks fail, in one line each")
-    red.add_argument("what", help="pr:N")
+    red = commands.add_parser("checks", help="why checks fail on a PR or branch, one line each")
+    red.add_argument("what", help="pr:N, main or branch:NAME")
     _common(red)
 
     gate = commands.add_parser(
