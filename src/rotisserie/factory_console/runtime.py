@@ -28,6 +28,7 @@ RUNTIME_MODULES = (
     "factory_settings",
     "factory_dispatch_credential_filter",
     "factory_fleet_switch",
+    "factory_incident",
     "factory_published_model_catalog",
     "factory_work_policy",
     "factory_rotisserie_adopter",

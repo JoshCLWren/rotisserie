@@ -633,7 +633,7 @@ def completion_report(
 
 def _is_ordinary_completion(candidate: Candidate) -> bool:
     """Return whether a candidate is an ordinary, promotable lane-3 PR action."""
-    return candidate.kind == "pr" and candidate.lane == 3 and candidate.stage is not None
+    return candidate.kind == "pr" and candidate.lane == 3 and candidate.stage is not None and not candidate.incident
 
 
 def apply_completion_ranking(

@@ -48,6 +48,7 @@
 .github/scripts/factory_full_completion_controller.py
 .github/scripts/factory_gh_usage.py
 .github/scripts/factory_heartbeat_health.py
+.github/scripts/factory_incident.py
 .github/scripts/factory_implementation_delivery.py
 .github/scripts/factory_issue_acceptance.py
 .github/scripts/factory_issue_pr_state_policy.py

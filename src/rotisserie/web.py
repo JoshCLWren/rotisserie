@@ -25,6 +25,8 @@ from rotisserie.factory_console.context import UsageError, find_repository
 REPO = re.compile(r"^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$")
 TARGET = re.compile(r"^(?:issue|pr):[1-9][0-9]*$")
 PR = re.compile(r"^pr:[1-9][0-9]*$")
+ISSUE = re.compile(r"^issue:[1-9][0-9]*$")
+ATTEMPTS = re.compile(r"^[1-6]$")
 PROVIDER = re.compile(r"^[a-zA-Z0-9][a-zA-Z0-9_.-]{0,79}$")
 MODEL = re.compile(r"^[a-zA-Z0-9_./:+-]{1,180}$")
 SETTING = re.compile(r"^[A-Z][A-Z0-9_]{1,100}$")
@@ -55,6 +57,7 @@ READ_ONLY = frozenset(
         "follow",
         "history",
         "estimate",
+        "incident",
     )
 )
 MAX_BODY = 4096
@@ -196,6 +199,20 @@ def write_command(data: Mapping[str, Any]) -> list[str]:
             raise InvalidRequest("Turning off needs a reason")
         command = "providers" if name == "provider_switch" else "models"
         return [command, *words, f"--reason={reason}"]
+    if name in ("incident_start", "incident_stop"):
+        issue = _match(_string(data, "issue", required=True), ISSUE, "issue")
+        if name == "incident_stop":
+            return ["incident", "stop", issue]
+        args = [
+            "incident",
+            "start",
+            issue,
+            f"--reason={_match(_string(data, 'reason'), REASON, 'reason')}",
+        ]
+        attempts = _string(data, "attempts")
+        if attempts:
+            args.append(f"--attempts={_match(attempts, ATTEMPTS, 'attempts')}")
+        return args
     if name == "doctor_fix":
         return ["doctor", "--fix"]
     if name == "release_expired":

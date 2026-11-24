@@ -12,7 +12,7 @@ ROOT = Path(__file__).resolve().parents[1]
 WORK_POLICY_SIBLINGS = tuple(
     f"factory_work_policy_{part}.py"
     for part in ("assignment", "backlog", "base", "candidates", "priority")
-)
+) + ("factory_incident.py",)
 
 
 def test_staged_worker_policy_imports_only_pinned_eligibility(tmp_path: Path) -> None:
@@ -22,7 +22,9 @@ def test_staged_worker_policy_imports_only_pinned_eligibility(tmp_path: Path) ->
 
     staged = tmp_path / "trusted"
     staged.mkdir()
-    for name in ("factory_work_policy.py", "factory_review_policy.py", "factory_adopter.py", *WORK_POLICY_SIBLINGS):
+    for sibling in WORK_POLICY_SIBLINGS:
+        assert f".github/scripts/{sibling}" in worker
+    for name in ("factory_work_policy.py", "factory_review_policy.py", "factory_adopter.py", "factory_settings.py", *WORK_POLICY_SIBLINGS):
         shutil.copy2(ROOT / ".github/scripts" / name, staged / name)
     shutil.copy2(ROOT / "scripts/factory_eligibility.py", staged / "factory_eligibility.py")
 

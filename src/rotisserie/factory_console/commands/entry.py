@@ -29,6 +29,7 @@ from rotisserie.factory_console.commands.health import (
     cmd_unstick,
 )
 from rotisserie.factory_console.commands.history import cmd_history, cmd_use
+from rotisserie.factory_console.commands.incident import cmd_incident
 from rotisserie.factory_console.commands.models import cmd_close, cmd_groom
 from rotisserie.factory_console.commands.parser import add_parser
 from rotisserie.factory_console.commands.prs import (
@@ -168,6 +169,7 @@ def _help_text() -> str:
             "  rotisserie factory providers | models PROVIDER | prioritize issue:N",
             "  rotisserie factory providers disable|enable NAME [--reason TEXT]",
             "  rotisserie factory models disable|enable PROVIDER MODEL [--reason TEXT]",
+            "  rotisserie factory incident [start issue:N [--attempts K] | stop issue:N]",
             "",
             "Run 'rotisserie factory COMMAND --help' for details.",
         ]
@@ -231,6 +233,7 @@ HANDLERS = {
     "explain": cmd_why,
     "providers": cmd_providers,
     "models": cmd_models,
+    "incident": cmd_incident,
 }
 
 

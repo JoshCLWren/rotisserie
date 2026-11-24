@@ -112,7 +112,12 @@ def order_candidates_for_worker(candidates: list[Candidate], worker: str) -> lis
 
     return sorted(
         eligible,
-        key=lambda candidate: (role_preference(candidate), work_class(candidate), candidate.sort_key()),
+        key=lambda candidate: (
+            0 if candidate.incident else 1,
+            role_preference(candidate),
+            work_class(candidate),
+            candidate.sort_key(),
+        ),
     )
 
 

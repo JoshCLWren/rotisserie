@@ -110,6 +110,7 @@
   </div>
  </section>
  <section class="view" id="queue"><div class="panel"><div class="panel-header"><div><h2>Issue eligibility</h2><p class="section-desc">Why the dispatcher would or would not pick each issue.</p></div><button class="button small" id="queue-refresh">Refresh queue</button></div><div class="panel-body"><div class="page-controls"><input id="queue-filter" placeholder="Search number or title" aria-label="Filter queue"><select id="queue-state" aria-label="Queue status"><option value="all">All issues</option><option value="ready">Ready</option><option value="held">Not starting</option></select><input id="queue-explain-number" type="number" min="1" step="1" placeholder="Issue #" aria-label="Issue number to explain"><button class="button small" id="queue-explain">Explain</button></div><div id="queue-content" class="empty">Open the queue to load eligibility.</div></div></div>
+  <section class="panel spaced"><div class="panel-header"><div><h2>Incidents</h2><p class="section-desc">Free workers go to an incident issue first. Other new intake pauses until it closes. Running work continues.</p></div><button class="button small" id="incidents-refresh">Refresh incidents</button></div><div class="panel-body"><div class="page-controls"><input id="incident-number" type="number" min="1" step="1" placeholder="Issue #" aria-label="Incident issue number"><select id="incident-attempts" aria-label="Fix attempts"><option value="">3 attempts</option><option value="1">1 attempt</option><option value="2">2 attempts</option><option value="4">4 attempts</option><option value="5">5 attempts</option><option value="6">6 attempts</option></select><input id="incident-reason" maxlength="180" placeholder="Reason" aria-label="Incident reason"><button class="button small danger" id="incident-start">Start incident</button></div><div id="incidents-content" class="empty">Open the queue to load incidents.</div></div></section>
   <section class="panel spaced"><div class="panel-header"><div><h2>Pull request workbench</h2><p class="section-desc">Inspect exact-head checks, review eligibility, and conflicts before changing anything.</p></div></div>
    <div class="panel-body"><div class="page-controls"><input id="pr-number" type="number" min="1" step="1" placeholder="PR number" aria-label="Pull request number"><button class="button small" data-pr-inspect="checks">Checks</button><button class="button small" id="main-checks">Checks on main</button><button class="button small" data-pr-inspect="review">Review gate</button><button class="button small" data-pr-inspect="conflicts">Conflicts</button><button class="button small" id="pr-select">Select for launch</button><button class="button small danger" id="pr-sync">Sync with main</button></div><div id="pr-inspector" class="hint">Choose a PR and an inspection. Sync uses Rotisserie's existing claim protection.</div></div>
   </section>
@@ -147,7 +148,7 @@ async function act(body,source){
  if(state.mutating)return;
  state.mutating=true;
  const button=source&&source.tagName==="BUTTON"?source:null;
- const operation=({claim:"Requesting claim",finish:"Finishing claim",labels:"Starting label doctor",provider_switch:"Switching provider",model_switch:"Switching model",run:"Submitting worker request",unstick:"Preparing recovery",cancel:"Stopping worker",sync:"Synchronizing PR",doctor_fix:"Applying safe repairs",release_expired:"Releasing expired leases",settings:"Saving setting",prioritize:"Setting priority"})[body.operation]||"Applying change";
+ const operation=({claim:"Requesting claim",finish:"Finishing claim",labels:"Starting label doctor",incident_start:"Starting incident",incident_stop:"Ending incident",provider_switch:"Switching provider",model_switch:"Switching model",run:"Submitting worker request",unstick:"Preparing recovery",cancel:"Stopping worker",sync:"Synchronizing PR",doctor_fix:"Applying safe repairs",release_expired:"Releasing expired leases",settings:"Saving setting",prioritize:"Setting priority"})[body.operation]||"Applying change";
  if(button){button.disabled=true;button.classList.add("is-loading");}
  el("operation-status").textContent=operation+"…";
  el("message").className="message";
@@ -208,6 +209,7 @@ function loadStatus(){
 async function loadReport(){try{const d=await get("report",{since:"12h"});state.report=d;setText("k-merged",(d.merged||[]).length);el("overview-merged").innerHTML=(d.merged||[]).slice(0,3).map(x=>'<div class="item"><div class="item-title">'+link("https://github.com/"+REPO+"/pull/"+x.number,"#"+x.number)+" "+h(x.title)+"</div></div>").join("")||empty("No recent merges.")}catch(err){setText("k-merged","?");el("overview-merged").innerHTML=empty(err.message)}}
 function renderFindings(d){if(!Array.isArray(d.findings))return raw(d);return d.findings.map(f=>'<div class="item"><div class="item-head"><div><div class="item-title">'+h(f.check)+'</div><div class="meta">'+h(f.text||f.hint||"")+'</div></div>'+badge(f.status,f.status==="ok"?"good":f.status==="fail"?"bad":"")+'</div></div>').join("")||empty("No diagnostic findings.")}
 async function loadDoctor(){try{const d=await get("doctor");state.doctor=d;setText("k-health",(d.findings||[]).filter(x=>x.status!=="ok").length);el("overview-health").innerHTML=renderFindings({...d,findings:(d.findings||[]).filter(x=>x.status!=="ok").slice(0,5)});if(!(d.findings||[]).some(x=>x.status!=="ok"))el("overview-health").innerHTML=empty("All checked systems healthy.");el("health-content").innerHTML=renderFindings(d)}catch(err){setText("k-health","?");el("overview-health").innerHTML=empty(err.message);el("health-content").innerHTML=empty(err.message)}}
+async function loadIncidents(){try{const d=await get("incident");const rows=d.incidents||[];el("incidents-content").innerHTML=rows.length?'<div class="table-wrap"><table class="table"><thead><tr><th>Issue</th><th>Attempts</th><th>State</th><th>Reason</th><th>Action</th></tr></thead><tbody>'+rows.map(i=>'<tr><td>#'+h(i.issue)+'</td><td>'+h(i.attempts)+'</td><td>'+badge(i.active?"active":"ended",i.active?"bad":"good")+'</td><td>'+h(i.reason||"")+'</td><td><button class="button small" data-incident-stop="'+h(i.issue)+'">Stop</button></td></tr>').join("")+'</tbody></table></div>':empty("No incident. Normal intake.")}catch(err){el("incidents-content").innerHTML=empty(err.message)}}
 async function loadQueue(){el("queue-content").innerHTML=empty("Evaluating the current work graph…");try{const d=await get("why");state.queue=d;setText("k-ready",(d.ready||[]).length);renderQueue()}catch(err){setText("k-ready","?");el("queue-content").innerHTML=empty(err.message)}}
 function renderQueue(){
  const d=state.queue;if(!d)return;
@@ -361,7 +363,7 @@ async function refresh(){
  el("refresh").disabled=true;el("refresh").classList.add("is-loading");
  try{
   if(page==="overview")await Promise.all([loadStatus(),loadReport(),loadDoctor(),loadQueue()]);
-  if(page==="queue")await loadQueue();
+  if(page==="queue")await Promise.all([loadQueue(),loadIncidents()]);
   if(page==="workers")await Promise.all([loadStatus(),loadLeases()]);
   if(page==="outcomes")await Promise.all([loadOutcomes(),loadStats()]);
   if(page==="models")await loadCatalog();
@@ -384,6 +386,7 @@ document.body.addEventListener("click",e=>{const b=e.target.closest("button");if
   const select=el("priority-"+b.dataset.priorityApply);
   if(select)act({operation:"prioritize",target:"issue:"+b.dataset.priorityApply,level:select.value},b);
  }
+ if(b.dataset.incidentStop&&window.confirm("End the incident on #"+b.dataset.incidentStop+"? Normal intake resumes."))act({operation:"incident_stop",issue:"issue:"+b.dataset.incidentStop},b);
  if(b.dataset.prInspect)inspectPr(b.dataset.prInspect);
  if(b.dataset.itemRead)itemRead(b.dataset.itemRead);
  if(b.dataset.switchOn)act(switchBody(b,true,""),b);
@@ -407,6 +410,8 @@ el("refresh").onclick=refresh;el("queue-refresh").onclick=loadQueue;el("workers-
 el("pr-select").onclick=()=>{const number=el("pr-number").value;if(!/^[1-9][0-9]*$/.test(number)){notice("Enter a valid PR number.",true);return}go("overview");el("work-kind").value="pr";el("target-number").value=number;preview()};
 el("pr-sync").onclick=()=>{const number=el("pr-number").value;if(!/^[1-9][0-9]*$/.test(number)){notice("Enter a valid PR number.",true);return}act({operation:"sync",target:"pr:"+number},el("pr-sync"))};
 el("main-checks").onclick=async()=>{el("pr-inspector").innerHTML=empty("Reading checks on main…");try{el("pr-inspector").innerHTML=renderChecks(ok(await get("checks",{target:"main"})))}catch(err){el("pr-inspector").innerHTML=empty(err.message)}};
+el("incidents-refresh").onclick=loadIncidents;
+el("incident-start").onclick=()=>{const number=el("incident-number").value;if(!/^[1-9][0-9]*$/.test(number)){notice("Enter a valid issue number.",true);return}const body={operation:"incident_start",issue:"issue:"+number,reason:el("incident-reason").value.trim()};if(el("incident-attempts").value)body.attempts=el("incident-attempts").value;if(window.confirm("Start an incident on #"+number+"? Free workers go to it first and other new intake pauses."))act(body,el("incident-start"))};
 el("item-claim").onclick=()=>itemWrite("claim","Claim");
 el("item-finish").onclick=()=>itemWrite("finish","End your claim on");
 el("labels-dry-run").onclick=()=>act({operation:"labels",mode:"dry-run"},el("labels-dry-run"));

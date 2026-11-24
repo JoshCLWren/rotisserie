@@ -86,6 +86,7 @@ from factory_work_policy_candidates import (
     pr_is_static_candidate,
     pr_suppresses_issue_candidate,
 )
+from factory_incident import declared as declared_incidents
 from factory_work_policy_priority import (
     OVERRIDE_LABEL,
     Candidate,
