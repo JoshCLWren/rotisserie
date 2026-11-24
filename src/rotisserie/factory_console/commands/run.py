@@ -43,9 +43,7 @@ def cmd_run(context: Context, arguments: argparse.Namespace) -> Outcome:
     elif context.interactive:
         provider = _pick_provider(context)
     else:
-        raise UsageError(
-            "Name a provider (see 'rotisserie factory providers'), or run in a terminal for menus."
-        )
+        raise UsageError("Name a provider (see 'baste providers'), or run in a terminal for menus.")
     if arguments.model:
         model = arguments.model
     elif context.interactive:
@@ -144,7 +142,7 @@ def _take_over_external(context: Context, number: int, data: dict[str, object]) 
     except external.ClaimStoreUnavailable as exc:
         console.note(
             f"Can't see outside-agent claims from here ({exc}). If one holds #{number}, "
-            "run 'rotisserie factory revoke' where the factory's Neon connection is set up."
+            "run 'baste revoke' where the factory's Neon connection is set up."
         )
         return True
     except (RuntimeError, ValueError) as exc:
@@ -220,7 +218,7 @@ def _submit_and_watch(
     data["scheduler_url"] = submission.url
     if no_wait:
         console.link("Scheduler", submission.url)
-        console.note(f"Follow it later: rotisserie factory watch {run_id}")
+        console.note(f"Follow it later: baste watch {run_id}")
         return Outcome(Result.SUBMITTED, EXIT_CODES[Result.SUBMITTED], data)
     tracker = Tracker(context.github, context.clock)
     return _watch_scheduler(

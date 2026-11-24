@@ -329,7 +329,7 @@ def plan(
                     "needs-person",
                     f"{task.target}: {len(tried)} models failed to resolve its conflicts"
                     f"{'; ' + overlap if overlap else ''}. Merge it by hand, or close it if "
-                    "main already did this work (rotisserie factory conflicts "
+                    "main already did this work (baste conflicts "
                     f"{task.target}).",
                     prs=(int(task.target.split(":")[1]),),
                 )

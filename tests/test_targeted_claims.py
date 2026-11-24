@@ -120,7 +120,7 @@ def test_an_active_lease_refuses_and_names_the_holder_and_the_next_step() -> Non
     result = claim(Fake({"issues/5695": issue(5695)}), store, "issue:5695")
     assert result["status"] == "conflict"
     assert result["reason"] == "#5695 is held by @bob until 2026-11-24T04:00:00+00:00"
-    assert "rotisserie factory revoke c-1" in str(result["next"])
+    assert "baste revoke c-1" in str(result["next"])
 
 
 def test_an_expired_factory_lease_says_how_to_clear_it() -> None:
@@ -137,7 +137,7 @@ def test_an_expired_factory_lease_says_how_to_clear_it() -> None:
     )
     result = claim(Fake({"issues/5695": issue(5695)}), store, "issue:5695")
     assert "expired lease by factory worker 1004230852003" in str(result["reason"])
-    assert "rotisserie factory cancel issue:5695" in str(result["next"])
+    assert "baste cancel issue:5695" in str(result["next"])
 
 
 def test_a_closed_issue_says_to_reopen_it() -> None:

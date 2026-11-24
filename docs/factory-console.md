@@ -18,7 +18,7 @@ historical model can be chosen.
 Signed in, the other views (Work queue and Why?, leases, settings, PR checks,
 review and conflicts, item follow, runs and history, incidents, the unstick
 preview, and live providers and models with their switches) run the same
-`rotisserie factory ... --json` reads in the adopter's read-only
+`baste ... --json` reads in the adopter's read-only
 `rotisserie-operator-read.yml` workflow. The page batches reads that start
 together into one run, keeps each result for one minute, and labels it with
 its GitHub run and observation time. A Refresh button drops the cached
@@ -111,7 +111,7 @@ unrequested fallbacks.
 
 ## Local web control room
 
-The browser interface uses the same `rotisserie factory` commands and your existing `gh`
+The browser interface uses the same `baste` commands and your existing `gh`
 authentication. It does **not** install or start an additional controller:
 
 ```bash
@@ -147,7 +147,7 @@ asks for a reason and a confirmation. The Diagnostics page reads the GitHub API
 limits and the backoffs, and resets quota backoffs after a confirmation. Both
 backoff controls go through the trusted workflows (`--via github`) locally; the
 hosted read workflow reads backoffs from Neon directly. Run history lists the
-failed worker runs of the last 10 hours. `tests/test_control_parity.py` checks that every `rotisserie factory`
+failed worker runs of the last 10 hours. `tests/test_control_parity.py` checks that every `baste`
 command has a control in both control rooms, or a reason in
 `src/rotisserie/control_parity.py` why it has none. The Diagnostics page starts a
 label doctor dry run or repair on GitHub and links the run. The Models page
@@ -163,25 +163,25 @@ Stop it with Ctrl+C. If GitHub or the installed factory is unavailable,
 panels show a failure instead of inventing state.
 
 
-`rotisserie factory` operates a software factory installed from `factory/`
+`baste` operates a software factory installed from `factory/`
 in an adopter repository. It replaces adopter-local operator scripts.
 
 ```bash
-rotisserie factory run opencode-go opencode-go/hy4-flash-free --force
-rotisserie factory status      # who is working on what: provider, model, state, how long
-rotisserie factory report      # what merged, what failed and why, is it running
-rotisserie factory stats       # which providers and models actually deliver
-rotisserie factory settings    # limits, worker counts and priority order
-rotisserie factory why issue:N # why an issue is or is not being picked up
-rotisserie factory unstick     # start the workers that clear the bottleneck
-rotisserie factory outcomes    # did the requested work actually happen
-rotisserie factory close pr:N --reason TEXT  # close work that should not be done
-rotisserie factory checks pr:N # why its checks fail, in one line each
-rotisserie factory review pr:N # whose approval counts: known self-review vs missing metadata
-rotisserie factory groom inventory  # the whole open backlog, with evidence per item
-rotisserie factory doctor      # is the factory itself healthy
-rotisserie factory limits      # GitHub API requests remaining and reset times
-rotisserie factory conflicts pr:N  # which of its files main also changed, and where
+baste run opencode-go opencode-go/hy4-flash-free --force
+baste status      # who is working on what: provider, model, state, how long
+baste report      # what merged, what failed and why, is it running
+baste stats       # which providers and models actually deliver
+baste settings    # limits, worker counts and priority order
+baste why issue:N # why an issue is or is not being picked up
+baste unstick     # start the workers that clear the bottleneck
+baste outcomes    # did the requested work actually happen
+baste close pr:N --reason TEXT  # close work that should not be done
+baste checks pr:N # why its checks fail, in one line each
+baste review pr:N # whose approval counts: known self-review vs missing metadata
+baste groom inventory  # the whole open backlog, with evidence per item
+baste doctor      # is the factory itself healthy
+baste limits      # GitHub API requests remaining and reset times
+baste conflicts pr:N  # which of its files main also changed, and where
 ```
 
 The repository is taken from `--repo owner/name`, `FACTORY_REPO`, the nearest
@@ -194,14 +194,14 @@ Rotisserie is private, so install it from GitHub with your SSH access:
 
 ```bash
 uv tool install "git+ssh://git@github.com/JoshCLWren/rotisserie.git"
-rotisserie factory --help
+baste --help
 ```
 
 Upgrade with `uv tool upgrade rotisserie`.
 
 ## Starting work
 
-`rotisserie factory run` with no arguments asks for the provider, model and
+`baste run` with no arguments asks for the provider, model and
 work in menus. In the issue and pull request lists, items someone is already
 working on show the provider and how long it has been running. Picking one
 offers to **take it over** with your provider and model, or to **stop** that
@@ -234,7 +234,7 @@ refusing. For a chosen item it also ignores blocked or dependency labels and
 CI still running.
 
 It does not take an item another worker currently holds. That would make two
-models write the same change. Use `--take-over`, or `rotisserie factory cancel`.
+models write the same change. Use `--take-over`, or `baste cancel`.
 It also never switches to a different provider or model than the one you
 named. If the provider itself refuses (missing credentials, no credit), the
 console says so. An item marked manual-only in its description is reported
@@ -265,11 +265,11 @@ recorded reason. With `--follow`, a delivered pull request is reported with
 its checks, review and merge state, because an open PR is not finished work.
 
 Ctrl+C stops watching only. The request keeps running on GitHub. Resume with
-`rotisserie factory watch RUN`, or stop it with `rotisserie factory cancel issue:N`.
+`baste watch RUN`, or stop it with `baste cancel issue:N`.
 
 ## Why isn't it picking that up?
 
-`rotisserie factory why issue:N` answers from the dispatcher's own rules, run
+`baste why issue:N` answers from the dispatcher's own rules, run
 over the same GitHub rows the controller reads:
 
 ```
@@ -280,8 +280,8 @@ over the same GitHub rows the controller reads:
     FACTORY_REVIEW_BACKLOG_LIMIT). Only main-breakage issues start new work
     until that drains.
 
-Raise the limit:  rotisserie factory settings FACTORY_REVIEW_BACKLOG_LIMIT N
-Start it anyway: rotisserie factory run PROVIDER MODEL --target issue:5612 --force
+Raise the limit:  baste settings FACTORY_REVIEW_BACKLOG_LIMIT N
+Start it anyway: baste run PROVIDER MODEL --target issue:5612 --force
 ```
 
 It reports blocked, terminal and epic labels, the manual-only marker, open
@@ -299,7 +299,7 @@ assignment.
 
 ## Clearing the bottleneck
 
-`rotisserie factory unstick` turns `why`'s diagnosis into work. It reads the
+`baste unstick` turns `why`'s diagnosis into work. It reads the
 same board, then plans:
 
 - **Review backlog at its limit** (`FACTORY_REVIEW_BACKLOG_LIMIT`): new issues
@@ -325,9 +325,9 @@ least 3 runs, at least one PR delivered. Name `PROVIDER MODEL` to choose them
 yourself.
 
 ```
-rotisserie factory unstick --dry-run   # show the plan only
-rotisserie factory unstick             # show it, ask, then start
-rotisserie factory unstick --max 3 -y  # start at most 3 without asking
+baste unstick --dry-run   # show the plan only
+baste unstick             # show it, ask, then start
+baste unstick --max 3 -y  # start at most 3 without asking
 ```
 
 `--skip pr:N` keeps an item out of the plan and `--only pr:N` limits the plan to
@@ -341,7 +341,7 @@ it starts nothing unless you pass `--yes`.
 
 ## Closing work that should not be done
 
-`rotisserie factory close pr:N [pr:M …] --reason TEXT` is for work you
+`baste close pr:N [pr:M …] --reason TEXT` is for work you
 cancelled, or that `main` has moved past (see `unstick`'s "probably obsolete"
 list). It shows what it will do and asks first (`--yes` skips the question;
 outside a terminal it closes nothing without it). For each pull request it:
@@ -355,7 +355,7 @@ outside a terminal it closes nothing without it). For each pull request it:
 
 A worker's own verdict is not proof. A merge-conflict worker can finish
 "without changes" while the pull request still conflicts.
-`rotisserie factory outcomes` follows each targeted request (from `run --target`
+`baste outcomes` follows each targeted request (from `run --target`
 or `unstick`) through to its effect: what the scheduler decided, what the
 worker reported, and whether the goal holds **now**:
 
@@ -383,7 +383,7 @@ newest first) for long windows.
 
 ## How long will it take?
 
-`rotisserie factory estimate issue:N` (or `pr:N`) compares the item with recent
+`baste estimate issue:N` (or `pr:N`) compares the item with recent
 finished factory work and prints three figures. Each figure has a median, the
 middle 80% (10th to 90th percentile) and the number of past items behind it:
 
@@ -467,7 +467,7 @@ approve it.** One eligible approval is always enough.
   model. The dispatcher also refuses to start a review on an author model: it
   re-picks across the fleet before the session starts.
 
-`rotisserie factory review pr:N` shows the known author models, whether the
+`baste review pr:N` shows the known author models, whether the
 current head has its own author record, the approvals and their recorded
 models, and the verdict. `--blocked` checks every open factory PR parked in
 `factory:blocked`. `--requeue` (confirm, or `--yes`) moves PRs the retired
@@ -477,7 +477,7 @@ head moved since it was inspected, and it never writes authorship markers.
 
 ## Why are its checks failing?
 
-`rotisserie factory checks pr:N` reads the failing check runs on the PR's
+`baste checks pr:N` reads the failing check runs on the PR's
 current head and pulls the first real error out of each log: a `cargo fmt`
 diff (with the files), failing test names (and a hint when the failure is a
 stale checked-in generated contract), or a compile error. A review-feedback
@@ -531,7 +531,7 @@ run) or **mixed** (fails in the PR's own files and in main's).
 
 ## Syncing branches with main
 
-`rotisserie factory sync pr:N [pr:N ...]` or `rotisserie factory sync --all-stale`
+`baste sync pr:N [pr:N ...]` or `baste sync --all-stale`
 merges the default branch into pull requests. Rotisserie owns this operation: it
 replaces the hand-run `sync_watch.py` watcher, which is retired and must not be
 restarted. One implementation (`factory_branch_sync.py` in the factory runtime)
@@ -566,7 +566,7 @@ serves the scheduler, `sync`, `unstick --yes` and `doctor --fix`.
   paginated list call plus about 3 calls per PR it syncs. A tick with nothing
   queued costs one list call.
 
-`rotisserie factory leases [pr:N ...]` shows who holds what: every worker and
+`baste leases [pr:N ...]` shows who holds what: every worker and
 target lease row from Neon (active or expired, with its claim and holder) where
 Neon is reachable (`FACTORY_STATE_DSN_FILE` set and the ledger importable).
 Otherwise it says leases are visible only to the trusted runtime and shows owner
@@ -577,7 +577,7 @@ dispatcher's stale-lease reconciler, not by this command.
 
 ## What does it conflict with?
 
-`rotisserie factory conflicts pr:N` compares each file the PR changes (files it
+`baste conflicts pr:N` compares each file the PR changes (files it
 added are skipped) at the PR's merge base with the default branch, and names
 the merged PR behind each difference. It is exact for any branch age; the
 compare API's file list stops at 300 files, and commit `since` filters miss
@@ -590,13 +590,13 @@ by hand, or close it if the overlapping merged PR already did the work.
 
 ## Grooming the backlog
 
-`rotisserie factory groom` reconciles an adopter's open issues and PRs with
+`baste groom` reconciles an adopter's open issues and PRs with
 reality in two steps, with a person (or an agent working for one) between them.
 
 ```
-rotisserie factory groom inventory --out inventory.json   # read everything, attach evidence
-rotisserie factory groom apply plan.json                  # check a reviewed plan (dry run)
-rotisserie factory groom apply plan.json --yes --log groom-audit.jsonl
+baste groom inventory --out inventory.json   # read everything, attach evidence
+baste groom apply plan.json                  # check a reviewed plan (dry run)
+baste groom apply plan.json --yes --log groom-audit.jsonl
 ```
 
 **inventory** reads every page of open issues and PRs and refuses, rather
@@ -643,7 +643,7 @@ file.
 
 ## Is the factory itself healthy?
 
-`rotisserie factory doctor` runs the checks behind problems that were first
+`baste doctor` runs the checks behind problems that were first
 found by hand. It exits 4 when any check fails.
 
 | Check | Fails when |
@@ -674,9 +674,9 @@ usage per calendar month. The exact reset hour is unverified, so Rotisserie
 shows the start of the next UTC month.
 
 ```bash
-rotisserie factory db-usage                # last value the status page published
-rotisserie factory db-usage --via github   # fresh read in the label claim workflow
-rotisserie factory db-usage --live --json  # Turso API; trusted jobs with the token only
+baste db-usage                # last value the status page published
+baste db-usage --via github   # fresh read in the label claim workflow
+baste db-usage --live --json  # Turso API; trusted jobs with the token only
 ```
 
 The status page job runs `.github/scripts/factory_turso_usage.py` with the
@@ -745,13 +745,13 @@ Any agent can ask for the next meaningful work and reserve it through the same
 leases the factory's own workers use:
 
 ```bash
-rotisserie factory next --json                       # ranked offers, read-only
-rotisserie factory reserve-next --client chatgpt --json
-rotisserie factory renew UUID --client chatgpt
-rotisserie factory release UUID --client chatgpt
+baste next --json                       # ranked offers, read-only
+baste reserve-next --client chatgpt --json
+baste renew UUID --client chatgpt
+baste release UUID --client chatgpt
 gh workflow run rotisserie-external-claim.yml --ref main \
   -f operation=handoff -f client=chatgpt -f claim_id=UUID -f evidence=PR_URL
-rotisserie factory revoke UUID --reason TEXT         # operator: remove a claim
+baste revoke UUID --reason TEXT         # operator: remove a claim
 ```
 
 Handoff always runs in the bridge workflow, which records the head's author
@@ -766,15 +766,15 @@ These commands drive the label claim controller (#191) and need no Neon
 connection on your machine. Each one waits for the controller's own answer:
 
 ```bash
-rotisserie factory claim pr:N                # add factory:claimed, show accepted/rejected
-rotisserie factory finish pr:N               # remove it, show the hand-off or release
-rotisserie factory wait-for-work --claim --via github   # wait, then claim the first item
-rotisserie factory runs pr:N                 # the controller's recent runs and results
-rotisserie factory follow pr:N               # print each stage change until done or held
-rotisserie factory follow pr:N --once        # where it stands now
-rotisserie factory labels --via github [--repair]       # label doctor report
-rotisserie factory leases pr:N --via github  # who holds it in Neon
-rotisserie factory why issue:N --via github  # eligibility plus the Neon holder
+baste claim pr:N                # add factory:claimed, show accepted/rejected
+baste finish pr:N               # remove it, show the hand-off or release
+baste wait-for-work --claim --via github   # wait, then claim the first item
+baste runs pr:N                 # the controller's recent runs and results
+baste follow pr:N               # print each stage change until done or held
+baste follow pr:N --once        # where it stands now
+baste labels --via github [--repair]       # label doctor report
+baste leases pr:N --via github  # who holds it in Neon
+baste why issue:N --via github  # eligibility plus the Neon holder
 ```
 
 `wait-for-work` never offers a review of a PR you authored, because GitHub
@@ -814,9 +814,9 @@ move into the service when they are next changed.
 
 ## GitHub API limits and retry times
 
-`rotisserie factory limits` shows REST core, GraphQL, and search quotas for the
+`baste limits` shows REST core, GraphQL, and search quotas for the
 **authenticated local GitHub CLI credential**, including used/remaining requests,
-local reset times and countdowns. `rotisserie factory limits --json` exposes the
+local reset times and countdowns. `baste limits --json` exposes the
 same resource counters and UTC reset timestamps as structured data. Factory
 worker GitHub App installation tokens may have **different limits**.
 
@@ -864,11 +864,11 @@ picked first. `prioritize issue:N` raises one item within its kind.
 ## Turning providers and models off
 
 ```sh
-rotisserie factory providers disable local-ollama --reason "fans too loud"
-rotisserie factory providers enable local-ollama
-rotisserie factory models disable opencode-go opencode-go/hy4-flash-free --reason "loops"
-rotisserie factory models enable opencode-go opencode-go/hy4-flash-free
-rotisserie factory providers          # the Switch column shows what is off and why
+baste providers disable local-ollama --reason "fans too loud"
+baste providers enable local-ollama
+baste models disable opencode-go opencode-go/hy4-flash-free --reason "loops"
+baste models enable opencode-go opencode-go/hy4-flash-free
+baste providers          # the Switch column shows what is off and why
 ```
 
 The switch writes two repository variables. Every factory workflow receives
@@ -901,7 +901,7 @@ Every place that picks a provider or a model obeys the switch:
 
 A run that names the provider (`run PROVIDER ...`) or the exact model may still
 use it. A disable never cancels work that is already running. To stop it, run
-`rotisserie factory cancel issue:N` (or `pr:N`).
+`baste cancel issue:N` (or `pr:N`).
 
 Dispatch by worker ID (`fixed-model-factory-dispatch` with `worker=`) obeys
 the switch: a worker ID does not name the provider. OmniRoute chooses its
@@ -936,9 +936,9 @@ slots on the next tick after the adopter runs the new Rotisserie ref.
 ## Incidents: send free workers to one issue
 
 ```sh
-rotisserie factory incident start issue:239 --reason "checkout is down"
-rotisserie factory incident                      # list incidents and their state
-rotisserie factory incident stop issue:239
+baste incident start issue:239 --reason "checkout is down"
+baste incident                      # list incidents and their state
+baste incident stop issue:239
 ```
 
 An incident is an issue that must be fixed before anything else. The console

@@ -1,4 +1,4 @@
-"""``rotisserie factory`` — the operator console for the software factory.
+"""``baste`` (also ``rotisserie factory``): the operator console for the software factory.
 
 Every command reads real factory state. Only ``estimate`` predicts, and it
 shows the past items behind each figure. Human output is the default.
@@ -90,16 +90,16 @@ discover_models = catalog.discover_models
 PROVIDERS_HELP = """\
 List providers, or turn one off or on for the whole fleet.
 
-  rotisserie factory providers
-  rotisserie factory providers disable local-ollama --reason "fans too loud"
-  rotisserie factory providers enable local-ollama
+  baste providers
+  baste providers disable local-ollama --reason "fans too loud"
+  baste providers enable local-ollama
 
 A turned-off provider is skipped by every lane on the next dispatcher tick:
 roster offers, automatic targets, unstick, cross-provider failover, the local
 Ollama review offer and PR-Agent advisory review. Only a run that names the
-provider explicitly ('rotisserie factory run PROVIDER ...') may still use it.
+provider explicitly ('baste run PROVIDER ...') may still use it.
 Work already running is not cancelled; stop it with
-'rotisserie factory cancel issue:N' (or pr:N).
+'baste cancel issue:N' (or pr:N).
 
 Adding a provider is a Rotisserie code change, not a switch: add its entry to
 factory/.github/scripts/factory_provider_registry.py, add a FACTORY_HAS_<SECRET>
@@ -110,10 +110,10 @@ the adopter repository. See docs/factory-console.md.
 MODELS_HELP = """\
 List a provider's models, or turn one model off or on for the whole fleet.
 
-  rotisserie factory models opencode-go
-  rotisserie factory models orcarouter --billing factory-fleet-catalogs.json
-  rotisserie factory models disable opencode-go opencode-go/hy4-flash-free --reason "loops"
-  rotisserie factory models enable opencode-go opencode-go/hy4-flash-free
+  baste models opencode-go
+  baste models orcarouter --billing factory-fleet-catalogs.json
+  baste models disable opencode-go opencode-go/hy4-flash-free --reason "loops"
+  baste models enable opencode-go opencode-go/hy4-flash-free
 
 MODEL is the ID the listing shows. Automatic model choice, failover and
 unstick never pick a turned-off model; a run that names that exact model may.

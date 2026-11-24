@@ -71,7 +71,7 @@ def cmd_unstick(context: Context, arguments: argparse.Namespace) -> Outcome:
         started.append({"target": target, "run_id": submission.run_id, "url": submission.url})
     data["started"] = started
     console.line()
-    console.line("Watch them: rotisserie factory status")
+    console.line("Watch them: baste status")
     return Outcome(Result.SUBMITTED, EXIT_CODES[Result.SUBMITTED], data)
 
 
@@ -316,7 +316,7 @@ def cmd_doctor(context: Context, arguments: argparse.Namespace) -> Outcome:
     fixable = [item for item in findings if item.fix and item.status != "ok"]
     if fixable and not arguments.fix and blocker is None:
         console.line()
-        console.line("Safe repairs are available: rotisserie factory doctor --fix")
+        console.line("Safe repairs are available: baste doctor --fix")
     if arguments.fix:
         if blocker is not None:
             console.line("Repairs deferred: GitHub is rate limited; no fixes were attempted.")

@@ -108,8 +108,7 @@ def cmd_wait_for_work(context: Context, arguments: argparse.Namespace) -> Outcom
             scope = "".join(f" --can {action}" for action in sorted(abilities))
             flag = " --via github" if via == "github" else ""
             console.line(
-                f"Reserve it: rotisserie factory reserve-next --repo {context.repo} "
-                f"--client AGENT{scope}{flag}"
+                f"Reserve it: baste reserve-next --repo {context.repo} --client AGENT{scope}{flag}"
             )
             return Outcome(
                 Result.COMPLETED,

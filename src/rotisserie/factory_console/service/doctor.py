@@ -157,7 +157,7 @@ def _scheduler(github: GitHub, now: datetime) -> Finding:
             "scheduler",
             "fail",
             "the scheduler has not run in the last 20 minutes",
-            "rotisserie factory report shows its last runs",
+            "baste report shows its last runs",
         )
     return Finding("scheduler", "ok", "running")
 
@@ -243,10 +243,10 @@ def model_availability(github: GitHub, now: datetime, tracker: Tracker) -> Findi
         parts.append(f"{count} failed at '{step}'")
     if other:
         parts.append(f"{other} were cancelled or timed out")
-    hint = "rotisserie factory report shows the failed runs"
+    hint = "baste report shows the failed runs"
     if no_model or in_session:
         hint = (
-            "rotisserie factory stats shows provider health; cooldowns clear by themselves. "
+            "baste stats shows provider health; cooldowns clear by themselves. "
             "If they are wrong: gh workflow run factory-model-health-reset.yml"
         )
     # No worker succeeding means nothing is being delivered at all.
@@ -261,7 +261,7 @@ def _intake(github: GitHub, now: datetime) -> Finding:
             "rotisserie intake",
             "fail",
             f"admits no fresh issue: {board.intake_problem}",
-            "rotisserie factory why issue:N explains a single issue",
+            "baste why issue:N explains a single issue",
         )
     return Finding("rotisserie intake", "ok", "deciding normally")
 
@@ -314,7 +314,7 @@ def systemic_rejection(found: list[outcomes.RequestOutcome]) -> Finding:
             "fail",
             f"{count} of {len(finished)} recent workers were rejected by the same factory gate: "
             f"{gate}. That points at the gate or the repository, not the models",
-            "rotisserie factory outcomes --all shows each rejection; compare the gate with main",
+            "baste outcomes --all shows each rejection; compare the gate with main",
         )
     return Finding(
         "worker rejections",
@@ -338,7 +338,7 @@ def shared_failures(github: GitHub, now: datetime) -> Finding:
             "fail",
             first.text,
             (f"Likely cause: {first.cause}. " if first.cause else "")
-            + "rotisserie factory unstick --dry-run shows the evidence; no worker is sent "
+            + "baste unstick --dry-run shows the evidence; no worker is sent "
             "to these PRs until main is fixed",
         )
     # Conflicting PRs get merge-conflict work, which merges main; update-branch cannot.
@@ -376,7 +376,7 @@ def shared_failures(github: GitHub, now: datetime) -> Finding:
             "warn",
             f"main has moved past the failures on {', '.join(waiting)}, but workers hold them; "
             "sync each once its worker finishes",
-            "rotisserie factory doctor --fix syncs the ones no worker holds",
+            "baste doctor --fix syncs the ones no worker holds",
         )
     return Finding("shared failures", "ok", "no backlog PR is red because of main")
 
@@ -393,7 +393,7 @@ def review_deadlocks(github: GitHub, pulls: list[Obj] | None = None) -> Finding:
         "review deadlocks",
         "warn",
         f"{len(found)} deadlock(s) on {names}: " + "; ".join(stall.text for stall in found[:3]),
-        hint="rotisserie factory review pr:N shows each one and what clears it",
+        hint="baste review pr:N shows each one and what clears it",
     )
 
 

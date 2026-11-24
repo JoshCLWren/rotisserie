@@ -1,4 +1,4 @@
-"""Contract tests for ``rotisserie factory`` against a scripted GitHub.
+"""Contract tests for ``baste`` against a scripted GitHub.
 
 These prove the console's behavior deterministically. They are not end-to-end
 verification: that requires a real authenticated dispatch (see the PR notes).
@@ -488,7 +488,7 @@ def test_explicit_selection_forwards_exactly_and_never_prompts(fake: FakeGitHub)
         "slot_index": "2",
     }
     assert "Choose" not in out and "Start this?" not in out
-    assert "Request sent" in out and "rotisserie factory watch 900" in out
+    assert "Request sent" in out and "baste watch 900" in out
 
 
 def test_unforced_next_task_request(fake: FakeGitHub) -> None:
@@ -605,7 +605,7 @@ def test_deferred_explains_the_real_reason(fake: FakeGitHub) -> None:
     assert code == 3
     assert "✗ No work assigned" in out
     assert "Reason: Nothing is waiting" in out
-    assert "See why: rotisserie factory why\n" in out
+    assert "See why: baste why\n" in out
 
 
 def test_deferred_target_points_at_why_for_that_issue(fake: FakeGitHub) -> None:
@@ -615,7 +615,7 @@ def test_deferred_target_points_at_why_for_that_issue(fake: FakeGitHub) -> None:
     )
     code, out = invoke(["run", "opencode-go", "auto", "--force", "--target", "issue:3953"])
     assert code == 3
-    assert "See why: rotisserie factory why issue:3953" in out
+    assert "See why: baste why issue:3953" in out
 
 
 def test_busy_target_offers_take_over_and_cancel(fake: FakeGitHub) -> None:
@@ -625,7 +625,7 @@ def test_busy_target_offers_take_over_and_cancel(fake: FakeGitHub) -> None:
     code, out = invoke(["run", "opencode-go", "auto", "--force", "--target", "issue:3953"])
     assert code == 3
     assert "#3953 is already being worked on" in out
-    assert "--take-over" in out and "rotisserie factory cancel issue:3953" in out
+    assert "--take-over" in out and "baste cancel issue:3953" in out
 
 
 def test_quota_deferred_scheduler_is_explained(fake: FakeGitHub) -> None:
@@ -695,7 +695,7 @@ def test_ctrl_c_stops_watching_without_cancelling(fake: FakeGitHub) -> None:
     clock.on_sleep = interrupt
     code, out = invoke(["run", "opencode-go", "auto", "--force"], clock=clock)
     assert code == 130
-    assert "Nothing was cancelled" in out and "rotisserie factory watch 900" in out
+    assert "Nothing was cancelled" in out and "baste watch 900" in out
     assert not any(call[:2] == ["run", "cancel"] for call in fake.calls)
 
 
@@ -844,7 +844,7 @@ def test_take_over_without_neon_explains_and_continues(
         ["run", "opencode-go", "auto", "--target", "issue:3953", "--take-over", "--no-wait"]
     )
     assert code == 0, out
-    assert "rotisserie factory revoke" in out
+    assert "baste revoke" in out
 
 
 # other commands ---------------------------------------------------------------------
@@ -1027,7 +1027,7 @@ def test_why_runs_the_real_rotisserie_intake_decision(fake: FakeGitHub) -> None:
     code, out = invoke(["why", "issue:41"])
     assert code == 0
     assert "held back by the factory's limits" in out
-    assert "Raise the limit:  rotisserie factory settings FACTORY_REVIEW_BACKLOG_LIMIT N" in out
+    assert "Raise the limit:  baste settings FACTORY_REVIEW_BACKLOG_LIMIT N" in out
     code, out = invoke(["--verbose", "why", "issue:41"])
     assert "intake not-authorized" in out
 
@@ -1877,7 +1877,7 @@ def test_doctor_fix_reruns_the_publisher_for_a_stale_snapshot(fake: FakeGitHub) 
     why_routes(fake, [])
     code, out = invoke(["doctor"])
     assert "factory-stats.json is stale" in out
-    assert "Safe repairs are available: rotisserie factory doctor --fix" in out
+    assert "Safe repairs are available: baste doctor --fix" in out
     assert not any(call[0] == "workflow" for call in fake.calls)
     code, out = invoke(["doctor", "--fix"])
     run = next(call for call in fake.calls if call[0] == "workflow")
@@ -2525,7 +2525,7 @@ def test_reserve_via_github_runs_the_claim_workflow_and_reads_its_result(
             "goal": "resolve the merge conflict",
             "url": f"https://github.com/{REPO}/pull/44",
             "claim_id": BRIDGE_CLAIM,
-            "renew": "rotisserie factory renew ...",
+            "renew": "baste renew ...",
             "renew_github": "gh workflow run rotisserie-external-claim.yml ... -f operation=renew",
         },
     }

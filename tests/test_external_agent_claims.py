@@ -253,7 +253,7 @@ def test_reserve_returns_real_fenced_claim_and_handoff(setup: LedgerDouble) -> N
     assert isinstance(handoff, dict)
     assert handoff["target"] == "issue:7"
     assert handoff["action"] == "implement"
-    assert handoff["renew"].startswith("rotisserie factory renew ")
+    assert handoff["renew"].startswith("baste renew ")
     assert setup.holder == "codebuff-phone"
 
 

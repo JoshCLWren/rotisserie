@@ -1,1 +1,1 @@
-"""Operator console for the Rotisserie software factory (``rotisserie factory``)."""
+"""Operator console for the Rotisserie software factory (``baste``)."""

@@ -141,10 +141,7 @@ def inspect(
     gate_block = stage == BLOCKED and any(text in note for text in REVIEW_GATE_BLOCK_NOTES)
     actions: list[str] = []
     if gate_block:
-        actions.append(
-            f"rotisserie factory review pr:{number} --requeue"
-            " (back to review for a different model)"
-        )
+        actions.append(f"baste review pr:{number} --requeue (back to review for a different model)")
     elif stage == BLOCKED and note:
         actions.append("Blocked for another reason (not the review gate); see the note.")
     if not verdict.eligible and verdict.status == "self-review" and stage != BLOCKED:

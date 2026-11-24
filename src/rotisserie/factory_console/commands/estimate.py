@@ -132,7 +132,7 @@ def _neon(context: Context, arguments: argparse.Namespace) -> tuple[Any, str, Ou
         started = estimate_source.start(context.github)
         console.ok("Started the Neon history run")
         _show_bridge(console, started)
-        console.line(f"Read it with: rotisserie factory estimate {arguments.what} --run ID")
+        console.line(f"Read it with: baste estimate {arguments.what} --run ID")
         return None, "", Outcome(Result.SUBMITTED, EXIT_OK, started)
     console.waiting("Reading Neon history through the label claim workflow on GitHub")
     try:

@@ -80,7 +80,7 @@ The intended result is a system that can:
 | `src/rotisserie/adapters/github/` | Repository-scoped GitHub projection and bounded mutation contracts |
 | `src/rotisserie/operator/` | Versioned local configuration, durable simulation state, records, metrics, and diagnostics |
 | `src/rotisserie/cli.py` | One-operation CLI with dry-run mutation plans and stable JSON output |
-| `src/rotisserie/factory_console/` | `rotisserie factory` operator console ([docs](docs/factory-console.md)) |
+| `src/rotisserie/factory_console/` | `baste` operator console ([docs](docs/factory-console.md)) |
 | `src/rotisserie/web.py` + `web_ui.html` | Local-only browser control room over the same factory CLI (`rotisserie web`) |
 | `prototype/` | Dependency and eligibility migration evidence with domain compatibility tests |
 | `tests/` | Rotisserie repository-safety guards |
@@ -128,7 +128,7 @@ From an adopter checkout, or by naming the repository explicitly, launch the aut
 rotisserie web --repo acme/widgets
 ```
 
-It reuses the existing `rotisserie factory ... --json` read/write commands and your authenticated `gh` CLI. It neither hosts a public service nor starts a separate scheduler. See [Factory operator console](docs/factory-console.md#local-web-control-room) for controls and safety boundaries.
+It reuses the existing `baste ... --json` read/write commands and your authenticated `gh` CLI. It neither hosts a public service nor starts a separate scheduler. See [Factory operator console](docs/factory-console.md#local-web-control-room) for controls and safety boundaries.
 
 ### Local operator quickstart
 

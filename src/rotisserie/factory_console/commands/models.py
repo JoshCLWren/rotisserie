@@ -57,9 +57,7 @@ def _groom_inventory(context: Context, arguments: argparse.Namespace) -> Outcome
         ]
         console.table(["Item", "Disposition", "Held by", "Evidence"], rows)
     console.line()
-    console.line(
-        "Review the evidence, write a plan, then: rotisserie factory groom apply PLAN.json"
-    )
+    console.line("Review the evidence, write a plan, then: baste groom apply PLAN.json")
     if arguments.out:
         console.line(f"Full inventory: {arguments.out}")
     return Outcome(Result.COMPLETED, EXIT_OK, data)

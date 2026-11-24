@@ -12,12 +12,19 @@ from rotisserie.factory_console.commands.parser_insight import (
 from rotisserie.factory_console.service import external
 
 
-def add_parser(subcommands: argparse._SubParsersAction[argparse.ArgumentParser]) -> None:
+def add_parser(
+    subcommands: argparse._SubParsersAction[argparse.ArgumentParser],
+    *,
+    prog: str | None = None,
+    epilog: str | None = None,
+) -> None:
     factory = subcommands.add_parser(
         "factory",
         help="operate the software factory: start work, watch it, see what happened",
         description=_shared.__doc__,
         formatter_class=argparse.RawDescriptionHelpFormatter,
+        prog=prog,
+        epilog=epilog,
     )
     factory.add_argument("--repo", help="repository running the factory (owner/name)")
     factory.add_argument(

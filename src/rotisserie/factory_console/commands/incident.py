@@ -7,13 +7,13 @@ from rotisserie.factory_console.context import Context, UsageError
 from rotisserie.factory_console.service import incident
 from rotisserie.factory_console.tracker import Result
 
-USAGE = "rotisserie factory incident [start issue:N [--attempts K] [--reason TEXT] | stop issue:N]"
+USAGE = "baste incident [start issue:N [--attempts K] [--reason TEXT] | stop issue:N]"
 HELP = """\
 Send free workers to one issue until it is fixed.
 
-  rotisserie factory incident                     list incidents
-  rotisserie factory incident start issue:N       declare an incident
-  rotisserie factory incident stop issue:N        end it
+  baste incident                     list incidents
+  baste incident start issue:N       declare an incident
+  baste incident stop issue:N        end it
 
 While an incident's issue is open, its issue and PRs rank ahead of every other
 item (owner picks included), its issue skips intake limits, and new intake of

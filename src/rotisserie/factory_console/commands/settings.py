@@ -47,7 +47,7 @@ def cmd_settings(context: Context, arguments: argparse.Namespace) -> Outcome:
                 {"name": name, "value": setting.default, "origin": "default"},
             )
         if len(change) != 2:
-            raise UsageError(f"Give a value: rotisserie factory settings {name} VALUE")
+            raise UsageError(f"Give a value: baste settings {name} VALUE")
         value = runtime.validate_setting(name, change[1])
         context.github.gh("variable", "set", name, "--repo", context.repo, "--body", value)
         console.ok(
@@ -84,7 +84,7 @@ def cmd_settings(context: Context, arguments: argparse.Namespace) -> Outcome:
         )
     console.table(["Setting", "Value", "", "Name"], rows)
     console.line()
-    console.note("Change one: rotisserie factory settings NAME VALUE   (or NAME --reset)")
+    console.note("Change one: baste settings NAME VALUE   (or NAME --reset)")
     console.note("Forced runs (--force) ignore these limits.")
     if console.verbose:
         for setting in runtime.settings():
@@ -97,7 +97,7 @@ def _setting_name(value: str, known: dict[str, runtime.SettingInfo]) -> str:
     for name in (candidate, f"FACTORY_{candidate}"):
         if name in known:
             return name
-    raise UsageError(f"Unknown setting {value}. See: rotisserie factory settings")
+    raise UsageError(f"Unknown setting {value}. See: baste settings")
 
 
 def _format(unit: str, value: str) -> str:

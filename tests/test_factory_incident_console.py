@@ -1,4 +1,4 @@
-"""``rotisserie factory incident`` declares, lists and ends incidents (#239)."""
+"""``baste incident`` declares, lists and ends incidents (#239)."""
 
 from __future__ import annotations
 

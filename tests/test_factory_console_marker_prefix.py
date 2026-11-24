@@ -1,4 +1,4 @@
-"""`rotisserie factory --repo` binds the runtime's comment-marker prefix to that repository."""
+"""`baste --repo` binds the runtime's comment-marker prefix to that repository."""
 
 from __future__ import annotations
 
