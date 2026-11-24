@@ -272,12 +272,24 @@ def capacity_sentence(source: str, kind: str, until: datetime) -> str:
     return f"{label} {kind} {noun} used up; resets at {when}"
 
 
-def account_exhaustion(source: str, reset: Reset) -> str | None:
-    """kind, reset epoch and sentence when this refusal blocks the whole source."""
-    if reset.until is None or scope(source, reset.kind) != "account":
-        return None
-    sentence = capacity_sentence(source, reset.kind, reset.until)
-    return f"{reset.kind}\t{int(reset.until.timestamp())}\t{sentence}"
+ANSI_RE = re.compile(r"\x1b\[[0-?]*[ -/]*[@-~]")
+
+
+def account_kind(source: str, outcome: str, log: str) -> str:
+    """daily or monthly only when the refusal text itself says the account ran out.
+
+    Unlike the cross-run hint, there is no policy fallback: a refusal without
+    readable evidence, a credit refusal or a throttle keeps per-model failover.
+    """
+    kind = refusal_kind(outcome, refusal_evidence(ANSI_RE.sub("", log)))
+    return kind if kind in {DAILY, MONTHLY} and scope(source, kind) == "account" else ""
+
+
+def account_exhaustion(source: str, kind: str, reset: Reset) -> str:
+    """kind, reset epoch and sentence for the worker's same-run stop."""
+    until = reset.until or policy_reset(source, kind, datetime.now(UTC))
+    sentence = capacity_sentence(source, kind, until)
+    return f"{kind}\t{int(until.timestamp())}\t{sentence}"
 
 
 def main() -> int:
@@ -298,6 +310,9 @@ def main() -> int:
             text = handle.read().decode("utf-8", "replace")
     except OSError:
         text = ""
+    kind = account_kind(args.source, args.outcome, text) if args.command == "account" else ""
+    if args.command == "account" and not kind:
+        return 1
     reset = from_text(args.source, args.outcome, refusal_evidence(text), observed)
     if args.probe and reset.reset_source == "policy" and reset.kind != NEEDS_CREDITS:
         from factory_quota_probe import probe_reset
@@ -305,11 +320,8 @@ def main() -> int:
         probed = probe_reset(args.source, args.model, reset.kind, observed, args.probe_cache)
         if probed is not None:
             reset = probed
-    if args.command == "account":
-        exhausted = account_exhaustion(args.source, reset)
-        if exhausted is None:
-            return 1
-        print(exhausted)
+    if kind:
+        print(account_exhaustion(args.source, kind, reset))
         return 0
     print(f"source={args.source} model={args.model} outcome={args.outcome} {reset.fields()}")
     return 0

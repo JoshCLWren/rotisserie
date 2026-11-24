@@ -46,7 +46,15 @@ def _catalog(*models: str) -> dict:
 
 
 def _trip(
-    tmp_path: Path, source: str, model: str, outcome: str, text: str, catalogs: dict | None = None
+    tmp_path: Path,
+    source: str,
+    model: str,
+    outcome: str,
+    text: str,
+    catalogs: dict | None = None,
+    *,
+    elapsed: int = 85,
+    probe: dict | None = None,
 ) -> str:
     repo = tmp_path / "repo"
     repo.mkdir()
@@ -54,6 +62,8 @@ def _trip(
     runner = tmp_path / "runner"
     runner.mkdir()
     (runner / "factory-fleet-catalogs.json").write_text(json.dumps(catalogs or {}))
+    if probe is not None:
+        (runner / "factory-quota-probe.json").write_text(json.dumps(probe))
     worker = f"account-trip-{tmp_path.name}"
     log = Path(f"/tmp/opencode-factory-{worker}.log")
     log.write_text(text)
@@ -63,9 +73,10 @@ def _trip(
         f'WORKER="{worker}"; RUNNER_TEMP="{runner}"; FACTORY_TRUSTED_FAILOVER_DIR="{SCRIPTS}"\n'
         "FAST_FAILOVER_SECONDS=180\n"
         "exhausted_pools=() exhausted_accounts=() exhausted_account_details=()\n"
-        f'trip_exhausted_capacity {source} "{model}" {outcome} 85\n'
+        f'trip_exhausted_capacity {source} "{model}" {outcome} {elapsed}\n'
         'echo "scope=$failure_scope pools=${exhausted_pools[*]:-} '
         'accounts=${exhausted_accounts[*]:-}"\n'
+        'echo "details=${exhausted_account_details[*]:-}"\n'
     )
     env = {k: v for k, v in os.environ.items() if not k.endswith("_API_KEY")}
     try:
@@ -116,6 +127,83 @@ def test_credit_pool_keeps_the_234_path(tmp_path: Path) -> None:
         {"orcarouter": catalog},
     )
     assert "scope=pool pools=orcarouter accounts=\n" in out
+
+
+ANSI_OUT_OF_CREDITS = "\x1b[91m\x1b[1mError: \x1b[0m" + OUT_OF_CREDITS
+
+
+@pytest.mark.parametrize("model,elapsed", [("synthetic/unpriced", 85), ("synthetic/paid", 900)])
+def test_credit_refusal_never_trips_the_account(tmp_path: Path, model: str, elapsed: int) -> None:
+    catalog = {
+        "data": [
+            {"id": "synthetic/paid", "pricing": {"prompt": "0.1", "completion": "1"}},
+            {"id": "synthetic/unpriced"},
+        ]
+    }
+    out = _trip(
+        tmp_path,
+        "orcarouter",
+        model,
+        "provider_quota",
+        ANSI_OUT_OF_CREDITS,
+        {"orcarouter": catalog},
+        elapsed=elapsed,
+    )
+    assert "scope=model pools= accounts=\n" in out
+
+
+def test_quota_without_readable_refusal_keeps_per_model_failover(tmp_path: Path) -> None:
+    text = "The docs say the daily quota exceeded message means a free-models-per-day limit.\n"
+    out = _trip(tmp_path, "openrouter-free", OPENROUTER[0], "provider_quota", text)
+    assert "scope=model pools= accounts=\n" in out
+
+
+def test_probe_supplies_only_the_reset_time(tmp_path: Path) -> None:
+    probed = int(datetime.now(UTC).timestamp())
+    cache = {
+        "openrouter-free": {
+            "probed_at": probed,
+            "reset_at": probed + 600,
+            "kind": "throttle",
+            "reset_source": "header",
+        }
+    }
+    out = _trip(
+        tmp_path, "openrouter-free", OPENROUTER[0], "provider_quota", DAILY_REFUSAL, probe=cache
+    )
+    assert "accounts=openrouter-free" in out
+    assert f"details=daily\t{probed + 600}\tOpenRouter daily free allowance used up" in out
+
+
+def test_selector_cli_drops_the_exhausted_account(tmp_path: Path) -> None:
+    catalogs = {"openrouter-free": _catalog(*OPENROUTER), "nvidia": _catalog("independent/coder")}
+    (tmp_path / "catalogs.json").write_text(json.dumps(catalogs))
+    (tmp_path / "sources.json").write_text(json.dumps(sorted(catalogs)))
+    (tmp_path / "exclusions.json").write_text("{}")
+    pair = json.dumps(["openrouter-free", OPENROUTER[0]])
+    command = [
+        sys.executable,
+        str(SCRIPTS / "factory_model_failover.py"),
+        "--source=openrouter-free",
+        "--worker=77",
+        f"--exclusions-file={tmp_path / 'exclusions.json'}",
+        f"--eligible-sources-file={tmp_path / 'sources.json'}",
+        f"--fleet-catalog-cache={tmp_path / 'catalogs.json'}",
+        f"--attempted-pair={pair}",
+    ]
+    env = {k: v for k, v in os.environ.items() if k != "FACTORY_CANDIDATE_HEALTH"}
+    run = subprocess.run(command, capture_output=True, text=True, env=env, check=False)
+    assert run.returncode == 0, run.stderr
+    assert json.loads(run.stdout)["source"] == "openrouter-free"
+    run = subprocess.run(
+        [*command, "--exhausted-account=openrouter-free"],
+        capture_output=True,
+        text=True,
+        env=env,
+        check=False,
+    )
+    assert run.returncode == 0, run.stderr
+    assert json.loads(run.stdout)["source"] == "nvidia"
 
 
 def _fleet(attempted: set, accounts: frozenset, catalogs: dict) -> dict:
