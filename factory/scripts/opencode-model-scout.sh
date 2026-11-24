@@ -7,17 +7,17 @@
 set -Eeuo pipefail
 
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
-SOURCE_REPO="${COMIC_PILE_REPO:-$(cd -- "$SCRIPT_DIR/.." && pwd)}"
+SOURCE_REPO="${FACTORY_SOURCE_REPO:-$(cd -- "$SCRIPT_DIR/.." && pwd)}"
 MANIFEST_HELPER="$SCRIPT_DIR/opencode-model-manifest.sh"
-STATE_DIR="${COMIC_PILE_FACTORY_STATE_DIR:-${SOURCE_REPO%/}-factory-state}"
+STATE_DIR="${FACTORY_STATE_DIR:-${SOURCE_REPO%/}-factory-state}"
 PARALLEL="${MODEL_SCOUT_PARALLEL:-4}"
 TIMEOUT="${MODEL_SCOUT_TIMEOUT:-900}"
 WATCHDOG_POLL_SECONDS="${MODEL_SCOUT_WATCHDOG_POLL_SECONDS:-15}"
 FAILURE_COOLDOWN_SECONDS="${MODEL_SCOUT_FAILURE_COOLDOWN_SECONDS:-3600}"
-ALLOWED_PROVIDERS="${COMIC_PILE_FACTORY_ALLOWED_PROVIDERS:-opencode nvidia fcm-nvidia openrouter google}"
+ALLOWED_PROVIDERS="${FACTORY_ALLOWED_PROVIDERS:-opencode nvidia fcm-nvidia openrouter google}"
 # Only these Google models are verified free on the free tier; probing the whole
 # google/ prefix would otherwise probe paid pro models.
-GOOGLE_FREE_MODELS="${COMIC_PILE_GOOGLE_FREE_MODELS:-google/gemini-3.1-flash-lite google/gemini-2.5-flash-lite}"
+GOOGLE_FREE_MODELS="${FACTORY_GOOGLE_FREE_MODELS:-google/gemini-3.1-flash-lite google/gemini-2.5-flash-lite}"
 # OpenCode's Google provider reads GOOGLE_GENERATIVE_AI_API_KEY, but the
 # credentials file exports GOOGLE_API_KEY. Alias it so free-tier Gemini models
 # can be probed and confirmed.

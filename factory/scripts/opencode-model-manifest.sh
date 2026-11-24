@@ -7,11 +7,11 @@
 set -Eeuo pipefail
 
 default_state_dir() {
-  local source_repo="${COMIC_PILE_REPO:-}"
+  local source_repo="${FACTORY_SOURCE_REPO:-}"
   if [[ -n "$source_repo" ]]; then
     printf '%s-factory-state\n' "${source_repo%/}"
   else
-    printf '%s\n' "${COMIC_PILE_FACTORY_STATE_DIR:-/tmp/comic-pile-factory-state}"
+    printf '%s\n' "${FACTORY_STATE_DIR:-/tmp/factory-state}"
   fi
 }
 
@@ -19,7 +19,7 @@ state_dir_for() {
   if [[ $# -ge 1 && -n "$1" ]]; then
     printf '%s\n' "$1"
   else
-    printf '%s\n' "${COMIC_PILE_FACTORY_STATE_DIR:-$(default_state_dir)}"
+    printf '%s\n' "${FACTORY_STATE_DIR:-$(default_state_dir)}"
   fi
 }
 

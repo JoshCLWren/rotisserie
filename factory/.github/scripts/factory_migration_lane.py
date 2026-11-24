@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Serialize final integration for factory PRs that change Alembic migrations.
 
-ComicPile requires a single Alembic head, so migration-bearing PRs cannot safely
+An adopter with a single Alembic head requires it, so migration-bearing PRs cannot safely
 finish review/CI/merge in parallel. This controller keeps ordinary implementation
 parallel, but parks all except one migration PR once they reach the finalization
 stages that can lead to merge.

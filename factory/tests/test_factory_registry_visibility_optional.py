@@ -156,13 +156,13 @@ def test_no_factory_path_posts_or_patches_issue_1093_comments() -> None:
                 assert "1093" not in line, f"{path.relative_to(ROOT)}: {line.strip()}"
 
 
-def test_issue_1093_stays_protected_and_non_executable() -> None:
-    """Retiring the registry never makes #1093 claimable or closable."""
+def test_reserved_issues_stay_protected_and_non_executable() -> None:
+    """[issues] reserved in the adopter config is never claimable or closable."""
     from factory_post_merge_closure import PROTECTED_ISSUES
     from factory_work_policy import NON_EXECUTABLE_ISSUES
 
-    assert 1093 in NON_EXECUTABLE_ISSUES
-    assert 1093 in PROTECTED_ISSUES
+    assert NON_EXECUTABLE_ISSUES == {9991, 9992}
+    assert PROTECTED_ISSUES == frozenset({9991, 9992})
 
 
 def test_session_steps_make_no_github_comment_calls(tmp_path: Path) -> None:

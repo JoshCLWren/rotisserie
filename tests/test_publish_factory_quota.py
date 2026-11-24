@@ -30,11 +30,11 @@ class QuotaSanitizationTests(unittest.TestCase):
         self.assertNotIn("secret-project", str(public))
         self.assertNotIn("123", str(public))
 
-    def test_accepts_authenticated_comicpile_sample(self) -> None:
+    def test_accepts_authenticated_observer_sample(self) -> None:
         sample = {
             "observed_at": "2026-10-10T14:00:00Z",
             "credential_kind": "github-actions-installation",
-            "public_alias": "factory-comicpile-actions",
+            "public_alias": "factory-actions",
             "resources": {
                 "core": {
                     "limit": 5000,

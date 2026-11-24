@@ -484,7 +484,7 @@ def classify(log: str) -> Result:
         )
 
     # A smoke invocation reached OpenCode but did not produce the proof token.
-    if "ComicPile fixed-model smoke" in log or "Smoke exact pinned model through OpenCode" in log:
+    if "fixed-model smoke" in log or "Smoke exact pinned model through OpenCode" in log:
         return Result(
             **common,
             outcome="PROVIDER FAILURE",
@@ -755,7 +755,7 @@ class ClassifierTests(unittest.TestCase):
 
     def test_rate_limited_is_provider_throttle(self) -> None:
         """Provider rate-limit responses map to canonical provider_throttle."""
-        result = classify(self.BASE + "ComicPile fixed-model smoke\nError: Too Many Requests 429\n")
+        result = classify(self.BASE + "Factory fixed-model smoke\nError: Too Many Requests 429\n")
         self.assertEqual(result.outcome, "PROVIDER THROTTLE")
         self.assertEqual(result.outcome_class, "provider_throttle")
 
@@ -774,7 +774,7 @@ class ClassifierTests(unittest.TestCase):
         """Ollama monthly usage-limit 429s are quota exhaustion, not a throttle."""
         result = classify(
             self.BASE
-            + "ComicPile fixed-model smoke\nError: you (joshisplutar) have reached your monthly "
+            + "Factory fixed-model smoke\nError: you (joshisplutar) have reached your monthly "
             + "usage limit, upgrade for higher limits (HTTP 429)\n"
         )
         self.assertEqual(result.outcome_class, "provider_quota")
@@ -802,7 +802,7 @@ class ClassifierTests(unittest.TestCase):
         """HTTP 413 TPM / request-too-large maps to provider_throttle."""
         result = classify(
             self.BASE
-            + "ComicPile fixed-model smoke\n"
+            + "Factory fixed-model smoke\n"
             + "Error: groq/openai/gpt-oss-20b: model — [413]: Request too large for model "
             + "`openai/gpt-oss-20b` on tokens per minute (TPM): Limit 8000, Requested 12027 "
             + "(HTTP 413)\n"
@@ -818,7 +818,7 @@ class ClassifierTests(unittest.TestCase):
         )
         result = classify(
             lock
-            + "ComicPile fixed-model smoke\n"
+            + "Factory fixed-model smoke\n"
             + "Error: groq/openai/gpt-oss-20b: model — [413]: Request too large (HTTP 413); "
             + "oc/north-mini-code-free: model — Model 'north-mini-code-free' is not available "
             + "in the active live catalog for provider 'opencode'. (HTTP 400)\n"
@@ -834,7 +834,7 @@ class ClassifierTests(unittest.TestCase):
         )
         result = classify(
             lock
-            + "ComicPile fixed-model smoke\n"
+            + "Factory fixed-model smoke\n"
             + "Model 'north-mini-code-free' is not available in the active live catalog "
             + "for provider 'opencode'. (HTTP 400)\n"
         )
@@ -1018,7 +1018,7 @@ class ClassifierTests(unittest.TestCase):
 
     def test_model_at_capacity_is_provider_throttle(self) -> None:
         """Explicit provider capacity exhaustion remains provider_throttle."""
-        result = classify(self.BASE + "ComicPile fixed-model smoke\nThe model is at capacity\n")
+        result = classify(self.BASE + "Factory fixed-model smoke\nThe model is at capacity\n")
         self.assertEqual(result.outcome, "PROVIDER THROTTLE")
         self.assertEqual(result.outcome_class, "provider_throttle")
 

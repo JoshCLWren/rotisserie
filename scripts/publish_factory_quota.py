@@ -32,7 +32,7 @@ def sanitize(raw: dict[str, Any]) -> dict[str, Any]:
     if not published:
         raise ValueError("trusted observation timestamp required")
     installations: list[dict[str, Any]] = []
-    # Accept an authenticated ComicPile observer sample as well as an
+    # Accept an authenticated factory observer sample as well as an
     # aggregate built from multiple private observations.
     observations = raw.get("installations")
     if observations is None and raw.get("credential_kind") == "github-actions-installation":

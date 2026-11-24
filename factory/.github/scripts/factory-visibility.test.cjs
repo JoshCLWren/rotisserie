@@ -85,12 +85,12 @@ function githubFor({
   const workerDefinitions = Object.fromEntries(
     Array.from({ length: 16 }, (_, index) => [
       `factory:${index + 1}`,
-      ['0366D6', `Current next-action owner is ComicPile Factory ${index + 1}`],
+      ['0366D6', `Current next-action owner is Factory ${index + 1}`],
     ]),
   );
   const definitions = [
     ...Object.entries({
-      factory: ['5319E7', 'Work owned or produced by an autonomous ComicPile factory'],
+      factory: ['5319E7', 'Work owned or produced by an autonomous factory'],
       ...workerDefinitions,
       'factory:local': ['0366D6', 'Current next-action owner is the local OpenCode factory'],
       'factory:unowned': ['BFDADC', 'Factory work has no current next-action owner'],
@@ -203,7 +203,7 @@ test('legacy model-specific label metadata is normalized', async () => {
 
   const update = updates.find(candidate => candidate.name === `factory:${dynamicWorker}`);
   assert.ok(update);
-  assert.equal(update.description, `Current next-action owner is ComicPile Factory ${dynamicWorker}`);
+  assert.equal(update.description, `Current next-action owner is Factory ${dynamicWorker}`);
 });
 
 test('label reconciliation replaces both groups with one atomic call', async () => {

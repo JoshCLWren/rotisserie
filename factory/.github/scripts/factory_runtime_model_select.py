@@ -59,7 +59,7 @@ def provider_catalog(
         headers={
             "Accept": "application/json",
             "Authorization": f"Bearer {env[spec.credential]}",
-            "User-Agent": "ComicPile-runtime-catalog/1",
+            "User-Agent": "rotisserie-runtime-catalog/1",
         },
     )
     try:

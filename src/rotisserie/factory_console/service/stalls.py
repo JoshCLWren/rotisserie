@@ -1,6 +1,6 @@
 """Review deadlocks the factory does not get out of by itself.
 
-Two shapes were found by hand on ComicPile (#177):
+Two shapes were found by hand on an adopter (#177):
 
 * **Answered thread** (#5688): a reviewer bot left a thread on the current
   head, a factory worker replied "**Fixed** in <sha>", and nobody resolved the

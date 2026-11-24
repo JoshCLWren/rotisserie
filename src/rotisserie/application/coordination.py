@@ -181,7 +181,7 @@ class DispatchPlan:
     This value object only records the verdict. The obligation to exit early and
     cheaply on a trustworthy zero -- spinning up no worker, invoking no provider,
     and issuing no effect -- belongs to the caller that runs the tick. It ports,
-    as provider-neutral policy, ComicPile's dispatcher behavior of ending a
+    as provider-neutral policy, the first adopter's dispatcher behavior of ending a
     bounded session on a trustworthy zero-work tick instead of chaining a
     successor.
     """

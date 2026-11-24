@@ -13,7 +13,7 @@ BUCKETS = ("core", "graphql", "search")
 def snapshot(payload, observed_at):
     resources = payload.get("resources", {})
     result = {"observed_at": observed_at, "credential_kind": "github-actions-installation",
-              "public_alias": "factory-comicpile-actions", "resources": {}}
+              "public_alias": "factory-actions", "resources": {}}
     for bucket in BUCKETS:
         raw = resources.get(bucket)
         if not isinstance(raw, dict):
@@ -37,7 +37,7 @@ def main():
         "Authorization": "Bearer " + token,
         "Accept": "application/vnd.github+json",
         "X-GitHub-Api-Version": "2022-11-28",
-        "User-Agent": "comicpile-factory-quota-observer",
+        "User-Agent": "rotisserie-factory-quota-observer",
     })
     with urlopen(request, timeout=12) as response:
         payload = json.load(response)

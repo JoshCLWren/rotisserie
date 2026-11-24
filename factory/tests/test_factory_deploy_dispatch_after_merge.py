@@ -27,9 +27,6 @@ MERGE_RE = re.compile(
 )
 # Merge paths that do not merge with GITHUB_TOKEN, with the reason.
 EXEMPT = {
-    # Local operator pipeline: merges with the operator's own token, which
-    # fires push events, so Deploy Production runs on its own.
-    "scripts/opencode_pipeline.sh",
     # Validator that forbids the merge string in the live worker.
     ".github/scripts/validate-free-model-factories.py",
 }

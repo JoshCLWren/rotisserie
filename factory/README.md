@@ -32,6 +32,29 @@ python3 factory/install/install.py /path/to/adopter --ref <sha> --workflow facto
 `--ref` must be a full commit SHA. Installed files keep the template names, so a
 workflow disabled in the adopter stays disabled when its file is updated.
 
+## Adopter configuration
+
+`.rotisserie/config.toml` in the adopter repository holds every
+adopter-specific value. Only `[repository]` is required.
+
+```toml
+schema_version = 1
+
+[repository]          # used when GITHUB_REPOSITORY is unset (local runs)
+owner = "acme"
+name = "widgets"
+
+[issues]
+reserved = []         # issues the factory never claims and never closes
+
+[checks]
+fast = ""             # replaces the built-in pre-push fast checks
+
+[dashboard]
+auth_url = ""         # https sign-in service for the hosted dashboard;
+                      # empty keeps the dashboard read-only
+```
+
 ## Comment markers
 
 The factory records state in HTML comment markers on issues and pull

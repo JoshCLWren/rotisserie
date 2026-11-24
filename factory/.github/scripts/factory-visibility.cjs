@@ -27,10 +27,10 @@ const RETIRED_OWNER_LABELS = [...RETIRED_WORKER_IDS]
 const WORKER_OWNER_LABELS = [...SCHEDULED_OWNER_LABELS, ...FIXED_MODEL_OWNER_LABELS];
 
 const DEFINITIONS = {
-  factory: ['5319E7', 'Work owned or produced by an autonomous ComicPile factory'],
+  factory: ['5319E7', 'Work owned or produced by an autonomous factory'],
   ...Object.fromEntries(WORKER_OWNER_LABELS.map((name) => {
     const number = name.slice('factory:'.length);
-    return [name, ['0366D6', `Current next-action owner is ComicPile Factory ${number}`]];
+    return [name, ['0366D6', `Current next-action owner is Factory ${number}`]];
   })),
   'factory:local': ['0366D6', 'Current next-action owner is the local OpenCode factory'],
   'factory:unowned': ['BFDADC', 'Factory work has no current next-action owner'],

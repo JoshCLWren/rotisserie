@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Synchronize the allowlisted public factory snapshot from Comic Pile."""
+"""Synchronize the allowlisted public factory snapshot from the adopter."""
 
 from __future__ import annotations
 
@@ -20,7 +20,7 @@ def sync_snapshot(source_root: Path, target_root: Path, *, check: bool = False) 
     """Copy or verify the explicitly allowlisted factory documentation.
 
     Args:
-        source_root: Comic Pile repository root.
+        source_root: Adopter repository root.
         target_root: Public factory snapshot repository root.
         check: Report drift without writing when true.
 

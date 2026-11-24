@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Translate one captured ComicPile Factory view into Rotisserie shadow inputs.
+"""Translate one captured adopter factory view into Rotisserie shadow inputs.
 
 The adapter deliberately performs no GitHub reads or writes.  An operator captures one
 host view, records its upstream revision, and passes that immutable JSON document here.
@@ -109,7 +109,7 @@ def _contributors(pr: dict[str, Any]) -> tuple[set[str], bool]:
 
 
 def _human_gate(issue: dict[str, Any]) -> bool:
-    """Return whether ComicPile policy requires an explicit non-worker gate."""
+    """Return whether adopter policy requires an explicit non-worker gate."""
     labels = set(_labels(issue))
     return (
         int(issue["number"]) in NON_EXECUTABLE_ISSUES
@@ -122,7 +122,7 @@ def _human_gate(issue: dict[str, Any]) -> bool:
 
 
 def _portable_priorities(issues: list[dict[str, Any]]) -> dict[int, int]:
-    """Encode ComicPile's issue ordering as host-neutral numeric priorities."""
+    """Encode the adopter's issue ordering as host-neutral numeric priorities."""
     ordered = sorted(
         issues,
         key=lambda issue: (
@@ -392,7 +392,7 @@ def _work_blocks(
 
 
 def legacy_decisions(view: dict[str, Any]) -> dict[str, object]:
-    """Normalize current ComicPile Factory decisions into DecisionSnapshot v1."""
+    """Normalize current factory decisions into DecisionSnapshot v1."""
     _validate(view)
     issues = [dict(item) for item in view["issues"]]
     prs = [dict(item) for item in view["pull_requests"]]

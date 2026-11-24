@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Trusted Neon decision projections for the ComicPile factory.
+"""Trusted Neon decision projections for the factory.
 
 Only trusted Actions controllers use these functions. Agent/model runner jobs
 must never receive FACTORY_STATE_DSN_FILE. GitHub remains authoritative for

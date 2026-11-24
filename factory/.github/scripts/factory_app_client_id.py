@@ -33,7 +33,7 @@ def resolve_client_id(
         headers={
             "Authorization": f"Bearer {jwt}",
             "Accept": "application/vnd.github+json",
-            "User-Agent": "comic-pile-factory-app-client-id",
+            "User-Agent": "rotisserie-factory-app-client-id",
             "X-GitHub-Api-Version": "2022-11-28",
         },
     )

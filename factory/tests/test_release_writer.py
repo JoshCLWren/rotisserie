@@ -1729,7 +1729,7 @@ class TestReleaseWriterEngineeringClassification:
                         "Source: z-ai\n"
                         "Worker: opencode-free-model-factory-94\n\n"
                         "Produced by fixed-model Factory 94 (Z.AI GLM 4.5 Flash). "
-                        "Normal ComicPile exact-head factory merge gates apply."
+                        "Normal exact-head factory merge gates apply."
                     ),
                 }
             return None

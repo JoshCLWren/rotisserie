@@ -37,7 +37,8 @@ def test_hosted_page_reuses_canonical_local_ui_without_local_session() -> None:
     assert "__REPOSITORY__" not in page
     assert 'const TOKEN=null, REPO="acme/widgets";' in page
     assert "GitHub Pages · Published snapshot" in page
-    assert "https://comic-pile.vercel.app" in page
+    assert 'const AUTH_BASE = "";' in page
+    assert "Sign-in is not configured." in page
     assert "https://raw.githubusercontent.com" in page
     assert "localStorage" not in page
     assert "Sign in with GitHub" in page
@@ -91,3 +92,15 @@ def test_browser_uses_real_github_oauth_not_pasted_tokens() -> None:
     assert "rotisserie-operator.yml" in content
     assert "/actions/workflows/" not in content
     assert "Bearer " in content
+
+
+def test_configured_sign_in_service_is_the_only_extra_connect_origin() -> None:
+    page = builder().render("acme/widgets", "https://auth.widgets.example/api/factory/github/")
+    assert 'const AUTH_BASE = "https://auth.widgets.example/api/factory/github";' in page
+    assert "connect-src https://raw.githubusercontent.com https://auth.widgets.example;" in page
+
+
+@pytest.mark.parametrize("url", ["http://auth.example", "https://auth.example/a b", "javascript:x"])
+def test_sign_in_service_must_be_a_plain_https_url(url: str) -> None:
+    with pytest.raises(ValueError):
+        builder().render("acme/widgets", url)

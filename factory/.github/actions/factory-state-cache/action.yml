@@ -7,7 +7,7 @@ inputs:
     description: Existing Neon management credential, never exposed to model jobs
   neon-project-id:
     required: true
-    description: Existing ComicPile Neon project ID
+    description: Existing adopter Neon project ID
 
 runs:
   using: composite

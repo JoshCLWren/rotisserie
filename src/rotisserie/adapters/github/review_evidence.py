@@ -7,8 +7,8 @@ the exact-head contributor set, the recorded lineage, the approver set, and
 whether provenance was recorded.
 
 Marker vocabulary is an adopter concern, so the collector is configured with a
-``namespace`` (the HTML-comment marker prefix, for example ComicPile's
-``comic-pile-factory``) and a ``worker_namespace`` for the identities the
+``namespace`` (the HTML-comment marker prefix, for example
+``widgets-factory``) and a ``worker_namespace`` for the identities the
 markers name. Rotisserie's domain never sees those strings; the GitHub- and
 product-specific encoding is confined to this adapter.
 

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Capture a read-only ComicPile host view for Rotisserie decision shadowing."""
+"""Capture a read-only adopter host view for Rotisserie decision shadowing."""
 from __future__ import annotations
 
 import argparse

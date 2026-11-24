@@ -9,6 +9,7 @@ repository name, so an adopter's existing markers stay recognizable.
 
 from __future__ import annotations
 
+import json
 import os
 import re
 import tomllib
@@ -75,6 +76,14 @@ def marker_prefix(slug: str | None = None) -> str:
     return prefix
 
 
+def reserved_issues() -> frozenset[int]:
+    """Issue numbers the factory never claims and never closes ([issues] reserved)."""
+    raw = (load_config().get("issues") or {}).get("reserved", [])
+    if not isinstance(raw, list) or not all(isinstance(n, int) and n > 0 for n in raw):
+        raise AdopterConfigError(f"[issues] reserved in {config_path()} must be issue numbers")
+    return frozenset(raw)
+
+
 def __getattr__(name: str) -> str:
     """Resolve ``from factory_adopter import MARKER_PREFIX`` at the importer's import time."""
     if name == "MARKER_PREFIX":
@@ -85,7 +94,11 @@ def __getattr__(name: str) -> str:
 if __name__ == "__main__":
     import sys
 
-    commands = {"repository": repository, "marker-prefix": marker_prefix}
+    commands = {
+        "repository": repository,
+        "marker-prefix": marker_prefix,
+        "reserved-issues": lambda: json.dumps(sorted(reserved_issues())),
+    }
     if len(sys.argv) != 2 or sys.argv[1] not in commands:
         raise SystemExit(f"usage: factory_adopter.py {'|'.join(commands)}")
     print(commands[sys.argv[1]]())

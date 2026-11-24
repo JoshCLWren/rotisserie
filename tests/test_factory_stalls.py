@@ -49,7 +49,7 @@ def thread(
 
 ANSWER = [
     comment("greptile-apps", "P0: the test never awaits the refresh"),
-    comment("github-actions", "**Fixed** in `" + HEAD + "` by ComicPile Factory 100", url="r"),
+    comment("github-actions", "**Fixed** in `" + HEAD + "` by Factory 100", url="r"),
 ]
 ANSWERED = thread(*ANSWER)
 

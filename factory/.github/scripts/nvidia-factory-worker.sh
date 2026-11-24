@@ -146,8 +146,8 @@ choose_issue() {
   local args=(issue list --state open --limit 300 --json number,labels,createdAt)
   local label
   for label in "${labels[@]}"; do args+=(--label "$label"); done
-  gh "${args[@]}" | jq -r --arg owner_re "$OWNER_RE" '
-    map(select(.number != 679 and .number != 1093 and .number != 1109))
+  gh "${args[@]}" | jq -r --arg owner_re "$OWNER_RE" --argjson reserved "$(python3 "$(dirname "${BASH_SOURCE[0]}")/factory_adopter.py" reserved-issues 2>/dev/null || python3 .github/scripts/factory_adopter.py reserved-issues)" '
+    map(select(.number as $n | $reserved | index($n) | not))
     | map(select((([.labels[].name | select(test($owner_re) and . != "factory:unowned")] | length) == 0)))
     | sort_by(.createdAt) | reverse | .[].number'
 }

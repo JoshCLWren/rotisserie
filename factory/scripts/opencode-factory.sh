@@ -2,18 +2,18 @@
 # Rotate models between independent factory heartbeats.
 #
 # The full single-heartbeat implementation lives in
-# comic-pile-opencode-factory-heartbeat.sh. Keeping orchestration here makes
+# opencode-factory-heartbeat.sh. Keeping orchestration here makes
 # model selection happen for every heartbeat instead of once per long-lived run.
 
 set -Eeuo pipefail
 
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
-HEARTBEAT_RUNNER="$SCRIPT_DIR/comic-pile-opencode-factory-heartbeat.sh"
+HEARTBEAT_RUNNER="$SCRIPT_DIR/opencode-factory-heartbeat.sh"
 MANIFEST_HELPER="$SCRIPT_DIR/opencode-model-manifest.sh"
 MODEL_SCOUT="$SCRIPT_DIR/opencode-model-scout.sh"
-SOURCE_REPO="${COMIC_PILE_REPO:-/mnt/extra/josh/code/comic-pile}"
-STATE_DIR="${COMIC_PILE_FACTORY_STATE_DIR:-}"
-DEFAULT_MODEL="${COMIC_PILE_DEFAULT_MODEL:-deepseek/deepseek-v4-flash}"
+SOURCE_REPO="${FACTORY_SOURCE_REPO:-$(cd -- "$SCRIPT_DIR/.." && pwd)}"
+STATE_DIR="${FACTORY_STATE_DIR:-}"
+DEFAULT_MODEL="${FACTORY_DEFAULT_MODEL:-deepseek/deepseek-v4-flash}"
 PINNED_MODEL="${OPENCODE_MODEL:-}"
 IDLE_SECONDS="${FACTORY_IDLE_SECONDS:-60}"
 MODE="drain"
@@ -21,16 +21,16 @@ RUN_ONCE=0
 STATE_DIR_EXPLICIT=0
 FORWARD_ARGS=()
 MAX_FAILURES="${FACTORY_MAX_FAILURES:-2}"
-WAIT_FOR_SCOUT="${COMIC_PILE_FACTORY_WAIT_FOR_SCOUT:-0}"
-SCOUT_READY_FILE="${COMIC_PILE_FACTORY_SCOUT_READY_FILE:-}"
-SCOUT_PID_FILE="${COMIC_PILE_FACTORY_SCOUT_PID_FILE:-}"
-AUTO_SCOUT="${COMIC_PILE_FACTORY_AUTO_SCOUT:-1}"
+WAIT_FOR_SCOUT="${FACTORY_WAIT_FOR_SCOUT:-0}"
+SCOUT_READY_FILE="${FACTORY_SCOUT_READY_FILE:-}"
+SCOUT_PID_FILE="${FACTORY_SCOUT_PID_FILE:-}"
+AUTO_SCOUT="${FACTORY_AUTO_SCOUT:-1}"
 SCOUT_PARALLEL="${SCOUT_PARALLEL:-4}"
 SCOUT_TIMEOUT="${MODEL_SCOUT_TIMEOUT:-${FACTORY_HEARTBEAT_TIMEOUT:-60}}"
-ALLOWED_PROVIDERS="${COMIC_PILE_FACTORY_ALLOWED_PROVIDERS:-opencode nvidia fcm-nvidia openrouter google}"
+ALLOWED_PROVIDERS="${FACTORY_ALLOWED_PROVIDERS:-opencode nvidia fcm-nvidia openrouter google}"
 # Only these Google models are verified free on the free tier; probing the whole
 # google/ prefix would otherwise probe paid pro models.
-GOOGLE_FREE_MODELS="${COMIC_PILE_GOOGLE_FREE_MODELS:-google/gemini-3.1-flash-lite google/gemini-2.5-flash-lite}"
+GOOGLE_FREE_MODELS="${FACTORY_GOOGLE_FREE_MODELS:-google/gemini-3.1-flash-lite google/gemini-2.5-flash-lite}"
 # OpenCode's Google provider reads GOOGLE_GENERATIVE_AI_API_KEY, but the
 # credentials file exports GOOGLE_API_KEY. Alias it so free-tier Gemini models
 # can be probed and confirmed.
@@ -96,7 +96,7 @@ while (($#)); do
   esac
 done
 
-if [[ -z "$STATE_DIR" || "$STATE_DIR_EXPLICIT" == "0" && -z "${COMIC_PILE_FACTORY_STATE_DIR:-}" ]]; then
+if [[ -z "$STATE_DIR" || "$STATE_DIR_EXPLICIT" == "0" && -z "${FACTORY_STATE_DIR:-}" ]]; then
   STATE_DIR="${SOURCE_REPO%/}-factory-state"
 fi
 [[ -n "$SCOUT_READY_FILE" ]] || SCOUT_READY_FILE="$STATE_DIR/scout-initial-pass.done"
@@ -109,7 +109,7 @@ is_nonnegative_integer "$SCOUT_PARALLEL" || die "SCOUT_PARALLEL must be an integ
 [[ "$SCOUT_TIMEOUT" =~ ^[1-9][0-9]*$ ]] || die "MODEL_SCOUT_TIMEOUT must be a positive integer"
 is_nonnegative_integer "$FAILURE_THRESHOLD" || die "FACTORY_FAILURE_THRESHOLD must be an integer"
 ((FAILURE_THRESHOLD >= 1)) || die "FACTORY_FAILURE_THRESHOLD must be at least 1"
-[[ "$AUTO_SCOUT" == "0" || "$AUTO_SCOUT" == "1" ]] || die "COMIC_PILE_FACTORY_AUTO_SCOUT must be 0 or 1"
+[[ "$AUTO_SCOUT" == "0" || "$AUTO_SCOUT" == "1" ]] || die "FACTORY_AUTO_SCOUT must be 0 or 1"
 [[ -x "$HEARTBEAT_RUNNER" ]] || die "heartbeat runner is not executable: $HEARTBEAT_RUNNER"
 [[ -x "$MANIFEST_HELPER" ]] || die "manifest helper is not executable: $MANIFEST_HELPER"
 mkdir -p "$STATE_DIR"

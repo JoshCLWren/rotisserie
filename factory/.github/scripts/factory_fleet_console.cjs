@@ -1,4 +1,4 @@
-/* ComicPile fleet console: trusted snapshot + public GitHub evidence.
+/* Factory fleet console: trusted snapshot + public GitHub evidence.
  * Display only. The factory controller remains sole authority for leases,
  * model selection, CI gating, review, merge, and deployment.
  */
@@ -16,7 +16,7 @@
   const emptyFilters = () => Object.fromEntries(keys.map(k => [k,""]));
   const s = { view:"attention", text:"", filters:emptyFilters(), prs:[], issues:[], runs:[],
     errors:[], loaded:false, period:14, compare:"", actions:[] };
-  try { s.actions = JSON.parse(localStorage.getItem("comicpile-fleet-notes-v1") || "[]"); }
+  try { s.actions = JSON.parse(localStorage.getItem("factory-fleet-notes-v1:"+repo) || "[]"); }
   catch { s.actions = []; }
   const e = value => String(value == null ? "" : value).replace(/[&<>"']/g,
     c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
@@ -93,7 +93,7 @@
     return "Check lease, dependencies, and priority";};
   const evidence=(type,x)=>type==="pr"?gh+"/pull/"+x.number:type==="issue"?gh+"/issues/"+x.number:
     type==="run"?gh+"/actions/runs/"+x.id:type==="worker"&&x.attempt_run?gh+"/actions/runs/"+x.attempt_run:
-    type==="model"&&x.run?gh+"/actions/runs/"+x.run:gh+"/issues/1093";
+    type==="model"&&x.run?gh+"/actions/runs/"+x.run:gh+"/actions";
   const detail=(type,id)=>{const items=type==="worker"?workers:type==="model"?models:type==="pr"?s.prs:type==="issue"?s.issues:s.runs;
     const x=items.find(a=>String(type==="worker"?a.worker:type==="model"?a.provider+"/"+a.model:type==="pr"||type==="issue"?a.number:a.id)===String(id));
     if(!x)return;const url=evidence(type,x);
@@ -108,13 +108,13 @@
       '<div class="f-buttons">'+link(url,"Open source")+' <button class="f-button" data-copy>Copy action</button>'+
       '<button class="f-button" data-record>Record action locally</button></div><h3>Source record</h3><pre>'+e(JSON.stringify({record:x,operational:extra},null,2))+'</pre></aside>';
     drawer.addEventListener("click",ev=>{if(ev.target===drawer||ev.target.closest("[data-close]"))drawer.remove();
-      if(ev.target.closest("[data-copy]"))navigator.clipboard?.writeText("ComicPile: "+next(type,x)+"\n"+url);
+      if(ev.target.closest("[data-copy]"))navigator.clipboard?.writeText(repo+": "+next(type,x)+"\n"+url);
       if(ev.target.closest("[data-record]")){const note=prompt("Next action, saved only in this browser:",next(type,x));
         if(note?.trim()){s.actions.unshift({at:new Date().toISOString(),type,id,action:note.trim(),url});
           s.actions=s.actions.slice(0,100);persist();drawer.remove();render();}}});
     document.body.appendChild(drawer);
   };
-  const persist=()=>{try{localStorage.setItem("comicpile-fleet-notes-v1",JSON.stringify(s.actions));}catch{}};
+  const persist=()=>{try{localStorage.setItem("factory-fleet-notes-v1:"+repo,JSON.stringify(s.actions));}catch{}};
   const attention=()=>{const items=[];
     for(const p of s.prs){const t=stage(p),running=ciFor(p).length;
       if(running||["changes-requested","blocked","review","ci"].includes(t))
@@ -139,7 +139,7 @@
         '<div class="f-empty">No actionable observations in the loaded window. This is not proof the backlog is empty.</div>')+
       '</div><div class="f-grid"><div class="f-panel"><h2>Execution ≠ delivery</h2><p>Timeout, persisted commit, open PR, merge, and production acceptance are distinct outcomes.</p>'+
       '<div class="f-note">If a run failed but created a durable PR, count the execution failure and persisted delivery separately. Unverified fields remain unknown.</div>'+
-      link(gh+"/issues/1093","Trusted outcome registry")+'</div><div class="f-panel"><h2>CI-aware allocation</h2><p>Running checks are observation-only. The controller must recheck the exact head before a new lease.</p>'+
+      '</div><div class="f-panel"><h2>CI-aware allocation</h2><p>Running checks are observation-only. The controller must recheck the exact head before a new lease.</p>'+
       '<strong style="font-size:27px">'+(s.loaded?s.runs.filter(inFlight).length:"—")+'</strong><div class="f-small">In-flight workflow runs in fetched window</div></div></div>';
   };
   const workerView=()=>'<div class="f-panel"><div class="f-head"><div><h2>Provider-derived worker slots</h2>'+
@@ -228,11 +228,11 @@
     const kpis=[["Open PRs",data.open_prs,"trusted snapshot"],["Open issues",data.open_issues,"trusted snapshot"],
       ["In-flight runs",s.loaded?s.runs.filter(inFlight).length:"—","GitHub API"],["Executable slots",data.executable_slot_capacity,"not active workers"],
       ["Merged / 24h",data.throughput?.merged_day,"trusted event window"]];
-    app.innerHTML='<div class="f-layout"><aside class="f-side"><div class="f-brand"><span class="f-logo">🏭</span><div><strong>ComicPile</strong><small>Factory operations</small></div></div>'+
+    app.innerHTML='<div class="f-layout"><aside class="f-side"><div class="f-brand"><span class="f-logo">🏭</span><div><strong>'+e(repo.split("/")[1])+'</strong><small>Factory operations</small></div></div>'+
       '<nav class="f-nav">'+tabs.map(([id,name])=>'<button data-view="'+id+'" class="'+(s.view===id?"active":"")+'">'+badge(name,counts[id])+'</button>').join("")+
       '</nav><div class="f-foot">Authority: GitHub + factory controller<br>Snapshot: '+e(date(data.generated_at))+
       '<br>Rust-first · no pinned model roster<br>CI running = no assignment</div></aside>'+
-      '<div class="f-main"><div class="f-top"><div><div class="f-eyebrow">ComicPile / Control room</div><h1>'+e(names[s.view])+
+      '<div class="f-main"><div class="f-top"><div><div class="f-eyebrow">'+e(repo)+' / Control room</div><h1>'+e(names[s.view])+
       '</h1><div class="f-small">Snapshot '+e(age(data.generated_at))+' · GitHub API '+(s.loaded?"read":"pending / unavailable")+
       ' · Observation ≠ authorization</div></div><div class="f-buttons"><button class="f-button" data-refresh>↻ Refresh</button>'+
       link(gh+"/actions","GitHub Actions")+'</div></div>'+
@@ -249,7 +249,7 @@
     if(b.hasAttribute("data-clear")){s.text="";s.filters=emptyFilters();render();}
     if(b.hasAttribute("data-refresh"))refresh();
     if(b.hasAttribute("data-export")){const blob=new Blob([JSON.stringify(s.actions,null,2)],{type:"application/json"});
-      const url=URL.createObjectURL(blob),a=document.createElement("a");a.href=url;a.download="comicpile-actions.json";a.click();
+      const url=URL.createObjectURL(blob),a=document.createElement("a");a.href=url;a.download="factory-actions.json";a.click();
       setTimeout(()=>URL.revokeObjectURL(url),1000);}
     if(b.hasAttribute("data-wipe")&&confirm("Clear local action notes?")){s.actions=[];persist();render();}
   });

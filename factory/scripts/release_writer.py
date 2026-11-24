@@ -493,7 +493,7 @@ def _github_request(url: str, *, missing_ok: bool = False) -> object:
     """
     headers = {
         "Accept": "application/vnd.github+json",
-        "User-Agent": "ComicPile-release-writer",
+        "User-Agent": "rotisserie-release-writer",
         "X-GitHub-Api-Version": "2022-11-28",
     }
     token = os.getenv("GH_TOKEN", "").strip()

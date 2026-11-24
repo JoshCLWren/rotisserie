@@ -42,7 +42,7 @@ factory_run_fast_checks "$EXPECTED_HEAD" "$RUNNER_TEMP/fork-fast-checks.log"
 # `uv sync` for Python diffs, so install it here before committing.
 factory_ensure_commit_hook_toolchain
 bash "$TRUSTED_FORK_DIRECTORY/install-git-hooks.sh"
-git config user.name "ComicPile Factory ${FACTORY_WORKER}"
+git config user.name "Factory ${FACTORY_WORKER}"
 git config user.email "factory-${FACTORY_WORKER}@users.noreply.github.com"
 git add -A
 git commit -m "fix: address contributor PR #${REQUESTED_PR} feedback" -m "Model: ${RUNTIME_MODEL}"
