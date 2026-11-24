@@ -146,3 +146,12 @@ def test_neon_estimate_starts_then_polls_without_caching_pending(results: dict[s
     assert results["estimatePending"]["value"]["result"] == "pending"
     assert results["estimateDone"]["value"]["result"] == "completed"
     assert results["estimateReadRuns"] == 2
+
+
+def test_signed_out_reads_published_db_usage(results: dict[str, Any]) -> None:
+    found = results["signedOutDbUsage"]["value"]
+    assert found["status"] == "warn" and found["label"] == "not in use yet"
+    assert found["source"] == "published"
+    findings = results["signedOutDoctor"]["value"]["findings"]
+    assert findings[-1]["check"] == "Database usage (published)"
+    assert findings[-1]["status"] == "warn"

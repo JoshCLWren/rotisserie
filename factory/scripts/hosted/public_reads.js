@@ -37,6 +37,24 @@ async function statistics() {
   if (!Array.isArray(result.models)) throw Error("Published reliability data is unavailable.");
   return result;
 }
+async function dbUsage() {
+  const stats = await cached("stats", "factory-stats.json").catch(() => null);
+  const usage = stats && stats.db_usage;
+  if (!usage || typeof usage !== "object") {
+    return {exit_code: 0, status: "unpublished", source: "published",
+      reasons: ["No Turso usage has been published yet."]};
+  }
+  return {...usage, exit_code: 0, source: "published"};
+}
+function usageFinding(usage) {
+  const status = {ok: "ok", critical: "fail", not_configured: "ok", unpublished: "info"}[usage.status];
+  return {
+    check: "Database usage (published)",
+    status: status || "warn",
+    text: (usage.label ? usage.label + ": " : "") + usage.status + ". " +
+      (usage.reasons || []).join("; ")
+  };
+}
 function asWork(s) {
   const rows = [];
   for (const worker of s.workers || []) {
@@ -124,6 +142,7 @@ async function publicRead(name, params) {
   if (name === "stats") return reliability(await statistics(), params.get("window") || "7d");
   if (name === "providers") return historicalProviders(await statistics());
   if (name === "models") return historicalModels(await statistics(), params.get("provider"));
+  if (name === "db-usage") return dbUsage();
   const s = await snapshot();
   if (name === "status") return {exit_code: 0, working: asWork(s), generated_at: s.generated_at};
   if (name === "report") {
@@ -131,7 +150,9 @@ async function publicRead(name, params) {
     const merged = (s.merged_prs || []).filter(p => Date.parse(p.merged_at) >= cutoff);
     return {exit_code: 0, merged, published_at: s.generated_at};
   }
-  if (name === "doctor") return {exit_code: 0, findings: asFindings(s)};
+  if (name === "doctor") {
+    return {exit_code: 0, findings: [...asFindings(s), usageFinding(await dbUsage())]};
+  }
   if (name === "outcomes") {
     return {exit_code: 0, requests: (s.workers || [])
       .filter(w => w.attempt_outcome)

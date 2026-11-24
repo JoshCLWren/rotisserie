@@ -30,6 +30,7 @@ CONTROLS: dict[str, tuple[str, ...]] = {
     "limits": ("read:limits",),
     "failures": ("read:failures",),
     "backoffs": ("read:backoffs", "write:backoffs_reset"),
+    "db-usage": ("read:db-usage",),
     "labels": ("write:labels",),
     "conflicts": ("read:conflicts",),
     "sync": ("write:sync",),

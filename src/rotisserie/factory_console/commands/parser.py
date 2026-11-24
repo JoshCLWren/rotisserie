@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import argparse
 
-from rotisserie.factory_console.commands import _shared, backoffs, incident
+from rotisserie.factory_console.commands import _shared, backoffs, db_usage, incident
 from rotisserie.factory_console.commands._shared import ACTIONS
 from rotisserie.factory_console.commands.parser_insight import (
     _common,
@@ -467,3 +467,4 @@ def add_parser(subcommands: argparse._SubParsersAction[argparse.ArgumentParser])
         _common(fleet)
     incident.add_parser(commands)
     backoffs.add_parser(commands)
+    db_usage.add_parser(commands)

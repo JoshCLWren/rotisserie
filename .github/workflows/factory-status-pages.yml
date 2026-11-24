@@ -16,6 +16,10 @@ on:
         required: false
       OMNIROUTE_MANAGEMENT_API_KEY:
         required: false
+      FACTORY_TURSO_API_TOKEN:
+        required: false
+      FACTORY_TURSO_URL:
+        required: false
 
 env:
   ROTISSERIE_ADMIN_GITHUB_IDS: ${{ vars.ROTISSERIE_ADMIN_GITHUB_IDS }}
@@ -147,6 +151,33 @@ jobs:
           # Counts of trusted worker outcomes only; read by `rotisserie factory stats`.
           python3 .github/scripts/factory_state_operations.py export-reliability > site/factory-stats.json.tmp
           mv site/factory-stats.json.tmp site/factory-stats.json
+
+      # Counts, status and dates only: no token, URL, organization or database name.
+      - name: Add Turso usage to the published stats
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+          FACTORY_TURSO_API_TOKEN: ${{ secrets.FACTORY_TURSO_API_TOKEN }}
+          FACTORY_TURSO_URL: ${{ secrets.FACTORY_TURSO_URL }}
+          FACTORY_TURSO_ORG: ${{ vars.FACTORY_TURSO_ORG }}
+          FACTORY_TURSO_DATABASE: ${{ vars.FACTORY_TURSO_DATABASE }}
+          FACTORY_NEON_CONFIGURED: ${{ vars.NEON_PROJECT_ID != '' }}
+        run: |
+          set -Eeuo pipefail
+          python3 .github/scripts/factory_turso_usage.py > "$RUNNER_TEMP/db-usage.json"
+          if [[ ! -s site/factory-stats.json ]]; then
+            gh api "repos/${GITHUB_REPOSITORY}/contents/factory-stats.json?ref=factory-status-live" \
+              --jq '.content' 2>/dev/null | base64 -d > site/factory-stats.json 2>/dev/null || true
+          fi
+          if [[ ! -s site/factory-stats.json ]]; then
+            echo "::warning::No reliability stats to carry Turso usage; skipped"
+            exit 0
+          fi
+          jq --slurpfile usage "$RUNNER_TEMP/db-usage.json" '.db_usage = $usage[0]' \
+            site/factory-stats.json > site/factory-stats.json.tmp
+          mv site/factory-stats.json.tmp site/factory-stats.json
+          jq -r '"Turso usage: \(.db_usage.status) \(.db_usage.label // "")"' site/factory-stats.json \
+            >> "$GITHUB_STEP_SUMMARY"
 
       - name: Publish live dashboard snapshot
         env:

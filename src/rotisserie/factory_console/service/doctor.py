@@ -17,6 +17,7 @@ Every check here replaces a diagnosis first done by hand:
 
 from __future__ import annotations
 
+import functools
 import re
 from collections import Counter
 from collections.abc import Callable
@@ -39,6 +40,7 @@ from rotisserie.factory_console.github import (
 from rotisserie.factory_console.service import (
     baseline,
     checks,
+    db_usage,
     main_health,
     outcomes,
     providers,
@@ -84,8 +86,7 @@ class Finding:
         return asdict(self)
 
 
-def _stats(github: GitHub, now: datetime) -> Finding:
-    stats = reliability.load_stats(github)
+def _stats(stats: Obj | None, now: datetime) -> Finding:
     if stats is None:
         return Finding(
             "reliability snapshot",
@@ -400,6 +401,7 @@ def run_checks(github: GitHub, *, now: datetime, clock: Clock | None = None) -> 
     """Every health check; a check that cannot read GitHub reports that instead of failing."""
     tracker = Tracker(github, clock)
     found: list[Finding] = []
+    stats = functools.cache(lambda: reliability.load_stats(github))
 
     def rejections() -> Finding:
         recent = outcomes.request_outcomes(
@@ -408,7 +410,8 @@ def run_checks(github: GitHub, *, now: datetime, clock: Clock | None = None) -> 
         return systemic_rejection(recent)
 
     checks: list[tuple[str, Callable[[], Finding]]] = [
-        ("reliability snapshot", lambda: _stats(github, now)),
+        ("reliability snapshot", lambda: _stats(stats(), now)),
+        ("database usage", lambda: Finding("database usage", *db_usage.health(stats(), now))),
         ("dashboard publisher", lambda: _dashboard(github, tracker)),
         ("scheduler", lambda: _scheduler(github, now)),
         ("main verification", lambda: main_verification(github)),

@@ -11,6 +11,15 @@ such change must be called out here and in its release notes.
 
 ### Added
 
+- Turso cost observability (#258, #253): `rotisserie factory db-usage`
+  (published value, `--via github` or `--live`), a doctor line read from the
+  published `factory-stats.json`, and a Database usage control in both control
+  rooms. The status page job reads the Turso Platform API and publishes rows
+  read and written, storage, sync, plan allowances, share used, days left, a
+  month-end projection and a status (ok, warn, critical). `pause_new_claims`
+  lets the Turso persistence code pause new claims at critical or on
+  `BLOCKED`. Adopters re-run the installer to pass the `FACTORY_TURSO_API_TOKEN`
+  and `FACTORY_TURSO_URL` secrets and add the `db-usage` label claim mode.
 - `rotisserie factory estimate issue:N --via github` counts attempts from exact
   Neon history (#238). The label claim workflow's new `estimate-history` mode
   runs one bounded, read-only query over `public.factory_state_events` and
