@@ -40,6 +40,16 @@ def add_insight_parsers(commands: argparse._SubParsersAction[argparse.ArgumentPa
     )
     _common(guess)
 
+    failed = commands.add_parser(
+        "failures",
+        help="failed worker runs grouped by job and step, with error, class and run links",
+    )
+    failed.add_argument(
+        "--since", default="10h", help="how far back: 10h, 2d, or a date (default 10h)"
+    )
+    failed.add_argument("--limit", type=int, default=60, help="newest failed runs to read (60)")
+    _common(failed)
+
     choose = commands.add_parser("use", help="show or save the default factory repository")
     choose.add_argument("repository", nargs="?", help="owner/name to save as the default")
     _common(choose)

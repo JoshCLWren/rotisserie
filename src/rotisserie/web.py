@@ -41,6 +41,7 @@ READ_ONLY = frozenset(
     (
         "status",
         "report",
+        "failures",
         "stats",
         "settings",
         "providers",
@@ -104,6 +105,7 @@ def read_command(name: str, query: Mapping[str, str]) -> list[str]:
         "estimate": {"target", "sample"},
         "follow": {"target"},
         "report": {"since"},
+        "failures": {"since"},
         "stats": {"window"},
     }
     if set(query) - allowed_parameters.get(name, set()):
@@ -128,8 +130,8 @@ def read_command(name: str, query: Mapping[str, str]) -> list[str]:
             args.extend(("--sample", _match(sample, re.compile(r"^[0-9]{2,3}$"), "sample")))
     elif name == "follow":
         args.extend((_match(_string(query, "target", required=True), TARGET, "target"), "--once"))
-    elif name == "report":
-        since = _string(query, "since") or "12h"
+    elif name in ("report", "failures"):
+        since = _string(query, "since") or ("12h" if name == "report" else "10h")
         args.extend(("--since", _match(since, re.compile(r"^[0-9]{1,3}[hd]$"), "since")))
     elif name == "outcomes":
         args.extend(("--since", "2h", "--limit", "40"))

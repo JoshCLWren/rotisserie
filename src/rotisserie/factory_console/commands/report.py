@@ -27,6 +27,7 @@ from rotisserie.factory_console.github import (
     timestamp,
 )
 from rotisserie.factory_console.service import reliability
+from rotisserie.factory_console.service.failures import runs_since
 from rotisserie.factory_console.tracker import (
     DISPATCH_WORKFLOW,
     EXIT_CODES,
@@ -54,7 +55,7 @@ def cmd_report(context: Context, arguments: argparse.Namespace) -> Outcome:
         github.repo_api(f"actions/workflows/{DISPATCH_WORKFLOW}/runs?per_page=1"), "workflow_runs"
     )
     last_dispatch = timestamp(dispatches[0], "created_at") if dispatches else None
-    workers = _runs_since(github, WORKER_WORKFLOW, iso)
+    workers = runs_since(github, WORKER_WORKFLOW, iso)
     coding_now = one_per_worker(current_work(github, with_session=False))
     console.line(console.bold("Is it running?"))
     if last_dispatch is None or now - last_dispatch > timedelta(minutes=20):
@@ -150,21 +151,6 @@ def _conclusion_word(name: str) -> str:
         "queued": "waiting",
         "skipped": "skipped",
     }.get(name, name)
-
-
-def _runs_since(github: GitHub, workflow: str, iso: str, *, pages: int = 3) -> list[Obj]:
-    found: list[Obj] = []
-    for page in range(1, pages + 1):
-        rows = items(
-            github.repo_api(
-                f"actions/workflows/{workflow}/runs?created=%3E%3D{iso}&per_page=100&page={page}"
-            ),
-            "workflow_runs",
-        )
-        found += rows
-        if len(rows) < 100:
-            break
-    return found
 
 
 def _search(github: GitHub, query: str) -> list[Obj]:
