@@ -25,20 +25,21 @@ async def _events(repo: str, entries: list[dict[str, Any]]) -> int:
         async with conn.transaction():
             await conn.execute("SELECT pg_advisory_xact_lock(hashtextextended($1, 0))", LEASE_PREFIX + repo)
             for entry in lifecycle:
-                existing = await conn.fetchval(
-                    """SELECT 1 FROM public.factory_state_events
-                       WHERE source='github-actions'
-                         AND detail->>'event_id'=$1 LIMIT 1""",
-                    entry["event_id"],
-                )
-                if existing:
-                    continue
-                await conn.execute(
+                # One round trip: the repository lock above serializes writers.
+                added = await conn.fetchval(
                     """INSERT INTO public.factory_state_events
                        (source,event_type,subject_type,subject_number,detail)
-                       VALUES ('github-actions',$1,'worker',$2,$3::jsonb)""",
+                       SELECT 'github-actions',$1,'worker',$2,$3::jsonb
+                        WHERE NOT EXISTS (
+                            SELECT 1 FROM public.factory_state_events
+                             WHERE source='github-actions'
+                               AND detail->>'event_id'=$4)
+                       RETURNING id""",
                     entry["event_type"], int(entry["worker"]), json.dumps({**entry, "repo": repo}),
+                    entry["event_id"],
                 )
+                if added is None:
+                    continue
                 inserted += 1
                 # 'running' is an initial status marker, not a periodic
                 # liveness check. A terminal success/failure never renews.

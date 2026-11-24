@@ -29,3 +29,11 @@ CREATE TABLE IF NOT EXISTS public.factory_state_events (
 
 CREATE INDEX IF NOT EXISTS idx_factory_state_events_recent
     ON public.factory_state_events (created_at DESC);
+
+-- Also applied to existing databases by factory_state_indexes.py through
+-- the trusted dispatcher bootstrap; keep both lists identical.
+CREATE INDEX IF NOT EXISTS idx_factory_state_events_event_id ON public.factory_state_events ((detail->>'event_id'));
+CREATE INDEX IF NOT EXISTS idx_factory_state_events_run_id ON public.factory_state_events ((detail->>'run_id'));
+CREATE INDEX IF NOT EXISTS idx_factory_state_events_worker_recent ON public.factory_state_events (created_at) WHERE event_type IN ('worker_started', 'worker_heartbeat', 'worker_outcome_signal', 'worker_completed', 'worker_idle', 'worker_failed');
+CREATE INDEX IF NOT EXISTS idx_factory_state_events_retired ON public.factory_state_events (id) WHERE event_type IN ('cache_refresh', 'target_reconciled');
+CREATE INDEX IF NOT EXISTS idx_factory_state_kv_key_prefix ON public.factory_state_kv (cache_key text_pattern_ops);
