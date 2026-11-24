@@ -11,15 +11,15 @@ product-specific details.
 
 ## Current phase
 
-This repository is an early extraction baseline. Historical implementation is
-quarantined under `reference/legacy-factory/`. Treat it as evidence to classify
-and migrate, never as Rotisserie product code or a public API.
+This repository is an early extraction baseline. The archived copy of the
+original factory was removed after extraction; git history keeps it (see
+`MIGRATION.md`). Rotisserie contains no adopter-specific code. Each adopter
+supplies its own values through configuration.
 
 ## Non-negotiable safety rules
 
 - Do not use Rotisserie or any autonomous worker to implement Rotisserie issues
   unless the user explicitly requests it.
-- Do not enable workflows from `reference/legacy-factory/`.
 - `.github/workflows/ci.yml` and the manually dispatched, issue-9-only
   `.github/workflows/canary-merge.yml` are the only active workflows. Any
   further activation requires an approved issue that changes the boundary.
@@ -33,8 +33,6 @@ and migrate, never as Rotisserie product code or a public API.
   and fail closed when identity or credentials are missing.
 - Never push directly to another repository, close another repository's issue,
   or alter external Actions as an incidental part of Rotisserie work.
-- Preserve `reference/legacy-factory/` as migration evidence until an
-  issue explicitly replaces or removes each reference artifact.
 
 ## Factory runtime boundary
 

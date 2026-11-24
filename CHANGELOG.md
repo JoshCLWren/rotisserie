@@ -59,6 +59,13 @@ such change must be called out here and in its release notes.
   `release_operation_lease`, `target_lease`, `list_leases` and
   `release_expired_leases`. Replaces the retired `sync_watch.py` watcher.
 
+### Removed
+
+- The archived legacy factory snapshot under `reference/legacy-factory/`, its
+  inventory (`MIGRATION_INVENTORY.md`), the inventory test and the 2026-10
+  drift note. Git history keeps them; `MIGRATION.md` names the last commit
+  that has them.
+
 ### Fixed
 
 - An expired factory lease no longer blocks an outside claim on its item. The

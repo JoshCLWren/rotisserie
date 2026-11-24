@@ -2,71 +2,31 @@
 
 ## Provenance
 
-- Source repository: `JoshCLWren/comic-pile`
+- Source repository: `JoshCLWren/comic-pile` (the first adopter)
 - Source commit: `2dc9b675e1a828b526f074c5f5c151293dedcdee`
 - Destination repository: `JoshCLWren/rotisserie`
 - Migration mode: byte-for-byte copy with source-relative paths preserved;
   destination-owned project and community-health files are authored separately
   from the source snapshot
 
-## Included in this phase
+## Archived snapshot removed
 
-- Factory, fixed-model, and free-model GitHub workflows
-- Factory controllers, workers, policy, model routing, recovery, visibility,
-  and status tooling
-- Factory-focused Python, shell, and Node tests and their fixtures
-- Worker, reviewer, and orchestration prompts and skills
-- Autonomous Factory policy and execution/acceptance protocols
-- The existing generic dependency/executable-policy extraction reference
+The byte-for-byte snapshot lived under `reference/legacy-factory/`, with a
+rule-based inventory in `MIGRATION_INVENTORY.md`, a completeness test, and a
+2026-10 drift inventory in `docs/migration/drift-2026-10.md`. All of it was
+removed once the factory runtime under `factory/` replaced it. Commit
+`67e4059e65531f9ab64c730791c75c11d76b6563` is the last commit that contains the
+snapshot. Use `git show 67e4059e:reference/legacy-factory/<path>` to read an
+archived file.
 
-Every archived path is assigned a future treatment by the checked inventory in
-[`MIGRATION_INVENTORY.md`](MIGRATION_INVENTORY.md). Classification does not
-move, activate, or make an archived artifact public.
-
-## GitHub Actions safety boundary
-
-Imported workflows are preserved under
-`reference/legacy-factory/.github/workflows/`, which GitHub does not execute. They remain
-available as migration evidence but cannot dispatch workers, merge pull
-requests, create issues, publish status pages, or consume ComicPile-oriented
-secrets from this repository.
+The snapshot copied the factory, fixed-model, and free-model workflows; the
+controllers, workers, policy, model routing, recovery, visibility, and status
+tooling; their Python, shell, and Node tests; and the worker, reviewer, and
+orchestration prompts and skills. GitHub never executed the archived workflows.
 
 The active workflows are the read-only `.github/workflows/ci.yml` and the
 manually dispatched, issue-9-only `.github/workflows/canary-merge.yml`. Neither
-has a schedule. The canary alone has the tested `contents: write` and
-`pull-requests: write` scopes; it cannot mutate an external repository or run
-pull-request code with its token.
-
-`tests/test_rotisserie_actions.py` enforces this boundary. Archived source tests
-are retained for behavioral archaeology but are not Rotisserie CI.
-
-ComicPile files were not removed or modified. Runtime names, repository names,
-labels, and paths have intentionally not been generalized yet; preserving the
-working implementation and tests is the baseline for later extraction work.
-
-## Issue cleanup
-
-The superseded Latticery extraction issues `JoshCLWren/Latticery#1` through
-`#6` were closed. ComicPile's matching coordination issues `#2870` through
-`#2875` were already closed. No new Factory issue was created for this copy.
-
-## Verification baseline
-
-The copied controller-focused Python suite passes 99 tests, and the copied
-Node visibility suite passes 13 tests. In the broader copied suite, 468 tests
-pass and 12 fail. Those 12 failures reproduce source-repository drift:
-
-- ten autonomous-policy tests still assert policy version 24 while the source
-  policy is version 25;
-- two OpenCode tests refer to `.github/workflows/opencode.yml`, which does not
-  exist at the source commit.
-
-These source mismatches are recorded rather than repaired during the
-byte-for-byte copy phase.
-
-The final audit found 144 byte-identical source paths, plus the preserved
-model-recommendation symlink. Every ComicPile tracked path containing
-`factory` or `ralph` is present in this repository.
+has a schedule. `tests/test_rotisserie_actions.py` enforces this boundary.
 
 ## Standalone foundation
 
@@ -194,7 +154,7 @@ gate. The canary is restricted to issue #9 and branch
 `rotisserie/canary-9`, requires independent exact-head semantic review evidence
 and required CI, rejects forks, and revalidates the head before an expected-SHA
 merge. Producer/reviewer separation uses durable Rotisserie worker identities,
-matching ComicPile's single-account Factory contract; formal GitHub approval is
+matching the first adopter's single-account Factory contract; formal GitHub approval is
 not required. A repository variable is the kill switch. Server-side branch
 protection requires the Python 3.12, 3.13, and 3.14 CI contexts. No worker
 execution or schedule has been activated. The canary lifecycle and recovery
@@ -202,7 +162,7 @@ evidence is recorded in [`docs/dogfood-evidence.md`](docs/dogfood-evidence.md).
 
 ## External adopter shadowing
 
-The first ComicPile integration slice defines a versioned, provider-neutral
+The first adopter integration slice defines a versioned, provider-neutral
 decision-shadow contract under `src/rotisserie/application`. Legacy and
 Rotisserie decisions can be normalized across eligibility, ranking, ownership,
 review, completion, and recovery, then compared in a deterministic
@@ -211,7 +171,7 @@ The operator exposes that contract as a read-only `shadow` command with hashed,
 durable evidence and a distinct divergence exit status; it never initializes
 graph state, acquires credentials, or contacts the adopter repository.
 
-ComicPile label vocabulary, retry rules, worker numbering, provider routes,
+The first adopter's label vocabulary, retry rules, worker numbering, provider routes,
 prompts, workflows, credentials, and rollback controls remain adopter policy or
 adapter concerns. This slice performs no cross-repository read or mutation and
 does not activate a workflow. The boundary inventory and staged integration
@@ -258,20 +218,20 @@ stage, and target stage. This makes the adopter's required compare-and-swap
 boundary explicit without giving Rotisserie a credential or host mutation
 mechanism.
 
-ComicPile now has a merged adopter translator and a read-only live acquisition path.
-Two distinct live, same-view observations at ComicPile revisions
+The first adopter now has a merged adopter translator and a read-only live acquisition path.
+Two distinct live, same-view observations at adopter revisions
 `cbea5e1ee3bff4cd76f4a7dc64d48f796b80e5f4` and
 `657fe86d9a4af8f914ec8f36412368deb3027e70` each compared 94 decisions across all
 six dimensions with zero divergence. Completion backlog and its configured limit are
 explicit projection inputs, preserving backpressure as portable policy.
 
-ComicPile also owns a bounded `issue-intake` compare-and-swap control that consumes
+The first adopter also owns a bounded `issue-intake` compare-and-swap control that consumes
 only the public transition command. Adopter tests cover immediate rollback and stale
 or altered transition refusal. After a zero-divergence canary observation, the
-checked-in adopter stage advanced to `expanded` at ComicPile commit
+checked-in adopter stage advanced to `expanded` at adopter commit
 `87748a26485e97f3c061addb0c69b402bae591b1`.
 
-ComicPile PR #2958 merged runtime enforcement at
+Adopter PR #2958 merged runtime enforcement at
 `a110f31b295e0f992ee0bf02466ac244d817ffb3`. The adopter's centralized assignment
 boundary now builds a graph snapshot from its exact live controller view and invokes
 the public, read-only `rotisserie decide` CLI before any fresh issue claim. The CLI
@@ -279,8 +239,8 @@ is pinned to Rotisserie commit `0067e8c49cb3a3142a04f6c56f19795a1e81ad3c`;
 missing or invalid control and decision evidence holds issue intake closed, while
 the adopter retains its existing PR completion path and immediate `legacy` rollback.
 
-Post-merge ComicPile dispatcher run
-[`36633600180`](https://github.com/JoshCLWren/comic-pile/actions/runs/36633600180)
+The post-merge adopter dispatcher run
+`36633600180`
 checked out the merge commit, installed the pinned CLI, evaluated the expanded
 issue-intake boundary, and completed successfully. It emitted four PR assignments
 and no issue assignment or fresh claim. This observed runtime evidence closes the
@@ -299,33 +259,19 @@ of expected. The `plan` and `dogfood` commands derive their work-in-progress
 ceiling from the inventory size, falling back to a single worker only when no
 inventory is declared.
 
-This extracts the generic mechanism behind ComicPile commits
+This extracts the generic mechanism behind adopter commits
 `2a7f599b4ef5dbc776ad41c1674b2be9122b734b` and
 `6461f689a77544b05f80c4d333f8a0cd37907fb1` (issue #3130), which replaced the
 `<=71` fixed-model worker ceilings with a roster-derived expected-worker set.
-ComicPile keeps its product-specific concerns — the `factory:N` label
+The first adopter keeps its product-specific concerns — the `factory:N` label
 vocabulary, the free-model TSV roster, the `factory-expected-workers.json`
 lock, scheduled worker numbering, and model catalogs. Rotisserie takes only the
 portable idea: derive the worker set and its capacity bound from configuration,
 with no numeric maximum compiled into code.
 
-## Appendix: 2026-10 drift inventory
-
-The legacy snapshot under `reference/legacy-factory/` is pinned to ComicPile
-`2dc9b675e1a8` (2026-09-26 UTC). ComicPile has continued to run live since then.
-A documentation-only drift inventory comparing that baseline against ComicPile
-HEAD `c2e40a34b5e2` (2026-10-05 UTC) — verified read-only against the public
-`JoshCLWren/comic-pile` history — lives in
-[`docs/migration/drift-2026-10.md`](docs/migration/drift-2026-10.md). It records
-the commit and file counts, the adopt/adapt/skip classification with commit
-SHAs, the files new since the snapshot, the paths still byte-identical to the
-archived baseline, and the planned extraction chunks (R2–R10, C1–C2). It
-activates no workflow, changes no schedule, enables no mutation or canary
-variable, and modifies nothing under `reference/legacy-factory/`.
-
 ## Exact-head review independence
 
-The generic review-independence semantics from ComicPile
+The generic review-independence semantics from the first adopter's
 `.github/scripts/factory_review_policy.py` (`head_has_authorized_approval` and
 the head-contributor provenance it consumes) now live as a pure domain rule in
 `src/rotisserie/domain/review.py`. A reviewer is eligible only when absent from
@@ -343,7 +289,7 @@ legacy check, and wiring the new rule into readiness is a later, additive step.
 
 `src/rotisserie/adapters/github/review_evidence.py` is a read-only adapter that
 decodes trusted review-thread comments into those signals. Marker and worker
-vocabularies are adopter configuration, so no `comic-pile-` strings enter the
+vocabularies are adopter configuration, so no adopter marker strings enter the
 domain. Contributor and semantic-review markers are honored only when the entire
 comment body is one marker, closing marker-in-prose forgery for both families.
 The producer is taken from the identity attested in the exact-head review
@@ -353,7 +299,7 @@ default — a shared `GITHUB_TOKEN` Actions job posting as `github-actions[bot]`
 is not trusted unless an adopter explicitly opts its controller identity in. The
 adapter performs no mutation and activates no workflow.
 
-ComicPile keeps the product-specific encoding: the `comic-pile-factory-*` marker
+The first adopter keeps the product-specific encoding: the repository-derived marker
 prefixes, the `factory:<n>` worker labels, the `factory/<n>-…` branch and
 `Worker: opencode-…-factory-<n>` body producer recovery, the semantic verdict
 vocabulary, and worker GitHub App slugs.
@@ -361,7 +307,7 @@ vocabulary, and worker GitHub App slugs.
 ## Operational runtime fast lane
 
 The maintainer prioritized moving the operational Factory runtime out of
-ComicPile on 2026-10-07, ahead of release publication. The first executable
+the first adopter on 2026-10-07, ahead of release publication. The first executable
 slice (issue #28) extracts process lifecycle from the archived
 `free-model-factory-worker.sh` and `free-model-factory-worker-primitives.sh` into
 the existing provider-neutral runtime, a versioned application process contract,
@@ -376,10 +322,10 @@ fallback only for unavailability/rate limits. Interrupted receipts require
 explicit matching resume evidence. Recognizable credentials and malformed or
 foreign results are refused before persistence; raw process output is discarded.
 
-The live ComicPile controller was inspected read-only at
+The live adopter controller was inspected read-only at
 `03b95add5c7d8363588ef2883c1a0d719e23a80b`. It still owns live acquisition,
 claim/release, provider bridges, review/completion and workflow topology. No
-ComicPile source or workflow changed in this slice. The runtime extraction is
+adopter source or workflow changed in this slice. The runtime extraction is
 not a live adopter cutover; same-view parity, bounded observation and rollback
 remain prerequisites for deleting duplicated code. The full boundary, example
 and recovery limits are in [`docs/worker-process.md`](docs/worker-process.md).
@@ -395,7 +341,7 @@ reassignment. Trusted assignments use the existing #28 process contract.
 
 The versioned `controller-plan` entrypoint and fixture-backed thin caller record
 exact input digests without credentials, remote effects, graph initialization or
-worker execution. The live source audit is pinned to ComicPile
+worker execution. The live source audit is pinned to adopter
 `b83a5a7f2c82eaa4764ade87681c5be5db23d2e7`. This is the fresh-assignment slice,
 not completion or full live-controller parity: recovery, exact-head independent
 review/completion, concrete adopter enforcement, golden live comparison and
@@ -413,7 +359,7 @@ Observation failures, liveness holds, recent activity, conflicts and ambiguous
 writes have distinct versioned results. This supersedes neither the local
 coordination simulation nor any live adopter runtime.
 
-The read-only source refresh used ComicPile main
+The read-only source refresh used adopter main
 `8692c718458282af9300edffce72035145ff6655` on 2026-10-09; source functions,
 deliberate strengthening and adapter enforcement obligations are recorded in
 [`docs/assignment-controller.md`](docs/assignment-controller.md). Production
@@ -435,12 +381,12 @@ proven-refusal compensation; uncertain outcomes retain ownership.
 
 The planning-only `controller-review-plan` CLI and fixture caller record exact
 input digests without graph initialization, credentials, effects or workers.
-The read-only ComicPile refresh is pinned to main
+The read-only adopter refresh is pinned to main
 `8692c718458282af9300edffce72035145ff6655` on 2026-10-09. Sources, deliberate
 strengthening, race tests and production adapter obligations are documented in
 [`docs/assignment-controller.md`](docs/assignment-controller.md). Completion /
 merge authority, concrete adopter enforcement, golden live same-view parity,
-provider bridges and observed rollback/cutover remain under issue #29. ComicPile,
+provider bridges and observed rollback/cutover remain under issue #29. The first adopter,
 active workflows and archived evidence are unchanged.
 
 
@@ -457,12 +403,12 @@ attempting/unknown records preserve uncertain outcomes without compensation or
 unsafe retries. Completion grants no linked-issue closure or release authority.
 
 The public version-1 `controller-completion-plan` CLI and fixture caller perform
-planning only. ComicPile main was refreshed read-only at
+planning only. Adopter main was refreshed read-only at
 `8692c718458282af9300edffce72035145ff6655` on 2026-10-09. The working semantic /
 mechanical / expected-head merge sequence, deliberate safety strengthening,
 source comparison and separately classified post-merge reconciliation are in
 [`docs/assignment-controller.md`](docs/assignment-controller.md). Concrete
 production enforcement, golden live same-view parity, provider bridges, safe
 completion adjudication/release, post-merge reconciliation and observed
-rollback/cutover remain follow-on work. Issue #29 remains open; ComicPile,
+rollback/cutover remain follow-on work. Issue #29 remains open; the first adopter,
 workflows, the issue-9 canary and archived evidence remain unchanged.

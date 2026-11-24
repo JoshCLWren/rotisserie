@@ -84,13 +84,11 @@ The intended result is a system that can:
 | `src/rotisserie/web.py` + `web_ui.html` | Local-only browser control room over the same factory CLI (`rotisserie web`) |
 | `prototype/` | Dependency and eligibility migration evidence with domain compatibility tests |
 | `tests/` | Rotisserie repository-safety guards |
-| `reference/legacy-factory/` | Archived migration evidence, code, tests, prompts, and disabled workflows |
 | `.github/workflows/ci.yml` | Read-only Rotisserie CI |
 | `.github/workflows/canary-merge.yml` | Manually dispatched, issue-9-only merge canary |
 
-See [MIGRATION.md](MIGRATION.md) for exact snapshot provenance and known source
-test drift. [MIGRATION_INVENTORY.md](MIGRATION_INVENTORY.md) accounts for the
-intended treatment of every archived artifact.
+See [MIGRATION.md](MIGRATION.md) for the extraction history and snapshot
+provenance.
 
 ## Safety boundary
 
