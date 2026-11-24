@@ -1,0 +1,14 @@
+name: Factory Issue Wakeup
+on:
+  issues:
+    types: [opened, reopened, edited, labeled, unlabeled]
+permissions:
+  actions: write
+  contents: read
+concurrency:
+  group: factory-issue-wakeup-${{ github.event.issue.number }}
+  cancel-in-progress: false
+jobs:
+  rotisserie:
+    cache-mode: read
+    uses: JoshCLWren/rotisserie/.github/workflows/factory-issue-wakeup.yml@main

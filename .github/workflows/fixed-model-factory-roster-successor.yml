@@ -1,0 +1,71 @@
+# Coalesce duplicate timers without interrupting an in-progress delay.
+# Only the eventual dispatcher acquires the shared assignment lock.
+name: Fixed Model Factory Roster Successor
+on:
+  workflow_call:
+    inputs:
+      delay_seconds:
+        type: string
+        required: false
+
+# This workflow is a timer, NOT an assignment writer. In particular, it must
+# never join the fixed-model-factory-dispatch lease group or the dispatcher's
+# workflow ingress group. It is deliberately unable to mutate issues or PRs.
+env:
+  # Operator settings (rotisserie factory settings) reach every factory script.
+  FACTORY_REPO_VARS: >-
+    {"FACTORY_SLOTS_PER_PROVIDER": "${{ vars.FACTORY_SLOTS_PER_PROVIDER }}", "FACTORY_PR_WIP_LIMIT": "${{ vars.FACTORY_PR_WIP_LIMIT }}", "FACTORY_REVIEW_BACKLOG_LIMIT": "${{ vars.FACTORY_REVIEW_BACKLOG_LIMIT }}", "FACTORY_OMNIROUTE_FREE_ENTRY_CAP": "${{ vars.FACTORY_OMNIROUTE_FREE_ENTRY_CAP }}", "FACTORY_NO_DIFF_RETRY_LIMIT": "${{ vars.FACTORY_NO_DIFF_RETRY_LIMIT }}", "FACTORY_NO_DIFF_RETRY_RESET_SECONDS": "${{ vars.FACTORY_NO_DIFF_RETRY_RESET_SECONDS }}", "FACTORY_REVIEW_FAILURE_COOLDOWN_SECONDS": "${{ vars.FACTORY_REVIEW_FAILURE_COOLDOWN_SECONDS }}", "FACTORY_FIXED_LEASE_TTL_SECONDS": "${{ vars.FACTORY_FIXED_LEASE_TTL_SECONDS }}", "FACTORY_LOCAL_LEASE_TTL_SECONDS": "${{ vars.FACTORY_LOCAL_LEASE_TTL_SECONDS }}", "FACTORY_PRIORITY_ORDER": "${{ vars.FACTORY_PRIORITY_ORDER }}"}
+
+permissions:
+  contents: read
+  actions: write
+
+jobs:
+  wait_and_wake:
+    runs-on: ubuntu-latest
+    timeout-minutes: 135
+    permissions:
+      actions: write
+      contents: read
+    steps:
+      - name: Wait outside the lease lock and wake one roster cycle
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          DELAY_SECONDS: ${{ inputs.delay_seconds }}
+        run: |
+          set -Eeuo pipefail
+          if [[ ! "$DELAY_SECONDS" =~ ^[1-9][0-9]*$ ]]; then
+            echo '::error::Roster delay must be a positive integer' >&2
+            exit 1
+          fi
+          # Caller sends 240s for productive/error recovery and 15..3700s
+          # for the observed installation quota reset. Never accept a longer
+          # or speculative wait. Dispatch retries below add at most 65 minutes.
+          if (( DELAY_SECONDS < 15 || DELAY_SECONDS > 3700 )); then
+            echo '::error::Roster delay must be between 15 and 3700 seconds' >&2
+            exit 1
+          fi
+
+          dispatch_roster() {
+            gh workflow run fixed-model-factory-dispatch.yml \
+              --repo "$GITHUB_REPOSITORY" --ref main -f mode=roster
+          }
+
+          echo "Roster successor sleeping ${DELAY_SECONDS}s outside assignment serialization"
+          sleep "$DELAY_SECONDS"
+          # GitHub 5xx bursts and an exhausted hourly quota both end the chain
+          # if this dispatch gives up. Back off fast, then retry every 5 minutes
+          # for up to 65 minutes, which spans one quota reset.
+          attempt=1 waited=0
+          until dispatch_roster; do
+            wait=300
+            (( attempt > 3 )) || wait=$(( 15 * (1 << (attempt - 1)) ))
+            if (( waited + wait > 3900 )); then
+              echo "::error::Roster chain ended: dispatch failed for ${waited}s" >&2
+              exit 1
+            fi
+            echo "::warning::roster dispatch failed (attempt ${attempt}); retrying in ${wait}s"
+            sleep "$wait"
+            waited=$(( waited + wait )) attempt=$(( attempt + 1 ))
+          done

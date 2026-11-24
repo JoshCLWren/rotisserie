@@ -11,6 +11,8 @@ from typing import Any
 import pytest
 from pytest import MonkeyPatch
 
+from tests.workflow_files import adopter_view
+
 SCRIPTS = Path(__file__).resolve().parents[1] / ".github" / "scripts"
 sys.path.insert(0, str(SCRIPTS))
 
@@ -360,10 +362,7 @@ def test_closed_lane_holder_immediately_releases_oldest_waiter(
 
 
 def test_closed_factory_pr_triggers_trusted_migration_reconciliation() -> None:
-    workflow = (
-        Path(__file__).resolve().parents[1]
-        / ".github/workflows/factory-migration-lane-release.yml"
-    ).read_text()
+    workflow = adopter_view("factory-migration-lane-release.yml")
     assert "pull_request_target:" in workflow
     assert "types: [closed, converted_to_draft, labeled, unlabeled]" in workflow
     assert "ref: main" in workflow

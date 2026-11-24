@@ -8,9 +8,11 @@ wide serialization group.
 
 from pathlib import Path
 
+from tests.workflow_files import adopter_view
+
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
-WORKFLOWS = REPO_ROOT / ".github" / "workflows"
+WORKFLOWS = REPO_ROOT.parent / ".github" / "workflows"
 ASSIGNMENT_GROUP = "fixed-model-factory-dispatch"
 
 
@@ -24,8 +26,7 @@ def _load_workflow(filename: str) -> dict:
     """
     import yaml
 
-    with (WORKFLOWS / filename).open(encoding="utf-8") as handle:
-        return yaml.safe_load(handle)
+    return yaml.safe_load(adopter_view(filename))
 
 
 def _ingress_group(workflow: dict) -> str:
@@ -89,7 +90,7 @@ def test_all_factory_assignment_writers_share_one_concurrency_group() -> None:
 
 def test_completion_signal_has_no_assignment_authority_or_writer_lock() -> None:
     """Signals cannot revive the incident's second assignment authority."""
-    completion = (WORKFLOWS / "factory-completion-drain.yml").read_text()
+    completion = adopter_view("factory-completion-drain.yml")
     assert " assign --worker " not in completion
     assert " release --worker " not in completion
     assert _job_group(_load_workflow("factory-completion-drain.yml")) == ""

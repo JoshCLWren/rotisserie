@@ -1,0 +1,20 @@
+name: Factory API Quota Sampler
+on:
+  workflow_dispatch:
+    inputs:
+      minutes:
+        description: Sampling window in minutes (1-30)
+        required: false
+        default: '15'
+        type: string
+permissions:
+  actions: read
+  contents: read
+concurrency:
+  group: factory-api-quota-sampler
+  cancel-in-progress: true
+jobs:
+  rotisserie:
+    uses: JoshCLWren/rotisserie/.github/workflows/factory-api-quota-sampler.yml@main
+    with:
+      minutes: ${{ inputs.minutes }}

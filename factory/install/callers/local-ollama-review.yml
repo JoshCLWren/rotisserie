@@ -1,0 +1,29 @@
+name: Local Ollama Review
+on:
+  workflow_dispatch:
+    inputs:
+      pr:
+        description: PR number
+        required: true
+        type: string
+  repository_dispatch:
+    types: [local-ollama-review]
+permissions:
+  actions: write
+  contents: read
+  issues: write
+  pull-requests: write
+concurrency:
+  group: local-ollama-review
+  queue: max
+  cancel-in-progress: false
+jobs:
+  rotisserie:
+    uses: JoshCLWren/rotisserie/.github/workflows/local-ollama-review.yml@main
+    with:
+      pr: ${{ inputs.pr }}
+    secrets:
+      LOCAL_OLLAMA_KEY: ${{ secrets.LOCAL_OLLAMA_KEY }}
+      LOCAL_OLLAMA_URL: ${{ secrets.LOCAL_OLLAMA_URL }}
+      REVIEW_PROVIDER_KEY: ${{ secrets.REVIEW_PROVIDER_KEY }}
+      REVIEW_PROVIDER_URL: ${{ secrets.REVIEW_PROVIDER_URL }}

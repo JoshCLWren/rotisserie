@@ -19,6 +19,7 @@ from pathlib import Path
 import yaml
 
 ROOT = Path(__file__).resolve().parents[1]
+REUSABLE = ROOT.parent / ".github" / "workflows"
 HELPER = ROOT / ".github/scripts/factory-dispatch-production-deploy.sh"
 DISPATCH_CALL = "factory_dispatch_production_deploy"
 
@@ -43,13 +44,22 @@ def code_lines(path: Path) -> list[tuple[int, str]]:
     return lines
 
 
+def _path(rel: str) -> Path:
+    if rel.startswith(".github/workflows/"):
+        return REUSABLE / rel.removeprefix(".github/workflows/")
+    return ROOT / rel
+
+
 def bot_merge_paths() -> dict[str, list[int]]:
     found: dict[str, list[int]] = {}
-    for base in (ROOT / ".github", ROOT / "scripts"):
+    for base in (ROOT / ".github", ROOT / "scripts", REUSABLE):
         for path in base.rglob("*"):
             if not path.is_file() or path.suffix not in SCANNED_SUFFIXES:
                 continue
-            rel = path.relative_to(ROOT).as_posix()
+            if base == REUSABLE:
+                rel = f".github/workflows/{path.name}"
+            else:
+                rel = path.relative_to(ROOT).as_posix()
             if "/tests/" in f"/{rel}" or rel.endswith((".test.cjs", ".test.mjs", ".test.js")):
                 continue
             hits = [n for n, line in code_lines(path) if MERGE_RE.search(line)]
@@ -75,7 +85,7 @@ def test_every_bot_merge_path_dispatches_deploy_production() -> None:
     missing = [
         rel
         for rel in bot_merge_paths()
-        if rel not in EXEMPT and DISPATCH_CALL not in (ROOT / rel).read_text(encoding="utf-8")
+        if rel not in EXEMPT and DISPATCH_CALL not in _path(rel).read_text(encoding="utf-8")
     ]
     assert not missing, (
         "These files merge PRs but never dispatch Deploy Production; a GITHUB_TOKEN merge "
@@ -87,7 +97,7 @@ def test_worker_merges_dispatch_right_after_the_merge() -> None:
     for rel, hits in bot_merge_paths().items():
         if rel in EXEMPT or not rel.endswith(".sh"):
             continue
-        lines = (ROOT / rel).read_text(encoding="utf-8").splitlines()
+        lines = _path(rel).read_text(encoding="utf-8").splitlines()
         for number in hits:
             following = "\n".join(lines[number : number + 3])
             assert DISPATCH_CALL in following, (
@@ -108,7 +118,7 @@ def test_bot_merge_workflow_jobs_can_dispatch_workflows() -> None:
     for rel in bot_merge_paths():
         if not rel.startswith(".github/workflows/"):
             continue
-        workflow = yaml.safe_load((ROOT / rel).read_text(encoding="utf-8"))
+        workflow = yaml.safe_load(_path(rel).read_text(encoding="utf-8"))
         for name, job in workflow["jobs"].items():
             runs = "\n".join(step.get("run", "") for step in job.get("steps", []))
             if not MERGE_RE.search(runs):
@@ -125,7 +135,7 @@ def test_bot_merge_workflow_jobs_can_dispatch_workflows() -> None:
 
 
 def _step_script(workflow_rel: str, step_name: str) -> str:
-    workflow = yaml.safe_load((ROOT / workflow_rel).read_text(encoding="utf-8"))
+    workflow = yaml.safe_load(_path(workflow_rel).read_text(encoding="utf-8"))
     for job in workflow["jobs"].values():
         for step in job.get("steps", []):
             if step.get("name") == step_name:

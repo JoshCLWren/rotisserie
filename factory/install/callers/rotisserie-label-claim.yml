@@ -1,0 +1,41 @@
+name: Rotisserie Label Claim Controller
+run-name: Label claim · ${{ github.event.issue.number && format('#{0}', github.event.issue.number) || github.event.pull_request.number && format('#{0}', github.event.pull_request.number) || inputs.mode }} · ${{ github.event_name }} · ${{ github.actor }}
+on:
+  issues:
+    types: [labeled, unlabeled]
+  pull_request_target:
+    types: [labeled, unlabeled, opened, ready_for_review, edited, synchronize]
+  issue_comment:
+    types: [created]
+  schedule:
+    - cron: '17 * * * *'
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: Label doctor mode, or leases to read Neon holders
+        type: choice
+        options: [dry-run, repair, delete-legacy, leases]
+        default: dry-run
+      targets:
+        description: For leases, space-separated issue:N / pr:N (blank means every lease)
+        type: string
+        required: false
+permissions:
+  contents: read
+  issues: write
+  pull-requests: write
+  actions: write
+  checks: read
+  statuses: read
+concurrency:
+  group: rotisserie-label-claim-${{ github.event.issue.number || github.event.pull_request.number || 'doctor' }}
+  cancel-in-progress: false
+jobs:
+  rotisserie:
+    cache-mode: read
+    uses: JoshCLWren/rotisserie/.github/workflows/rotisserie-label-claim.yml@main
+    with:
+      mode: ${{ inputs.mode }}
+      targets: ${{ inputs.targets }}
+    secrets:
+      NEON_API_KEY: ${{ secrets.NEON_API_KEY }}

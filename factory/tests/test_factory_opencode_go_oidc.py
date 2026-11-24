@@ -10,9 +10,9 @@ import yaml
 
 ROOT = Path(__file__).resolve().parents[1]
 SCRIPT = ROOT / ".github/scripts/factory_opencode_go_oidc.sh"
-RUNNER = ROOT / ".github/workflows/free-model-factory-run.yml"
-ENTRY = ROOT / ".github/workflows/free-model-factory-entry.yml"
-DISPATCH = ROOT / ".github/workflows/fixed-model-factory-dispatch.yml"
+RUNNER = ROOT.parent / ".github/workflows/free-model-factory-run.yml"
+ENTRY = ROOT.parent / ".github/workflows/free-model-factory-entry.yml"
+DISPATCH = ROOT.parent / ".github/workflows/fixed-model-factory-dispatch.yml"
 
 
 @pytest.fixture

@@ -92,9 +92,9 @@ def test_opencode_go_live_catalog_must_be_zero_cost_and_outside_neon_cooldown(mo
 
 
 def test_fast_runner_contract_and_no_model_or_provider_fallback():
-    dispatch = (ROOT / '.github/workflows/fixed-model-factory-dispatch.yml').read_text()
-    entry = (ROOT / '.github/workflows/free-model-factory-entry.yml').read_text()
-    runner = (ROOT / '.github/workflows/free-model-factory-run.yml').read_text()
+    dispatch = (ROOT.parent / '.github/workflows/fixed-model-factory-dispatch.yml').read_text()
+    entry = (ROOT.parent / '.github/workflows/free-model-factory-entry.yml').read_text()
+    runner = (ROOT.parent / '.github/workflows/free-model-factory-run.yml').read_text()
     worker = (ROOT / '.github/scripts/free-model-factory-worker.sh').read_text()
     assert 'dispatch-next' in dispatch
     assert '--provider "$REQUESTED_PROVIDER" --model "$REQUESTED_MODEL"' in dispatch

@@ -28,7 +28,7 @@ slot_count = _slots.slot_count
 slots = _slots.slots
 sources = _slots.sources
 
-WORKFLOWS = ROOT / ".github" / "workflows"
+WORKFLOWS = ROOT.parent / ".github" / "workflows"
 
 
 def validate() -> None:

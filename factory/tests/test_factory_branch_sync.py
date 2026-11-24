@@ -230,7 +230,7 @@ def test_neon_leases_name_the_holder_and_never_accept_an_unconfigured_ledger():
 
 
 def test_dispatcher_runs_the_bounded_leased_sync_pass():
-    workflow = (Path(__file__).resolve().parents[1] / ".github/workflows/fixed-model-factory-dispatch.yml")
+    workflow = (Path(__file__).resolve().parents[2] / ".github/workflows/fixed-model-factory-dispatch.yml")
     jobs = yaml.safe_load(workflow.read_text(encoding="utf-8"))["jobs"]
     steps = {step.get("name"): step for step in jobs["dispatch"]["steps"]}
     step = steps["Sync queued factory PRs with main under Neon leases"]

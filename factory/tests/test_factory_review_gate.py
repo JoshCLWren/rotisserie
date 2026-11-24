@@ -15,8 +15,10 @@ from typing import Any
 import pytest
 from pytest import MonkeyPatch
 
+from tests.workflow_files import adopter_view
+
 SCRIPTS = Path(__file__).resolve().parents[1] / ".github" / "scripts"
-WORKFLOWS = Path(__file__).resolve().parents[1] / ".github" / "workflows"
+WORKFLOWS = Path(__file__).resolve().parents[2] / ".github" / "workflows"
 sys.path.insert(0, str(SCRIPTS))
 
 _review_policy = importlib.import_module("factory_review_policy")
@@ -801,9 +803,9 @@ def test_worker_stages_trusted_controller_and_submits_exact_reviewed_head() -> N
 
 def test_dispatcher_requires_controller_authorization_before_merge() -> None:
     """The dispatcher never merges; the serialized drain authorizes every merge."""
-    dispatcher = (WORKFLOWS / "fixed-model-factory-dispatch.yml").read_text(encoding="utf-8")
+    dispatcher = adopter_view("fixed-model-factory-dispatch.yml")
     assert "gh pr merge" not in dispatcher
-    source = (WORKFLOWS / "factory-ready-merge-drain.yml").read_text(encoding="utf-8")
+    source = adopter_view("factory-ready-merge-drain.yml")
     authorization = 'python3 "$review_controller" authorized --pr "$pr"'
     merge = 'gh pr merge "$pr"'
     assert authorization in source
@@ -1872,9 +1874,7 @@ def test_authorization_paths_do_not_read_pull_reviews() -> None:
 
 def test_trusted_native_changes_requested_routes_to_repair_only() -> None:
     """Native review feedback can request repairs, not bypass merge authorization."""
-    workflow = (
-        WORKFLOWS / "factory-issue-pr-state-reconciler.yml"
-    ).read_text(encoding="utf-8")
+    workflow = adopter_view("factory-issue-pr-state-reconciler.yml")
     assert "pull_request_review:" in workflow
     assert "types: [submitted, dismissed]" in workflow
     assert "await visibility({ github, context });" in workflow
@@ -1890,7 +1890,7 @@ def test_trusted_native_changes_requested_routes_to_repair_only() -> None:
 
 def test_merge_drain_never_reads_native_review_state_for_merge() -> None:
     """factory-ready-merge-drain merges only via controller authorized + gates."""
-    content = (WORKFLOWS / "factory-ready-merge-drain.yml").read_text(encoding="utf-8")
+    content = adopter_view("factory-ready-merge-drain.yml")
     assert 'authorized --pr' in content
     assert 'gates --pr' in content
     assert "factory-visibility" not in content
@@ -2971,7 +2971,7 @@ def test_attestation_is_idempotent_and_never_rewrites_a_recorded_head(
 
 def test_provenance_reconcile_workflow_runs_trusted_main() -> None:
     """The reconciliation entry point is an explicit, maintainer-run workflow."""
-    workflow = (WORKFLOWS / "factory-provenance-reconcile.yml").read_text(encoding="utf-8")
+    workflow = adopter_view("factory-provenance-reconcile.yml")
     assert "workflow_dispatch:" in workflow
     assert "reconcile-provenance" in workflow
     assert "factory-review-controller.py" in workflow
@@ -3718,7 +3718,7 @@ def test_review_route_rejects_inconsistent_runtime_provenance(
 
 def test_review_restores_per_worker_provider_instead_of_a_shared_composite() -> None:
     """Review must not force all independent workers onto one quota domain."""
-    workflow = (WORKFLOWS / "free-model-factory-run.yml").read_text()
+    workflow = adopter_view("free-model-factory-run.yml")
     assert "reason='exact-head-semantic-review-only'" not in workflow
     assert "Register composite OpenRouter model for semantic review only" not in workflow
     assert "Factory $worker: routing leased semantic review via" not in workflow
@@ -3732,7 +3732,7 @@ def test_review_restores_per_worker_provider_instead_of_a_shared_composite() -> 
 
 def test_review_uses_existing_model_preflight_and_provider_rotation() -> None:
     """Review uses the same catalog selection and real work invocation as coding."""
-    workflow = (WORKFLOWS / "free-model-factory-run.yml").read_text()
+    workflow = adopter_view("free-model-factory-run.yml")
     assert '[[ "${RUNTIME_MODEL:-}" != \'openrouter/free\' ]]' not in workflow
     # Review and coding share one dispatch-time catalog selection and the
     # worker's in-lease fleet failover; no review-only model path exists.
@@ -3741,7 +3741,7 @@ def test_review_uses_existing_model_preflight_and_provider_rotation() -> None:
     assert "fleet_fallback()" in selector
     assert 'echo "runtime_model=$runtime_model"' in selector
     assert "FACTORY_RUNTIME_MODEL: ${{ steps.executor.outputs.runtime_model" in workflow
-    worker = (WORKFLOWS.parent / "scripts" / "free-model-factory-worker.sh").read_text()
+    worker = (WORKFLOWS.parents[1] / "factory" / ".github" / "scripts" / "free-model-factory-worker.sh").read_text()
     assert "select_next_eligible_model" in worker
 
 

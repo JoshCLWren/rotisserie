@@ -67,7 +67,7 @@ def _start(github: GitHub, workflow: str, inputs: dict[str, str]) -> tuple[int, 
     listing = f"https://github.com/{github.repo}/actions/workflows/{workflow}"
     try:
         output = github.workflow_run(workflow, inputs)
-    except (GitHubAuthError, GitHubNotFoundError, GitHubRateLimitError):
+    except GitHubAuthError, GitHubNotFoundError, GitHubRateLimitError:
         raise  # GitHub refused the request outright: nothing started.
     except GitHubError as exc:
         # A timeout or dropped connection may follow GitHub accepting it.

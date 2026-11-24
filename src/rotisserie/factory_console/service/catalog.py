@@ -24,7 +24,7 @@ def opencode_catalog() -> list[str]:
             output = subprocess.run(
                 [executable, "models"], capture_output=True, text=True, timeout=45, check=False
             ).stdout
-        except (OSError, subprocess.SubprocessError):
+        except OSError, subprocess.SubprocessError:
             continue
         return [
             line.split()[0]

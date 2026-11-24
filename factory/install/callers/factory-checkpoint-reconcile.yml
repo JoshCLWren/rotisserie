@@ -1,0 +1,27 @@
+name: Factory Checkpoint Reconciliation
+on:
+  workflow_run:
+    workflows: [Fixed Model Factory Entry]
+    types: [completed]
+  schedule:
+    - cron: '17 * * * *'
+  workflow_dispatch:
+    inputs:
+      run_id:
+        description: 'Optional canonical factory run ID, otherwise sweep saved checkpoints'
+        required: false
+        type: string
+permissions:
+  contents: write
+  pull-requests: write
+  issues: write
+  actions: read
+concurrency:
+  group: factory-checkpoint-reconciliation
+  cancel-in-progress: false
+jobs:
+  rotisserie:
+    cache-mode: read
+    uses: JoshCLWren/rotisserie/.github/workflows/factory-checkpoint-reconcile.yml@main
+    with:
+      run_id: ${{ inputs.run_id }}

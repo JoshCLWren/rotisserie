@@ -11,8 +11,10 @@ from datetime import UTC, datetime
 from pathlib import Path
 from types import ModuleType
 
+from tests.workflow_files import adopter_view
+
 SCRIPTS = Path(__file__).resolve().parents[1] / ".github" / "scripts"
-WORKFLOW = Path(".github/workflows/factory-issue-pr-state-reconciler.yml")
+WORKFLOW = Path("../.github/workflows/factory-issue-pr-state-reconciler.yml")
 POLICY_SCRIPT = SCRIPTS / "factory_issue_pr_state_policy.py"
 
 
@@ -66,7 +68,7 @@ def _issue_payload(labels: list[str], updated_at: str | None) -> dict[str, objec
 
 def test_factory_issue_state_reconciler_has_periodic_sweep() -> None:
     """Old orphaned issue labels must be repaired without a new PR event."""
-    workflow = WORKFLOW.read_text(encoding="utf-8")
+    workflow = adopter_view(WORKFLOW.name)
 
     assert "  schedule:" in workflow
     assert "    - cron: '31 * * * *'" in workflow
@@ -74,7 +76,7 @@ def test_factory_issue_state_reconciler_has_periodic_sweep() -> None:
 
 def test_hourly_sweep_skips_history_when_no_stale_stages() -> None:
     """Clean factory backlog must not trigger 5,000-PR history pagination."""
-    workflow = WORKFLOW.read_text(encoding="utf-8")
+    workflow = adopter_view(WORKFLOW.name)
     schedule = workflow.index("factory_issues=\"$(gh issue list")
     no_work_exit = workflow.index('if [[ -z "$factory_issues" ]]', schedule)
     full_history = workflow.index('SWEEP_PULLS="$(gh api --paginate', schedule)
@@ -88,7 +90,7 @@ def test_hourly_sweep_skips_history_when_no_stale_stages() -> None:
 
 def test_pr_history_uses_supported_pagination_and_compacts_before_caching() -> None:
     """gh rejects --slurp combined with --jq; project per page, then reassemble."""
-    workflow = WORKFLOW.read_text(encoding="utf-8")
+    workflow = adopter_view(WORKFLOW.name)
     script = workflow[workflow.index("Reconcile linked issue from trusted canonical PR history"):]
     assert not re.search(r"--paginate\s+--slurp\s*\\\s*--jq", script)
     projection = "--jq '[.[] | {number, head: {ref: .head.ref}, state, merged_at}]'"
@@ -99,7 +101,7 @@ def test_pr_history_uses_supported_pagination_and_compacts_before_caching() -> N
 
 def test_automated_issue_sweep_defers_when_installation_quota_is_low() -> None:
     """A low REST budget must not start either expensive scheduled scan."""
-    workflow = WORKFLOW.read_text(encoding="utf-8")
+    workflow = adopter_view(WORKFLOW.name)
     guard = workflow.index("Guard recovery sweeps on the Actions installation REST budget")
     enroll = workflow.index("Enroll repository PRs missing factory labels")
     history = workflow.index("Reconcile linked issue from trusted canonical PR history")
@@ -161,7 +163,7 @@ def test_reconcile_issue_skips_blocked_labels_before_replace() -> None:
     The workflow stays enabled; only issues matching claim-policy BLOCKED_LABELS
     are left alone.
     """
-    workflow = WORKFLOW.read_text(encoding="utf-8")
+    workflow = adopter_view(WORKFLOW.name)
     body = _reconcile_issue_body(workflow)
 
     assert "if: false" not in workflow
@@ -236,7 +238,7 @@ def test_reconcile_issue_skips_manual_only_before_replace() -> None:
     ``gh issue list --label factory`` includes pull requests, so the body
     skip has to live inside reconcile_issue with the BLOCKED_LABELS skip.
     """
-    workflow = WORKFLOW.read_text(encoding="utf-8")
+    workflow = adopter_view(WORKFLOW.name)
     body = _reconcile_issue_body(workflow)
 
     skip_at = body.index("--blocked-by-body-file")
@@ -443,7 +445,7 @@ def test_claim_after_history_walk_is_caught_at_writer_boundary(tmp_path: Path) -
     )
     assert decision.stdout.strip() == policy.LEASE_ACTION_HOLD_LOCAL
 
-    workflow = WORKFLOW.read_text(encoding="utf-8")
+    workflow = adopter_view(WORKFLOW.name)
     body = _replace_issue_state_body(workflow)
     read_at = body.index('gh api "repos/${GITHUB_REPOSITORY}/issues/${issue}"')
     policy_at = body.index("--lease-action-issue-file")
@@ -460,7 +462,7 @@ def test_claim_after_history_walk_is_caught_at_writer_boundary(tmp_path: Path) -
 
 def test_reconcile_issue_has_no_separate_pre_write_lease_read() -> None:
     """The history walk must not duplicate the writer's boundary ownership read."""
-    workflow = WORKFLOW.read_text(encoding="utf-8")
+    workflow = adopter_view(WORKFLOW.name)
     body = _reconcile_issue_body(workflow)
 
     assert "--lease-action-issue-file" not in body
@@ -471,10 +473,13 @@ def test_reconcile_issue_has_no_separate_pre_write_lease_read() -> None:
 
 def test_trusted_review_comment_events_route_to_visibility_without_issue_sweep() -> None:
     """Human review comments must reach the label handler without heavy sweeps."""
-    workflow = WORKFLOW.read_text(encoding="utf-8")
+    workflow = adopter_view(WORKFLOW.name)
     assert "issue_comment:\n    types: [created]" in workflow
     assert "github.event.issue.pull_request" in workflow
-    assert "contains(github.event.comment.body, 'comic-pile-factory-semantic-review-v1:')" in workflow
+    assert (
+        "contains(github.event.comment.body, format('{0}-factory-semantic-review-v1:', "
+        "github.event.repository.name))"
+    ) in workflow
     assert "context.eventName === 'issue_comment'" in workflow
     assert '[[ "$EVENT_NAME" == ' in workflow
     assert "== 'issue_comment' ||" in workflow

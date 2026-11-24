@@ -1,0 +1,15 @@
+name: Factory PR Review Wakeup
+on:
+  pull_request_target:
+    types: [opened, reopened, ready_for_review, labeled, synchronize]
+permissions:
+  actions: write
+  contents: read
+  pull-requests: read
+concurrency:
+  group: factory-pr-review-wakeup
+  cancel-in-progress: false
+jobs:
+  rotisserie:
+    cache-mode: read
+    uses: JoshCLWren/rotisserie/.github/workflows/factory-pr-review-wakeup.yml@main

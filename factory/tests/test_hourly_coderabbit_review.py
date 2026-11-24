@@ -10,6 +10,8 @@ from typing import Any
 
 import pytest
 
+from tests.workflow_files import adopter_view
+
 SCRIPTS = Path(__file__).resolve().parents[1] / ".github" / "scripts"
 sys.path.insert(0, str(SCRIPTS))
 SPEC = importlib.util.spec_from_file_location(
@@ -297,11 +299,9 @@ def test_shortlist_favors_priority_then_green_ci() -> None:
 
 def test_jev_review_uses_existing_dispatcher_driven_merge_drain() -> None:
     """No independent cron or failure coupling; existing hourly quota survives."""
-    workflows = SCRIPTS.parent / "workflows"
-    drain = (workflows / "factory-ready-merge-drain.yml").read_text(encoding="utf-8")
-    dispatcher = (workflows / "fixed-model-factory-dispatch.yml").read_text(
-        encoding="utf-8"
-    )
+    workflows = SCRIPTS.parents[2] / ".github" / "workflows"
+    drain = adopter_view("factory-ready-merge-drain.yml")
+    dispatcher = adopter_view("fixed-model-factory-dispatch.yml")
     assert not (workflows / "hourly-jev-coderabbit-review.yml").exists()
     assert "gh workflow run factory-ready-merge-drain.yml" in dispatcher
     step_name = "      - name: Ask Jev for CodeRabbit review on the existing drain cadence"

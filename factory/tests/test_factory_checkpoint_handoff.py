@@ -7,6 +7,7 @@ import sys
 from pathlib import Path
 
 import pytest
+from tests.workflow_files import adopter_view
 
 ROOT = Path(__file__).resolve().parents[1]
 SPEC = importlib.util.spec_from_file_location(
@@ -238,11 +239,10 @@ def test_named_and_legacy_checkpoint_metadata_remain_recoverable(
 
 
 def test_workflow_and_entry_keep_recovery_independent_and_failure_visible() -> None:
-    workflow = (ROOT / ".github/workflows/factory-checkpoint-reconcile.yml").read_text()
-    assert "workflow_run:" in workflow and "schedule:" in workflow
-    assert "ref: main" in workflow and "persist-credentials: false" in workflow
-    assert "--cleanup" in workflow and "--sweep" in workflow
-    entry = (ROOT / ".github/workflows/free-model-factory-entry.yml").read_text()
+    workflow = adopter_view("factory-checkpoint-reconcile.yml")
+    assert "workflow_run:" in workflow and "schedule:" in workflow and "ref: main" in workflow
+    assert "persist-credentials: false" in workflow and "--cleanup" in workflow and "--sweep" in workflow
+    entry = adopter_view("free-model-factory-entry.yml")
     assert "--outcome" in entry
     assert "Code saved on the work PR; validation incomplete; worker failed:" in entry
     assert 'if [[ "$verdict" == failed ]]; then' in entry

@@ -1,0 +1,13 @@
+name: Factory API Quota Observation
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '17 * * * *'
+permissions:
+  contents: read
+concurrency:
+  group: factory-api-quota-observation
+  cancel-in-progress: true
+jobs:
+  rotisserie:
+    uses: JoshCLWren/rotisserie/.github/workflows/factory-api-quota-observation.yml@main

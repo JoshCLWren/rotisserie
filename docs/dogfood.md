@@ -68,8 +68,8 @@ uses GitHub's expected-head merge guard. GitHub auto-merge is not enabled. The
 workflow token is exposed only to the trusted merge adapter; no worker or
 pull-request code runs with it.
 
-Branch protection independently requires the Python 3.12, 3.13, and 3.14 CI
-contexts and resolved conversations. The adapter requires the same complete
+Branch protection independently requires the Python 3.14 CI
+context and resolved conversations. The adapter requires the same complete
 successful CI set and refuses GitHub command failures as explicit canary
 errors. Formal GitHub `APPROVED` state is not required: the single authenticated
 operator account cannot approve its own pull request. This follows the first adopter's

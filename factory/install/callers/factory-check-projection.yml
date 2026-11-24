@@ -1,0 +1,19 @@
+name: Factory Check Completion Wakeup
+on:
+  workflow_run:
+    workflows:
+      - CI
+      - PR-Agent Advisory Review
+      - Local Ollama Review
+      - Fixed Model PR Repair Guard
+    types: [completed]
+permissions:
+  contents: read
+  actions: write
+  pull-requests: read
+jobs:
+  rotisserie:
+    cache-mode: read
+    uses: JoshCLWren/rotisserie/.github/workflows/factory-check-projection.yml@main
+    secrets:
+      NEON_API_KEY: ${{ secrets.NEON_API_KEY }}

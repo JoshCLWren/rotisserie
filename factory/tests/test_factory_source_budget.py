@@ -77,7 +77,7 @@ def test_budget_guard_uses_recent_actions_evidence_not_model_inventory() -> None
 
 
 def test_dispatch_filters_provider_budget_before_batch_cap() -> None:
-    text = (ROOT / ".github/workflows/fixed-model-factory-dispatch.yml").read_text()
+    text = (ROOT.parent / ".github/workflows/fixed-model-factory-dispatch.yml").read_text()
     step = text[text.index('workers="$(python3 "$slots" offer'):]
     assert step.index("factory_source_budget.py filter") < step.index("'.[:$cap]'")
 

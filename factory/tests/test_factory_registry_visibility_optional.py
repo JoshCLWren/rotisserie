@@ -28,7 +28,7 @@ import yaml
 
 ROOT = Path(__file__).resolve().parents[1]
 SCRIPTS = ROOT / ".github" / "scripts"
-WORKFLOWS = ROOT / ".github" / "workflows"
+WORKFLOWS = ROOT.parent / ".github" / "workflows"
 RUN_WORKFLOW = WORKFLOWS / "free-model-factory-run.yml"
 ENTRY_WORKFLOW = WORKFLOWS / "free-model-factory-entry.yml"
 OBSERVER_WORKFLOW = WORKFLOWS / "fixed-model-runtime-observer.yml"

@@ -1292,7 +1292,7 @@ def test_factory_control_plane_installs_parser_runtime(workflow: str) -> None:
     import yaml
 
     root = Path(__file__).resolve().parents[1]
-    config = yaml.safe_load((root / '.github/workflows' / workflow).read_text())
+    config = yaml.safe_load((root.parent / '.github/workflows' / workflow).read_text())
     # Jobs that only validate a fenced assignment or export Neon projections
     # never reach the delivery gate; every job that can is checked.
     gate_markers = (

@@ -19,7 +19,7 @@ def iso(value: Any) -> str | None:
         if date.tzinfo is None:
             raise ValueError("timezone required")
         return date.astimezone(UTC).isoformat().replace("+00:00", "Z")
-    except (TypeError, AttributeError, ValueError):
+    except TypeError, AttributeError, ValueError:
         return None
 
 

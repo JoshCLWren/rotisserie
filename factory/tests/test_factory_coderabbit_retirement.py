@@ -9,7 +9,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 CONTROLLER = ROOT / ".github/scripts/factory-review-controller.py"
-RUNNER = ROOT / ".github/workflows/factory-ready-merge-drain.yml"
+RUNNER = ROOT.parent / ".github/workflows/factory-ready-merge-drain.yml"
 LEGACY_REVIEW = ROOT / ".github/scripts/hourly_coderabbit_review.py"
 HEAD = "a" * 40
 
@@ -54,7 +54,7 @@ def test_merge_drain_requests_coderabbit_reviews_without_blocking_merges() -> No
     Requests were restored after #5209 removed them; findings remain advisory
     for the factory merge gate (see the tests above).
     """
-    drain = (ROOT / ".github/workflows/factory-ready-merge-drain.yml").read_text(encoding="utf-8")
+    drain = (ROOT.parent / ".github/workflows/factory-ready-merge-drain.yml").read_text(encoding="utf-8")
     step_name = "      - name: Ask Jev for CodeRabbit review on the existing drain cadence"
     assert drain.count(step_name) == 1
     step = drain.split(step_name, 1)[1].split("\n      - name:", 1)[0]

@@ -217,7 +217,7 @@ def test_bare_persistence_checks_real_parent_without_checkout(tmp_path: Path) ->
 
 def test_fork_workflows_separate_execution_and_persistence() -> None:
     """Untrusted source has only read permissions; privileged job never checks it out."""
-    root = SCRIPTS.parent / "workflows"
+    root = SCRIPTS.parents[2] / ".github" / "workflows"
     execution_text = (root / "factory-fork-execution.yml").read_text()
     execution = yaml.safe_load(execution_text)
     assert set(execution["permissions"].values()) == {"read"}

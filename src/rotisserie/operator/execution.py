@@ -66,7 +66,7 @@ def _validate_lease(assignment: Assignment, config: OperatorConfig, at: int) -> 
         if state.exists() and raw.get("schema_version") != 1:
             raise ValueError("unsupported graph state")
         snapshot = GraphSnapshot.from_dict(raw["snapshot"] if state.exists() else raw)
-    except (ValueError, TypeError, KeyError, RecursionError):
+    except ValueError, TypeError, KeyError, RecursionError:
         raise ValueError("invalid execution graph") from None
     validate_assignment(assignment, snapshot, at=at)
 
@@ -94,7 +94,7 @@ def _validate_worktree(assignment: Assignment, config: OperatorConfig) -> None:
                 timeout=10,
                 check=True,
             )
-        except (OSError, subprocess.SubprocessError):
+        except OSError, subprocess.SubprocessError:
             raise ValueError("cannot verify execution worktree identity") from None
         return result.stdout.strip()
 

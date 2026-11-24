@@ -10,7 +10,7 @@ from pathlib import Path
 import pytest
 
 SCRIPTS = Path(__file__).resolve().parents[1] / ".github" / "scripts"
-WORKFLOW = Path(__file__).resolve().parents[1] / ".github" / "workflows" / "free-model-factory-run.yml"
+WORKFLOW = Path(__file__).resolve().parents[2] / ".github" / "workflows" / "free-model-factory-run.yml"
 sys.path.insert(0, str(SCRIPTS))
 policy = importlib.import_module("factory_review_policy")
 guard = importlib.import_module("factory_review_model_guard")

@@ -1,0 +1,63 @@
+# A closed/drafted factory PR disappears from the active finalization set.
+# Scheduled/dispatcher sweeps alone can leave a migration waiter stranded.
+# pull_request_target checks out trusted main only, never a PR's untrusted code.
+# Serialize this event-driven reconciliation with dispatch and capacity refill.
+# Coalesce duplicate ingress events for this workflow only. The job-level
+# shared group below serializes every lease writer without canceling other lanes.
+name: Factory Migration Lane Release
+on:
+  workflow_call:
+
+env:
+  # Operator settings (rotisserie factory settings) reach every factory script.
+  FACTORY_REPO_VARS: >-
+    {"FACTORY_SLOTS_PER_PROVIDER": "${{ vars.FACTORY_SLOTS_PER_PROVIDER }}", "FACTORY_PR_WIP_LIMIT": "${{ vars.FACTORY_PR_WIP_LIMIT }}", "FACTORY_REVIEW_BACKLOG_LIMIT": "${{ vars.FACTORY_REVIEW_BACKLOG_LIMIT }}", "FACTORY_OMNIROUTE_FREE_ENTRY_CAP": "${{ vars.FACTORY_OMNIROUTE_FREE_ENTRY_CAP }}", "FACTORY_NO_DIFF_RETRY_LIMIT": "${{ vars.FACTORY_NO_DIFF_RETRY_LIMIT }}", "FACTORY_NO_DIFF_RETRY_RESET_SECONDS": "${{ vars.FACTORY_NO_DIFF_RETRY_RESET_SECONDS }}", "FACTORY_REVIEW_FAILURE_COOLDOWN_SECONDS": "${{ vars.FACTORY_REVIEW_FAILURE_COOLDOWN_SECONDS }}", "FACTORY_FIXED_LEASE_TTL_SECONDS": "${{ vars.FACTORY_FIXED_LEASE_TTL_SECONDS }}", "FACTORY_LOCAL_LEASE_TTL_SECONDS": "${{ vars.FACTORY_LOCAL_LEASE_TTL_SECONDS }}", "FACTORY_PRIORITY_ORDER": "${{ vars.FACTORY_PRIORITY_ORDER }}"}
+
+permissions:
+  contents: read
+  issues: write
+  pull-requests: read
+
+jobs:
+  release-waiter:
+    concurrency:
+      group: fixed-model-factory-dispatch
+      queue: max
+      cancel-in-progress: false
+    if: |
+      github.event_name == 'workflow_dispatch' ||
+      github.event.action == 'closed' ||
+      github.event.action == 'converted_to_draft' ||
+      contains(
+        fromJSON('["factory:ready", "factory:ci", "factory:review", "factory:changes-requested", "factory:blocked", "factory:migration-wait"]'),
+        github.event.label.name
+      )
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Set up factory Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: '3.14'
+      - name: Checkout trusted main
+        uses: actions/checkout@v7
+        with:
+          ref: main
+          persist-credentials: false
+      - name: Check out Rotisserie factory runtime
+        uses: actions/checkout@v7
+        with:
+          repository: ${{ job.workflow_repository }}
+          ref: ${{ job.workflow_sha }}
+          path: .rotisserie/runtime
+          persist-credentials: false
+      - name: Overlay Rotisserie factory runtime
+        run: bash .rotisserie/runtime/factory/install/overlay.sh .
+
+      - name: Reconcile serialized migration finalization lane
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          python3 .github/scripts/factory_migration_lane.py reconcile

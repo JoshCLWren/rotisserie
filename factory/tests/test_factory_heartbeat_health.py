@@ -77,7 +77,7 @@ def test_identity_timestamp_and_latest_record_are_not_inferred_from_comment_orde
 
 def test_recovery_keeps_fleet_gate_and_publishes_per_worker_diagnostics() -> None:
     """Partial staleness cannot directly dispatch a worker or bypass quota selection."""
-    workflow = (ROOT / ".github/workflows/fixed-model-factory-dispatch-recovery.yml").read_text()
+    workflow = (ROOT.parent / ".github/workflows/fixed-model-factory-dispatch-recovery.yml").read_text()
     assert "factory_heartbeat_health.py" in workflow
     assert '(( newest_age < 1200 ))' in workflow
     assert "--summary" in workflow

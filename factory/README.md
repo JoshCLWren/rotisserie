@@ -4,16 +4,21 @@ This directory is the factory runtime that adopter repositories install. It
 started as a copy of the first adopter's factory and keeps that layout so
 relative paths still work.
 
-The workflow files under `.github/workflows/` here are templates. GitHub does
-not run them in Rotisserie. They run in each adopter repository, on that
+The factory workflows are reusable workflows in Rotisserie's root
+`.github/workflows/`. Each has only an `on: workflow_call` trigger, so GitHub never
+runs them in Rotisserie. They run in each adopter repository, on that
 repository's events and Actions minutes.
 
 ## How an adopter runs it
 
-1. The adopter commits `.rotisserie/config.toml` and the installed workflows.
-2. Each installed workflow checks out the adopter, then checks out Rotisserie at
-   a pinned commit into `.rotisserie/runtime/`, then runs
-   `factory/install/overlay.sh`.
+1. The adopter commits `.rotisserie/config.toml` and the thin caller workflows
+   from `install/callers/`. A caller holds only the triggers, permissions,
+   concurrency, run-name, and one job that calls the reusable workflow of the
+   same name with its inputs and the secrets it needs.
+2. Each reusable job checks out the adopter, then checks out Rotisserie at the
+   commit of the called workflow (`job.workflow_repository` at
+   `job.workflow_sha`) into `.rotisserie/runtime/`, then runs
+   `factory/install/overlay.sh`. Jobs that run Python set up Python 3.14 first.
 3. `overlay.sh` copies the paths in `install/overlay-paths.txt` into the
    workspace and lists them in `.git/info/exclude`, so workers never commit
    them. It refuses to run while the adopter still tracks any of those paths.
@@ -25,12 +30,22 @@ own `docs/ISSUE_EXECUTION_PROTOCOL.md` and `docs/PRODUCT_ACCEPTANCE_PROTOCOL.md`
 ## Install or update
 
 ```bash
+python3 factory/install/install.py /path/to/adopter
 python3 factory/install/install.py /path/to/adopter --ref <rotisserie-commit-sha>
-python3 factory/install/install.py /path/to/adopter --ref <sha> --workflow factory-ready-merge-drain.yml
+python3 factory/install/install.py /path/to/adopter --workflow factory-ready-merge-drain.yml
 ```
 
-`--ref` must be a full commit SHA. Installed files keep the template names, so a
-workflow disabled in the adopter stays disabled when its file is updated.
+`--ref` is `main` by default, or a branch name or full commit SHA. Callers keep
+the reusable workflow names, so a workflow disabled in the adopter stays
+disabled when its file is updated, and scripts that dispatch a workflow by file
+name keep working. A full install also deletes workflow files that earlier
+versions installed and that the reusable workflows replace.
+
+Secrets pass explicitly, by name, from each caller. GitHub documents
+`secrets: inherit` only for callers in the same organization or enterprise, and
+explicit secrets give each reusable workflow only what it reads. Repository
+variables need no passing: a called workflow reads the caller repository's
+`vars`.
 
 ## Adopter configuration
 

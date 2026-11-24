@@ -1,0 +1,318 @@
+name: Fixed Model Factory Entry
+on:
+  workflow_call:
+    inputs:
+      assignment:
+        type: string
+        required: false
+      worker:
+        type: string
+        required: false
+      model:
+        type: string
+        required: false
+      provider:
+        type: string
+        required: false
+    secrets:
+      AION_API_KEY:
+        required: false
+      AI_GATEWAY_API_KEY:
+        required: false
+      CLOUDFLARE_API_TOKEN:
+        required: false
+      COHERE_API_KEY:
+        required: false
+      FACTORY_READER_APP_ID:
+        required: false
+      FACTORY_READER_APP_PRIVATE_KEY:
+        required: false
+      FACTORY_WORKER_48_APP_ID:
+        required: false
+      FACTORY_WORKER_48_APP_PRIVATE_KEY:
+        required: false
+      FACTORY_WORKER_48_INSTALLATION_ID:
+        required: false
+      GEMINI_API_KEY:
+        required: false
+      GROQ_API_KEY:
+        required: false
+      MISTRAL_API_KEY:
+        required: false
+      NEON_API_KEY:
+        required: false
+      NVIDIA_API_KEY:
+        required: false
+      OLLAMA_API_KEY:
+        required: false
+      OMNIROUTE_API_KEY:
+        required: false
+      OMNIROUTE_MANAGEMENT_API_KEY:
+        required: false
+      OPENCODE_GO_CLIENT_ID:
+        required: false
+      OPENROUTER_API_KEY:
+        required: false
+      ORCAROUTER_API_KEY:
+        required: false
+      POLLINATIONS_API_KEY:
+        required: false
+      PR_REBASE_TOKEN:
+        required: false
+      REQUESTY_API_KEY:
+        required: false
+      ROTISSERIE_FACTORY_APP_ID:
+        required: false
+      ROTISSERIE_FACTORY_APP_PRIVATE_KEY:
+        required: false
+      ROTISSERIE_FACTORY_INSTALLATION_ID:
+        required: false
+      TYPHOON_API_KEY:
+        required: false
+      Z_AI_API_KEY:
+        required: false
+
+env:
+  # Operator settings (rotisserie factory settings) reach every factory script.
+  FACTORY_REPO_VARS: >-
+    {"FACTORY_SLOTS_PER_PROVIDER": "${{ vars.FACTORY_SLOTS_PER_PROVIDER }}", "FACTORY_PR_WIP_LIMIT": "${{ vars.FACTORY_PR_WIP_LIMIT }}", "FACTORY_REVIEW_BACKLOG_LIMIT": "${{ vars.FACTORY_REVIEW_BACKLOG_LIMIT }}", "FACTORY_OMNIROUTE_FREE_ENTRY_CAP": "${{ vars.FACTORY_OMNIROUTE_FREE_ENTRY_CAP }}", "FACTORY_NO_DIFF_RETRY_LIMIT": "${{ vars.FACTORY_NO_DIFF_RETRY_LIMIT }}", "FACTORY_NO_DIFF_RETRY_RESET_SECONDS": "${{ vars.FACTORY_NO_DIFF_RETRY_RESET_SECONDS }}", "FACTORY_REVIEW_FAILURE_COOLDOWN_SECONDS": "${{ vars.FACTORY_REVIEW_FAILURE_COOLDOWN_SECONDS }}", "FACTORY_FIXED_LEASE_TTL_SECONDS": "${{ vars.FACTORY_FIXED_LEASE_TTL_SECONDS }}", "FACTORY_LOCAL_LEASE_TTL_SECONDS": "${{ vars.FACTORY_LOCAL_LEASE_TTL_SECONDS }}", "FACTORY_PRIORITY_ORDER": "${{ vars.FACTORY_PRIORITY_ORDER }}"}
+
+permissions:
+  id-token: write
+  contents: write
+  issues: write
+  pull-requests: write
+  actions: write
+  checks: read
+
+jobs:
+  run:
+    uses: ./.github/workflows/free-model-factory-run.yml
+    with:
+      worker: ${{ inputs.worker }}
+      assignment: ${{ inputs.assignment }}
+      model: ${{ inputs.model }}
+      provider: ${{ inputs.provider }}
+    secrets: inherit
+
+  # The preceding job owns the entire worker lease and its release. A
+  # completion wakeup is therefore a signal only, never an assignment.
+  signal_completion:
+    name: Wake completion drain after trusted outcome persistence
+    needs: [run, persist_outcome]
+    if: ${{ always() }}
+    runs-on: ubuntu-latest
+    permissions:
+      actions: write
+      contents: read
+    steps:
+      - name: Signal completed worker capacity
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -Eeuo pipefail
+          # A workflow_run event from a GITHUB_TOKEN-launched worker is not
+          # reliably delivered. Explicit workflow_dispatch is supported and
+          # the drain's concurrency group coalesces bursts of completions.
+          gh workflow run factory-completion-drain.yml \
+            --repo "$GITHUB_REPOSITORY" --ref main -f source_run_id="$GITHUB_RUN_ID"
+
+  # Persist the terminal outcome in this trusted, *separate* runner after the
+  # model execution job exits. The capacity drain can remain blocked behind
+  # dispatch serialization without delaying durable lifecycle recording.
+  # The reusable model job does not receive Neon secrets.
+  persist_outcome:
+    name: Persist trusted worker outcome in Neon
+    needs: run
+    if: ${{ always() }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      actions: read
+      pull-requests: write
+      issues: write
+    steps:
+      - name: Set up factory Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: '3.14'
+      - uses: actions/checkout@v7
+        with:
+          ref: main
+          persist-credentials: false
+      - name: Check out Rotisserie factory runtime
+        uses: actions/checkout@v7
+        with:
+          repository: ${{ job.workflow_repository }}
+          ref: ${{ job.workflow_sha }}
+          path: .rotisserie/runtime
+          persist-credentials: false
+      - name: Overlay Rotisserie factory runtime
+        run: bash .rotisserie/runtime/factory/install/overlay.sh .
+
+      - name: Configure restricted Neon factory event ledger
+        uses: ./.github/actions/factory-state-cache
+        with:
+          neon-api-key: ${{ secrets.NEON_API_KEY }}
+          neon-project-id: ${{ vars.NEON_PROJECT_ID }}
+
+      - name: Classify and persist this completed worker
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          INPUT_WORKER: ${{ inputs.worker }}
+        run: |
+          set -Eeuo pipefail
+          # Retry only transient GitHub responses. Every retry overwrites its
+          # destination, so truncated first attempts cannot corrupt JSON/logs.
+          retry_gh_api() {
+            local file="$1" error_file="$RUNNER_TEMP/factory-gh-api-error.txt" attempt
+            shift
+            for attempt in 1 2 3 4; do
+              if gh api "$@" > "$file" 2> "$error_file"; then
+                return 0
+              fi
+              if (( attempt == 4 )) || ! grep -Eiq 'HTTP (408|409|425|429|5[0-9][0-9])|rate.limit|timed? out|connection (reset|refused)|unexpected EOF' "$error_file"; then
+                cat "$error_file" >&2
+                return 1
+              fi
+              echo "::warning::Transient GitHub API failure; retrying attempt $((attempt + 1))/4" >&2
+              sleep "$((1 << attempt))"
+            done
+          }
+          [[ "$INPUT_WORKER" =~ ^[1-9][0-9]*$ ]] || {
+            echo "::error::Invalid trusted worker ID"
+            exit 1
+          }
+          # This is the authoritative Entry run ID. The job can run while
+          # the parent workflow's capacity-wakeup job is still executing.
+          retry_gh_api "$RUNNER_TEMP/factory-run-jobs.json" \
+            "repos/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}/jobs?per_page=100"
+          job_id="$(jq -r '[.jobs[] | select((.name | ltrimstr("rotisserie / ")) == "run / factory" and .status == "completed") | .id][0] // empty' "$RUNNER_TEMP/factory-run-jobs.json")"
+          [[ "$job_id" =~ ^[1-9][0-9]*$ ]] || {
+            echo "::error::The reusable factory job has not completed"
+            exit 1
+          }
+          # Write ANSI-colored logs to a local file, never to a terminal.
+          retry_gh_api "$RUNNER_TEMP/factory-entry.log" --allow-escape-sequences \
+            "repos/${GITHUB_REPOSITORY}/actions/jobs/${job_id}/logs"
+          python3 .github/scripts/factory_dynamic_outcome.py \
+            --log "$RUNNER_TEMP/factory-entry.log" \
+            > "$RUNNER_TEMP/worker-outcome.json"
+          # Code handoff is distinct from agent exit. Only potential successful
+          # deliveries get a targeted authoritative GitHub verification.
+          delivery_pr="$(jq -r '.delivery_pr // empty' "$RUNNER_TEMP/worker-outcome.json")"
+          if [[ -n "$delivery_pr" ]]; then
+            [[ "$delivery_pr" =~ ^[1-9][0-9]*$ ]] || exit 1
+            retry_gh_api "$RUNNER_TEMP/factory-delivery-pr.json" \
+              "repos/$GITHUB_REPOSITORY/pulls/$delivery_pr"
+            jq -e --arg repo "$GITHUB_REPOSITORY" --argjson number "$delivery_pr" '
+              .number == $number and .head.repo.full_name == $repo and
+              (.state == "open" or .merged == true) and
+              (.head.sha | test("^[0-9a-f]{40}$"))
+            ' "$RUNNER_TEMP/factory-delivery-pr.json" >/dev/null || {
+              echo "::error::Unable to verify persisted PR #$delivery_pr in this repository"
+              exit 1
+            }
+          fi
+          # Authoritative remote-ref/PR enrichment distinguishes persisted work
+          # from validated PR delivery. Never convert a failing worker into success.
+          checkpoint_args=(--repo "$GITHUB_REPOSITORY" --run-id "$GITHUB_RUN_ID"
+            --cleanup --outcome "$RUNNER_TEMP/worker-outcome.json")
+          if [[ -n "$delivery_pr" ]]; then
+            checkpoint_args+=(--delivered-pr "$delivery_pr")
+          fi
+          python3 .github/scripts/factory_checkpoint_handoff.py "${checkpoint_args[@]}" || {
+            echo "::warning::Work PR publication failed; independent checkpoint reconciliation will retry"
+          }
+          # Worker identity comes from the trusted dispatch input, *not* from
+          # any untrusted text in a model-generated log.
+          jq --arg worker "$INPUT_WORKER" '.worker = $worker' \
+            "$RUNNER_TEMP/worker-outcome.json" \
+            > "$RUNNER_TEMP/worker-outcome-attested.json"
+          # This write is idempotent by (repo, run_id) in Neon. A temporary
+          # connection failure must not silently drop the terminal outcome.
+          for attempt in 1 2 3 4; do
+            if python3 .github/scripts/factory_state_ledger.py runtime-outcome \
+              --repo "$GITHUB_REPOSITORY" --run-id "$GITHUB_RUN_ID" \
+              --file "$RUNNER_TEMP/worker-outcome-attested.json" \
+              --log "$RUNNER_TEMP/factory-entry.log"; then
+              break
+            fi
+            if (( attempt == 4 )); then
+              echo "::error::Unable to persist Neon terminal outcome after 4 attempts"
+              exit 1
+            fi
+            echo "::warning::Neon terminal write failed; retrying attempt $((attempt + 1))/4" >&2
+            sleep "$((1 << attempt))"
+          done
+          # The trusted classifier, not the wrapper job's shell exit, owns
+          # the Entry run's final meaning. Persist first, then fail visibly
+          # when the coding attempt really failed. Idle is not delivery.
+          classification="$(jq -r '.outcome_class // "unknown_failure"' "$RUNNER_TEMP/worker-outcome-attested.json")"
+          delivered="$(jq -r '.delivery_outcome // "none"' "$RUNNER_TEMP/worker-outcome-attested.json")"
+          pr="$(jq -r '.delivery_pr // empty' "$RUNNER_TEMP/worker-outcome-attested.json")"
+          saved="$(jq -r '.checkpoint_saved // false' "$RUNNER_TEMP/worker-outcome-attested.json")"
+          recovery_pr="$(jq -r '.recovery_pr // empty' "$RUNNER_TEMP/worker-outcome-attested.json")"
+          if [[ "$delivered" == persisted ]]; then
+            verdict="code_delivered"
+            message="Verified PR #$pr was handed off; agent outcome: $classification"
+          elif [[ "$classification" == no_work ]]; then
+            verdict="idle"
+            message="No code delivered; worker had no useful work to persist"
+          elif [[ "$classification" == success ]]; then
+            verdict="work_completed"
+            message="Work completed without a verified PR handoff (for example review)"
+          else
+            verdict="failed"
+            if [[ "$saved" == true ]]; then
+              message="Code saved on the work PR; validation incomplete; worker failed: $classification (work PR: ${recovery_pr:-publication pending})"
+            else
+              message="No verified saved code or PR delivery; worker failed: $classification"
+            fi
+          fi
+          {
+            echo "### Factory outcome: $verdict"
+            echo
+            echo "$message"
+            echo
+            # Markdown backticks in this printf format are intentional.
+            # shellcheck disable=SC2016
+            printf 'Neon terminal classification: `%s`\n' "$classification"
+            # Markdown backticks in this printf format are intentional.
+            # shellcheck disable=SC2016
+            printf 'Checkpoint saved: `%s`; work PR: `%s`; checkpoint validated: `false`\n' "$saved" "${recovery_pr:-none}"
+          } >> "$GITHUB_STEP_SUMMARY"
+          echo "[factory-outcome] $verdict: $message"
+          if [[ "$verdict" == failed ]]; then
+            echo "::error::$message"
+            exit 1
+          fi
+
+      # Deferred reconciliation: a persister that hit the installation rate
+      # limit (runs 44031401652, 44032359658) left no Neon outcome. Each later
+      # Entry persister backfills a bounded number of earlier misses with the
+      # same classifier. Never blocks or changes this run's own verdict.
+      - name: Reconcile earlier Entry outcomes missing from Neon
+        if: ${{ always() }}
+        continue-on-error: true
+        timeout-minutes: 5
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -Eeuo pipefail
+          python3 .github/scripts/factory_outcome_reconcile.py \
+            --repo "$GITHUB_REPOSITORY" --hours 12 --limit 3 \
+            --exclude-run "$GITHUB_RUN_ID"
+
+      # The signed-in Actions run, not Neon, owns this durable handoff record.
+      # A failed agent remains failed; this artifact never upgrades the verdict.
+      - name: Preserve attested worker outcome artifact
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: factory-worker-outcome-${{ github.run_id }}
+          path: ${{ runner.temp }}/worker-outcome-attested.json
+          if-no-files-found: warn
+          retention-days: 30

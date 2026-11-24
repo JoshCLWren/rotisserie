@@ -11,9 +11,11 @@ from types import ModuleType
 
 import pytest
 
+from tests.workflow_files import adopter_view
+
 REPO_ROOT = Path(__file__).resolve().parents[1]
 SCRIPT = REPO_ROOT / ".github" / "scripts" / "factory_main_health.py"
-WORKFLOWS = REPO_ROOT / ".github" / "workflows"
+WORKFLOWS = REPO_ROOT.parent / ".github" / "workflows"
 SHA = "a" * 40
 OTHER = "b" * 40
 
@@ -248,8 +250,8 @@ def test_stale_claim_from_a_crashed_actor_is_reclaimed(fake: FakeGitHub) -> None
 
 
 def test_only_the_serialized_drain_merges_ready_prs() -> None:
-    drain = (WORKFLOWS / "factory-ready-merge-drain.yml").read_text(encoding="utf-8")
-    dispatcher = (WORKFLOWS / "fixed-model-factory-dispatch.yml").read_text(encoding="utf-8")
+    drain = adopter_view("factory-ready-merge-drain.yml")
+    dispatcher = adopter_view("fixed-model-factory-dispatch.yml")
     assert "gh pr merge" not in dispatcher
     assert "ensure-verification" in dispatcher
     assert "gh workflow run factory-ready-merge-drain.yml" in dispatcher

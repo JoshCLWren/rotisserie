@@ -12,7 +12,7 @@ import pytest
 
 ROOT = Path(__file__).resolve().parents[1]
 SCRIPT = ROOT / ".github/scripts/factory_published_model_catalog.py"
-RUNNER = ROOT / ".github/workflows/free-model-factory-run.yml"
+RUNNER = ROOT.parent / ".github/workflows/free-model-factory-run.yml"
 
 
 @pytest.fixture(scope="module")

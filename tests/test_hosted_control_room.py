@@ -14,7 +14,7 @@ import pytest
 ROOT = Path(__file__).resolve().parents[1]
 BUILDER = ROOT / "factory" / "scripts" / "build_hosted_control_room.py"
 ADAPTER = ROOT / "factory" / "scripts" / "hosted_control_room.js"
-WORKFLOW = ROOT / "factory" / ".github" / "workflows" / "rotisserie-operator.yml"
+WORKFLOW = ROOT / ".github" / "workflows" / "rotisserie-operator.yml"
 
 
 def builder() -> ModuleType:

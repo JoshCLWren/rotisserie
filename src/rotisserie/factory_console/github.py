@@ -222,6 +222,14 @@ def string(value: Obj, key: str) -> str:
     return found if isinstance(found, str) else ""
 
 
+CALLER_JOB_PREFIX = "rotisserie / "
+
+
+def job_name(job: Obj) -> str:
+    """A job's name without the prefix an adopter's thin caller workflow adds."""
+    return string(job, "name").removeprefix(CALLER_JOB_PREFIX)
+
+
 def integer(value: Obj, key: str) -> int | None:
     found = value.get(key)
     return found if isinstance(found, int) and not isinstance(found, bool) else None

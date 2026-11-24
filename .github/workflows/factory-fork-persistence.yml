@@ -1,0 +1,65 @@
+name: Factory Fork Persistence
+on:
+  workflow_call:
+    inputs:
+      run:
+        type: string
+        required: false
+    secrets:
+      PR_REBASE_TOKEN:
+        required: false
+
+env:
+  # Operator settings (rotisserie factory settings) reach every factory script.
+  FACTORY_REPO_VARS: >-
+    {"FACTORY_SLOTS_PER_PROVIDER": "${{ vars.FACTORY_SLOTS_PER_PROVIDER }}", "FACTORY_PR_WIP_LIMIT": "${{ vars.FACTORY_PR_WIP_LIMIT }}", "FACTORY_REVIEW_BACKLOG_LIMIT": "${{ vars.FACTORY_REVIEW_BACKLOG_LIMIT }}", "FACTORY_OMNIROUTE_FREE_ENTRY_CAP": "${{ vars.FACTORY_OMNIROUTE_FREE_ENTRY_CAP }}", "FACTORY_NO_DIFF_RETRY_LIMIT": "${{ vars.FACTORY_NO_DIFF_RETRY_LIMIT }}", "FACTORY_NO_DIFF_RETRY_RESET_SECONDS": "${{ vars.FACTORY_NO_DIFF_RETRY_RESET_SECONDS }}", "FACTORY_REVIEW_FAILURE_COOLDOWN_SECONDS": "${{ vars.FACTORY_REVIEW_FAILURE_COOLDOWN_SECONDS }}", "FACTORY_FIXED_LEASE_TTL_SECONDS": "${{ vars.FACTORY_FIXED_LEASE_TTL_SECONDS }}", "FACTORY_LOCAL_LEASE_TTL_SECONDS": "${{ vars.FACTORY_LOCAL_LEASE_TTL_SECONDS }}", "FACTORY_PRIORITY_ORDER": "${{ vars.FACTORY_PRIORITY_ORDER }}"}
+
+permissions:
+  contents: read
+  actions: read
+  issues: write
+  pull-requests: write
+
+jobs:
+  persist:
+    if: >-
+      github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' ||
+      (github.event.workflow_run.event == 'workflow_dispatch' &&
+       github.event.workflow_run.head_repository.full_name == github.repository &&
+       github.event.workflow_run.head_branch == 'main')
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: main
+          persist-credentials: false
+      - name: Check out Rotisserie factory runtime
+        uses: actions/checkout@v7
+        with:
+          repository: ${{ job.workflow_repository }}
+          ref: ${{ job.workflow_sha }}
+          path: .rotisserie/runtime
+          persist-credentials: false
+      - name: Overlay Rotisserie factory runtime
+        run: bash .rotisserie/runtime/factory/install/overlay.sh .
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.14'
+      - name: Install factory syntax parsers
+        uses: ./.github/actions/factory-syntax
+
+      # No contributor checkout or artifact code execution is permitted here.
+      - name: Validate receipt, lease, artifact ancestry, and persist exact fork head
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_REBASE_TOKEN: ${{ secrets.PR_REBASE_TOKEN }}
+          EXECUTION_RUN: ${{ github.event.workflow_run.id || inputs.run }}
+        run: |
+          set -Eeuo pipefail
+          if [[ -z "$EXECUTION_RUN" ]]; then
+            python3 .github/scripts/factory_fork_control.py reconcile
+            exit 0
+          fi
+          [[ "$EXECUTION_RUN" =~ ^[0-9]+$ ]]
+          python3 .github/scripts/factory_fork_control.py complete --run "$EXECUTION_RUN"

@@ -1,0 +1,66 @@
+# A separate runner survives worker cancellation; scheduled sweeping also covers
+# suppressed workflow_run events and temporary publication/API failures.
+name: Factory Checkpoint Reconciliation
+on:
+  workflow_call:
+    inputs:
+      run_id:
+        type: string
+        required: false
+
+env:
+  # Operator settings (rotisserie factory settings) reach every factory script.
+  FACTORY_REPO_VARS: >-
+    {"FACTORY_SLOTS_PER_PROVIDER": "${{ vars.FACTORY_SLOTS_PER_PROVIDER }}", "FACTORY_PR_WIP_LIMIT": "${{ vars.FACTORY_PR_WIP_LIMIT }}", "FACTORY_REVIEW_BACKLOG_LIMIT": "${{ vars.FACTORY_REVIEW_BACKLOG_LIMIT }}", "FACTORY_OMNIROUTE_FREE_ENTRY_CAP": "${{ vars.FACTORY_OMNIROUTE_FREE_ENTRY_CAP }}", "FACTORY_NO_DIFF_RETRY_LIMIT": "${{ vars.FACTORY_NO_DIFF_RETRY_LIMIT }}", "FACTORY_NO_DIFF_RETRY_RESET_SECONDS": "${{ vars.FACTORY_NO_DIFF_RETRY_RESET_SECONDS }}", "FACTORY_REVIEW_FAILURE_COOLDOWN_SECONDS": "${{ vars.FACTORY_REVIEW_FAILURE_COOLDOWN_SECONDS }}", "FACTORY_FIXED_LEASE_TTL_SECONDS": "${{ vars.FACTORY_FIXED_LEASE_TTL_SECONDS }}", "FACTORY_LOCAL_LEASE_TTL_SECONDS": "${{ vars.FACTORY_LOCAL_LEASE_TTL_SECONDS }}", "FACTORY_PRIORITY_ORDER": "${{ vars.FACTORY_PRIORITY_ORDER }}"}
+
+permissions:
+  contents: write
+  pull-requests: write
+  issues: write
+  actions: read
+
+jobs:
+  reconcile:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Set up factory Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: '3.14'
+      - name: Checkout trusted main only
+        uses: actions/checkout@v7
+        with:
+          ref: main
+          persist-credentials: false
+      - name: Check out Rotisserie factory runtime
+        uses: actions/checkout@v7
+        with:
+          repository: ${{ job.workflow_repository }}
+          ref: ${{ job.workflow_sha }}
+          path: .rotisserie/runtime
+          persist-credentials: false
+      - name: Overlay Rotisserie factory runtime
+        run: bash .rotisserie/runtime/factory/install/overlay.sh .
+      - name: Publish saved work and retire incorporated checkpoints
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TARGET_RUN: ${{ github.event.workflow_run.id || inputs.run_id || '' }}
+        run: |
+          set -Eeuo pipefail
+          args=(--repo "$GITHUB_REPOSITORY" --cleanup)
+          if [[ -n "$TARGET_RUN" ]]; then
+            [[ "$TARGET_RUN" =~ ^[1-9][0-9]*$ ]] || exit 1
+            args+=(--run-id "$TARGET_RUN")
+          else
+            args+=(--sweep)
+          fi
+          python3 .github/scripts/factory_checkpoint_handoff.py "${args[@]}" \
+            | tee "$RUNNER_TEMP/factory-checkpoint-result.json"
+          {
+            echo '### Checkpoint recovery'
+            echo '```json'
+            cat "$RUNNER_TEMP/factory-checkpoint-result.json"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"

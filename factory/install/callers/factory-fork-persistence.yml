@@ -1,0 +1,29 @@
+name: Factory Fork Persistence
+on:
+  schedule:
+    - cron: '17,47 * * * *'
+  workflow_run:
+    workflows: ['Factory Fork Execution']
+    types: [completed]
+  workflow_dispatch:
+    inputs:
+      run:
+        description: Completed canonical fork execution run to reconcile
+        required: true
+        type: string
+permissions:
+  contents: read
+  actions: read
+  issues: write
+  pull-requests: write
+concurrency:
+  group: factory-fork-persistence-${{ github.event.workflow_run.id || inputs.run }}
+  cancel-in-progress: false
+jobs:
+  rotisserie:
+    cache-mode: read
+    uses: JoshCLWren/rotisserie/.github/workflows/factory-fork-persistence.yml@main
+    with:
+      run: ${{ inputs.run }}
+    secrets:
+      PR_REBASE_TOKEN: ${{ secrets.PR_REBASE_TOKEN }}

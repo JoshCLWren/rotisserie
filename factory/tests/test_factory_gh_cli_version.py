@@ -3,7 +3,7 @@
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
-WORKFLOW_DIR = REPO_ROOT / ".github" / "workflows"
+WORKFLOW_DIR = REPO_ROOT.parent / ".github" / "workflows"
 GH_VERSION = "2.97.0"
 GH_LINUX_AMD64_SHA256 = "a2c9b8497e1f85b1ad0dfcb78b5a622e098801b8e461e459e88e1ee12f018112"
 

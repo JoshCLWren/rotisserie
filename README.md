@@ -106,7 +106,7 @@ Rotisserie-specific.
 
 ## Development
 
-Rotisserie supports Python 3.12 through 3.14. Install
+Rotisserie requires Python 3.14. Install
 [uv](https://docs.astral.sh/uv/), then create the locked development
 environment and run the same verification used by CI:
 

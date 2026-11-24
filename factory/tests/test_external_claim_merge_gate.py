@@ -118,7 +118,7 @@ def test_configured_but_unconnected_store_holds_merges(
 
 
 def test_merge_drain_reads_claims_with_the_python_it_runs() -> None:
-    text = (SCRIPTS.parent / "workflows" / "factory-ready-merge-drain.yml").read_text()
+    text = (SCRIPTS.parents[2] / ".github" / "workflows" / "factory-ready-merge-drain.yml").read_text()
     neon = text.index("uses: ./.github/actions/factory-state-cache")
     parsers = text.index("uses: ./.github/actions/factory-syntax")
     reader = text.index("python3 -m pip install --quiet --disable-pip-version-check 'asyncpg")
@@ -153,7 +153,7 @@ def test_every_claim_gated_controller_step_reads_outside_claims() -> None:
     """Steps that promote or authorize PRs must see outside-agent claims."""
     gated = re.compile(r"\b(?:reconcile-ci|authorized)\b")
     found = 0
-    for workflow in sorted((SCRIPTS.parent / "workflows").glob("*.yml")):
+    for workflow in sorted((SCRIPTS.parents[2] / ".github" / "workflows").glob("*.yml")):
         text = workflow.read_text()
         steps = _steps(text)
         for index, step in enumerate(steps):

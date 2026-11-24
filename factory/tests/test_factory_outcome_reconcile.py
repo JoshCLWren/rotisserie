@@ -35,7 +35,9 @@ def _run(run_id: int, worker: str = WORKER, **extra: object) -> dict[str, Any]:
     }
 
 
-def _api(runs: list[dict[str, Any]], *, fail_on: str = "", persist_status: str = "completed"):
+def _api(
+    runs: list[dict[str, Any]], *, fail_on: str = "", persist_status: str = "completed", prefix: str = ""
+):
     calls: list[str] = []
 
     def api(path: str, *, raw: bool = False) -> str:
@@ -46,8 +48,8 @@ def _api(runs: list[dict[str, Any]], *, fail_on: str = "", persist_status: str =
             return json.dumps({"workflow_runs": runs})
         if path.endswith("/jobs?per_page=100"):
             return json.dumps({"jobs": [
-                {"id": 7, "name": "run / factory", "status": "completed"},
-                {"id": 8, "name": RECONCILE.PERSIST_JOB, "status": persist_status},
+                {"id": 7, "name": f"{prefix}run / factory", "status": "completed"},
+                {"id": 8, "name": f"{prefix}{RECONCILE.PERSIST_JOB}", "status": persist_status},
             ]})
         if path.endswith("/jobs/7/logs"):
             assert raw
@@ -79,6 +81,13 @@ def test_missing_rate_limited_outcome_is_persisted_with_trusted_worker() -> None
     assert outcome["worker"] == WORKER
     assert outcome["delivery_pr"] == "5298"
     assert outcome["reconciled"] is True
+
+
+def test_entry_called_from_an_adopter_caller_job_is_reconciled() -> None:
+    api, _ = _api([_run(44031401652)], prefix="rotisserie / ")
+    summary, persisted = _reconcile(api, recorded=set())
+    assert [run_id for run_id, _ in persisted] == ["44031401652"]
+    assert summary["missing"] == ["44031401652"]
 
 
 def test_recorded_runs_are_never_reprojected() -> None:
@@ -116,7 +125,7 @@ def test_limit_bounds_one_pass() -> None:
 
 
 def test_entry_persister_runs_reconciliation_without_owning_the_verdict() -> None:
-    entry = yaml.safe_load((ROOT / ".github/workflows/free-model-factory-entry.yml").read_text())
+    entry = yaml.safe_load((ROOT.parent / ".github/workflows/free-model-factory-entry.yml").read_text())
     steps = entry["jobs"]["persist_outcome"]["steps"]
     step = next(s for s in steps if s.get("name") == "Reconcile earlier Entry outcomes missing from Neon")
     assert step["if"] == "${{ always() }}"

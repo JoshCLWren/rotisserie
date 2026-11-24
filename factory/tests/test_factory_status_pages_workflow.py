@@ -2,13 +2,15 @@
 
 from pathlib import Path
 
+from tests.workflow_files import adopter_view, own_steps
 
-WORKFLOW = Path(__file__).resolve().parents[1] / ".github" / "workflows" / "factory-status-pages.yml"
+
+WORKFLOW = Path(__file__).resolve().parents[2] / ".github" / "workflows" / "factory-status-pages.yml"
 
 
 def test_pages_workflow_uses_supported_first_deploy_configuration() -> None:
     """Keep the Pages workflow compatible with repositories enabled for Actions publishing."""
-    workflow = WORKFLOW.read_text(encoding="utf-8")
+    workflow = adopter_view(WORKFLOW.name)
 
     assert "enablement: true" not in workflow
     assert "contents: write" in workflow
@@ -22,7 +24,7 @@ def test_pages_workflow_uses_supported_first_deploy_configuration() -> None:
 
 def test_scheduled_refreshes_do_not_redeploy_pages_for_the_same_commit() -> None:
     """Publish live data separately because Pages deployments are keyed by commit SHA."""
-    workflow = WORKFLOW.read_text(encoding="utf-8")
+    workflow = adopter_view(WORKFLOW.name)
 
     assert "factory-status-live" in workflow
     assert "Publish live dashboard snapshot" in workflow
@@ -35,7 +37,7 @@ def test_scheduled_refreshes_do_not_redeploy_pages_for_the_same_commit() -> None
 
 def test_pages_workflow_proves_the_shell_and_live_snapshot_are_available() -> None:
     """Do not treat an accepted Pages artifact as proof that users can see live data."""
-    workflow = WORKFLOW.read_text(encoding="utf-8")
+    workflow = adopter_view(WORKFLOW.name)
 
     assert "Verify Pages publishing mode" in workflow
     assert 'build_type\" != \"workflow\"' in workflow
@@ -47,9 +49,8 @@ def test_pages_workflow_proves_the_shell_and_live_snapshot_are_available() -> No
 
 def test_pages_workflow_probes_opencode_free_roster_fail_soft() -> None:
     """Refresh the roster with OmniRoute credentials without failing the page."""
-    workflow = WORKFLOW.read_text(encoding="utf-8")
+    workflow = adopter_view(WORKFLOW.name)
 
-    assert ".github/scripts/probe_opencode_free_roster.py" in workflow
     assert "OMNIROUTE_API_KEY: ${{ secrets.OMNIROUTE_API_KEY }}" in workflow
     assert (
         "OMNIROUTE_MANAGEMENT_API_KEY: ${{ secrets.OMNIROUTE_MANAGEMENT_API_KEY }}"
@@ -61,7 +62,7 @@ def test_pages_workflow_probes_opencode_free_roster_fail_soft() -> None:
 
 def test_large_dashboard_upload_uses_file_input_not_process_arguments() -> None:
     """Huge fleet dashboards must not hit Linux's per-argument size limit."""
-    workflow = WORKFLOW.read_text(encoding="utf-8")
+    workflow = adopter_view(WORKFLOW.name)
     assert "publish_snapshot site/index.html index.html" in workflow
     assert "publish_snapshot site/funnel-cache.json funnel-cache.json" in workflow
     assert 'base64.b64encode(Path(source).read_bytes())' in workflow
@@ -74,7 +75,7 @@ def test_publisher_also_runs_after_the_scheduler_when_the_snapshot_is_stale() ->
     """GitHub throttled the */15 schedule (3 runs in ~14 hours); stats went stale."""
     import yaml
 
-    workflow = yaml.safe_load(WORKFLOW.read_text(encoding="utf-8"))
+    workflow = yaml.safe_load(adopter_view(WORKFLOW.name))
     triggers = workflow[True]  # PyYAML reads the bare `on:` key as True
     assert triggers["workflow_run"] == {
         "workflows": ["Fixed Model Factory Dispatcher"],
@@ -84,7 +85,7 @@ def test_publisher_also_runs_after_the_scheduler_when_the_snapshot_is_stale() ->
     jobs = workflow["jobs"]
     assert jobs["publish-live-dashboard"]["needs"] == "freshness"
     assert jobs["publish-live-dashboard"]["if"] == "needs.freshness.outputs.stale == 'true'"
-    gate = jobs["freshness"]["steps"][0]["run"]
+    gate = own_steps(jobs["freshness"])[0]["run"]
     assert 'if [[ "$EVENT" != "workflow_run" ]]' in gate  # manual and cron runs always publish
     assert "age > 840" in gate
 
@@ -93,7 +94,7 @@ def test_refresh_runs_cannot_cancel_a_queued_push_deployment() -> None:
     """Greptile P1 on adopter PR #5671: one pending run per concurrency group."""
     import yaml
 
-    workflow = yaml.safe_load(WORKFLOW.read_text(encoding="utf-8"))
+    workflow = yaml.safe_load(adopter_view(WORKFLOW.name))
     group = workflow["concurrency"]["group"]
     assert group == (
         "factory-status-pages-${{ github.event_name == 'push' && 'push' || 'refresh' }}"

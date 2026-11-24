@@ -355,7 +355,7 @@ def _worker_execute(
             raise ValueError("worker input exceeds the process contract bound")
         try:
             return json.loads(data)
-        except (ValueError, RecursionError):
+        except ValueError, RecursionError:
             raise ValueError("invalid worker input JSON") from None
 
     try:

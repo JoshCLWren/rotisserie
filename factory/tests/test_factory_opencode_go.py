@@ -64,7 +64,7 @@ def test_zen_key_is_not_go_key_and_worker_requires_named_go_secret():
     assert source_requirements("opencode-free") == ("FACTORY_HAS_OPENCODE_GO_CLIENT_ID",)
     with pytest.raises(GoCatalogError, match="missing"):
         catalog({"OPENCODE_ZEN_API_KEY": "only-zen", "OPENCODE_GO_API_KEY": ""})
-    workflow = (ROOT / ".github/workflows/free-model-factory-run.yml").read_text()
+    workflow = (ROOT.parent / ".github/workflows/free-model-factory-run.yml").read_text()
     assert "OPENCODE_GO_CLIENT_ID: ${{ secrets.OPENCODE_GO_CLIENT_ID }}" in workflow
     assert "Exchange GitHub OIDC for OpenCode Go" in workflow
     assert "OPENCODE_GO_API_KEY" not in workflow

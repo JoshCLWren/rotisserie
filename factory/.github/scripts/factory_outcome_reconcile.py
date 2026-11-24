@@ -27,6 +27,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 ENTRY_WORKFLOW = "free-model-factory-entry.yml"
 FACTORY_JOB = "run / factory"
 PERSIST_JOB = "Persist trusted worker outcome in Neon"
+# Adopters call the reusable Entry from a thin caller job named rotisserie.
+CALLER_JOB_PREFIX = "rotisserie / "
 # run-name is derived only from the trusted dispatcher's `worker` input.
 # The model segment is optional: older runs are ``Factory N · fixed-model entry``.
 TITLE_RE = re.compile(
@@ -38,6 +40,10 @@ GhApi = Callable[..., str]
 
 class GitHubUnavailableError(RuntimeError):
     """A GitHub read failed; defer the rest of the pass to a later run."""
+
+
+def _job_name(job: dict[str, Any]) -> str:
+    return str(job.get("name") or "").removeprefix(CALLER_JOB_PREFIX)
 
 
 def gh_api(path: str, *, raw: bool = False) -> str:
@@ -81,11 +87,11 @@ def classify_run(repo: str, run: dict[str, Any], api: GhApi) -> tuple[dict[str, 
     from factory_dynamic_outcome import classify
 
     jobs = json.loads(api(f"repos/{repo}/actions/runs/{run['id']}/jobs?per_page=100")).get("jobs") or []
-    persist = [job for job in jobs if job.get("name") == PERSIST_JOB]
+    persist = [job for job in jobs if _job_name(job) == PERSIST_JOB]
     # Only completed persisters; one still running may yet succeed itself.
     if not persist or any(job.get("status") != "completed" for job in persist):
         return None
-    factory = [job for job in jobs if job.get("name") == FACTORY_JOB and job.get("status") == "completed"]
+    factory = [job for job in jobs if _job_name(job) == FACTORY_JOB and job.get("status") == "completed"]
     if not factory:
         return None
     log = api(f"repos/{repo}/actions/jobs/{factory[0]['id']}/logs", raw=True)

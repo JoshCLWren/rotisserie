@@ -77,7 +77,9 @@ def test_partial_priority_order_keeps_remaining_categories_in_default_order():
 def test_every_factory_workflow_receives_exactly_the_registered_settings():
     # Only registered settings, never toJSON(vars): adopter logs may be public.
     expected = settings.workflow_env_value()
-    for workflow in (ROOT / '.github/workflows').glob('*.yml'):
+    for workflow in (ROOT.parent / '.github/workflows').glob('*.yml'):
+        if workflow.name in ('ci.yml', 'canary-merge.yml'):
+            continue
         text = workflow.read_text()
         assert 'toJSON(vars)' not in text, workflow.name
         assert f'FACTORY_REPO_VARS: >-\n    {expected}\n' in text, workflow.name

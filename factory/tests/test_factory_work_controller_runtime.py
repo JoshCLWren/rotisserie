@@ -12,6 +12,8 @@ from typing import Any
 
 import pytest
 
+from tests.workflow_files import adopter_view
+
 REPO_ROOT = Path(__file__).resolve().parents[1]
 CONTROLLER_PATH = REPO_ROOT / ".github/scripts/factory-work-controller.py"
 
@@ -914,9 +916,7 @@ def test_active_worker_no_longer_performs_repo_wide_selection_or_merging() -> No
 
 def test_dispatcher_validates_controller_assignment_and_survives_dispatch_failure() -> None:
     """Verify dispatcher validates controller assignment and survives dispatch failure."""
-    dispatcher = (
-        REPO_ROOT / ".github/workflows/free-model-factory-dispatch.yml"
-    ).read_text(encoding="utf-8")
+    dispatcher = adopter_view("free-model-factory-dispatch.yml")
 
     assert "group: fixed-model-factory-dispatch" in dispatcher
     assert 'python3 "$controller" reconcile' in dispatcher
@@ -930,9 +930,7 @@ def test_dispatcher_validates_controller_assignment_and_survives_dispatch_failur
 
 def test_entry_run_name_exposes_queued_worker_identity() -> None:
     """Verify entry run name exposes queued worker identity."""
-    entry = (
-        REPO_ROOT / ".github/workflows/free-model-factory-entry.yml"
-    ).read_text(encoding="utf-8")
+    entry = adopter_view("free-model-factory-entry.yml")
 
     # The model follows the worker so operators can see it without opening logs;
     # every title parser also accepts the older model-less form.

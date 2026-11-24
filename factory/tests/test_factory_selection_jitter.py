@@ -78,7 +78,7 @@ def test_go_does_not_pin_one_favorite_automatically_but_exact_pin_remains() -> N
 
 
 def test_workflow_passes_run_identity_to_all_initial_and_failover_selectors() -> None:
-    workflow = (ROOT / ".github/workflows/free-model-factory-run.yml").read_text()
+    workflow = (ROOT.parent / ".github/workflows/free-model-factory-run.yml").read_text()
     worker = (ROOT / ".github/scripts/free-model-factory-worker.sh").read_text()
     step = workflow.split("- name: Select execution candidate at dispatch time", 1)[1]
     step = step.split("- name: Configure selected OmniRoute capacity", 1)[0]

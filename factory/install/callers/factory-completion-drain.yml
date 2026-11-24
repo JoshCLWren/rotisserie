@@ -1,0 +1,20 @@
+name: Factory Completion Drain
+on:
+  workflow_dispatch:
+    inputs:
+      source_run_id:
+        description: Completed Entry run (advisory scheduling context)
+        required: false
+        type: string
+permissions:
+  actions: write
+  contents: read
+concurrency:
+  group: factory-completion-drain-ingress
+  queue: single
+  cancel-in-progress: false
+jobs:
+  rotisserie:
+    uses: JoshCLWren/rotisserie/.github/workflows/factory-completion-drain.yml@main
+    with:
+      source_run_id: ${{ inputs.source_run_id }}

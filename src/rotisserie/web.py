@@ -260,7 +260,7 @@ def make_handler(
             """
             try:
                 self.wfile.write(body)
-            except (BrokenPipeError, ConnectionResetError):
+            except BrokenPipeError, ConnectionResetError:
                 # A tab closed, navigated away, or discarded an old response.
                 return
 

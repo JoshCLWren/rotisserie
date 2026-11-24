@@ -1,0 +1,21 @@
+name: Fixed Model Factory Dispatcher Recovery
+on:
+  schedule:
+    - cron: '*/15 * * * *'
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/fixed-model-factory-dispatch-recovery.yml'
+      - '.github/factory-expected-workers.json'
+permissions:
+  actions: write
+  contents: read
+concurrency:
+  group: fixed-model-factory-dispatch-recovery
+  cancel-in-progress: true
+jobs:
+  rotisserie:
+    uses: JoshCLWren/rotisserie/.github/workflows/fixed-model-factory-dispatch-recovery.yml@main
+    secrets:
+      NEON_API_KEY: ${{ secrets.NEON_API_KEY }}

@@ -7,6 +7,7 @@ from pathlib import Path
 from types import ModuleType, SimpleNamespace
 
 import pytest
+from tests.workflow_files import adopter_view
 
 SCRIPT_DIR = Path(__file__).parent
 CONTROLLER_PATH = SCRIPT_DIR / "factory-review-controller.py"
@@ -771,7 +772,7 @@ def test_terse_review_can_be_substantive_without_changed_path(tmp_path):
 
 
 def test_workflows_delegate_mechanical_gates_to_controller():
-    root = SCRIPT_DIR.parent / "workflows"
+    root = SCRIPT_DIR.parents[2] / ".github" / "workflows"
     for name in ("factory-ready-merge-drain.yml", "fixed-model-factory-dispatch.yml"):
         text = (root / name).read_text()
         assert "factory-review-controller.py" in text
@@ -989,9 +990,8 @@ def test_diff_only_semantic_verdict_returns_to_review(monkeypatch, verdict):
 
 
 def test_fixed_model_factory_schedules_are_active():
-    root = SCRIPT_DIR.parent / "workflows"
-    drain = (root / "factory-ready-merge-drain.yml").read_text()
-    dispatcher = (root / "fixed-model-factory-dispatch.yml").read_text()
+    drain = adopter_view("factory-ready-merge-drain.yml")
+    dispatcher = adopter_view("fixed-model-factory-dispatch.yml")
     assert "    - cron: '2-57/15 * * * *'" in drain
     assert dispatcher.count("    - cron: '") == 1
     assert "    - cron: '7 * * * *'" in dispatcher

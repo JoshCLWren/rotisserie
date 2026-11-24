@@ -1,0 +1,21 @@
+name: Fixed Model Runtime Observer
+on:
+  pull_request:
+    paths:
+      - .github/workflows/fixed-model-runtime-observer.yml
+  workflow_run:
+    workflows:
+      - Fixed Model Factory Entry
+    types:
+      - completed
+permissions:
+  contents: read
+  actions: read
+  issues: read
+  pull-requests: read
+jobs:
+  rotisserie:
+    cache-mode: read
+    uses: JoshCLWren/rotisserie/.github/workflows/fixed-model-runtime-observer.yml@main
+    secrets:
+      NEON_API_KEY: ${{ secrets.NEON_API_KEY }}

@@ -1,0 +1,28 @@
+name: Factory Incident Bot Promote
+on:
+  workflow_dispatch:
+    inputs:
+      pr:
+        description: Open factory PR number to promote (must be CLEAN / mergeable)
+        required: true
+        type: string
+      worker:
+        description: Fixed-model reviewer id (must not be the PR producer)
+        required: true
+        default: '66'
+        type: string
+permissions:
+  contents: write
+  issues: write
+  pull-requests: write
+  checks: read
+  actions: write
+concurrency:
+  group: factory-incident-bot-promote
+  cancel-in-progress: false
+jobs:
+  rotisserie:
+    uses: JoshCLWren/rotisserie/.github/workflows/factory-incident-bot-promote.yml@main
+    with:
+      pr: ${{ inputs.pr }}
+      worker: ${{ inputs.worker }}

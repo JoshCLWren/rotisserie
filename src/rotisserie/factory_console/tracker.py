@@ -25,6 +25,7 @@ from rotisserie.factory_console.github import (
     Obj,
     integer,
     items,
+    job_name,
     obj,
     string,
     timestamp,
@@ -190,9 +191,7 @@ def read_dispatcher(run: Obj, jobs: list[Obj]) -> View:
     created = timestamp(run, "created_at")
     if status in ("queued", "pending", "waiting", "requested") and not jobs:
         return View(Stage.QUEUED, "Waiting for earlier factory requests to finish", created)
-    dispatch = next(
-        (job for job in jobs if string(job, "name") == "dispatch"), jobs[0] if jobs else {}
-    )
+    dispatch = next((job for job in jobs if job_name(job) == "dispatch"), jobs[0] if jobs else {})
     job_status = string(dispatch, "status")
     if job_status in ("queued", "waiting", "pending", ""):
         if status == "completed":
@@ -267,7 +266,7 @@ def read_worker(run: Obj, jobs: list[Obj], number: int | None = None) -> View:
             True,
         )
     for job in jobs:
-        name = string(job, "name")
+        name = job_name(job)
         if "release" in name and string(job, "status") == "in_progress":
             return View(Stage.FINISHING, "Releasing the claim", timestamp(job, "started_at"))
         if (
@@ -326,7 +325,7 @@ def parse_result(log: str) -> DispatchOutcome | None:
     if status == "dispatched":
         try:
             number = int(str(found["number"]))
-        except (KeyError, ValueError):
+        except KeyError, ValueError:
             return DispatchOutcome("unknown", reason="The scheduler's result did not name a task.")
         dispatched = found.get("dispatched_at")
         return DispatchOutcome(
@@ -472,7 +471,7 @@ class Tracker:
         return integer(matches[0], "id") if matches else None
 
     def dispatch_outcome(self, run_id: int, jobs: list[Obj]) -> DispatchOutcome:
-        dispatch = next((job for job in jobs if string(job, "name") == "dispatch"), None)
+        dispatch = next((job for job in jobs if job_name(job) == "dispatch"), None)
         if dispatch is None:
             return DispatchOutcome("unknown", reason="The scheduler run has no scheduling job.")
         job_id = integer(dispatch, "id") or 0
@@ -506,11 +505,7 @@ class Tracker:
 
     def worker_outcome(self, jobs: list[Obj]) -> WorkerOutcome:
         persist = next(
-            (
-                job
-                for job in jobs
-                if string(job, "name").startswith("Persist trusted worker outcome")
-            ),
+            (job for job in jobs if job_name(job).startswith("Persist trusted worker outcome")),
             None,
         )
         if persist is not None:

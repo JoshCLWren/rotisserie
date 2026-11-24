@@ -3,7 +3,7 @@
 from pathlib import Path
 
 
-WORKFLOW = Path(__file__).resolve().parents[1] / ".github/workflows/free-model-factory-run.yml"
+WORKFLOW = Path(__file__).resolve().parents[2] / ".github/workflows/free-model-factory-run.yml"
 
 
 def test_omniroute_requests_carry_github_correlation_headers() -> None:

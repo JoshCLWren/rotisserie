@@ -10,9 +10,11 @@ from pathlib import Path
 
 import yaml
 
+from tests.workflow_files import adopter_view, own_steps
+
 ROOT = Path(__file__).resolve().parents[1]
 METER = ROOT / ".github/scripts/factory-gh-meter.sh"
-WORKFLOWS = ROOT / ".github/workflows"
+WORKFLOWS = ROOT.parent / ".github/workflows"
 spec = importlib.util.spec_from_file_location("factory_gh_usage", ROOT / ".github/scripts/factory_gh_usage.py")
 assert spec and spec.loader
 USAGE = importlib.util.module_from_spec(spec)
@@ -53,7 +55,7 @@ def test_usage_summary_counts_writes_and_pagination() -> None:
 def _step(workflow: str, name: str) -> str:
     data = yaml.safe_load((WORKFLOWS / workflow).read_text())
     for job in data["jobs"].values():
-        for step in job["steps"]:
+        for step in own_steps(job):
             if step.get("name") == name:
                 return step["run"]
     raise AssertionError(name)
@@ -116,10 +118,10 @@ def test_pr_review_wakeup_skips_leased_prs() -> None:
 
 
 def test_dispatcher_and_worker_report_gh_usage() -> None:
-    dispatch = (WORKFLOWS / "fixed-model-factory-dispatch.yml").read_text()
+    dispatch = adopter_view("fixed-model-factory-dispatch.yml")
     assert "FACTORY_GH_CALL_LOG=$RUNNER_TEMP/factory-gh-calls.log" in dispatch
     assert "factory_gh_usage.py" in dispatch
-    run = (WORKFLOWS / "free-model-factory-run.yml").read_text()
+    run = adopter_view("free-model-factory-run.yml")
     assert 'cp .github/scripts/factory-gh-meter.sh "$meter_dir/gh"' in run
     assert 'python3 -I "$meter_dir/factory_gh_usage.py"' in run
 
@@ -297,6 +299,6 @@ def test_usage_report_separates_cache_hits_from_github_requests() -> None:
 
 
 def test_quota_sampler_is_read_only_and_on_demand() -> None:
-    data = yaml.safe_load((WORKFLOWS / "factory-api-quota-sampler.yml").read_text())
+    data = yaml.safe_load(adopter_view("factory-api-quota-sampler.yml"))
     assert set(data[True]) == {"workflow_dispatch"}
     assert data["permissions"] == {"actions": "read", "contents": "read"}

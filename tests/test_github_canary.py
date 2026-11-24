@@ -69,13 +69,7 @@ class Runner:
     )
     reviews: str = "[]"
     checks: str = field(
-        default_factory=lambda: json.dumps(
-            [
-                {"name": "Python 3.12", "state": "SUCCESS"},
-                {"name": "Python 3.13", "state": "SUCCESS"},
-                {"name": "Python 3.14", "state": "SUCCESS"},
-            ]
-        )
+        default_factory=lambda: json.dumps([{"name": "Python 3.14", "state": "SUCCESS"}])
     )
     commands: list[tuple[str, ...]] = field(default_factory=list)
 
@@ -173,8 +167,7 @@ def test_canary_requires_independent_exact_head_semantic_evidence(
 @pytest.mark.parametrize("state", ["PENDING", "FAILURE", "ERROR", "CANCELLED", "SKIPPED"])
 def test_canary_rejects_every_unsuccessful_required_check(state: str) -> None:
     checks = [
-        {"name": version, "state": state if version == "Python 3.13" else "SUCCESS"}
-        for version in ("Python 3.12", "Python 3.13", "Python 3.14")
+        {"name": "Python 3.14", "state": state},
     ]
     runner = Runner(checks=json.dumps(checks))
     with pytest.raises(CanaryMergeError, match="unsuccessful required CI"):

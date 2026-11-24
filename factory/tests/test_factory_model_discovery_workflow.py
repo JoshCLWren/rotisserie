@@ -9,7 +9,7 @@ from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[1]
-WORKFLOWS = ROOT / ".github" / "workflows"
+WORKFLOWS = ROOT.parent / ".github" / "workflows"
 FACTORY_RUN = WORKFLOWS / "free-model-factory-run.yml"
 
 

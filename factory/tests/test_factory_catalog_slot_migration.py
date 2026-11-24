@@ -41,7 +41,7 @@ def test_worker_fibonacci_backoff_survives_model_rotation() -> None:
 
 
 def test_dispatched_model_is_looked_up_at_execution() -> None:
-    workflow = (ROOT / ".github/workflows/free-model-factory-run.yml").read_text()
+    workflow = (ROOT.parent / ".github/workflows/free-model-factory-run.yml").read_text()
     assert "factory_worker_slots.py resolve" in workflow
     assert "factory_runtime_model_select.py" in workflow
     assert "factory_published_model_catalog.py" in workflow

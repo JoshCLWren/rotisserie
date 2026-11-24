@@ -10,14 +10,16 @@ from pathlib import Path
 
 import pytest
 
+from tests.workflow_files import adopter_view
+
 ROOT = Path(__file__).resolve().parents[1]
-DISPATCHER = ROOT / ".github/workflows/fixed-model-factory-dispatch.yml"
-REVIEWER = ROOT / ".github/workflows/local-ollama-review.yml"
+DISPATCHER = ROOT.parent / ".github/workflows/fixed-model-factory-dispatch.yml"
+REVIEWER = ROOT.parent / ".github/workflows/local-ollama-review.yml"
 
 
 def dispatch_script() -> str:
     """Extract the executable script from the dedicated roster-dispatch job."""
-    source = DISPATCHER.read_text(encoding="utf-8")
+    source = adopter_view(DISPATCHER.name)
     step = source.split(
         "      - name: Offer one unclaimed PR to local Ollama reviewer\n", 1,
     )[1].split("\n      - name:", 1)[0]
@@ -26,8 +28,8 @@ def dispatch_script() -> str:
 
 def test_canonical_roster_offers_ollama_without_manual_dispatch() -> None:
     """Keep the automatic Qwen review attached to roster and watchdog ticks."""
-    workflow = DISPATCHER.read_text(encoding="utf-8")
-    reviewer = REVIEWER.read_text(encoding="utf-8")
+    workflow = adopter_view(DISPATCHER.name)
+    reviewer = adopter_view(REVIEWER.name)
     job = workflow.split(
         "      - name: Offer one unclaimed PR to local Ollama reviewer", 1,
     )[1].split("      - name: Queue roster successor outside assignment lease lock", 1)[0]
