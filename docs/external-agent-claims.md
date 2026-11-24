@@ -11,8 +11,8 @@ authenticated as the actual agent principal, and a restricted
 `FACTORY_STATE_DSN_FILE` provisioned by the existing trusted controller:
 
 ```bash
-rotisserie factory next --repo JoshCLWren/comic-pile --json
-rotisserie factory reserve-next --repo JoshCLWren/comic-pile --client chatgpt --json
+rotisserie factory next --repo acme/widgets --json
+rotisserie factory reserve-next --repo acme/widgets --client chatgpt --json
 ```
 
 Only a JSON response with `"status": "reserved"` and an exact `claim_id`
@@ -25,11 +25,11 @@ instruction.
 Renew before expiration. For example, use the claim UUID returned above:
 
 ```bash
-rotisserie factory renew UUID --repo JoshCLWren/comic-pile --client chatgpt --json
-rotisserie factory release UUID --repo JoshCLWren/comic-pile --client chatgpt --json
-gh workflow run rotisserie-external-claim.yml --repo JoshCLWren/comic-pile --ref main \
+rotisserie factory renew UUID --repo acme/widgets --client chatgpt --json
+rotisserie factory release UUID --repo acme/widgets --client chatgpt --json
+gh workflow run rotisserie-external-claim.yml --repo acme/widgets --ref main \
   -f operation=handoff -f client=chatgpt -f claim_id=UUID \
-  -f evidence=https://github.com/JoshCLWren/comic-pile/pull/123
+  -f evidence=https://github.com/acme/widgets/pull/123
 ```
 
 Handoff records evidence in Neon and releases the claim. It **does not**
@@ -123,7 +123,7 @@ and where to report. Renew well before `expires_at` (claims last 30 minutes).
 Agents with GitHub CLI access can dispatch the same authorized workflow:
 
 ```bash
-gh workflow run rotisserie-external-claim.yml --repo JoshCLWren/comic-pile \
+gh workflow run rotisserie-external-claim.yml --repo acme/widgets \
   --ref main -f operation=reserve-next -f client=codebuff-phone
 ```
 
@@ -133,12 +133,12 @@ direct call would (a refusal inside the workflow exits 4, as it does locally).
 No Neon connection is needed on the agent's machine:
 
 ```bash
-rotisserie factory next --repo JoshCLWren/comic-pile --via github
-rotisserie factory wait-for-work --repo JoshCLWren/comic-pile --can merge-conflict --via github
-rotisserie factory reserve-next --repo JoshCLWren/comic-pile --client claude-code --via github --json
-rotisserie factory renew UUID --repo JoshCLWren/comic-pile --client claude-code --via github
-rotisserie factory handoff UUID --repo JoshCLWren/comic-pile --client claude-code \
-  --evidence https://github.com/JoshCLWren/comic-pile/pull/123 --via github
+rotisserie factory next --repo acme/widgets --via github
+rotisserie factory wait-for-work --repo acme/widgets --can merge-conflict --via github
+rotisserie factory reserve-next --repo acme/widgets --client claude-code --via github --json
+rotisserie factory renew UUID --repo acme/widgets --client claude-code --via github
+rotisserie factory handoff UUID --repo acme/widgets --client claude-code \
+  --evidence https://github.com/acme/widgets/pull/123 --via github
 ```
 
 `wait-for-work` checks the work list until it offers an unheld candidate for an
@@ -150,9 +150,9 @@ If a claim run does not finish or publishes no result, the CLI reports
 `unknown` (exit 6) with the run URL: the run may still have reserved work, so
 look before retrying.
 
-By hand, use `gh run list --repo JoshCLWren/comic-pile
+By hand, use `gh run list --repo acme/widgets
 --workflow rotisserie-external-claim.yml` to identify the initiated run and
-`gh run download RUN_ID --repo JoshCLWren/comic-pile` to retrieve its
+`gh run download RUN_ID --repo acme/widgets` to retrieve its
 machine-readable result. Match the workflow run you triggered, not another
 agent's run. The GitHub bridge supports `renew`, `release`, and `handoff`
 with the same `client`, `claim_id` and (for handoff) a same-repository
@@ -239,7 +239,7 @@ them, so a second run changes nothing.
 
 ## Universal agent instruction
 
-> Do the next meaningful work in ComicPile. Ask Rotisserie for its authoritative
+> Do the next meaningful work in this repository. Ask Rotisserie for its authoritative
 > ranked work and reserve the highest eligible action using the current shared
 > lease authority. Use your own stable client identity. Do not act on a
 > read-only candidate or assume labels confer ownership. Never bypass active

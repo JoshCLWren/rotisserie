@@ -571,7 +571,7 @@ def test_vercel_rewrite_only_change_runs_routing_tests_not_cargo(tmp_path: Path)
 
 
 def test_missing_ingress_contract_tests_are_skipped_not_failed(tmp_path: Path) -> None:
-    """Comic Pile deleted these tests with its Python app (#5641).
+    """An adopter deleted these tests with its Python app (#5641).
 
     The gate then failed every Rust worker on pytest "file not found", so even a
     correct `cargo fmt` repair of PR #5629 was rejected as failed validation.

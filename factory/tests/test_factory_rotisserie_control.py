@@ -1,4 +1,4 @@
-"""Tests for ComicPile's bounded Rotisserie adoption control."""
+"""Tests for the adopter's bounded Rotisserie adoption control."""
 from __future__ import annotations
 
 import hashlib
@@ -22,7 +22,7 @@ def load_control() -> ModuleType:
 
 
 def state(stage: str = "legacy") -> dict[str, object]:
-    """Build the one supported ComicPile lane state."""
+    """Build the one supported adopter lane state."""
     return {
         "schema_version": 1,
         "control_revision": "controls-1",

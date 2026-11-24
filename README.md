@@ -17,10 +17,10 @@ interrupted-work recovery. Its job is to make those mechanics portable.
 > worker contracts, plus a local CLI with durable state and diagnostics. The
 > operator can produce fixture, read-only projection, and credential-free
 > mutation-plan evidence, completed its guarded merge canary, and now exposes a
-> versioned decision-shadow contract that ComicPile consumes at its bounded
+> versioned decision-shadow contract that the first adopter consumes at its bounded
 > issue-intake runtime boundary. The opt-in `execute` command now owns bounded
 > local worker process execution. The live controller and provider bridges
-> remain in ComicPile pending operational extraction and verified cutover.
+> remain in the first adopter pending operational extraction and verified cutover.
 > General autonomous dispatch and external-repository mutation remain disabled.
 
 ## What “graph engineering” means
@@ -125,7 +125,7 @@ Version history and release-note conventions live in
 From an adopter checkout, or by naming the repository explicitly, launch the authenticated local browser UI:
 
 ```bash
-rotisserie web --repo JoshCLWren/comic-pile
+rotisserie web --repo acme/widgets
 ```
 
 It reuses the existing `rotisserie factory ... --json` read/write commands and your authenticated `gh` CLI. It neither hosts a public service nor starts a separate scheduler. See [Factory operator console](docs/factory-console.md#local-web-control-room) for controls and safety boundaries.
@@ -177,8 +177,8 @@ canonical dependency-ordered plan. Current progress:
 - [x] define provider-neutral worker, evidence, and executor contracts;
 - [x] build the operator CLI, configuration model, persistence, and observability surface;
 - [x] safely dogfood Rotisserie on its own repository;
-- [x] integrate ComicPile as the first external adopter through the public boundary;
-- [ ] move the operational controller and worker machinery upstream, leaving ComicPile with configuration and thin bridges;
+- [x] integrate the first external adopter through the public boundary;
+- [ ] move the operational controller and worker machinery upstream, leaving the first adopter with configuration and thin bridges;
 - [ ] harden and publish the first supported open-source release.
 
 Operational extraction takes priority over release publication. Interim adopter

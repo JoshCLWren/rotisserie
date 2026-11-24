@@ -1,17 +1,17 @@
 ---
 name: crouton-factory-codex
-description: Drive Comic Pile local factory delivery through CI repair, actual OpenCode ACP independent review, gated merge and production acceptance in the Codex harness. Use for Comic Pile local factory or explicit Crouton orchestration; not generic coding or other repositories.
+description: Drive local factory delivery in an adopter repository through CI repair, actual OpenCode ACP independent review, gated merge and production acceptance in the Codex harness. Use for the adopter's local factory or explicit Crouton orchestration; not generic coding.
 ---
 
-# Comic Pile local factory in Codex
+# Local factory in Codex
 
 Codex adapter for the owner's Crouton workflow at
 `/home/josh/.agents/skills/crouton-factory/SKILL.md`; preserve that original file.
-Tracked source: Comic Pile `.agents/skills/crouton-factory-codex/`.
+Tracked source: Rotisserie `factory/.agents/skills/crouton-factory-codex/`.
 
 ## Scope and completion
 
-Confirm this is a Comic Pile checkout. Read repository `AGENTS.md`,
+Confirm this is an adopter checkout (it has `.rotisserie/config.toml`). Read repository `AGENTS.md`,
 `docs/OBJECTIVE_FIRST_ENGINEERING_CONTRACT.md`, and applicable local-factory-session
 and github-issue-kanban skills. Those files govern claims, verification and
 current review/merge rules. Local work is exempt from remote factory PR/backlog
@@ -56,7 +56,7 @@ silently replace it. Missing eligible models or unconfirmed selection is unavail
 review, not approval.
 
 The installed skill includes `scripts/local-factory-acp-review.mjs`; use its
-absolute installed path from any Comic Pile checkout. This works before the
+absolute installed path from any adopter checkout. This works before the
 repository wrapper is merged. No dependency on files in the implementation branch.
 
 Before launch, re-read PR head, every exact-head contributor, live issue/PR labels,

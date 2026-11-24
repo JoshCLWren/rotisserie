@@ -49,7 +49,7 @@ states, exposed dispatch expressions to shell parsing, and lacked server-side
 branch protection. The kill switch was set to `false` before remediation.
 Branch protection now requires all three supported-Python CI contexts. Its
 mistaken formal-approval requirement was removed after comparison with
-ComicPile's single-account factory policy.
+the first adopter's single-account factory policy.
 
 A successful run still requires required CI and controller-persisted semantic
 review evidence from a reviewer worker distinct from the producer worker and

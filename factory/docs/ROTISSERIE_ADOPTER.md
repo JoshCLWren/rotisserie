@@ -1,11 +1,11 @@
 # Rotisserie adopter boundary
 
-ComicPile consumes Rotisserie through its versioned CLI contract. It does not import
+The adopter consumes Rotisserie through its versioned CLI contract. It does not import
 Rotisserie internals, give Rotisserie a GitHub credential, or let a worker acquire the
 host snapshot. `.github/scripts/factory_rotisserie_adopter.py` accepts one already
 captured, immutable host view and derives both the legacy decision baseline and the
 Rotisserie `GraphSnapshot` from the same bytes. Its bundle records the source SHA-256,
-the exact fetched ComicPile commit, and the capture time.
+the exact fetched adopter commit, and the capture time.
 
 The captured-view schema is demonstrated by
 `tests/fixtures/factory-rotisserie/parity-view.json`. Issue and pull-request objects use
@@ -48,7 +48,7 @@ divergence exits 3 and must be explained before any canary decision. Invalid or 
 input exits 2. The adapter never changes Factory labels, dispatches a worker, enables a
 workflow, or applies a cutover decision.
 
-The shadow invocation supplies both ComicPile's observed completion backlog and active
+The shadow invocation supplies both the adopter's observed completion backlog and active
 Factory PR count, together with their configured limits, as explicit Rotisserie
 projection inputs. Completion and production backpressure therefore remain portable
 decision policy instead of being hidden inside the adopter translation.
@@ -57,19 +57,19 @@ decision policy instead of being hidden inside the adopter translation.
 
 | Current behavior | Portable observation or adopter-owned boundary |
 |---|---|
-| Contradictory owner/stage labels and target normalization | ComicPile-owned host normalization; the captured lease is the normalized ownership input. |
-| Signal-only completion, explicit-worker, and roster dispatch modes | Provider/topology policy remains ComicPile-owned; selected work appears as ownership. |
-| Trustworthy zero-work dispatcher termination | ComicPile workflow topology; an empty eligible/ranking set is the portable result. |
-| Dispatch-failure release and stale-lease reconciliation | Recovery observations use explicit lease expiry; applying a release remains ComicPile-owned. |
-| Worker roster and capacity | ComicPile provider policy. Capacity affects intake before capture and must be recorded when it changes a decision. |
-| Post-merge Factory release reconciliation | Outside the coordination decision contract: it writes ComicPile's product release ledger after completion. |
-| Provenance lane and creation-time ranking | ComicPile translates its deterministic issue order into host-neutral numeric graph priorities. |
+| Contradictory owner/stage labels and target normalization | Adopter-owned host normalization; the captured lease is the normalized ownership input. |
+| Signal-only completion, explicit-worker, and roster dispatch modes | Provider/topology policy remains adopter-owned; selected work appears as ownership. |
+| Trustworthy zero-work dispatcher termination | Adopter workflow topology; an empty eligible/ranking set is the portable result. |
+| Dispatch-failure release and stale-lease reconciliation | Recovery observations use explicit lease expiry; applying a release remains adopter-owned. |
+| Worker roster and capacity | Adopter provider policy. Capacity affects intake before capture and must be recorded when it changes a decision. |
+| Post-merge Factory release reconciliation | Outside the coordination decision contract: it writes the adopter's product release ledger after completion. |
+| Provenance lane and creation-time ranking | The adopter translates its deterministic issue order into host-neutral numeric graph priorities. |
 | Unknown-producer authorization | Deliberate stricter legacy rule (two reviewers); divergence is retained, never coerced. |
-| No-diff retry generations | ComicPile execution policy; a suppressed generation appears blocked in the legacy baseline. |
-| Worker-specific completion ordering | ComicPile dispatch policy; normalized completion readiness remains exact-head and worker-neutral. |
-| Workflow-activity lease liveness | ComicPile translates activity into the explicit lease interval before projection. |
+| No-diff retry generations | Adopter execution policy; a suppressed generation appears blocked in the legacy baseline. |
+| Worker-specific completion ordering | Adopter dispatch policy; normalized completion readiness remains exact-head and worker-neutral. |
+| Workflow-activity lease liveness | The adopter translates activity into the explicit lease interval before projection. |
 
-The bounded canary switch and physical compare-and-swap are ComicPile-owned in
+The bounded canary switch and physical compare-and-swap are adopter-owned in
 `.github/factory-rotisserie-control.json`. The control accepts only the exact
 `evidence.transition` emitted by an authorized Rotisserie CLI result. It verifies the
 operation key, control revision, lane, and expected stage before atomically changing

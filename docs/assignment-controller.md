@@ -8,7 +8,7 @@ handing off **at most one fresh implementation assignment**. The application
 
 ## Classification and source
 
-The read-only audit used ComicPile main
+The read-only audit used adopter main
 `b83a5a7f2c82eaa4764ade87681c5be5db23d2e7` on 2026-10-08. Sources were
 `.github/scripts/factory-work-controller.py` (`assign`, `assign_candidate`,
 `worker_has_active_lease`, `reconcile_stale_leases`) and
@@ -96,7 +96,7 @@ parity with this fresh-work planner.
 
 Golden same-view comparison against the current live controller, rollback/refusal
 control, provider bridges, bounded execution observation and a pinned adopter
-caller remain required before cutover or duplicate deletion. No ComicPile file,
+caller remain required before cutover or duplicate deletion. No adopter file,
 workflow, schedule, credential or control variable changed here; no autonomous
 self-implementation was activated. Issue #29 remains open.
 
@@ -161,7 +161,7 @@ contract and do not confer live mutation authority or prove live parity.
 
 ### Recovery source provenance
 
-ComicPile main was refreshed read-only on 2026-10-09 to exact SHA
+Adopter main was refreshed read-only on 2026-10-09 to exact SHA
 `8692c718458282af9300edffce72035145ff6655`. The audit inspected
 `.github/scripts/factory-work-controller.py`: `reconcile_stale_leases`,
 `latest_lease_activity_epoch`, `active_fixed_workers` and
@@ -184,7 +184,7 @@ Trusted comment authors/markers, pagination, workflow/job identity resolution,
 local/fixed worker differences, owner labels, credential scope and TTL selection
 remain adopter adapters/configuration. This slice supplies no production host
 adapter, golden live same-view parity, exact-head review/completion handoff or
-observed cutover. ComicPile, workflows and archived evidence remain unchanged;
+observed cutover. The first adopter, workflows and archived evidence remain unchanged;
 issue #29 remains open.
 
 
@@ -300,7 +300,7 @@ replaced ownership, missing bindings, lost acknowledgements and proven refusal.
 
 ### Review source provenance and remaining boundary
 
-ComicPile main was refreshed through read-only GitHub acquisition on 2026-10-09
+Adopter main was refreshed through read-only GitHub acquisition on 2026-10-09
 at exact SHA `8692c718458282af9300edffce72035145ff6655`. Inspection covered
 `.github/scripts/factory-work-controller.py` (`assign`, `assign_candidate`,
 `pr_contributor_workers`, `resolve_review_head_contributors`),
@@ -325,7 +325,7 @@ provider routes and product ranking remain adopter-owned.
 
 Completion/merge authority, production adopter CAS enforcement, golden live
 same-view comparison, provider bridges, observed bounded execution and tested
-rollback/cutover remain follow-on work. No ComicPile file, workflow, schedule or
+rollback/cutover remain follow-on work. No adopter file, workflow, schedule or
 archived evidence changed. No Rotisserie issue was executed autonomously.
 Issue #29 remains open.
 
@@ -339,7 +339,7 @@ attempts at most one merge through `CompletionPort.acquire`, `claim` and
 `complete`. A held first demand is never skipped. No repair/review loop, worker
 execution, label normalization or post-merge operation is performed.
 
-This follows the working ComicPile path: semantic exact-head authorization,
+This follows the first adopter's working path: semantic exact-head authorization,
 contributor exclusion, required CI, mechanical readiness, then an expected-head
 merge. The existing contributor-set domain verdict is reused directly. The
 older `readiness_decision` and `CoordinationService.completion` remain local
@@ -391,7 +391,7 @@ Results distinguish `no_eligible_completion_work`, `acquisition_failed`,
 `ownership_hold`. Human boundaries require the existing human identity rule;
 explicit prerequisites must be completed. An empty completion lane says nothing
 about fresh/review demand. The optional backlog ceiling is caller policy, not
-an inherited ComicPile production-intake threshold; callers draining completion
+an inherited adopter production-intake threshold; callers draining completion
 can leave it unset. The total WIP ceiling governs the claimed completion slot.
 
 ### Durable claim and effect obligations
@@ -458,7 +458,7 @@ malformed input/configuration. The fixture is not golden live parity evidence.
 
 ### Source provenance and deliberate differences
 
-ComicPile main was fetched read-only on 2026-10-09 at exact SHA
+Adopter main was fetched read-only on 2026-10-09 at exact SHA
 `8692c718458282af9300edffce72035145ff6655`. Inspection covered:
 
 - `.github/scripts/factory_completion_controller.py` (`signal_completion_mode`,
@@ -501,8 +501,8 @@ are deliberately insufficient for controller mutation authority.
 | Post-merge closure / release | Separate source scripts/workflows | No authority inherited; separate adopter reconciliation contract |
 
 Tests exercise these source-derived gate scenarios and the deliberate refusal,
-race and uncertainty strengthening. They do not execute a live ComicPile view
+race and uncertainty strengthening. They do not execute a live adopter view
 or prove golden same-view parity. Production adopter enforcement, golden live
 parity, provider bridges, safe completion reconciliation/release, post-merge
-reconciliation and observed rollback/cutover remain under #29. ComicPile, active
+reconciliation and observed rollback/cutover remain under #29. The first adopter, active
 workflows, the issue-9 canary and all archived evidence are unchanged.

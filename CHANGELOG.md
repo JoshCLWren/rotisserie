@@ -106,12 +106,12 @@ such change must be called out here and in its release notes.
   claim still blocks, because an elapsed timestamp never proves an outside
   agent stopped (#212).
 - The post-merge closer no longer closes an issue a person reopened. Before,
-  it closed ComicPile #5695 again because an earlier merged PR said "Closes",
+  it closed adopter issue #5695 again because an earlier merged PR said "Closes",
   although the reproduction still failed. A reopen by the factory itself (for
   dependency blocks) still allows closure (#212).
 - A claim on a named issue or PR (label claim or `rotisserie factory claim`)
   is no longer judged by factory intake. Capacity, backpressure, ranking and
-  "offered now" checks applied, so ComicPile #5695, a reopened production bug,
+  "offered now" checks applied, so adopter issue #5695, a reopened production bug,
   was refused while the review backlog was full. Only another active lease on
   the item now refuses a claim, and the refusal names the holder, the expiry
   and the command to end it (#212).
@@ -210,7 +210,7 @@ such change must be called out here and in its release notes.
   (`explain_issue_report`) and Rotisserie intake decision (`intake_verdicts`)
   now live in shared modules the console ships. A run that assigns no work
   now points at `why`.
-- `rotisserie factory`, the factory operator console (moved from ComicPile's
+- `rotisserie factory`, the factory operator console (moved from the first adopter's
   `scripts/factory-run`): `run`, `watch`, `status`, `cancel`, `report`,
   `stats`, `settings`, `prioritize`, `providers` and `models`. Progress is
   read from real GitHub signals in plain language and distinguishes

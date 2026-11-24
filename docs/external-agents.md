@@ -9,7 +9,7 @@ An installed Rotisserie CLI can display the same deterministic work-policy
 candidate order as the factory runtime:
 
 ```sh
-rotisserie factory next --repo JoshCLWren/comic-pile --json
+rotisserie factory next --repo acme/widgets --json
 ```
 
 Schema `1` includes the repository, 60-second observation expiry, ordered
