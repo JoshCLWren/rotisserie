@@ -221,7 +221,7 @@ jobs:
             <head>
               <meta charset="utf-8">
               <meta name="viewport" content="width=device-width,initial-scale=1">
-              <title>Rotisserie Factory</title>
+              <title>__REPOSITORY__ Factory</title>
               <style>
                 body { font: 16px system-ui, sans-serif; margin: 0; background: #0b1020; color: #eef2ff; }
                 main { min-height: 100vh; display: grid; place-items: center; padding: 2rem; text-align: center; }
@@ -259,6 +259,7 @@ jobs:
             </body>
           </html>
           HTML
+          sed -i "s|__REPOSITORY__|${GITHUB_REPOSITORY#*/}|" site/index.html
 
       - name: Configure Pages
         uses: actions/configure-pages@v6
