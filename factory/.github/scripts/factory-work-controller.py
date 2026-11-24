@@ -30,7 +30,10 @@ from factory_quota_pause import describe as describe_quota_pause, is_paused as q
 from factory_source_budget import budget_block_reason, worker_sources
 from factory_attempt_history import read_comment_history
 from factory_discovery import canonical_target, discover, update_labels
-from factory_state_ledger import acquire_lease, release_lease, renew_verified_workers, worker_claim, external_wip_count
+from factory_state_ledger import acquire_lease, release_lease, worker_claim, external_wip_count
+import factory_lease_owners
+import factory_state_ledger
+from factory_lease_owners import ActiveWorkerResult, github_timestamp_epoch
 from factory_state_ledger import enabled as ledger_enabled
 from factory_adopter import MARKER_PREFIX, repository
 import factory_assign_trace as trace
@@ -792,28 +795,6 @@ def load_no_diff_attempts(now_epoch: int | None=None) -> dict[int, int]:
     return counts
 
 
-class ActiveWorkerResult(tuple[set[int], set[str]]):
-    """Pair of resolved workers and credible unresolved runs with set compatibility."""
-
-    def __new__(cls, workers: set[int], unresolved: set[str]) -> ActiveWorkerResult:
-        return tuple.__new__(cls, (workers, unresolved))
-
-    def __eq__(self, other: object) -> bool:
-        if isinstance(other, set):
-            return self[0] == other
-        return tuple.__eq__(self, other)
-
-
-def github_timestamp_epoch(value: object) -> int | None:
-    """Parse one GitHub timestamp into epoch seconds when possible."""
-    if not isinstance(value, str) or not value:
-        return None
-    try:
-        return int(datetime.fromisoformat(value.replace('Z', '+00:00')).timestamp())
-    except ValueError:
-        return None
-
-
 def unresolved_run_has_credible_liveness(run: dict[str, Any], *, now_epoch: int) -> bool:
     """Return whether an unresolved active-status run still merits a safety fence."""
     status = str(run.get('status') or '').lower()
@@ -884,11 +865,10 @@ def active_fixed_workers() -> ActiveWorkerResult:
             for page in page_values:
                 if isinstance(page, dict):
                     runs.extend(cast(list[dict[str, Any]], page.get('workflow_runs') or []))
+    resolved_by_store: dict[str, str] = {}
     for index, run in enumerate(runs):
-        title = str(run.get('display_title') or run.get('name') or '')
-        match = re.search(r'\bFactory\s+(\d+)\b', title)
-        if match:
-            workers.add(int(match.group(1)))
+        if worker := factory_lease_owners.run_worker(run, {}):
+            workers.add(int(worker))
             continue
         run_id = str(run.get('id') or '')
         unresolved_id = run_id or f'missing-run-id-{index}'
@@ -903,6 +883,7 @@ def active_fixed_workers() -> ActiveWorkerResult:
             for run_id, worker in matches.items():
                 if run_id in numeric_unresolved and worker.isdecimal() and is_authorized_fixed_worker(worker):
                     workers.add(int(worker))
+                    resolved_by_store[run_id] = worker
                     unresolved_run_ids.discard(run_id)
         except Exception as exc:
             print(f'[factory-controller] run-to-worker evidence unavailable ({type(exc).__name__}); preserving unresolved run fence', file=sys.stderr)
@@ -914,7 +895,7 @@ def active_fixed_workers() -> ActiveWorkerResult:
             continue
         unresolved_run_ids.discard(run_id)
         print(f'[factory-controller] ignoring expired unresolved active-status run {run_id}: no credible worker execution evidence', file=sys.stderr)
-    return ActiveWorkerResult(workers, unresolved_run_ids)
+    return ActiveWorkerResult(workers, unresolved_run_ids, runs, resolved_by_store)
 
 
 def owned_targets(issues: list[dict[str, Any]] | None=None, prs: list[dict[str, Any]] | None=None) -> list[tuple[int, str]]:
@@ -1074,12 +1055,10 @@ def reconcile_stale_leases(now_epoch: int | None = None) -> list[int]:
             + ', '.join(sorted(unresolved_runs)),
             file=sys.stderr,
         )
-    # The current Actions run roster is already verified. Renew only the
-    # existing reservations of workers still demonstrably executing.
     try:
-        renew_verified_workers(REPO, [str(worker) for worker in active])
+        factory_lease_owners.reconcile(REPO, lambda path: gh_json(['api', f'repos/{REPO}/{path}']), active_result, factory_state_ledger)
     except Exception as exc:
-        print(f'[factory-controller] verified store renewal deferred ({type(exc).__name__})', file=sys.stderr)
+        print(f'[factory-controller] claim owner reconciliation deferred ({type(exc).__name__})', file=sys.stderr)
     issue_items, pr_items = list_issues(), list_prs()
     targets = {
         int(item["number"]): item

@@ -143,7 +143,7 @@ def cmd_leases(context: Context, arguments: argparse.Namespace) -> Outcome:
             return _bridge_failed(context, exc, "The leases could not be read")
         console.finish()
     else:
-        data = branch_sync.lease_report(context.github, numbers=numbers).to_dict()
+        data = branch_sync.lease_report(context.github, numbers=numbers, owners=True).to_dict()
     _show_leases(console, data)
     return Outcome(Result.COMPLETED, EXIT_OK, data)
 
@@ -157,13 +157,14 @@ def _show_leases(console: Console, data: dict[str, object]) -> None:
         console.line("Nothing is held.")
     else:
         console.table(
-            ["Item", "Held by", "State", "Expires"],
+            ["Item", "Held by", "State", "Expires", "Owning run"],
             [
                 [
                     str(row.get("target")),
                     str(row.get("holder")),
                     "active" if row.get("active") else "expired",
                     str(row.get("expires_at")),
+                    str(row.get("owner_run") or "-"),
                 ]
                 for row in rows
             ],

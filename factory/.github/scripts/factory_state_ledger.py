@@ -11,6 +11,7 @@ from __future__ import annotations
 import json
 
 from factory_adopter import repository
+from factory_lease_owners import claim_owners  # noqa: F401
 from factory_state_ledger_core import LEASE_PREFIX, WORKER_RE, _keys, _target_key  # noqa: F401
 from factory_state_ledger_events import (  # noqa: F401
     quota_reset_hints, refine_trusted_dynamic_models, refine_trusted_failover_models,
@@ -36,7 +37,8 @@ from factory_turso_external import (  # noqa: F401
 )
 from factory_turso_leases import (  # noqa: F401
     acquire_lease, acquire_operation_lease, list_leases, release_expired_leases, release_lease,
-    release_operation_lease, release_worker, renew_verified_workers, target_lease, worker_claim,
+    release_operation_lease, release_worker, renew_owned_claims, renew_verified_workers, target_lease,
+    worker_claim,
 )
 from factory_turso_slots import acquire_slot, slot_holders  # noqa: F401
 
@@ -50,13 +52,14 @@ def main() -> int:
     parser.add_argument("--status", choices=sorted(LIFECYCLE_STATUSES))
     parser.add_argument("--log", help="Trusted completed factory job log, for exact smoke timeout attribution")
     parser.add_argument("--run-id", required=True)
+    parser.add_argument("--claim-id", default=None, help="the claim this Entry run executes")
     parser.add_argument("--repo", default=None)
     args = parser.parse_args()
     args.repo = args.repo or repository()
     if args.command == "lifecycle":
         if not args.worker or not args.status:
             parser.error("lifecycle requires --worker and --status")
-        result = record_lifecycle(args.repo, args.run_id, args.worker, args.status)
+        result = record_lifecycle(args.repo, args.run_id, args.worker, args.status, args.claim_id)
         print(f"[factory-ledger] recorded {result} lifecycle event(s)")
         return 0
     if args.command == "runtime-outcome":

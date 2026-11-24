@@ -336,6 +336,7 @@ class LeaseRow:
     holder: str
     active: bool
     expires_at: str
+    owner_run: str = ""
 
 
 @dataclass(frozen=True)
@@ -358,15 +359,35 @@ def _describe(row: Mapping[str, object]) -> str:
     return "unknown holder"
 
 
+def _claim_runs(ledger: ModuleType, github: GitHub, leases: list[Obj]) -> dict[str, str]:
+    """Each worker claim's owning Entry run and whether it still runs; empty when unreadable."""
+    find = getattr(ledger, "claim_owners", None)
+    if find is None:
+        return {}
+    try:
+        return {owner.claim_id: owner.describe() for owner in find(leases, github.repo_api)}
+    except GitHubError, RuntimeError, ValueError:
+        return {}
+
+
 def lease_report(
-    github: GitHub, rows: Sequence[Obj] | None = None, numbers: Iterable[int] = ()
+    github: GitHub,
+    rows: Sequence[Obj] | None = None,
+    numbers: Iterable[int] = (),
+    *,
+    owners: bool = False,
 ) -> LeaseReport:
-    """Who holds what: The factory store when reachable, otherwise owner labels from ``rows``."""
+    """Who holds what: The factory store when reachable, otherwise owner labels from ``rows``.
+
+    ``owners`` adds the Actions run that owns each worker claim and its state.
+    """
     wanted = set(numbers)
     ledger, why = load_ledger()
     if ledger is not None:
         found: list[LeaseRow] = []
-        for row in ledger.list_leases(github.repo):
+        leases = list(ledger.list_leases(github.repo))
+        runs = _claim_runs(ledger, github, leases) if owners else {}
+        for row in leases:
             _, kind, ident = str(row["key"]).rsplit(":", 2)
             if wanted and (kind != "target" or int(ident) not in wanted):
                 continue
@@ -376,6 +397,7 @@ def lease_report(
                     _describe(row),
                     bool(row["active"]),
                     str(row["expires_at"]),
+                    runs.get(str(row.get("claim_id") or ""), ""),
                 )
             )
         return LeaseReport("neon", tuple(found))

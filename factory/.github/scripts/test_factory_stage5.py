@@ -227,7 +227,7 @@ def test_unresolvable_run_holds_fixed_leases_but_local_gc_continues(
     now = 2_000_000_000
     released: list[tuple[int, str]] = []
     monkeypatch.setattr(controller, "active_fixed_workers", lambda: ({7}, {"222"}))
-    monkeypatch.setattr(controller, "renew_verified_workers", lambda *_args: 0)
+    monkeypatch.setattr(controller.factory_lease_owners, "reconcile", lambda *_args: [])
     targets = [
         {
             "number": number,

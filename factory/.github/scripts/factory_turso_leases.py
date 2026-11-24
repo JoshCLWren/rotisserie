@@ -266,7 +266,32 @@ def renewal_statements(repo: str, workers: list[str], ttl: int) -> list[core.Sta
         "(SELECT claim_id FROM factory_lease WHERE lease_key IN"
         " (SELECT value FROM json_each(:keys)) AND expires_at > unixepoch())"
     )
-    params = {"keys": keys, "ttl": ttl, "repo": repo}
+    return _extend(claims, {"keys": keys, "ttl": ttl, "repo": repo})
+
+
+def claim_renewal_statements(repo: str, claim_ids: list[str], ttl: int) -> list[core.Statement]:
+    """Renew exactly these claims, never whichever claim a worker ID holds now."""
+    import json
+
+    claims = (
+        "(SELECT claim_id FROM factory_lease WHERE kind = 'worker' AND expires_at > unixepoch()"
+        " AND claim_id IN (SELECT value FROM json_each(:claims)))"
+    )
+    return _extend(claims, {"claims": json.dumps(sorted(set(claim_ids))), "ttl": ttl, "repo": repo})
+
+
+def bind_run_statements(repo: str, claim_id: str, run_id: str, ttl: int) -> list[core.Statement]:
+    """Record the Entry run that executes this claim on its worker row, then renew the claim."""
+    bind = (
+        "UPDATE factory_lease SET detail = json_set(coalesce(detail, '{}'), '$.run_id', :run)"
+        " WHERE repo = :repo AND claim_id = :claim AND kind = 'worker'"
+        " AND expires_at > unixepoch()",
+        {"repo": repo, "claim": claim_id, "run": run_id},
+    )
+    return [bind, *claim_renewal_statements(repo, [claim_id], ttl)]
+
+
+def _extend(claims: str, params: dict[str, Any]) -> list[core.Statement]:
     return [
         (
             "UPDATE factory_provider_reservation SET expires_at = max(expires_at, unixepoch() + :ttl)"
@@ -289,6 +314,15 @@ def renew_verified_workers(repo: str, workers: list[str]) -> int:
     if any(not WORKER_RE.fullmatch(worker) for worker in workers):
         raise ValueError("invalid verified worker ID")
     _, leases = core.store().batch(renewal_statements(repo, workers, FIXED_LEASE_TTL_SECONDS))
+    return sum(1 for row in leases if row["kind"] == "worker")
+
+
+def renew_owned_claims(repo: str, claim_ids: list[str]) -> int:
+    """Renew claims whose own recorded or dispatched Entry run is still executing."""
+    if not core.enabled() or not claim_ids:
+        return 0
+    statements = claim_renewal_statements(repo, claim_ids, FIXED_LEASE_TTL_SECONDS)
+    _, leases = core.store().batch(statements)
     return sum(1 for row in leases if row["kind"] == "worker")
 
 
