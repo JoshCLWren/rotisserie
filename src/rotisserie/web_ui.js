@@ -91,6 +91,7 @@ function renderRecap(d){const m=d.merged||{},w=d.went_wrong||{},p=d.providers||{
  +recapPart("Merged: product",merged("product"))+recapPart("Merged: factory",merged("factory"))
  +recapPart("Needs you",(d.needs_you||[]).map(x=>recapRow(x.text,x.action,x.url)))
  +recapPart("Fixed by itself",(d.healed||[]).map(x=>recapRow(x.text,fmtDate(x.at),x.url)))
+ +recapPart("The factory clears these on its next pass",(d.clearing||[]).map(x=>recapRow(x.text,"",x.url)))
  +recapPart(wrongTitle,(w.causes||[]).map(c=>recapRow(c.count+"× "+c.words+((c.providers||[]).length?" ("+c.providers.join(", ")+")":""),[c.example,c.fix?"Fix: "+c.fix:""].filter(Boolean).join(" · "))))
  +recapPart("Providers (last 24 hours)",[...(p.delivered||[]).map(x=>recapRow(x.provider+" delivered "+x.delivered+" of "+x.runs+" runs")),...(p.wasted||[]).map(x=>recapRow(x.provider+" delivered nothing: "+x.failed+" of "+x.runs+" runs failed")),...(p.off||[]).map(x=>recapRow((x.model?x.provider+" "+x.model:x.provider)+" is switched off",x.reason||"no reason given")),...(p.paused||[]).map(x=>recapRow(x.provider+": "+x.models+" model(s) paused"+(x.why?" after "+x.why:""),"until "+fmtDate(x.until)))])
  +recapPart("Stuck",(d.stuck||[]).map(x=>recapRow(x.text,"",x.url)))

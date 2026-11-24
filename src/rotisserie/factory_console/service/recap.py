@@ -45,6 +45,7 @@ class Recap:
     merged: dict[str, list[dict[str, object]]]
     needs_you: list[dict[str, object]]
     healed: list[dict[str, object]]
+    clearing: list[dict[str, object]]
     went_wrong: dict[str, object]
     providers: dict[str, list[dict[str, object]]]
     stuck: list[dict[str, object]]
@@ -61,6 +62,7 @@ class Recap:
             "merged": self.merged,
             "needs_you": self.needs_you,
             "healed": self.healed,
+            "clearing": self.clearing,
             "went_wrong": self.went_wrong,
             "providers": self.providers,
             "stuck": self.stuck,
@@ -98,6 +100,7 @@ def assemble(sources: build.Sources) -> Recap:
         merged=groups,
         needs_you=needs,
         healed=build.healed(sources),
+        clearing=build.clearing(sources),
         went_wrong=wrong,
         providers=build.providers(sources),
         stuck=build.stuck(sources),

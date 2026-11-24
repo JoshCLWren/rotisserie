@@ -60,6 +60,12 @@ def render(console: Console, data: dict[str, object]) -> None:
         console.line(console.bold(f"Fixed by itself ({len(healed)})"))
         for row in healed:
             console.line(f"  {console.ok_mark} {row['text']}")
+    clearing = _rows(data.get("clearing"))
+    if clearing:
+        console.line()
+        console.line(console.bold(f"The factory clears these on its next pass ({len(clearing)})"))
+        for row in clearing:
+            console.line(f"  {console.warn_mark} {row['text']}")
     _render_wrong(console, data["went_wrong"])
     _render_providers(console, data["providers"])
     stuck = _rows(data["stuck"])

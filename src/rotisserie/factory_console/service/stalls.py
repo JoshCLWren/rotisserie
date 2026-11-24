@@ -149,17 +149,14 @@ def empty_repair_verdict(
     found = _rules().empty_verdict(records, number)
     if found is None:
         return None
-    return Stall(
-        pr=number,
-        kind="empty-repair-verdict",
-        text=(
-            f"PR #{number} is in repair on a {found.verdict} verdict that names no finding "
-            "(only tool output and narration), so repair workers have nothing to fix."
-        ),
-        hint=f"{SELF_HEAL} To do it now: {_review_again(number)}",
-        url=found.url or url,
-        auto=True,
+    text = (
+        f"PR #{number} is in repair on a {found.verdict} verdict that names no finding "
+        "(only tool output and narration), so repair workers have nothing to fix."
     )
+    if found.healed:
+        text += " The factory already sent it back to review once for this verdict."
+    hint = _review_again(number) if found.healed else f"{SELF_HEAL} Or now: {_review_again(number)}"
+    return Stall(number, "empty-repair-verdict", text, hint, found.url or url, not found.healed)
 
 
 def inspect(

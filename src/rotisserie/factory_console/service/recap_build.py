@@ -164,6 +164,19 @@ def needs_you(sources: Sources) -> list[dict[str, object]]:
     return rows
 
 
+def clearing(sources: Sources) -> list[dict[str, object]]:
+    """Stalls the factory's next dispatcher pass clears, kept out of "Needs you"."""
+    pulls = _titles(sources.pulls)
+    return [
+        {
+            "text": f"{named(string(pulls.get(stall.pr, {}), 'title'), stall.pr)}: {stall.text}",
+            "url": stall.url or None,
+        }
+        for stall in sources.stalls
+        if stall.auto
+    ]
+
+
 def healed(sources: Sources) -> list[dict[str, object]]:
     """What the factory cleared by itself, one plain line each."""
     return [

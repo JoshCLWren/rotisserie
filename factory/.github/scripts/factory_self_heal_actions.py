@@ -91,13 +91,14 @@ def heal_empty_verdicts(
         if rules.CHANGES_REQUESTED not in names or not number or heal.label_holder(names):
             continue
         found = rules.empty_verdict(github.comments(number), number)
-        if found is None or not found.ref:
+        if found is None or not found.ref or found.healed:
             continue
         holder = store.holder(number)
         if holder:
             done.append({"pr": number, "status": "held", "text": f"#{number}: {holder} holds it"})
             continue
-        model = found.model or "the model that wrote it (no record names it)"
+        avoid = found.model if rules.valid_token(found.model) else ""
+        model = avoid or "the model that wrote it (no record names it)"
         text = (
             f"Moved #{number} back to review: the {found.verdict} verdict at "
             f"`{found.head[:12]}` named no finding, so repair workers had nothing to fix. "
@@ -124,7 +125,7 @@ def heal_empty_verdicts(
                 head=_head(pull),
                 ref=found.ref,
                 text=text,
-                avoid=found.model,
+                avoid=avoid,
             )
         )
     return done

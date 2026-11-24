@@ -136,17 +136,16 @@ def test_an_empty_verdict_names_the_model_that_wrote_it() -> None:
         [verdict(NARRATION), verdict(FINDING, verdict="approve", cid=8)],
         # A newer controller repair handoff always carries findings.
         [verdict(NARRATION), trusted("### Factory semantic review · Factory controller · REPAIR")],
-        # Already healed once: never again for the same verdict.
-        [
-            verdict(NARRATION),
-            trusted(
-                rules.comment_body(kind=rules.EMPTY_VERDICT, pr=44, head=HEAD, ref="7", text="x")
-            ),
-        ],
     ],
 )
 def test_other_histories_are_not_empty_verdicts(records: list[dict[str, Any]]) -> None:
     assert rules.empty_verdict(records, 44) is None
+
+
+def test_a_verdict_healed_once_is_still_found_but_marked_healed() -> None:
+    heal_body = rules.comment_body(kind=rules.EMPTY_VERDICT, pr=44, head=HEAD, ref="7", text="x")
+    found = rules.empty_verdict([verdict(NARRATION), trusted(heal_body)], 44)
+    assert found is not None and found.healed
 
 
 def test_the_sweep_moves_it_back_to_review_once_and_says_why() -> None:
@@ -335,3 +334,41 @@ def test_a_dry_run_changes_nothing() -> None:
     assert [row["status"] for row in result["threads"]] == ["would-heal"]
     assert hub.writes == [] and hub.resolved == [] and store.events == []
     assert json.dumps(result)
+
+
+def test_the_store_records_one_conflict_attempt_per_head(
+    tmp_path: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import importlib
+
+    from tests import turso_support as support
+
+    events = importlib.import_module("factory_turso_events")
+
+    def attempt(head: str) -> dict[str, Any]:
+        row = heal.event(kind=rules.CONFLICT_SYNC, pr=44, head=head, ref=head, text="attempt")
+        return {**row, "event_id": f"self-heal:conflict-attempt:44:{head}"}
+
+    with support.bound("file", tmp_path / "state.sqlite", monkeypatch) as (_db, repo):
+        assert events.record_events(repo, [attempt(HEAD)]) == 1
+        assert events.record_events(repo, [attempt(HEAD)]) == 0
+        assert events.record_events(repo, [attempt(OLD)]) == 1
+
+
+@pytest.mark.parametrize(
+    ("runtime_model", "note_model"),
+    [
+        ("opencode-go/iceman-contributor-free", "iceman-contributor-free"),
+        ("nvidia/moonshotai/kimi-k3.1-pro", "moonshotai/kimi-k3.1-pro"),
+    ],
+)
+def test_the_review_guard_matches_a_runtime_model_to_the_avoided_note_model(
+    runtime_model: str, note_model: str
+) -> None:
+    import factory_review_model_guard as guard
+
+    body = rules.comment_body(
+        kind=rules.EMPTY_VERDICT, pr=44, head=HEAD, ref="7", text="x", avoid=note_model
+    )
+    avoided = rules.avoided_reviewers([trusted(body)], pr=44)
+    assert guard.self_review(runtime_model, avoided) == [note_model]

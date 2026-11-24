@@ -44,11 +44,15 @@ OUTCOME_MARKER = f"{MARKER_PREFIX}-factory-greptile-outcome-v1"
 _HANDOFF_MODEL = re.compile(r"(?m)^.*\bModel: (?P<model>\S+)\s*$")
 
 
+def valid_token(value: str) -> bool:
+    return bool(value) and re.fullmatch(_TOKEN, value) is not None
+
+
 def marker(*, kind: str, pr: int, head: str, ref: str, avoid: str = "") -> str:
     """The first line of a self-heal comment."""
     if kind not in KINDS:
         raise ValueError(f"unknown self-heal kind: {kind}")
-    avoid_token = avoid if avoid and re.fullmatch(_TOKEN, avoid) else "none"
+    avoid_token = avoid if valid_token(avoid) else "none"
     line = (
         f"<!-- {MARKER_PREFIX}-factory-self-heal-v1:kind-{kind}:pr-{pr}:"
         f"head-{head or 'none'}:ref-{ref}:avoid-{avoid_token} -->"
@@ -107,6 +111,7 @@ class EmptyVerdict:
     ref: str  # the verdict comment's id; empty when the read did not carry it
     url: str
     model: str  # the model that wrote it, "" when no record names it
+    healed: bool = False  # a self-heal already moved it to review once; never again
 
 
 def _excerpt(body: str) -> str:
@@ -139,8 +144,8 @@ def empty_verdict(records: Sequence[Mapping[str, Any]], number: int) -> EmptyVer
     """The newest trusted verdict, when it sent the PR to repair with no finding.
 
     A newer marker-less controller verdict (a CI or gate repair handoff, which
-    always carries findings) or a self-heal already recorded for this verdict
-    means there is nothing left to clear.
+    always carries findings) means there is nothing left to clear. ``healed``
+    says a self-heal already acted on this verdict, so only a person can now.
     """
     rows = list(records)
     trusted = set(policy.controller_comment_bodies(rows))
@@ -163,8 +168,6 @@ def empty_verdict(records: Sequence[Mapping[str, Any]], number: int) -> EmptyVer
         if policy.has_actionable_review_findings(_excerpt(body)):
             return None
         ref = str(record.get("id") or "")
-        if ref and ref in healed:
-            return None
         return EmptyVerdict(
             pr=number,
             verdict=verdict,
@@ -173,6 +176,7 @@ def empty_verdict(records: Sequence[Mapping[str, Any]], number: int) -> EmptyVer
             ref=ref,
             url=str(record.get("html_url") or ""),
             model=_reviewer_model(rows, found["reviewer"], found["head"]),
+            healed=bool(ref) and ref in healed,
         )
     return None
 

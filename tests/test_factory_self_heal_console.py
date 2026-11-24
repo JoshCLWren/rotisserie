@@ -55,9 +55,11 @@ def test_an_empty_verdict_is_a_stall_the_factory_clears() -> None:
     assert "--action review" in found.hint
 
 
-def test_a_healed_verdict_is_no_longer_a_stall() -> None:
+def test_a_verdict_healed_once_that_holds_the_pr_again_needs_a_person() -> None:
     records = [verdict_record(), heal_record()]
-    assert stalls.empty_repair_verdict(records, 44, "factory:changes-requested") is None
+    found = stalls.empty_repair_verdict(records, 44, "factory:changes-requested")
+    assert found is not None and not found.auto
+    assert "already sent it back to review once" in found.text
 
 
 def test_a_heal_comment_from_anyone_else_is_ignored() -> None:
@@ -104,10 +106,12 @@ def test_the_recap_lists_heals_and_leaves_self_clearing_stalls_out_of_needs_you(
     assert [row["kind"] for row in result.needs_you] == ["deadlock"]
     assert "A person's thread." in str(result.needs_you)
     assert str(result.healed[0]["text"]).startswith("Moved #44")
+    assert "In repair on an empty verdict." in str(result.clearing[0]["text"])
     data = result.to_dict()
     stream = io.StringIO()
     render(Console(stream, env={"NO_COLOR": "1"}), data)
     assert "Fixed by itself (1)" in stream.getvalue()
+    assert "The factory clears these on its next pass (1)" in stream.getvalue()
 
 
 def test_heal_is_a_live_read_with_a_bounded_window() -> None:
