@@ -18,6 +18,7 @@ import factory_work_policy as work
 AVAILABLE = "factory:available"
 CLAIMED = "factory:claimed"
 REJECTED = "factory:claim-rejected"
+OVERRIDE = "factory:override"
 CLAIM_LABELS = frozenset({AVAILABLE, CLAIMED, REJECTED})
 LABEL_CLIENT = "label"
 MERGE_CONFLICT = "factory:merge-conflict"

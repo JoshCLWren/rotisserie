@@ -11,6 +11,11 @@ such change must be called out here and in its release notes.
 
 ### Added
 
+- Owner picks go first. An accepted claim adds `factory:override` to the item
+  and its linked issue or PR, and a hand-off adds it to the evidence PR. The
+  factory ranks those items ahead of every lane and priority (implement,
+  review, repair and merge), and they bypass WIP and review backpressure
+  (#212).
 - `rotisserie factory history <target>`: an item's label changes, close and
   reopen events, factory markers and label-claim controller runs, in local
   time. `rotisserie factory labels --run <id>` shows an earlier label doctor

@@ -87,6 +87,7 @@ from factory_work_policy_candidates import (
     pr_suppresses_issue_candidate,
 )
 from factory_work_policy_priority import (
+    OVERRIDE_LABEL,
     Candidate,
     _CATEGORIES,
     configured_lane_rank,

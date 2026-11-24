@@ -353,7 +353,7 @@ def test_accepted_claim_keeps_label_and_writes_one_status_comment(neon: Neon) ->
         cast(GitHub, github), "issues", event("factory:claimed", "labeled"), dict(ACTIONS_ENV)
     )
     assert result["status"] == "reserved"
-    assert github.items[7] == {"factory", "factory:unowned", "factory:claimed"}
+    assert github.items[7] == {"factory", "factory:unowned", "factory:claimed", "factory:override"}
     assert len(github.comments[7]) == 1
     assert "Accepted: @alice" in github.comments[7][0]["body"]
 
@@ -435,7 +435,7 @@ def test_finished_claim_with_evidence_hands_off_and_wakes_the_next_stage(
     monkeypatch.setattr(
         labelclaims, "_evidence", lambda github, claim: f"https://github.com/{REPO}/pull/12"
     )
-    github = FakeGitHub({7: {"factory", "factory:unowned", "factory:claimed"}})
+    github = FakeGitHub({7: {"factory", "factory:unowned", "factory:claimed"}, 12: {"factory"}})
     labelclaims.handle(
         cast(GitHub, github), "issues", event("factory:claimed", "labeled"), dict(ACTIONS_ENV)
     )
@@ -443,7 +443,7 @@ def test_finished_claim_with_evidence_hands_off_and_wakes_the_next_stage(
         cast(GitHub, github), "issues", event("factory:claimed", "unlabeled"), dict(ACTIONS_ENV)
     )
     assert result["operation"] == "handoff"
-    assert "factory:claimed" not in github.items[7]
+    assert "factory:claimed" not in github.items[7] and "factory:override" in github.items[12]
     assert github.dispatched[-1] == {
         "workflow": labelclaims.DISPATCH,
         "target": "pr:12",

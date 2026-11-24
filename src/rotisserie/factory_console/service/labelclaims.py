@@ -154,6 +154,9 @@ def request(
     actor = environment.get("GITHUB_ACTOR", "")
     if outcome.get("status") == "reserved":
         _remove(github, number, lp.AVAILABLE, lp.REJECTED)
+        # The owner picked this work, so the factory puts it first from here on.
+        for item in sorted({number, *_covered(outcome)}):
+            _add(github, item, lp.OVERRIDE)
         handoff = obj(outcome.get("handoff"))  # type: ignore[arg-type]
         status_comment(
             github,
@@ -297,6 +300,7 @@ def finish(
     if operation == "handoff":
         lines.append(f"Handed off {evidence}. The factory takes the next step.")
         evidence_number = int(evidence.rstrip("/").split("/")[-1])
+        _add(github, evidence_number, lp.OVERRIDE)
         _wake(github, "pr", evidence_number)
     else:
         lines.append("No evidence was found, so the claim was released unchanged.")

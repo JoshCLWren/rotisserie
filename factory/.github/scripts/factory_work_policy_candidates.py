@@ -29,7 +29,12 @@ from factory_work_policy_base import (
     producer_worker_from_pr,
     stage_of,
 )
-from factory_work_policy_priority import Candidate, priority_rank, provenance_lane
+from factory_work_policy_priority import (
+    OVERRIDE_LABEL,
+    Candidate,
+    priority_rank,
+    provenance_lane,
+)
 
 
 def matching_pr_no_diff_attempts(
@@ -274,6 +279,7 @@ def build_candidates(
                 priority=priority_rank(labels),
                 created_at=str(issue.get('createdAt') or ''),
                 stage=stage_of(labels),
+                override=OVERRIDE_LABEL in labels,
             )
         )
     for pr in prs:
@@ -317,6 +323,7 @@ def build_candidates(
                 conflicted=pr_is_conflicted(pr),
                 head_contributors=head_contributors_from_pr(pr),
                 is_fork=pr.get('isCrossRepository') is True,
+                override=OVERRIDE_LABEL in labels,
             )
         )
     return sorted(candidates, key=Candidate.sort_key)
