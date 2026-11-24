@@ -74,6 +74,7 @@ def assemble(sources: build.Sources) -> Recap:
         ),
         capacity=sum(int(c["count"]) for c in causes if c["cause"] == "no_capacity"),
         failures_read=len(sources.failures),
+        failed_runs=int(str(wrong["failed_runs"])),
         finished=len(finished),
         succeeded=sum(1 for run in finished if string(run, "conclusion") == "success"),
         needs=len(needs),

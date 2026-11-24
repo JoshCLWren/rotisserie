@@ -282,6 +282,7 @@ def verdict(
     scheduler_stopped: bool,
     capacity: int,
     failures_read: int,
+    failed_runs: int,
     finished: int,
     succeeded: int,
     needs: int,
@@ -297,7 +298,9 @@ def verdict(
         tone, text = "rough", f"Rough night: main is failing, {prs}"
     elif scheduler_stopped:
         tone, text = "rough", f"Rough night: the scheduler stopped, {prs}"
-    elif failures_read >= WASTED_RUNS and capacity * 2 > failures_read:
+    elif (
+        failures_read >= WASTED_RUNS and capacity * 2 > failures_read and failed_runs * 2 > finished
+    ):
         tone, text = "rough", f"Rough night: most failed runs had no capacity, {prs}"
     elif merged_count == 0 and finished >= 5 and succeeded == 0:
         tone, text = "rough", "Rough night: nothing merged and no run succeeded"

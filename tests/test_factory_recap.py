@@ -3,12 +3,13 @@ from __future__ import annotations
 import io
 import time
 from collections.abc import Iterator
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime, timedelta, tzinfo
 from typing import Any, cast
 
 import pytest
 
 from rotisserie import control_contract
+from rotisserie.factory_console import ui
 from rotisserie.factory_console.commands.recap import render
 from rotisserie.factory_console.github import GitHubError
 from rotisserie.factory_console.service import (
@@ -210,6 +211,7 @@ VERDICT = {
     "scheduler_stopped": False,
     "capacity": 0,
     "failures_read": 0,
+    "failed_runs": 4,
     "finished": 10,
     "succeeded": 6,
     "needs": 0,
@@ -224,7 +226,7 @@ VERDICT = {
         ({"main": "failing"}, "rough", "Rough night: main is failing, 6 PRs merged"),
         ({"scheduler_stopped": True}, "rough", "Rough night: the scheduler stopped, 6 PRs merged"),
         (
-            {"capacity": 5, "failures_read": 8},
+            {"capacity": 5, "failures_read": 8, "failed_runs": 8},
             "rough",
             "Rough night: most failed runs had no capacity, 6 PRs merged",
         ),
@@ -234,6 +236,11 @@ VERDICT = {
             "Rough night: nothing merged and no run succeeded",
         ),
         ({"merged_count": 0}, "quiet", "Quiet night: nothing merged, main green"),
+        (
+            {"capacity": 2, "failures_read": 3, "failed_runs": 3, "finished": 200},
+            "good",
+            "Good night: 6 PRs merged, main green",
+        ),
         ({"main": "unverified"}, "good", "Good night: 6 PRs merged, main not verified yet"),
         ({"needs": 1}, "good", "Good night: 6 PRs merged, main green. 1 thing needs you"),
         ({"needs": 3}, "good", "Good night: 6 PRs merged, main green. 3 things need you"),
@@ -271,6 +278,13 @@ def test_assemble_full_recap() -> None:
 def chicago(monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
     monkeypatch.setenv("TZ", "America/Chicago")
     time.tzset()
+
+    class Frozen(datetime):
+        @classmethod
+        def now(cls, tz: tzinfo | None = None) -> Frozen:
+            return cls.fromtimestamp(NOW.timestamp(), tz)
+
+    monkeypatch.setattr(ui, "datetime", Frozen)
     yield
     monkeypatch.undo()
     time.tzset()
