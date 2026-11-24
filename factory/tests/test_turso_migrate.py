@@ -81,7 +81,8 @@ def test_a_real_run_copies_every_family_and_counts_it_back(db: Any, data: Any) -
 
 def test_dry_run_writes_nothing_and_reports_the_three_checks(tmp_path: Path, data: Any) -> None:
     del data["factory_check_projection"]
-    summary = migrate.migrate(support.FakeNeon(data), None, repo=support.REPO, dry_run=True)
+    never = libsql.FileStore(tmp_path / "never.sqlite")
+    summary = migrate.migrate(support.FakeNeon(data), never, repo=support.REPO, dry_run=True)
     assert summary["status"] == "ok" and summary["dry_run"] is True
     assert summary["checks"]["projection_keys"] == 2
     assert summary["checks"]["provider_budget_set"] == [
@@ -254,3 +255,19 @@ def test_the_tool_imports_no_neon_factory_module() -> None:
         check=False,
     )
     assert result.returncode == 0, result.stdout + result.stderr
+
+
+def test_two_row_pages_cross_every_composite_key(db: Any, data: Any, tmp_path: Path) -> None:
+    for table in ("factory_runtime_event_keys", "factory_model_attempt_daily"):
+        extra = [dict(row) for row in data[table]]
+        for number, row in enumerate(extra):
+            row.update({"run_id": 900 + number} if "run_id" in row else {"source": "zz"})
+        data[table] += extra
+    small = migrate.migrate(
+        support.FakeNeon(data), db, repo=support.REPO, dry_run=False, page=2, batch=3
+    )
+    whole = migrate.migrate(support.FakeNeon(data), None, repo=support.REPO, dry_run=True, page=500)
+    assert small["status"] == "ok", small["mismatches"]
+    for name, group in whole["migration"].items():
+        assert small["migration"][name]["eligible"] == group["eligible"], name
+        assert small["migration"][name]["skipped"] == group["skipped"], name

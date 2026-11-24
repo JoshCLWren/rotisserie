@@ -25,10 +25,33 @@ runtime = importlib.import_module("factory_turso_runtime")
 REPO = support.REPO
 
 
+FAILURE = {"source": "nvidia", "model": "m1", "outcome_class": "work_failure"}
+
+
+def _failure(number: int, run_id: int, age: int, worker: str, named: bool) -> dict[str, Any]:
+    detail = {**FAILURE, "run_id": str(run_id), "exact_model_proven": True, "repo": REPO}
+    if named:
+        detail["worker"] = worker
+    return {
+        "id": number,
+        "source": "github-actions",
+        "event_type": "worker_failed",
+        "subject_type": "worker",
+        "subject_number": int(worker),
+        "created_at": support.at(-age),
+        "detail": json.dumps({**detail, "event_id": f"runtime:{run_id}"}),
+    }
+
+
 @pytest.fixture
 def migrated(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Any:
     nvidia = support.workers()["nvidia"]
     data = support.sample(nvidia[0], nvidia[1])
+    data["factory_state_events"] += [
+        _failure(10, 10, 2000, nvidia[0], True),
+        _failure(11, 11, 500, nvidia[0], True),
+        _failure(12, 12, 400, nvidia[0], False),
+    ]
     db = libsql.FileStore(tmp_path / "state.sqlite")
     monkeypatch.setenv("FACTORY_STATE_SQLITE", str(tmp_path / "state.sqlite"))
     monkeypatch.delenv("FACTORY_TURSO_URL", raising=False)
@@ -153,4 +176,9 @@ def test_the_health_reset_time_bounds_the_failure_history(migrated: Any) -> None
     )
     (row,) = db.read("SELECT health_reset_at FROM factory_repo_state WHERE repo = :r", {"r": REPO})
     assert row["health_reset_at"] == int(neon["updated_at"].timestamp())
-    assert runtime._history(db, REPO, 999, "nvidia", "m1", None) == 0
+    worker = migrated[2][0]
+    assert runtime._history(db, REPO, 999, "nvidia", "m1", None) == 2
+    assert runtime._history(db, REPO, 999, "nvidia", "m1", worker) == 2
+    db.batch([("DELETE FROM factory_repo_state", {})])
+    assert runtime._history(db, REPO, 999, "nvidia", "m1", None) == 3
+    assert runtime._history(db, REPO, 999, "nvidia", "m1", worker) == 3

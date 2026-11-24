@@ -54,6 +54,9 @@ def map_event(row: dict[str, Any], default_repo: str) -> Mapped:
         for field in EVENT_FIELDS:
             value = detail.get(field)
             values[field] = None if value is None or value == "" else str(value)
+        if values["worker"] is None and values["subject_type"] == "worker":
+            number = values["subject_number"]
+            values["worker"] = None if number is None else str(number)
         values["event_id"] = event_key(row)
         mapped = _done(group, "factory_state_events", values)
     except Invalid as error:

@@ -66,7 +66,7 @@ def test_event_fields_follow_event_insert() -> None:
     }
     found = rows.map_event(row, "other/repo")
     assert found.values is not None and found.reason == ""
-    assert found.values["run_id"] == "12" and found.values["worker"] is None
+    assert found.values["run_id"] == "12" and found.values["worker"] == "3"
     assert found.values["event_id"] == "neon:7" and found.values["created_at"] == 1767323045
     assert found.values["detail"] == (
         '{"model": "m", "repo": "acme/widgets", "run_id": 12, "worker": "", "z": 1}'
@@ -113,3 +113,19 @@ def test_a_live_reservation_keeps_its_uuid_as_text() -> None:
 def test_every_insert_names_only_destination_columns() -> None:
     sql, params = mapping.insert_statement("factory_repo_state", {"repo": REPO, "x": 1})
     assert "ON CONFLICT DO NOTHING" in sql and set(params) == {"repo", "health_reset_at"}
+
+
+def test_a_worker_event_without_a_worker_name_uses_its_subject_number() -> None:
+    row = {
+        "id": 9,
+        "source": "github-actions",
+        "event_type": "worker_failed",
+        "subject_type": "worker",
+        "subject_number": 14,
+        "created_at": 5,
+        "detail": {"repo": REPO},
+    }
+    found = rows.map_event(row, REPO)
+    assert found.values and found.values["worker"] == "14"
+    other = rows.map_event({**row, "subject_type": "target"}, REPO)
+    assert other.values and other.values["worker"] is None
