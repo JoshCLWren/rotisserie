@@ -339,6 +339,18 @@ class Clock:
     sleep: Callable[[float], None] = field(default=time.sleep)
 
 
+def completed(job: Obj) -> bool:
+    """A completed job's log and annotations can never change again."""
+    return string(job, "status") == "completed"
+
+
+def run_version(run: Obj) -> str:
+    """A completed run attempt's job list is fixed; a re-run changes this token."""
+    if string(run, "status") != "completed" or not string(run, "updated_at"):
+        return ""
+    return f"{integer(run, 'run_attempt') or 1}:{string(run, 'updated_at')}"
+
+
 class Tracker:
     """Reads one request's real GitHub state on demand."""
 
@@ -349,18 +361,29 @@ class Tracker:
     def run(self, run_id: int) -> Obj:
         return obj(self.github.repo_api(f"actions/runs/{run_id}"))
 
-    def jobs(self, run_id: int) -> list[Obj]:
-        return items(self.github.repo_api(f"actions/runs/{run_id}/jobs?per_page=100"), "jobs")
+    def jobs(self, run_id: int, *, version: str = "") -> list[Obj]:
+        path = f"actions/runs/{run_id}/jobs?per_page=100"
+        return items(
+            self.github.repo_api(path, final=version) if version else self.github.repo_api(path),
+            "jobs",
+        )
 
-    def annotations(self, job_id: int) -> list[Obj]:
+    def annotations(self, job_id: int, *, final: bool = False) -> list[Obj]:
+        path = f"check-runs/{job_id}/annotations"
         try:
-            return items(self.github.repo_api(f"check-runs/{job_id}/annotations"))
+            found = (
+                self.github.repo_api(path, final="completed")
+                if final
+                else self.github.repo_api(path)
+            )
+            return items(found)
         except GitHubError:
             return []
 
-    def log(self, job_id: int) -> str:
+    def log(self, job_id: int, *, final: bool = False) -> str:
+        path = f"actions/jobs/{job_id}/logs"
         try:
-            return self.github.text(f"actions/jobs/{job_id}/logs")
+            return self.github.text(path, final="completed") if final else self.github.text(path)
         except GitHubError:
             return ""
 
@@ -417,12 +440,13 @@ class Tracker:
                         "reserve, so nothing was started."
                     ),
                 )
-        log = self.log(job_id)
+        done = completed(dispatch)
+        log = self.log(job_id, final=done)
         result = parse_result(log)
         if result is not None:
             return result
         if string(dispatch, "conclusion") not in ("success", ""):
-            reasons = failure_reasons(self.annotations(job_id), log)
+            reasons = failure_reasons(self.annotations(job_id, final=done), log)
             return DispatchOutcome(
                 "failed",
                 reason=reasons[0] if reasons else "The scheduler failed.",
@@ -438,13 +462,14 @@ class Tracker:
             None,
         )
         if persist is not None:
-            outcome = parse_outcome(self.log(integer(persist, "id") or 0))
+            outcome = parse_outcome(self.log(integer(persist, "id") or 0, final=completed(persist)))
             if outcome is not None:
                 return outcome
         reasons: list[str] = []
         for job in jobs:
             if string(job, "conclusion") == "failure":
-                for reason in failure_reasons(self.annotations(integer(job, "id") or 0)):
+                found = self.annotations(integer(job, "id") or 0, final=completed(job))
+                for reason in failure_reasons(found):
                     if reason not in reasons:
                         reasons.append(reason)
         if reasons:

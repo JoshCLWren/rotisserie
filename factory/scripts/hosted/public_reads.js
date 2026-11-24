@@ -13,6 +13,10 @@ async function publicJson(name) {
   if (!response.ok) throw Error("Published factory data unavailable (" + response.status + ").");
   return response.json();
 }
+function clearPublic() {
+  snapshotCache = null;
+  statsCache = null;
+}
 function cached(slot, name) {
   const current = slot === "snapshot" ? snapshotCache : statsCache;
   if (current && Date.now() - current.time < SNAPSHOT_MS) return current.value;

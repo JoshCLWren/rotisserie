@@ -9,6 +9,7 @@ on stderr become the job's step list.
 from __future__ import annotations
 
 import json
+import os
 import secrets
 import subprocess
 import sys
@@ -18,6 +19,8 @@ from collections import deque
 from collections.abc import Callable, Iterable
 from dataclasses import dataclass, field
 from typing import Any
+
+from rotisserie.factory_console.read_cache import ReadCache
 
 READ_TIMEOUT = 600
 KEEP_FINISHED = 20
@@ -29,6 +32,11 @@ class JobRefused(RuntimeError):
     def __init__(self, message: str, running: str = "") -> None:
         super().__init__(message)
         self.running = running
+
+
+def shared(args: list[str], max_age: int) -> list[str]:
+    """Let a read reuse GitHub answers; the CLI refuses the cache for anything else."""
+    return ["--max-age", str(max_age), *args] if max_age > 0 else list(args)
 
 
 def factory_command(repository: str, args: list[str]) -> list[str]:
@@ -51,6 +59,7 @@ class Job:
     args: list[str]
     mutating: bool
     started: float
+    max_age: int = 0
     state: str = "running"
     finished: float | None = None
     result: dict[str, Any] | None = None
@@ -67,8 +76,10 @@ class Jobs:
         read_timeout: float = READ_TIMEOUT,
         keep: int = KEEP_FINISHED,
         clock: Callable[[], float] = time.monotonic,
+        cache: ReadCache | None = None,
     ) -> None:
         self.repository = repository
+        self.cache = cache or ReadCache.for_repo(repository, os.environ)
         self.command = command
         self.read_timeout = read_timeout
         self.keep = keep
@@ -76,7 +87,7 @@ class Jobs:
         self._jobs: dict[str, Job] = {}
         self._lock = threading.Lock()
 
-    def start(self, args: list[str], *, mutating: bool) -> Job:
+    def start(self, args: list[str], *, mutating: bool, max_age: int = 0) -> Job:
         with self._lock:
             running = [job for job in self._jobs.values() if job.state == "running"]
             for job in running:
@@ -87,7 +98,8 @@ class Jobs:
                 raise JobRefused("Another change is still running. Wait for it to finish.", busy.id)
             if len(running) >= MAX_RUNNING:
                 raise JobRefused("Too many factory commands are running. Try again shortly.")
-            job = Job(secrets.token_urlsafe(12), list(args), mutating, self.clock())
+            age = 0 if mutating else max_age
+            job = Job(secrets.token_urlsafe(12), list(args), mutating, self.clock(), age)
             self._jobs[job.id] = job
         threading.Thread(target=self._run, args=(job,), daemon=True).start()
         return job
@@ -109,15 +121,20 @@ class Jobs:
             }
 
     def _run(self, job: Job) -> None:
+        if job.mutating:
+            self.cache.invalidate()
         try:
             self._execute(job)
         except Exception as exc:  # noqa: BLE001
             self._finish(job, "failed", _failure("unavailable", f"The job runner failed: {exc}"))
+        finally:
+            if job.mutating:
+                self.cache.invalidate()
 
     def _execute(self, job: Job) -> None:
         try:
             process = subprocess.Popen(
-                self.command(self.repository, job.args),
+                self.command(self.repository, shared(job.args, job.max_age)),
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
                 text=True,

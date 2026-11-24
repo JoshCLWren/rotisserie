@@ -18,7 +18,10 @@ from rotisserie import web, web_jobs
 
 FAKE_CLI = """
 import json, sys, time
-command, rest = sys.argv[2], sys.argv[3:]
+argv = sys.argv[2:]
+if argv[:1] == ["--max-age"]:
+    argv = argv[2:]
+command, rest = argv[0], argv[1:]
 if command == "unstick":
     for text in ("Reading open work", "Plan: 2 workers to start"):
         print(json.dumps({"step": text, "phase": "plan"}), file=sys.stderr, flush=True)
@@ -192,7 +195,7 @@ def test_a_background_read_returns_a_job_that_needs_the_session(
     status, _, body = get(port, "/api/unstick?background=1", auth)
     assert status == 202
     job = json.loads(body)["job"]
-    assert calls == [["unstick", "--dry-run"]]
+    assert calls == [["--max-age", "60", "unstick", "--dry-run"]]
     assert get(port, f"/api/jobs/{job}", {})[0] == 403
     assert get(port, f"/api/jobs/{job}", {**auth, "Origin": "https://evil.test"})[0] == 403
     assert get(port, "/api/jobs/unknown", auth)[0] == 404

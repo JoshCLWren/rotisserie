@@ -158,6 +158,7 @@ async function main() {
   out.signedOutDbUsage = await settle(request("/api/db-usage"));
   out.signedOutDoctor = await settle(request("/api/doctor"));
   out.signedOutIdentity = env.elements["github-identity"].textContent;
+  out.signedOutViewer = env.context.window.hostedViewer();
   out.signedOutCalls = service.calls;
 
   service = fakeService();
@@ -219,7 +220,11 @@ async function main() {
 
   service = fakeService();
   env = environment(service);
+  out.viewerWhileChecking = env.context.window.hostedViewer();
   await tick();
+  out.viewerSignedIn = env.context.window.hostedViewer();
+  out.freshRead = await settle(env.context.window.hostedRequest("/api/settings?fresh=1"));
+  out.freshQuery = service.dispatched[service.dispatched.length - 1].reads[0].query;
   service.expired = true;
   out.expired = await settle(env.context.window.hostedRequest("/api/why"));
   out.expiredIdentity = env.elements["github-identity"].textContent;

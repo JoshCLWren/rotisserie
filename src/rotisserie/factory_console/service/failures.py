@@ -22,7 +22,7 @@ from rotisserie.factory_console.github import (
     job_name,
     string,
 )
-from rotisserie.factory_console.tracker import WORKER_WORKFLOW, Tracker
+from rotisserie.factory_console.tracker import WORKER_WORKFLOW, Tracker, completed, run_version
 from rotisserie.factory_console.verdicts import failure_reasons, outcome_class
 
 WORKER_JOB = "run / factory"
@@ -129,14 +129,22 @@ def read_failure(tracker: Tracker, run: Obj) -> WorkerFailure | None:
     if run_id is None:
         return None
     try:
-        jobs = tracker.jobs(run_id)
+        jobs = tracker.jobs(run_id, version=run_version(run))
     except GitHubError:
         return None
     job, step = first_failed_step(jobs)
     failing = _job_named(jobs, job) if job else None
-    errors = failure_reasons(tracker.annotations(integer(failing, "id") or 0)) if failing else []
+    errors = (
+        failure_reasons(tracker.annotations(integer(failing, "id") or 0, final=completed(failing)))
+        if failing
+        else []
+    )
     persist = _job_named(jobs, PERSIST_JOB)
-    recorded = outcome_class(tracker.log(integer(persist, "id") or 0)) if persist else {}
+    recorded = (
+        outcome_class(tracker.log(integer(persist, "id") or 0, final=completed(persist)))
+        if persist
+        else {}
+    )
     title = TITLE_WORKER.match(string(run, "display_title"))
     worker = title.group(1) if title else ""
     source = recorded.get("source", "")

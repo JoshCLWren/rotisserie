@@ -14,7 +14,35 @@ let statusRequest=null;
 const titles={overview:["Control room","Start work and monitor the factory."],queue:["Work queue","Which issues are ready and why others are waiting."],workers:["Workers","Real runs and active lease ownership."],outcomes:["Run history","What work was attempted, delivered or failed."],models:["Models","Browse real, provider-discovered model IDs."],settings:["Settings","Factory limits and priorities."],health:["Diagnostics","Find problems before assigning more workers."]};
 function notice(message,error=false){const box=el("message");box.className="message visible"+(error?" error":"");box.textContent=message;}
 async function request(path,body){const opt={headers:{"X-Rotisserie-Token":TOKEN}};if(body){opt.method="POST";opt.headers["Content-Type"]="application/json";opt.body=JSON.stringify(body)}const res=await fetch(path,opt);let data;try{data=await res.json()}catch{throw Error("The console did not return JSON.")}if(!res.ok)throw Error(data.error||"Request rejected");return data}
-async function get(name,params={}){const qs=new URLSearchParams(params);const path="/api/"+name+(qs.size?"?"+qs:"");return request(path)}
+/* Panel reads persist in localStorage, keyed by repository, viewer and arguments. Seconds until each kind is stale: */
+const TTL={status:90,leases:90,incident:120,why:120,heal:600,doctor:600,report:900,recap:900,outcomes:900,stats:900,settings:1800,providers:1800,models:3600};
+const PANELS={status:()=>loadStatus(),leases:()=>loadLeases(),incident:()=>loadIncidents(),why:()=>loadQueue(),heal:()=>loadHeal(),doctor:()=>loadDoctor(),report:()=>loadReport(),recap:()=>loadRecap(),outcomes:()=>loadOutcomes(),stats:()=>loadStats(),settings:()=>loadSettings(),providers:()=>loadProviders()};
+const KEEP="rotisserie:v1:",KEEP_ENTRY=400000,KEEP_TOTAL=2000000,pending=new Set();
+let forceFresh=false,epoch=0;
+const seen=new Set(),lazy={"overview-recap":()=>loadRecap(),"overview-heal":()=>loadHeal()};
+const viewer=()=>LOCAL?"local":window.hostedViewer?window.hostedViewer():"public";
+const keyOf=(name,params)=>KEEP+REPO+":"+viewer()+":"+name+"?"+new URLSearchParams(Object.entries(params).sort());
+const keyName=k=>k.slice(k.lastIndexOf(":")+1).split("?")[0];
+function ours(){try{return Object.keys(localStorage).filter(k=>k.startsWith(KEEP+REPO+":"))}catch{return[]}}
+function kept(key){try{const v=JSON.parse(localStorage.getItem(key)||"null");return v&&typeof v.got==="number"&&typeof v.at==="number"&&v.data&&typeof v.data==="object"?v:null}catch{return null}}
+function keep(key,data){try{const blob=JSON.stringify({got:Date.now(),at:dataTime(data),data});if(blob.length>KEEP_ENTRY)return;const rows=ours().filter(k=>k!==key).map(k=>({k,got:(kept(k)||{got:0}).got,n:(localStorage.getItem(k)||"").length})).sort((a,b)=>a.got-b.got);let total=blob.length+rows.reduce((t,r)=>t+r.n,0);while(rows.length&&total>KEEP_TOTAL){const r=rows.shift();localStorage.removeItem(r.k);total-=r.n}localStorage.setItem(key,blob)}catch{}}
+function drop(names,who){epoch++;for(const k of ours())if((!names||names.includes(keyName(k)))&&(!who||who(k.split(":")[3])))try{localStorage.removeItem(k)}catch{}}
+window.rotisserieForget=()=>drop(null,v=>v!=="public"&&v!=="local");
+function dataTime(d){const t=Date.parse(d.read_at||(d._source&&d._source.observed_at)||d.generated_at||d.published_at||"");return Number.isNaN(t)?Date.now():Math.min(t,Date.now())}
+const asOf=d=>d&&d._at?'<div class="hint asof" data-at="'+d._at+'">'+h(ago(d._at))+'</div>':"";
+function ago(at){const s=Math.max(0,Math.round((Date.now()-at)/1000)),n=s<60?[s,"second"]:s<7200?[Math.round(s/60),"minute"]:[Math.round(s/3600),"hour"];return "As of "+n[0]+" "+n[1]+(n[0]===1?"":"s")+" ago"}
+const loading=(id,text,name,params={})=>{if(forceFresh||!viewer()||!kept(keyOf(name,params)))el(id).innerHTML=empty(text)};
+const storable=d=>d&&!d.job&&!d.error&&typeof d.exit_code==="number"&&!/^(github_unavailable|invalid|timeout|unavailable|interrupted)$/.test(d.result||"");
+async function fetchRead(name,params,fresh){const qs=new URLSearchParams(fresh?{...params,fresh:"1"}:params);return request("/api/"+name+(qs.size?"?"+qs:""))}
+async function get(name,params={}){
+ const fresh=forceFresh,since=epoch,stored=TTL[name]&&viewer()&&!("target" in params)&&!("background" in params),key=stored&&keyOf(name,params),hit=key&&!fresh&&kept(key);
+ if(hit&&Date.now()-hit.got<TTL[name]*1000)return {...hit.data,_at:hit.at};
+ if(hit&&PANELS[name]&&!pending.has(key)){pending.add(key);fetchRead(name,params,false).then(d=>{if(storable(d)&&since===epoch){keep(key,d);PANELS[name]()}}).catch(()=>{}).finally(()=>pending.delete(key));return {...hit.data,_at:hit.at}}
+ const d=await fetchRead(name,params,fresh);
+ if(key&&storable(d)&&since===epoch)keep(key,d);
+ return {...d,_at:dataTime(d)};
+}
+const SWITCHED=["providers","models","why","doctor"],AFFECTS={settings:["settings","why"],prioritize:["why","settings"],provider_switch:SWITCHED,model_switch:SWITCHED,backoffs_reset:SWITCHED,incident_start:["incident","why","status"],incident_stop:["incident","why","status"],estimate_neon:[],store_selftest:[],store_export:[]};
 async function act(body,source,resumed){
  if(state.mutating)return;
  state.mutating=true;state.lastJob=null;
@@ -45,8 +73,9 @@ async function act(body,source,resumed){
   }else notice("Rotisserie reports: "+(data.result||"completed")+".");
   if(data.operator&&data.operator.run_url)el("message").insertAdjacentHTML("beforeend"," "+link(data.operator.run_url,"GitHub operator run: "+(data.operator.conclusion||"completed")));
   el("operation-status").textContent="Refreshing factory state…";
+  drop(AFFECTS[body.operation]||null);
   await refresh();
- }catch(err){notice(err.message||String(err),true)}
+ }catch(err){drop(AFFECTS[body.operation]||null);notice(err.message||String(err),true)}
  finally{state.mutating=false;el("operation-status").textContent="";if(button){button.disabled=false;button.classList.remove("is-loading")}}
 }
 function fmtDate(value){if(!value)return "Not recorded";const d=new Date(value);return Number.isNaN(d.getTime())?"Not recorded":d.toLocaleString()}
@@ -72,8 +101,8 @@ function loadStatus(){
    state.status=d;
    const owners=new Set((d.working||[]).map(x=>x.worker||x.ref));
    setText("k-workers",owners.size);
-   el("overview-workers").innerHTML=renderWorkers(d.working||[]);
-   el("workers-content").innerHTML=renderWorkers(d.working||[],true);
+   el("overview-workers").innerHTML=asOf(d)+renderWorkers(d.working||[]);
+   el("workers-content").innerHTML=asOf(d)+renderWorkers(d.working||[],true);
   }catch(err){
    el("overview-workers").innerHTML=empty(err.message);
    el("workers-content").innerHTML=empty(err.message);
@@ -82,7 +111,7 @@ function loadStatus(){
  })();
  return statusRequest;
 }
-async function loadReport(){try{const d=await get("report",{since:"12h"});state.report=d;setText("k-merged",(d.merged||[]).length);el("overview-merged").innerHTML=(d.merged||[]).slice(0,3).map(x=>'<div class="item"><div class="item-title">'+link("https://github.com/"+REPO+"/pull/"+x.number,"#"+x.number)+" "+h(x.title)+"</div></div>").join("")||empty("No recent merges.")}catch(err){setText("k-merged","?");el("overview-merged").innerHTML=empty(err.message)}}
+async function loadReport(){try{const d=await get("report",{since:"12h"});state.report=d;setText("k-merged",(d.merged||[]).length);el("overview-merged").innerHTML=asOf(d)+((d.merged||[]).slice(0,3).map(x=>'<div class="item"><div class="item-title">'+link("https://github.com/"+REPO+"/pull/"+x.number,"#"+x.number)+" "+h(x.title)+"</div></div>").join("")||empty("No recent merges."))}catch(err){setText("k-merged","?");el("overview-merged").innerHTML=empty(err.message)}}
 function renderFindings(d){if(!Array.isArray(d.findings))return raw(d);return d.findings.map(f=>'<div class="item"><div class="item-head"><div><div class="item-title">'+h(f.check)+'</div><div class="meta">'+h(f.text||f.hint||"")+'</div></div>'+badge(f.status,f.status==="ok"?"good":f.status==="fail"?"bad":"")+'</div></div>').join("")||empty("No diagnostic findings.")}
 const recapPart=(title,rows)=>rows.length?'<h3 class="recap-h">'+h(title)+'</h3>'+rows.join(""):"";
 const recapRow=(text,meta,url)=>'<div class="item"><div class="item-title">'+(url?link(url,text):h(text))+'</div>'+(meta?'<div class="meta">'+h(meta)+'</div>':"")+'</div>';
@@ -97,11 +126,11 @@ function renderRecap(d){const m=d.merged||{},w=d.went_wrong||{},p=d.providers||{
  +recapPart("Stuck",(d.stuck||[]).map(x=>recapRow(x.text,"",x.url)))
  +(d.database?recapPart("Database",[recapRow(d.database.text,d.database.status)]):"")
  +((d.unread||[]).length?'<div class="hint">Could not read: '+h(d.unread.join(", "))+'</div>':"")}
-async function loadHeal(){el("overview-heal").innerHTML=empty("Reading what the factory fixed by itself…");try{const d=await get("heal",{since:"24h"});const rows=(d.healed||[]).map(x=>recapRow(x.text,fmtDate(x.at),x.url));el("overview-heal").innerHTML=rows.length?rows.join(""):empty("The factory cleared no stall by itself in the last 24 hours.")}catch(err){el("overview-heal").innerHTML=empty(err.message)}}
-async function loadRecap(){el("overview-recap").innerHTML=empty("Reading what the factory did…");try{const d=await get("recap",{since:"12h"});state.recap=d;el("overview-recap").innerHTML=renderRecap(d)}catch(err){el("overview-recap").innerHTML=empty(err.message)}}
-async function loadDoctor(){try{const d=await get("doctor");state.doctor=d;setText("k-health",(d.findings||[]).filter(x=>x.status!=="ok").length);el("overview-health").innerHTML=renderFindings({...d,findings:(d.findings||[]).filter(x=>x.status!=="ok").slice(0,5)});if(!(d.findings||[]).some(x=>x.status!=="ok"))el("overview-health").innerHTML=empty("All checked systems healthy.");el("health-content").innerHTML=renderFindings(d)}catch(err){setText("k-health","?");el("overview-health").innerHTML=empty(err.message);el("health-content").innerHTML=empty(err.message)}}
-async function loadIncidents(){try{const d=await get("incident");const rows=d.incidents||[];el("incidents-content").innerHTML=rows.length?'<div class="table-wrap"><table class="table"><thead><tr><th>Issue</th><th>Attempts</th><th>State</th><th>Reason</th><th>Action</th></tr></thead><tbody>'+rows.map(i=>'<tr><td>#'+h(i.issue)+'</td><td>'+h(i.attempts)+'</td><td>'+badge(i.active?"active":"ended",i.active?"bad":"good")+'</td><td>'+h(i.reason||"")+'</td><td><button class="button small" data-incident-stop="'+h(i.issue)+'">Stop</button></td></tr>').join("")+'</tbody></table></div>':empty("No incident. Normal intake.")}catch(err){el("incidents-content").innerHTML=empty(err.message)}}
-async function loadQueue(){el("queue-content").innerHTML=empty("Evaluating the current work graph…");try{const d=await get("why");state.queue=d;setText("k-ready",(d.ready||[]).length);renderQueue()}catch(err){setText("k-ready","?");el("queue-content").innerHTML=empty(err.message)}}
+async function loadHeal(){loading("overview-heal","Reading what the factory fixed by itself…","heal",{since:"24h"});try{const d=await get("heal",{since:"24h"});const rows=(d.healed||[]).map(x=>recapRow(x.text,fmtDate(x.at),x.url));el("overview-heal").innerHTML=asOf(d)+(rows.length?rows.join(""):empty("The factory cleared no stall by itself in the last 24 hours."))}catch(err){el("overview-heal").innerHTML=empty(err.message)}}
+async function loadRecap(){loading("overview-recap","Reading what the factory did…","recap",{since:"12h"});try{const d=await get("recap",{since:"12h"});state.recap=d;el("overview-recap").innerHTML=renderRecap(d)}catch(err){el("overview-recap").innerHTML=empty(err.message)}}
+async function loadDoctor(){try{const d=await get("doctor");state.doctor=d;setText("k-health",(d.findings||[]).filter(x=>x.status!=="ok").length);el("overview-health").innerHTML=renderFindings({...d,findings:(d.findings||[]).filter(x=>x.status!=="ok").slice(0,5)});if(!(d.findings||[]).some(x=>x.status!=="ok"))el("overview-health").innerHTML=empty("All checked systems healthy.");el("overview-health").insertAdjacentHTML("afterbegin",asOf(d));el("health-content").innerHTML=asOf(d)+renderFindings(d)}catch(err){setText("k-health","?");el("overview-health").innerHTML=empty(err.message);el("health-content").innerHTML=empty(err.message)}}
+async function loadIncidents(){try{const d=await get("incident");const rows=d.incidents||[];el("incidents-content").innerHTML=asOf(d)+(rows.length?'<div class="table-wrap"><table class="table"><thead><tr><th>Issue</th><th>Attempts</th><th>State</th><th>Reason</th><th>Action</th></tr></thead><tbody>'+rows.map(i=>'<tr><td>#'+h(i.issue)+'</td><td>'+h(i.attempts)+'</td><td>'+badge(i.active?"active":"ended",i.active?"bad":"good")+'</td><td>'+h(i.reason||"")+'</td><td><button class="button small" data-incident-stop="'+h(i.issue)+'">Stop</button></td></tr>').join("")+'</tbody></table></div>':empty("No incident. Normal intake."))}catch(err){el("incidents-content").innerHTML=empty(err.message)}}
+async function loadQueue(){loading("queue-content","Evaluating the current work graph…","why");try{const d=await get("why");state.queue=d;setText("k-ready",(d.ready||[]).length);renderQueue()}catch(err){setText("k-ready","?");el("queue-content").innerHTML=empty(err.message)}}
 function renderQueue(){
  const d=state.queue;if(!d)return;
  let issues=d.issues||[],filter=el("queue-filter").value.toLowerCase(),status=el("queue-state").value;
@@ -119,7 +148,7 @@ async function loadProviders(){
   const d=await get("providers");
   if(d.exit_code!==0)throw Error(d.error||d.result);
   state.providers=d.providers||[];
-  renderSwitches();
+  renderSwitches();el("provider-switches").insertAdjacentHTML("afterbegin",asOf(d));
   const options=state.providers.map(p=>'<option value="'+h(p.provider)+'">'+h(p.name)+' · '+h(p.setup)+'</option>').join("");
   el("provider").innerHTML=options||'<option value="">No providers found</option>';
   const preferred=state.providers.find(p=>p.provider===selected)||state.providers.find(p=>p.setup==="ready")||state.providers[0];
@@ -186,12 +215,12 @@ async function loadCatalog(){
   state.catalogModels=models;renderCatalog();
  }catch(err){if(el("catalog-provider").value===provider){el("catalog-summary").textContent="";el("model-catalog").innerHTML=empty("Could not discover models: "+err.message)}}
 }
-async function loadSettings(){el("settings-content").innerHTML=empty("Loading repository settings…");try{const d=await get("settings");el("settings-content").innerHTML=sourceNote(d)+(d.settings||[]).map(s=>'<div class="item"><div class="item-head"><div><div class="item-title">'+h(s.title)+'</div><div class="meta">'+h(s.description)+'<br>'+h(s.name)+' · '+h(s.origin)+'</div></div><div class="item-actions"><input aria-label="'+h(s.title)+'" style="width:85px;padding:9px;background:#111a25;color:#fff;border:1px solid #3b4a5a;border-radius:8px" data-setting-name="'+h(s.name)+'" value="'+h(s.value)+'"><button class="button small" data-save-setting="'+h(s.name)+'">Save</button></div></div></div>').join("")||empty("No settings found.")}catch(err){el("settings-content").innerHTML=empty(err.message)}}
-async function loadOutcomes(){try{const d=await get("outcomes");el("outcomes-content").innerHTML=(d.requests||[]).slice(0,40).map(x=>'<div class="item"><div class="item-head"><div><div class="item-title">'+h(x.target||"Next eligible")+' · '+h(x.action||"advance")+'</div><div class="meta">'+h(x.model||"Auto model")+' · '+h(x.decision||"")+'</div></div>'+badge(x.goal||x.worker_result||"Recorded",x.goal==="met"?"good":"")+'</div></div>').join("")||empty("No targeted requests in the selected period.")}catch(err){el("outcomes-content").innerHTML=empty(err.message)}}
-async function loadStats(){try{const d=await get("stats",{window:el("stats-window").value});el("stats-content").innerHTML=(d.models||[]).slice(0,30).map(x=>'<div class="item"><div class="item-head"><div class="item-title">'+h(x.model)+'</div>'+badge(x.health||"recorded",x.health==="paused"?"bad":"")+'</div><div class="meta">'+h(x.delivered)+' PRs delivered / '+h(x.runs)+' runs · '+h(x.failed)+' failed'+(x.top_failure?" · "+h(x.top_failure):"")+'</div></div>').join("")||empty("No model reliability data published.")}catch(err){el("stats-content").innerHTML=empty(err.message)}}
+async function loadSettings(){loading("settings-content","Loading repository settings…","settings");try{const d=await get("settings");el("settings-content").innerHTML=sourceNote(d)+(d.settings||[]).map(s=>'<div class="item"><div class="item-head"><div><div class="item-title">'+h(s.title)+'</div><div class="meta">'+h(s.description)+'<br>'+h(s.name)+' · '+h(s.origin)+'</div></div><div class="item-actions"><input aria-label="'+h(s.title)+'" style="width:85px;padding:9px;background:#111a25;color:#fff;border:1px solid #3b4a5a;border-radius:8px" data-setting-name="'+h(s.name)+'" value="'+h(s.value)+'"><button class="button small" data-save-setting="'+h(s.name)+'">Save</button></div></div></div>').join("")||empty("No settings found.")}catch(err){el("settings-content").innerHTML=empty(err.message)}}
+async function loadOutcomes(){try{const d=await get("outcomes");el("outcomes-content").innerHTML=asOf(d)+((d.requests||[]).slice(0,40).map(x=>'<div class="item"><div class="item-head"><div><div class="item-title">'+h(x.target||"Next eligible")+' · '+h(x.action||"advance")+'</div><div class="meta">'+h(x.model||"Auto model")+' · '+h(x.decision||"")+'</div></div>'+badge(x.goal||x.worker_result||"Recorded",x.goal==="met"?"good":"")+'</div></div>').join("")||empty("No targeted requests in the selected period."))}catch(err){el("outcomes-content").innerHTML=empty(err.message)}}
+async function loadStats(){try{const d=await get("stats",{window:el("stats-window").value});el("stats-content").innerHTML=asOf(d)+((d.models||[]).slice(0,30).map(x=>'<div class="item"><div class="item-head"><div class="item-title">'+h(x.model)+'</div>'+badge(x.health||"recorded",x.health==="paused"?"bad":"")+'</div><div class="meta">'+h(x.delivered)+' PRs delivered / '+h(x.runs)+' runs · '+h(x.failed)+' failed'+(x.top_failure?" · "+h(x.top_failure):"")+'</div></div>').join("")||empty("No model reliability data published."))}catch(err){el("stats-content").innerHTML=empty(err.message)}}
 async function inspectPr(which){const number=el("pr-number").value;if(!/^[1-9][0-9]*$/.test(number)){notice("Enter a valid PR number.",true);return}el("pr-inspector").innerHTML=empty("Inspecting PR #"+number+"…");try{const d=await get(which,{target:"pr:"+number});el("pr-inspector").innerHTML=sourceNote(d)+(which==="checks"?renderChecks(ok(d)):raw(d))}catch(err){el("pr-inspector").innerHTML=empty(err.message)}}
 const ok=d=>{if(d.exit_code!==undefined&&d.exit_code!==0)throw Error(d.error||d.reason||"Rotisserie returned "+(d.result||"an error"));return d};
-const sourceNote=d=>d&&d._source?'<div class="hint">Live result from '+link(d._source.run_url,"GitHub Actions run")+' · observed '+h(fmtDate(d._source.observed_at))+'</div>':"";
+const sourceNote=d=>asOf(d)+(d&&d._source?'<div class="hint">Live result from '+link(d._source.run_url,"GitHub Actions run")+' · observed '+h(fmtDate(d._source.observed_at))+'</div>':"");
 const short=sha=>String(sha||"").slice(0,12);
 const runBadge=v=>badge(v,/^(success|reserved|released|already-held|completed)$/.test(v)?"good":/^(failure|conflict|rejected|unavailable)$/.test(v)?"bad":"");
 function renderChecks(d){
@@ -336,18 +365,15 @@ async function showPlan(source,resumed){
 }
 function target(){const kind=el("work-kind").value;const number=el("target-number").value;return kind==="next"?"":kind+":"+number}
 function preview(){const kind=el("work-kind").value;el("target-field").hidden=kind==="next";el("action-field").hidden=kind!=="pr";el("take-over").disabled=kind==="next";if(kind==="next")el("take-over").checked=false;const args=["rotisserie","factory","run",el("provider").value||"PROVIDER",el("model").value||"auto"];if(kind!=="next")args.push("--target",target()||kind+":NUMBER");if(kind==="pr"&&el("action").value!=="advance")args.push("--action",el("action").value);if(el("force").checked)args.push("--force");if(el("exact").checked&&el("model").value&&el("model").value!=="auto")args.push("--exact");if(el("take-over").checked)args.push("--take-over");if(el("slot").value)args.push("--slot",el("slot").value);args.push("--no-wait");el("command-preview").textContent=args.join(" ");el("force-hint").textContent=el("force").checked?"Override bypasses scheduler pacing and capacity limits, but not another active claim. Takeover is a separate explicit action.":"Normal scheduling respects factory limits and existing leases. Overrides never silently steal another worker's claim."}
-async function refresh(){
- const page=state.page;
+async function refresh(fresh=false){
+ const page=state.page,lazyLoaded=Object.keys(lazy).filter(id=>seen.has(id)).map(id=>lazy[id]);
+ const loads={overview:[loadStatus,loadReport,loadDoctor,loadQueue,...lazyLoaded],queue:[loadQueue,loadIncidents],workers:[loadStatus,loadLeases],outcomes:[loadOutcomes,loadStats],models:[loadCatalog],settings:[loadSettings],health:[loadDoctor]}[page]||[];
  el("refresh").disabled=true;el("refresh").classList.add("is-loading");
+ forceFresh=fresh===true;
  try{
-  if(page==="overview"&&!state.recap){void loadRecap();void loadHeal()}
-  if(page==="overview")await Promise.all([loadStatus(),loadReport(),loadDoctor(),loadQueue()]);
-  if(page==="queue")await Promise.all([loadQueue(),loadIncidents()]);
-  if(page==="workers")await Promise.all([loadStatus(),loadLeases()]);
-  if(page==="outcomes")await Promise.all([loadOutcomes(),loadStats()]);
-  if(page==="models")await loadCatalog();
-  if(page==="settings")await loadSettings();
-  if(page==="health")await loadDoctor();
+  const running=loads.map(load=>load());
+  forceFresh=false;
+  await Promise.all(running);
  }finally{el("refresh").disabled=false;el("refresh").classList.remove("is-loading")}
 }
 function go(page){if(!titles[page])return;state.page=page;document.querySelectorAll(".view").forEach(x=>x.classList.toggle("active",x.id===page));document.querySelectorAll(".nav").forEach(x=>x.classList.toggle("active",x.dataset.view===page));setText("page-title",titles[page][0]);setText("page-sub",titles[page][1]);window.scrollTo({top:0,behavior:"smooth"});refresh()}
@@ -385,11 +411,12 @@ document.body.addEventListener("click",e=>{const b=e.target.closest("button");if
 el("launcher").addEventListener("submit",e=>{e.preventDefault();if(state.mutating||el("model").disabled)return;const kind=el("work-kind").value;const number=el("target-number").value;if(kind!=="next"&&(!/^[1-9][0-9]*$/.test(number))){notice("Enter a valid issue or PR number.",true);return}const data={operation:"run",provider:el("provider").value,model:el("model").value||"auto",target:kind==="next"?"":target(),action:kind==="pr"?el("action").value:"advance",force:el("force").checked,exact:el("exact").checked&&!!el("model").value&&el("model").value!=="auto",take_over:el("take-over").checked};if(el("slot").value)data.slot=Number(el("slot").value);act(data,el("launch"))});
 ["provider","model","work-kind","target-number","action","slot","force","exact","take-over"].forEach(id=>el(id).addEventListener("change",()=>{preview();if(id==="provider")loadModelOptions()}));
 el("model").addEventListener("input",preview);el("target-number").addEventListener("input",preview);
-el("refresh").onclick=refresh;el("recap-refresh").onclick=loadRecap;el("heal-refresh").onclick=loadHeal;el("queue-refresh").onclick=loadQueue;el("workers-refresh").onclick=loadStatus;el("leases-refresh").onclick=loadLeases;el("outcomes-refresh").onclick=loadOutcomes;el("models-refresh").onclick=()=>{modelCache.clear();loadProviders()};el("doctor-refresh").onclick=loadDoctor;el("queue-filter").oninput=renderQueue;el("queue-state").onchange=renderQueue;el("stats-window").onchange=loadStats;el("catalog-provider").onchange=loadCatalog;el("model-search").oninput=renderCatalog;el("view-plan").onclick=()=>showPlan(el("view-plan"));
+const fresh=fn=>()=>{forceFresh=true;try{return fn()}finally{forceFresh=false}};
+el("refresh").onclick=()=>refresh(true);el("recap-refresh").onclick=fresh(loadRecap);el("heal-refresh").onclick=fresh(loadHeal);el("queue-refresh").onclick=fresh(loadQueue);el("workers-refresh").onclick=fresh(loadStatus);el("leases-refresh").onclick=fresh(loadLeases);el("outcomes-refresh").onclick=fresh(loadOutcomes);el("models-refresh").onclick=fresh(()=>{modelCache.clear();drop(["providers","models"]);return loadProviders()});el("doctor-refresh").onclick=fresh(loadDoctor);el("queue-filter").oninput=renderQueue;el("queue-state").onchange=renderQueue;el("stats-window").onchange=loadStats;el("catalog-provider").onchange=loadCatalog;el("model-search").oninput=renderCatalog;el("view-plan").onclick=()=>showPlan(el("view-plan"));
 el("pr-select").onclick=()=>{const number=el("pr-number").value;if(!/^[1-9][0-9]*$/.test(number)){notice("Enter a valid PR number.",true);return}go("overview");el("work-kind").value="pr";el("target-number").value=number;preview()};
 el("pr-sync").onclick=()=>{const number=el("pr-number").value;if(!/^[1-9][0-9]*$/.test(number)){notice("Enter a valid PR number.",true);return}act({operation:"sync",target:"pr:"+number},el("pr-sync"))};
 el("main-checks").onclick=async()=>{el("pr-inspector").innerHTML=empty("Reading checks on main…");try{el("pr-inspector").innerHTML=renderChecks(ok(await get("checks",{target:"main"})))}catch(err){el("pr-inspector").innerHTML=empty(err.message)}};
-el("incidents-refresh").onclick=loadIncidents;
+el("incidents-refresh").onclick=fresh(loadIncidents);
 el("pr-close").onclick=()=>{const number=el("pr-number").value;if(!/^[1-9][0-9]*$/.test(number)){notice("Enter a valid PR number.",true);return}const reason=(window.prompt("Why close PR #"+number+"? The reason is posted as the closing comment, and the issue it delivers closes as not planned.")||"").trim();if(!reason){notice("Give a reason before closing.",true);return}if(window.confirm("Close PR #"+number+" and the issue it delivers?\nReason: "+reason))act({operation:"close",target:"pr:"+number,reason},el("pr-close"))};
 el("failures-read").onclick=async()=>{el("outcomes-content").innerHTML=empty("Reading failed worker runs from the last 10 hours…");try{const d=ok(await get("failures",{since:"10h"}));el("outcomes-content").innerHTML=sourceNote(d)+raw(d)}catch(err){el("outcomes-content").innerHTML=empty(err.message)}};
 el("backoffs-read").onclick=async()=>{el("limits-content").innerHTML=empty("Reading backoffs through the trusted workflow…");try{const d=ok(await get("backoffs"));el("limits-content").innerHTML=sourceNote(d)+raw(d)}catch(err){el("limits-content").innerHTML=empty(err.message)}};
@@ -414,4 +441,8 @@ el("doctor-fix").onclick=()=>act({operation:"doctor_fix"},el("doctor-fix"));
 el("release-expired").onclick=()=>act({operation:"release_expired"},el("release-expired"));
 el("queue-explain").onclick=()=>{const number=el("queue-explain-number").value;if(/^[1-9][0-9]*$/.test(number))explain(number);else notice("Enter an issue number to explain.",true)};
 setInterval(()=>{if(!document.hidden&&!state.mutating&&(state.page==="overview"||state.page==="workers"))loadStatus()},30000);
+setInterval(()=>{for(const x of document.querySelectorAll(".asof"))x.textContent=ago(Number(x.dataset.at))},15000);
+document.addEventListener("visibilitychange",()=>{if(!document.hidden&&!state.mutating)refresh()});
+const watcher=window.IntersectionObserver?new IntersectionObserver(rows=>{for(const r of rows)if(r.isIntersecting&&!seen.has(r.target.id)){seen.add(r.target.id);lazy[r.target.id]()}}):null;
+for(const id in lazy)if(watcher)watcher.observe(el(id));else{seen.add(id);lazy[id]()}
 resumeJob();loadProviders();refresh();preview();

@@ -56,7 +56,9 @@ from rotisserie.factory_console.tracker import (
     WORKER_WORKFLOW,
     Clock,
     Tracker,
+    completed,
     failure_reasons,
+    run_version,
 )
 
 DASHBOARD_WORKFLOW = "factory-status-pages.yml"
@@ -121,7 +123,7 @@ def _dashboard(github: GitHub, tracker: Tracker) -> Finding:
         return Finding("dashboard publisher", "ok", "last run succeeded")
     run_id = integer(last, "id") or 0
     detail = ""
-    for job in tracker.jobs(run_id):
+    for job in tracker.jobs(run_id, version=run_version(last)):
         failed = [
             string(step, "name")
             for step in items(job, "steps")
@@ -129,11 +131,12 @@ def _dashboard(github: GitHub, tracker: Tracker) -> Finding:
         ]
         if failed:
             job_id = integer(job, "id") or 0
-            reasons = failure_reasons(tracker.annotations(job_id))
+            finished = completed(job)
+            reasons = failure_reasons(tracker.annotations(job_id, final=finished))
             if not reasons:
                 # Tracebacks only reach the log; annotations say "exit code 1".
                 try:
-                    reasons = failure_reasons([], tracker.log(job_id))
+                    reasons = failure_reasons([], tracker.log(job_id, final=finished))
                 except GitHubError:
                     reasons = []
             detail = f" at step '{failed[0]}'" + (f": {reasons[0]}" if reasons else "")
