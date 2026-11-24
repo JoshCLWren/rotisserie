@@ -456,7 +456,7 @@ def test_trusted_terminal_collector_retries_scoped_reads_and_idempotent_writes()
     # Markdown backticks must be quoted so shell does not execute agent_timeout.
     assert "printf 'Neon terminal classification: `%s`\\n'" in entry
     assert 'echo "Neon terminal classification: `' not in entry
-    operations = (root / ".github/scripts/factory_state_operations.py").read_text()
+    operations = (root / ".github/scripts/factory_state_operations_runtime.py").read_text()
     assert "INSERT INTO public.factory_runtime_event_keys(repo,run_id)" in operations
     assert "ON CONFLICT DO NOTHING RETURNING run_id" in operations
 

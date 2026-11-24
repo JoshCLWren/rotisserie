@@ -37,7 +37,7 @@ def test_worker_status_is_captured_after_attempt_code_exits() -> None:
 
 def test_newer_attempt_evidence_is_ordered_by_run_in_neon() -> None:
     """Run ordering moved from comment bodies to Neon's run-keyed projections."""
-    operations = (ROOT / ".github/scripts/factory_state_operations.py").read_text()
+    operations = (ROOT / ".github/scripts/factory_state_operations_runtime.py").read_text()
     assert "last_run_id <= EXCLUDED.last_run_id" in operations
     assert "existing_run > GITHUB_RUN_ID" not in WORKFLOW.read_text(encoding="utf-8")
 
