@@ -113,7 +113,7 @@ def test_run_workflow_reads_authors_once_and_reselects_without_more_calls() -> N
     selector = selector.split("\n      - name:", 1)[0]
     assert "factory_review_model_guard.py check" in selector
     assert "--attempted-pair" in selector
-    assert 'if [[ "$REQUESTED_MODEL" == auto ]]; then' in selector
+    assert 'if [[ "$effective_model" == auto ]]; then' in selector
     # The guard runs before the selection is published to later steps.
     assert selector.index("factory_review_model_guard.py check") < selector.index(
         'echo "runtime_model=$runtime_model"'

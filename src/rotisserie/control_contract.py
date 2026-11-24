@@ -203,6 +203,10 @@ def _run(data: Mapping[str, Any]) -> list[str]:
         args.extend(("--action", action))
     if _flag(data, "force"):
         args.append("--force")
+    if _flag(data, "exact"):
+        if model == "auto":
+            raise InvalidRequest("An exact pin needs a model, not auto")
+        args.append("--exact")
     if _flag(data, "take_over"):
         if not target:
             raise InvalidRequest("Takeover requires an issue or pull request")

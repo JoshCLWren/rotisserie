@@ -2484,12 +2484,10 @@ def dispatch_next(
 ) -> dict[str, object]:
     """Assign a provider worker to real work and start it.
 
-    Without force, normal scheduling applies. With operator force the request
-    always results in work when any exists: the factory's own pacing (worker
-    health history, configured capacity, queue and review limits, cooldowns,
-    budgets, pauses) never refuses it, and if every regular worker identity is
-    busy an extra operator identity is used. Force never takes an item another
-    worker holds (status ``busy``) and never switches provider or model.
+    Without force, normal scheduling applies. With operator force the request always results
+    in work when any exists: the factory's pacing (slot health, capacity, queue and review
+    limits, cooldowns, budgets, pauses) never refuses it, and if every regular identity is busy
+    an operator identity is used. Force never takes a held item (``busy``) or switches provider.
     """
     from factory_completion_controller import (
         capacity_report, durable_factory_state, load_manifest_candidates,
@@ -2499,8 +2497,10 @@ def dispatch_next(
     source = 'opencode-free' if provider == 'opencode-go' else provider
     if source not in sources():
         raise ValueError(f'Unsupported factory provider: {provider}')
+    from factory_manual_model import validate_model_syntax
+    from factory_pinned_model import split_request
+    model, exact = split_request(model)
     if model != 'auto':
-        from factory_manual_model import validate_model_syntax
         validate_model_syntax(source, model)
     if slot_index is not None and not force_slot:
         raise ValueError('An explicit slot requires --force-slot')
@@ -2591,9 +2591,9 @@ def dispatch_next(
             run_gh([
                 'workflow', 'run', 'free-model-factory-entry.yml', '--repo', REPO,
                 '--ref', 'main', '-f', f'worker={worker}',
-                '-f', 'assignment=' + json.dumps(assignment_context(candidate, worker)),
-                '-f', f'model={model}',
-                '-f', f'provider={source}',
+                '-f', 'assignment=' + json.dumps(
+                    assignment_context(candidate, worker) | ({'exact_model': True} if exact else {})),
+                '-f', f'model={model}', '-f', f'provider={source}',
             ])
         except RuntimeError:
             # An accepted but timed-out workflow_dispatch may already exist.

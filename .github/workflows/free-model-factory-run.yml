@@ -471,9 +471,15 @@ jobs:
           LANE_BRANCH_SUFFIX: ${{ steps.lane.outputs.branch_suffix }}
           REQUESTED_MODEL: ${{ inputs.model || 'auto' }}
           REQUESTED_PROVIDER: ${{ inputs.provider || 'auto' }}
+          FACTORY_ASSIGNMENT: ${{ inputs.assignment }}
         run: |
           set -Eeuo pipefail
           discovery_outcome="$RUNNER_TEMP/factory-discovery-outcome"
+          # A pinned model is a preference unless the dispatcher marked the
+          # assignment exact-or-nothing; see factory_pinned_model.py.
+          exact_model="$(python3 .github/scripts/factory_pinned_model.py exact)"
+          effective_model="$REQUESTED_MODEL"
+          pin_reason=""
           exclusions_file="$RUNNER_TEMP/factory-trusted-model-exclusions.json"
           printf '%s\n' "$FACTORY_MODEL_EXCLUSIONS" > "$exclusions_file"
           printf '%s\n' "$FACTORY_FLEET_SOURCES" > "$RUNNER_TEMP/factory-fleet-sources.json"
@@ -487,6 +493,12 @@ jobs:
           # does after a failed attempt, and log the trusted transition.
           fleet_fallback() {
             local reason="$1" fallback
+            if [[ -n "$pin_reason" ]]; then
+              python3 .github/scripts/factory_pinned_model.py exhausted \
+                --requested-model "$REQUESTED_MODEL" --source "$SOURCE" --reason "$reason" \
+                --pin-reason "$pin_reason" --outcome-file "$discovery_outcome"
+              exit 1
+            fi
             if [[ "$REQUESTED_MODEL" != auto || "$REQUESTED_PROVIDER" != auto ]]; then
               printf 'model_unavailable\tOperator-pinned provider/model unavailable: %s\n' "$reason" > "$discovery_outcome"
               echo "::error::Exact requested model could not be selected; no provider fallback"
@@ -508,11 +520,22 @@ jobs:
           }
           selection=''
           if [[ "$REQUESTED_MODEL" != auto ]]; then
-            selection="$(python3 .github/scripts/factory_manual_model.py \
-              --source "$SOURCE" --model "$REQUESTED_MODEL" \
-              --exclusions-file "$exclusions_file")" \
-              || fleet_fallback 'Exact requested model is unavailable in trusted provider catalog'
-          else
+            pin_error="$RUNNER_TEMP/factory-pinned-model-error"
+            if ! selection="$(python3 .github/scripts/factory_manual_model.py \
+                --source "$SOURCE" --model "$REQUESTED_MODEL" \
+                --exclusions-file "$exclusions_file" 2> "$pin_error")"; then
+              selection=''
+              pin_reason="$(python3 .github/scripts/factory_pinned_model.py unavailable \
+                --requested-model "$REQUESTED_MODEL" --exact "$exact_model" \
+                --error-file "$pin_error" --outcome-file "$discovery_outcome")" || {
+                echo "::error::Exact requested model could not be selected; no provider fallback"
+                exit 1
+              }
+              effective_model=auto
+              echo "Factory $WORKER: pinned $REQUESTED_MODEL unavailable ($pin_reason); selecting the best eligible $SOURCE model"
+            fi
+          fi
+          if [[ -z "$selection" ]]; then
           # Selection happens after the relevant CLI is installed. Nothing
           # uses a checked-in model ID, cost limit, or worker/model mapping.
           case "$SOURCE" in
@@ -530,8 +553,8 @@ jobs:
             opencode-free)
               catalog="$RUNNER_TEMP/factory-go-catalog.json"
               required_model_args=()
-              if [[ "$REQUESTED_MODEL" != auto ]]; then
-                required_model_args+=(--required-model "$REQUESTED_MODEL")
+              if [[ "$effective_model" != auto ]]; then
+                required_model_args+=(--required-model "$effective_model")
               fi
               selection="$(python3 .github/scripts/factory_opencode_go.py \
                 --worker "$WORKER" --rotation "${GITHUB_RUN_ID:-0}" \
@@ -572,7 +595,7 @@ jobs:
           # Prefer an eligible model whose last real outcome proved coding
           # work on this lane's provider. Advisory: any failure keeps the
           # lane's own pick, and cooled models stay excluded either way.
-          if [[ "$REQUESTED_MODEL" == auto && "$selected_source" == "$SOURCE" ]]; then
+          if [[ "$effective_model" == auto && "$selected_source" == "$SOURCE" ]]; then
             proven_args=(--source "$SOURCE" --worker "$WORKER" --proven-only
               --rotation "${GITHUB_RUN_ID:-0}" --exclusions-file "$exclusions_file")
             case "$SOURCE" in
@@ -587,7 +610,7 @@ jobs:
           fi
           # Prefer authenticated Go free models across the existing fleet.
           # No extra OpenCode route, worker identity, or provider-wide ban.
-          if [[ "$REQUESTED_MODEL" == auto && "$REQUESTED_PROVIDER" == auto && -n "${OPENCODE_API_KEY:-}" ]] &&
+          if [[ "$effective_model" == auto && "$REQUESTED_PROVIDER" == auto && -n "${OPENCODE_API_KEY:-}" ]] &&
              jq -e 'index("opencode-free") != null' "$RUNNER_TEMP/factory-fleet-sources.json" >/dev/null; then
             go_args=(--worker "$WORKER" --rotation "${GITHUB_RUN_ID:-0}"
               --exclusions-file "$exclusions_file")
@@ -603,8 +626,9 @@ jobs:
           runtime_model="$(jq -er '.runtime_model' <<< "$selection")"
           # Known self-review cannot count at the merge gate, so never spend a
           # review session on it: re-pick across the eligible fleet, treating
-          # each head-author pick as attempted. Operator pins are respected.
-          if [[ "$REQUESTED_MODEL" == auto ]]; then
+          # each head-author pick as attempted. Operator pins are respected,
+          # but a fallback from an unavailable pin is not a pin.
+          if [[ "$effective_model" == auto ]]; then
             avoided=()
             while why="$(python3 .github/scripts/factory_review_model_guard.py check \
                 --authors-json "${FACTORY_REVIEW_AUTHORS:-[]}" --model "$runtime_model")"; do
@@ -645,7 +669,7 @@ jobs:
               runtime_model="$(jq -er '.runtime_model' <<< "$selection")"
             done
           fi
-          if [[ "$REQUESTED_MODEL" != auto && "$runtime_model" != "$REQUESTED_MODEL" ]]; then
+          if [[ "$effective_model" != auto && "$runtime_model" != "$REQUESTED_MODEL" ]]; then
             echo '::error::Selected model differs from explicit requested model'
             exit 1
           fi
@@ -669,8 +693,22 @@ jobs:
             echo "display=$selected_source · $model"
             echo "branch_suffix=$LANE_BRANCH_SUFFIX"
             echo "reason=selected-from-live-runtime-catalog"
+            echo "requested_model=$REQUESTED_MODEL"
+            echo "used_model=$runtime_model"
           } >> "$GITHUB_OUTPUT"
           echo "Factory $WORKER discovered $runtime_model; real work verifies callability"
+          fallback="$(python3 .github/scripts/factory_pinned_model.py note \
+            --requested-model "$REQUESTED_MODEL" --used-model "$runtime_model" \
+            --pin-reason "$pin_reason" \
+            --run-url "${GITHUB_SERVER_URL:-https://github.com}/${GITHUB_REPOSITORY:-}/actions/runs/${GITHUB_RUN_ID:-0}")"
+          model_note="$(jq -r '.note' <<< "$fallback")"
+          echo "model_note=$model_note" >> "$GITHUB_OUTPUT"
+          if [[ -n "$model_note" ]]; then
+            echo "::notice::$model_note"
+            printf '### Model fallback\n\nRequested: `%s`\n\nUsed: `%s`\n\n%s\n' \
+              "$REQUESTED_MODEL" "$runtime_model" "$model_note" >> "$GITHUB_STEP_SUMMARY"
+            jq -r '.comment' <<< "$fallback" > "$RUNNER_TEMP/factory-model-fallback.md"
+          fi
 
       # Crouton's OpenCode Zen free route can reject anonymous runner requests.
       # Do not change the anonymous DeepSeek comparison or other model lanes.
@@ -853,6 +891,20 @@ jobs:
           # forge the trusted wrapper's source classification.
           printf '%s\n' "$worker_status" > "$RUNNER_TEMP/factory-worker-status"
           exit "$worker_status"
+
+      # Posted after the session so a comment failure can never gate the work.
+      - name: Note the pinned model fallback on the target
+        if: always() && steps.executor.outputs.model_note != ''
+        continue-on-error: true
+        shell: bash
+        env:
+          FACTORY_ASSIGNMENT: ${{ inputs.assignment }}
+        run: |
+          set -Eeuo pipefail
+          target="$(jq -r '.number // empty' <<< "${FACTORY_ASSIGNMENT:-null}")"
+          [[ "$target" =~ ^[1-9][0-9]*$ && -s "$RUNNER_TEMP/factory-model-fallback.md" ]] || exit 0
+          gh api "repos/${GITHUB_REPOSITORY}/issues/${target}/comments" \
+            -F body=@"$RUNNER_TEMP/factory-model-fallback.md" >/dev/null
 
       - name: Report OmniRoute routing summary
         if: always() && vars.FACTORY_OMNIROUTE_ENABLED == 'on' && steps.lane.outputs.configured == 'true' && (steps.executor.outputs.source || steps.lane.outputs.source) == 'omniroute-free'

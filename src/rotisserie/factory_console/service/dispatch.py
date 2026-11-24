@@ -22,11 +22,12 @@ class Request:
     slot: int | None = None
     action: str = "advance"
     take_over: bool = False
+    exact: bool = False
 
     def inputs(self) -> dict[str, str]:
         values = {
             "provider": self.provider.key,
-            "model": self.model,
+            "model": f"exact:{self.model}" if self.exact else self.model,
             "mode": "smoke",
             "action": self.action,
             "force_slot": "true" if self.force else "false",
@@ -46,6 +47,7 @@ class Request:
             "slot": self.slot,
             "action": self.action,
             "take_over": self.take_over,
+            "exact": self.exact,
         }
 
 
