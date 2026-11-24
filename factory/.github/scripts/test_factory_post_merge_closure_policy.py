@@ -4,6 +4,9 @@ from __future__ import annotations
 
 import unittest
 from datetime import datetime, timezone
+from unittest.mock import patch
+
+from factory_adopter import reserved_issues
 
 import factory_post_merge_closure_github as github
 from factory_post_merge_closure import close_merged_pr_issue
@@ -133,7 +136,13 @@ class FactoryPostMergeClosurePolicyTests(NoPersonReopenMixin, unittest.TestCase)
 
     def test_protected_issues_are_never_closed(self) -> None:
         """The adopter's reserved issues stay outside closure authority."""
-        self.assertEqual(PROTECTED_ISSUES, frozenset({9991, 9992}))
+        import factory_post_merge_closure as mod
+
+        self.assertEqual(PROTECTED_ISSUES, reserved_issues())
+        info = {"branch": "factory/58-2167-x", "body": "Closes #2167.", "state": "MERGED"}
+        with patch.object(mod, "PROTECTED_ISSUES", frozenset({2167})):
+            with patch.object(mod.github, "_pr_info", return_value=info):
+                self.assertEqual(close_merged_pr_issue(2140, dry_run=True), "protected-issue")
 
     def test_closure_comment_embeds_canonical_marker(self) -> None:
         """The marker identifies both the PR and the issue durably."""
