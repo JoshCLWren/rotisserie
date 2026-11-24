@@ -80,32 +80,6 @@ async def _export_view(conn: Any, repo: str) -> dict[str, Any]:
         repo, list(EVENT_TYPES),
     )
     view: dict[str, Any] = project_events([dict(row) for row in rows])
-    # One-time conversion of verified old comment observations. This compact
-    # bootstrap is read-only and NEVER feeds model retry/accounting. Live
-    # event observations always win when newer.
-    legacy = await conn.fetch(
-        """SELECT scope,checkpoint FROM public.factory_reconciliation_cursor
-           WHERE repo=$1 AND scope LIKE 'registry-observation-v1:%'""", repo,
-    )
-    for row in legacy:
-        scope = str(row["scope"])
-        parts = scope.split(":")
-        if len(parts) != 4 or parts[0] != "registry-observation-v1" or parts[2] != "worker":
-            continue
-        kind, worker = parts[1], parts[3]
-        if kind not in {"heartbeat", "attempt"} or not worker.isdecimal():
-            continue
-        record = _detail(row["checkpoint"])
-        updated = str(record.get("updated") or "")
-        if str(record.get("worker") or "") != worker or not updated:
-            continue
-        try:
-            datetime.fromisoformat(updated.replace("Z", "+00:00"))
-        except ValueError:
-            continue
-        target = view["attempts"] if kind == "attempt" else view["heartbeats"]
-        if updated > target.get(worker, {}).get("updated", ""):
-            target[worker] = {str(k): str(v) for k, v in record.items()}
     view["health"] = await _export_candidate_health(conn, repo)
     return view
 
@@ -124,22 +98,8 @@ async def _run_workers(conn: Any, repo: str, ids: list[str]) -> dict[str, str]:
            ORDER BY detail->>'run_id', id DESC""",
         repo, ids,
     )
-    found = {str(row["run_id"]): str(row["worker"])
-             for row in rows if str(row["worker"]).isdecimal()}
-    unresolved = [run for run in ids if run not in found]
-    if unresolved:
-        legacy = await conn.fetch(
-            """SELECT scope,checkpoint FROM public.factory_reconciliation_cursor
-               WHERE repo=$1 AND scope LIKE 'registry-observation-v1:%'
-                 AND checkpoint::jsonb->>'run'=ANY($2::text[])""",
-            repo, unresolved,
-        )
-        for row in legacy:
-            record = _detail(row["checkpoint"])
-            worker, run = str(record.get("worker") or ""), str(record.get("run") or "")
-            if worker.isdecimal() and run in unresolved and str(row["scope"]).endswith(":worker:" + worker):
-                found[run] = worker
-    return found
+    return {str(row["run_id"]): str(row["worker"])
+            for row in rows if str(row["worker"]).isdecimal()}
 
 def run_workers(repo: str, ids: list[str]) -> dict[str, str]:
     return _run(_run_workers, repo, ids) if ids else {}
