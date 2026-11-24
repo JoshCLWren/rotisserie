@@ -493,7 +493,7 @@ jobs:
               selection="$fallback"
               return 0
             fi
-            printf 'provider_failure\t%s; no eligible fleet candidate\n' "$reason" > "$discovery_outcome"
+            printf 'no_capacity\t%s; no eligible fleet candidate\n' "$reason" > "$discovery_outcome"
             exit 1
           }
           selection=''
@@ -618,8 +618,15 @@ jobs:
                   --rotation "${GITHUB_RUN_ID:-0}" \
                   --exclusions-file "$exclusions_file" \
                   "${repick[@]}" "${avoided[@]}")"; then
-                printf 'model_unavailable\tNo eligible reviewer model outside the PR authors\n' > "$discovery_outcome"
-                echo '::error::Every available model authored this PR; the review stays queued for another model'
+                # Each avoided pick was an eligible model outside exclusions that
+                # authored the PR; failover exhaustion means none other remains.
+                picked=$(( ${#avoided[@]} / 2 ))
+                scope="$picked"
+                if (( ${#avoided[@]} > 32 )); then scope="at least $picked"; fi
+                authors="$(jq 'length' <<< "${FACTORY_REVIEW_AUTHORS:-[]}" 2>/dev/null || echo unknown)"
+                reason="No reviewer model: ${scope} model(s) outside exclusions are eligible and all ${picked} authored this PR (${authors} author model(s) recorded); the review waits for a non-author model"
+                printf 'no_capacity\t%s\n' "$reason" > "$discovery_outcome"
+                echo "::error::$reason"
                 exit 1
               fi
               selected_source="$(jq -r '.source // empty' <<< "$selection")"

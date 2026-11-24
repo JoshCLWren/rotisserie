@@ -130,7 +130,7 @@ def test_discovery_failures_publish_normalized_outcomes() -> None:
     assert "factory-discovery-outcome" in selector
     assert "control_plane_failure" in selector
     fallback = selector.split("fleet_fallback() {", 1)[1].split("\n          }\n", 1)[0]
-    assert "provider_failure" in fallback
+    assert "no_capacity" in fallback
     assert "no eligible fleet candidate" in fallback
 
 

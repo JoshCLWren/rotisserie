@@ -100,11 +100,20 @@ def cmd_report(context: Context, arguments: argparse.Namespace) -> Outcome:
 
     # What is broken?
     failed = [run for run in workers if string(run, "conclusion") == "failure"][:15]
-    problems = _failure_reasons(github, failed)
+    capacity, problems = split_capacity(_failure_reasons(github, failed))
     console.line()
     console.line(console.bold("Where it is breaking"))
     if failed:
         console.note(f"from the {len(failed)} most recent failed worker runs")
+    for (reason, provider), count in capacity.most_common(5):
+        console.line(
+            f"  {console.yellow(console.warn_mark)} {count}×  {reason}"
+            + (f"  {console.dim('(' + provider + ')')}" if provider else "")
+        )
+    data["no_capacity"] = [
+        {"reason": reason, "provider": provider, "count": count}
+        for (reason, provider), count in capacity.most_common(20)
+    ]
     if problems:
         for (reason, provider), count in problems.most_common(8):
             console.line(
@@ -186,8 +195,21 @@ def _failure_reasons(github: GitHub, runs: list[Obj]) -> Counter[tuple[str, str]
     return counter
 
 
+NO_CAPACITY = "no capacity: "
+
+
+def split_capacity(
+    found: Counter[tuple[str, str]],
+) -> tuple[Counter[tuple[str, str]], Counter[tuple[str, str]]]:
+    """Capacity exits apart from real failures: (no capacity, failures)."""
+    capacity = Counter({key: n for key, n in found.items() if key[0].startswith(NO_CAPACITY)})
+    return capacity, found - capacity
+
+
 def plain_failure(message: str) -> str:
     """Turn the factory's outcome sentence into a short, plain reason."""
+    if message.startswith("No capacity: "):
+        return NO_CAPACITY + message.removeprefix("No capacity: ")[:120]
     match = re.search(r"worker failed: ([a-z_0-9]+)", message)
     if match is None:
         return message[:120]

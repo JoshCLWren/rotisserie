@@ -29,11 +29,12 @@ from rotisserie.factory_console.tracker import (
     Stage,
     Tracker,
     View,
+    WorkerOutcome,
     read_dispatcher,
     read_worker,
     session_started,
 )
-from rotisserie.factory_console.ui import duration, local_time, since
+from rotisserie.factory_console.ui import Console, duration, local_time, since
 from rotisserie.factory_console.work import open_items
 
 
@@ -240,6 +241,8 @@ def _watch_worker(
         "message": outcome.message,
         "pr": outcome.pr,
     }
+    if outcome.result is Result.NO_CAPACITY:
+        return show_no_capacity(console, outcome, data)
     if started_at is None and session_started(jobs) is None:
         console.fail("The model never started", "the claim was released")
         console.line(f"Reason: {outcome.message}")
@@ -263,6 +266,13 @@ def _watch_worker(
         data["pull_request"] = _show_pull_request(context, pr)
     console.link("Worker", str(data["worker_url"]))
     return Outcome(outcome.result, EXIT_CODES[outcome.result], data)
+
+
+def show_no_capacity(console: Console, outcome: WorkerOutcome, data: dict[str, object]) -> Outcome:
+    console.warn("No capacity: no eligible model was free; the item stays queued")
+    console.line(f"Reason: {outcome.message.removeprefix('No capacity: ')}")
+    console.link("Worker", str(data["worker_url"]))
+    return Outcome(Result.NO_CAPACITY, EXIT_CODES[Result.NO_CAPACITY], data)
 
 
 def _show_pull_request(context: Context, number: int) -> dict[str, object]:

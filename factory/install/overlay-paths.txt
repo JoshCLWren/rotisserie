@@ -6,6 +6,8 @@
 .github/actions/factory-syntax/
 .github/factory-state-schema.sql
 .github/scripts/classify-fixed-model-run.py
+.github/scripts/classify_fixed_model_patterns.py
+.github/scripts/classify_fixed_model_testing.py
 .github/scripts/factory-canonical-merge-route.sh
 .github/scripts/factory-dispatch-production-deploy.sh
 .github/scripts/factory-expected-workers.cjs
@@ -129,6 +131,8 @@
 .github/scripts/provision-worker-app.cjs
 .github/scripts/prune-oldest-vcr-image.sh
 .github/scripts/stale_pr_decay.py
+.github/scripts/test_classify_fixed_model_run.py
+.github/scripts/test_classify_fixed_model_run_provider.py
 .github/scripts/test_factory_post_merge_closure_acceptance.py
 .github/scripts/test_factory_post_merge_closure_dependencies.py
 .github/scripts/test_factory_post_merge_closure_policy.py
