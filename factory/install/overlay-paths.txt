@@ -42,6 +42,7 @@
 .github/scripts/factory_discovery.py
 .github/scripts/factory_dispatch_credential_filter.py
 .github/scripts/factory_dynamic_outcome.py
+.github/scripts/factory_explain_report.py
 .github/scripts/factory_external_review.py
 .github/scripts/factory_fleet_console.cjs
 .github/scripts/factory_fleet_style.py
@@ -74,6 +75,7 @@
 .github/scripts/factory_post_merge_closure_github.py
 .github/scripts/factory_post_merge_closure_policy.py
 .github/scripts/factory_post_merge_closure_testing.py
+.github/scripts/factory_pinned_model.py
 .github/scripts/factory_provider_candidates.py
 .github/scripts/factory_provider_registry.py
 .github/scripts/factory_published_model_catalog.py

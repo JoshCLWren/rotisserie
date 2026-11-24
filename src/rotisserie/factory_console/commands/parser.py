@@ -65,6 +65,11 @@ def add_parser(
     )
     run.add_argument("--target", help="work on issue:N or pr:N instead of the next task")
     run.add_argument(
+        "--exact",
+        action="store_true",
+        help="fail if MODEL is unavailable instead of using another model from the provider",
+    )
+    run.add_argument(
         "--action",
         choices=ACTIONS,
         default="advance",

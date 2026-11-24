@@ -23,6 +23,7 @@ from factory_capacity_policy import (
 )
 from factory_work_policy import (BLOCKED_LABELS, FACTORY_NO_DIFF_RETRY_LIMIT, FACTORY_NO_DIFF_RETRY_RESET_SECONDS, FACTORY_PR_WIP_LIMIT, FACTORY_REVIEW_BACKLOG_LIMIT, FIXED_LEASE_TTL_SECONDS, LOCAL_LEASE_TTL_SECONDS, FIXED_OWNER_RE, NoDiffAttempt, NON_EXECUTABLE_ISSUES, OWNER_RE, REQUIRED_CHECK_FAILURE_STATES, STAGE_LABELS, STAGE_PRECEDENCE, Candidate, build_candidates, comment_is_trusted, completion_action_for, eligibility, explain_issue_report, provenance_lane, env_positive_int, factory_pr_wip_count, factory_review_backlog_count, is_manual_only, item_is_unowned, issue_bypasses_wip_limit, issue_explicitly_closed_by_pr, labels_of, lease_is_stale, linked_issue_from_branch, linked_issue_from_pr, order_candidates_for_worker, owner_of, parse_no_diff_attempts_from_comments, plan_distinct_assignments, pr_suppresses_issue_candidate, stage_of)
 from factory_jev_shadow import apply_completion_ranking, apply_jev_ranking
+from factory_explain_report import render_explain_report
 from stale_pr_decay import StalePRGuard, list_factory_prs
 from factory_review_policy import recorded_pr_contributors, trusted_comment_bodies
 from factory_quota_pause import describe as describe_quota_pause, is_paused as quota_pause_for
@@ -2275,26 +2276,6 @@ def explain_issue(
     )
 
 
-def render_explain_report(report: dict[str, Any]) -> str:
-    """Render an ``explain_issue`` report as operator-readable plain text.
-
-    Args:
-        report: The report returned by :func:`explain_issue`.
-
-    Returns:
-        Human-readable lines naming the verdict, each reason, and each gate.
-    """
-    verdict = 'eligible' if report['eligible'] else 'not eligible'
-    lines = [f"#{report['issue']}: {verdict}"]
-    lines.extend(f"  - {reason}" for reason in report['reasons'])
-    prs = report.get('open_canonical_prs') or []
-    lines.append(f"  open canonical PRs: {', '.join(f'#{n}' for n in prs) if prs else 'none'}")
-    lines.append(f"  labels: {', '.join(report['labels']) or 'none'}")
-    for name, value in report.get('dynamic_gates', {}).items():
-        lines.append(f"  gate {name}: {value}")
-    return '\n'.join(lines)
-
-
 def check_stale_prs(dry_run: bool = False) -> dict[str, Any]:
     """Report stale open PRs for recovery without discarding their work.
 
@@ -2489,7 +2470,9 @@ def dispatch_next(
     health history, configured capacity, queue and review limits, cooldowns,
     budgets, pauses) never refuses it, and if every regular worker identity is
     busy an extra operator identity is used. Force never takes an item another
-    worker holds (status ``busy``) and never switches provider or model.
+    worker holds (status ``busy``) and never switches provider. An ``exact:``
+    model prefix makes the pin exact-or-nothing; otherwise an unavailable pinned
+    model falls back inside the same provider at run time.
     """
     from factory_completion_controller import (
         capacity_report, durable_factory_state, load_manifest_candidates,
@@ -2499,8 +2482,10 @@ def dispatch_next(
     source = 'opencode-free' if provider == 'opencode-go' else provider
     if source not in sources():
         raise ValueError(f'Unsupported factory provider: {provider}')
+    from factory_manual_model import validate_model_syntax
+    from factory_pinned_model import split_request
+    model, exact = split_request(model)
     if model != 'auto':
-        from factory_manual_model import validate_model_syntax
         validate_model_syntax(source, model)
     if slot_index is not None and not force_slot:
         raise ValueError('An explicit slot requires --force-slot')
@@ -2591,9 +2576,9 @@ def dispatch_next(
             run_gh([
                 'workflow', 'run', 'free-model-factory-entry.yml', '--repo', REPO,
                 '--ref', 'main', '-f', f'worker={worker}',
-                '-f', 'assignment=' + json.dumps(assignment_context(candidate, worker)),
-                '-f', f'model={model}',
-                '-f', f'provider={source}',
+                '-f', 'assignment=' + json.dumps(
+                    assignment_context(candidate, worker) | ({'exact_model': True} if exact else {})),
+                '-f', f'model={model}', '-f', f'provider={source}',
             ])
         except RuntimeError:
             # An accepted but timed-out workflow_dispatch may already exist.

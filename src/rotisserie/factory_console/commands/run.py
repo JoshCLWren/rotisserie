@@ -51,6 +51,8 @@ def cmd_run(context: Context, arguments: argparse.Namespace) -> Outcome:
     else:
         model = "auto"
     runtime.validate_model(provider, model)
+    if getattr(arguments, "exact", False) and model == "auto":
+        raise UsageError("--exact needs an exact MODEL, not auto.")
     request = Request(
         provider,
         model,
@@ -59,6 +61,7 @@ def cmd_run(context: Context, arguments: argparse.Namespace) -> Outcome:
         arguments.slot,
         arguments.action,
         arguments.take_over,
+        getattr(arguments, "exact", False),
     )
     # An explicit provider and model is a complete request: no further questions.
     if context.interactive and not explicit:
