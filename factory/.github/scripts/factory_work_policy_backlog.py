@@ -11,6 +11,7 @@ from factory_work_policy_base import (
     pr_is_conflicted,
     stage_of,
 )
+from factory_work_policy_priority import OVERRIDE_LABEL
 
 
 def issue_bypasses_wip_limit(
@@ -28,6 +29,8 @@ def issue_bypasses_wip_limit(
     opening new work once the review backlog is saturated.
     """
     labels = labels_of(issue)
+    if OVERRIDE_LABEL in labels:
+        return True
     if review_backlog_saturated:
         return 'main-breakage' in labels
     return (

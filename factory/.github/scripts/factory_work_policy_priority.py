@@ -6,6 +6,9 @@ from datetime import datetime
 
 from factory_work_policy_base import _settings
 
+# Set on work the repository owner picked (an accepted claim): it goes first.
+OVERRIDE_LABEL = 'factory:override'
+
 INFRA_LABELS = {'infrastructure', 'e2e-infrastructure', 'policy-change', 'docs', 'documentation', 'quality-control'}
 
 # Work categories in default pick-up order; index == historical lane number.
@@ -28,10 +31,11 @@ class Candidate:
     conflicted: bool = False
     head_contributors: frozenset[str] = frozenset()
     is_fork: bool = False
+    override: bool = False
 
-    def sort_key(self) -> tuple[int, int, float, int]:
-        """Return the deterministic queue ordering key (oldest work first)."""
-        return (configured_lane_rank(self.lane), -self.priority,
+    def sort_key(self) -> tuple[int, int, int, float, int]:
+        """Return the deterministic queue ordering key: owner picks, then oldest work first."""
+        return (0 if self.override else 1, configured_lane_rank(self.lane), -self.priority,
                 parse_time(self.created_at), self.number)
 
 
