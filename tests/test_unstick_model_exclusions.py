@@ -206,3 +206,21 @@ def test_unstick_does_not_repeat_a_model_that_just_missed_on_the_item() -> None:
     assert isinstance(exhausted, Assignment)
     assert exhausted.model == "opencode-go/a"
     assert "every offered model already missed on it recently" in exhausted.why
+
+
+def test_a_review_skips_the_model_whose_empty_verdict_the_factory_cleared(
+    fake: FakeGitHub, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from rotisserie.factory_console import runtime
+
+    unstick_routes(fake, FULL_BACKLOG)
+    fake.routes["contents/factory-stats.json"] = snapshot()
+    authored_by(monkeypatch, 301)
+    heal = runtime.module("factory_self_heal_rules").comment_body(
+        kind="empty-verdict", pr=301, head="b" * 40, ref="7", text="Moved back.", avoid=BEST
+    )
+    record = {"id": 9, "user": {"login": "github-actions[bot]", "type": "Bot"}, "body": heal}
+    fake.routes = {r"issues/301/comments": [record], **fake.routes}
+    _, found, _ = plan(fake)
+    models = {item["task"]["target"]: item["model"] for item in found["assignments"]}
+    assert models["pr:301"] == NEXT
