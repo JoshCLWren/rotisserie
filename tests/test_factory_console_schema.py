@@ -208,3 +208,13 @@ def test_workflows_publish_the_status_and_offer_the_apply_mode() -> None:
     assert "schema-apply]" in caller
     overlay = (ROOT / "factory/install/overlay-paths.txt").read_text().split()
     assert ".github/scripts/factory_turso_schema.py" in overlay
+
+
+def test_an_apply_run_without_a_status_reports_its_error(monkeypatch: pytest.MonkeyPatch) -> None:
+    def fake_run(github, clock, workflow, inputs, **kwargs):  # type: ignore[no-untyped-def]
+        data: dict[str, object] = {"result": "usage", "error": "the factory store is required"}
+        return bridge.BridgeRun(workflow, 8, "https://example.invalid/run/8", "failure", data)
+
+    monkeypatch.setattr(bridge, "run", fake_run)
+    with pytest.raises(bridge.BridgeError, match="the factory store is required"):
+        schema.apply_via_github(GitHub("acme/widgets"), None)  # type: ignore[arg-type]

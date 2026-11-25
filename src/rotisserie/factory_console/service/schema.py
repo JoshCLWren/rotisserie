@@ -100,6 +100,11 @@ def apply_via_github(
         timeout=bridge.CLAIM_TIMEOUT,
         started=started,
     )
+    if "objects" not in result.data:
+        reason = result.data.get("error") or result.data.get("reason")
+        raise bridge.BridgeError(
+            str(reason or "the apply run published no schema status"), url=result.url
+        )
     return {**result.data, "source": "label claim workflow", "bridge": result.summary()}
 
 
