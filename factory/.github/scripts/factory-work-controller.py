@@ -228,7 +228,7 @@ def replace_factory_labels(
             updated = last_github_update_epoch(target, now_epoch=checked_at)
             if updated is None or updated > inactive_before_epoch:
                 return False
-        if related_owner_target is not None:
+        if related_owner_target is not None and inactive_before_epoch is not None:
             # An issue and its canonical PR are one active local repair.
             # Progress on either side must protect the paired owner lease.
             related = target_json(related_owner_target)
