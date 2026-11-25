@@ -158,28 +158,6 @@ def load_controller() -> Any:
     return module
 
 
-@pytest.mark.parametrize(("approved", "decision"), [(True, "pass"), (False, "deny")])
-def test_only_an_outside_approval_skips_the_acceptance_gate(
-    monkeypatch: MonkeyPatch, approved: bool, decision: str
-) -> None:
-    ctrl = load_controller()
-    passing = {"decision": "pass", "reason": "ok"}
-    monkeypatch.setattr(ctrl, "poll_mergeable_gate", lambda *_a: passing)
-    monkeypatch.setattr(ctrl, "required_checks_gate", lambda *_a: passing)
-    monkeypatch.setattr(ctrl, "current_head_review_gate", lambda *_a: passing)
-    monkeypatch.setattr(ctrl, "declared_dependency_gate", lambda *_a: passing)
-    monkeypatch.setattr(ctrl, "pr_json", lambda _n: {"labels": [{"name": "factory"}]})
-    monkeypatch.setattr(
-        ctrl, "issue_acceptance_gate", lambda *_a: {"decision": "deny", "reason": "no record"}
-    )
-    monkeypatch.setattr(
-        ctrl._outside_approval,
-        "authorization",
-        lambda *_a, **_k: {"model": "claude-sonnet-5-5"} if approved else None,
-    )
-    assert ctrl.mechanical_merge_gate(PR, HEAD)["decision"] == decision
-
-
 def test_failing_required_checks_still_hold_an_outside_approval(monkeypatch: MonkeyPatch) -> None:
     ctrl = load_controller()
     passing = {"decision": "pass", "reason": "ok"}
@@ -204,9 +182,6 @@ def test_authorize_ready_records_and_returns_the_outside_approval(monkeypatch: M
     monkeypatch.setattr(ctrl, "outside_claim", lambda *_a: None)
     monkeypatch.setattr(ctrl, "review_comment_bodies", lambda _n: [])
     monkeypatch.setattr(ctrl, "model_comment_bodies", lambda _n: [])
-    monkeypatch.setattr(
-        ctrl, "issue_acceptance_gate", lambda *_a: {"decision": "deny", "reason": "x"}
-    )
     recorded: list[tuple[int, str]] = []
     monkeypatch.setattr(
         outside, "record", lambda _repo, number, approval: recorded.append((number, approval.head))

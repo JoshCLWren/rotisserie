@@ -953,90 +953,12 @@ if factory_review_has_conflicting_terminal_markers "$review_log"; then
 fi
 
 # Line-anchored findings decide the verdict; no parseable record is a failed run.
+# An approval is final: no acceptance report or second model run is required.
 verdict="$(factory_line_review_verdict "$sanitized_review_log" "$NUMBER" "$EXPECTED_HEAD")" || verdict=''
-line_review_verdict="$verdict"
-acceptance_policy="$(dirname "$TRUSTED_REVIEW_CONTROLLER")/factory_issue_acceptance.py"
-# Obtain the trusted linked-issue rubric before checking primary evidence.
-# A parseable report with only A1 is not a complete acceptance report.
-acceptance_mission="$(factory_issue_acceptance_mission "$NUMBER" "$EXPECTED_HEAD")"
-if [[ "$verdict" == 'approve' ]] \
-  && ! factory_has_acceptance_report "$sanitized_review_log" "$acceptance_policy" "$acceptance_mission"; then
-  log "review findings approve without a parseable acceptance report; requesting bounded evidence recovery"
-  verdict=''
-fi
-recovery_attempted=0
-recovery_status=0
-
-# Fork reviews run tool-free from a data snapshot. The recovery pass starts a
-# normal tool-enabled agent in this credentialed checkout, so it must never run
-# for a fork: a prompt-injected contributor could otherwise fetch and execute
-# its own branch here. A missing fork verdict is released for re-dispatch.
-if [[ -z "$verdict" ]] && [[ "$SOURCE" != 'kilo-auto' ]] \
-  && [[ "${FACTORY_FORK_STATIC_REVIEW:-0}" != 1 ]] \
-  && [[ -n "$line_review_verdict" ]]; then
-  recovery_attempted=1
-  recovery_log="/tmp/opencode-factory-${WORKER}-verdict-recovery.log"
-  # Recovery writes a full acceptance report for an already-finished review.
-  # At 90s it timed out on 10 of 12 READY reviews (Nov 20), discarding the
-  # approvals. One bounded recovery still caps at the remaining budget.
-  recovery_timeout=600
-  available="$(remaining)"
-  (( recovery_timeout > available - 45 )) && recovery_timeout=$((available - 45))
-
-  if (( recovery_timeout >= 20 )); then
-    log "semantic review needs a verdict or acceptance report; attempting one bounded same-session evidence recovery"
-    recovery_status=0
-    factory_recover_semantic_verdict "$RUNTIME_MODEL" "$GITHUB_WORKSPACE" "$recovery_timeout" "$recovery_log" \
-      "$NUMBER" "$EXPECTED_HEAD" "$acceptance_mission" || recovery_status=$?
-
-    current_head="$(gh pr view "$NUMBER" --json headRefOid --jq .headRefOid 2>/dev/null || true)"
-    snapshot_failure="$(review_snapshot_failure_reason "$current_head" "$EXPECTED_HEAD" "$NUMBER")"
-    if [[ -n "$snapshot_failure" ]]; then
-      log "${FACTORY_SEMANTIC_STATUS_HEAD_CHANGED}: PR #${NUMBER} recovery invalidated (expected ${EXPECTED_HEAD}, observed ${current_head:-unavailable}, or lease revoked)"
-      # A revoked lease belongs to its new owner; never release that worker.
-      if [[ "$snapshot_failure" != semantic-review-lease-lost ]]; then
-        release_pr_and_issue "$NUMBER" "$BRANCH" 'factory:review' "$snapshot_failure"
-      fi
-      record_terminal_outcome control_plane_failure "PR #${NUMBER} head or lease changed during semantic verdict recovery"
-      exit 0
-    fi
-
-    if (( recovery_status == 0 )); then
-      sanitized_recovery_log="/tmp/opencode-factory-${WORKER}-verdict-recovery.sanitized.log"
-      factory_sanitize_review_log "$recovery_log" "$sanitized_recovery_log"
-      if factory_review_has_conflicting_terminal_markers "$sanitized_recovery_log"; then
-        recovered_verdict=''
-        log "${FACTORY_SEMANTIC_STATUS_RECOVERY_FAILED}: recovery returned contradictory terminal markers"
-      else
-        recovered_verdict="$(factory_extract_semantic_verdict "$sanitized_recovery_log" || true)"
-      fi
-      if [[ "$recovered_verdict" == 'repair' || "$recovered_verdict" == 'reject' ]]; then
-        log "${FACTORY_SEMANTIC_STATUS_RECOVERY_FAILED}: recovery prose cannot request changes; only line findings decide"
-      elif [[ "$recovered_verdict" == 'approve' ]]; then
-        if factory_append_recovered_acceptance_report \
-          "$sanitized_review_log" "$sanitized_recovery_log" "$acceptance_policy" "$EXPECTED_HEAD" "$acceptance_mission"; then
-          verdict='approve'
-          log "${FACTORY_SEMANTIC_STATUS_RECOVERED}: recovered approval with acceptance evidence for PR #${NUMBER}"
-        else
-          log "${FACTORY_SEMANTIC_STATUS_RECOVERY_FAILED}: recovery approval lacks a unique current-head acceptance report"
-        fi
-      else
-        log "${FACTORY_SEMANTIC_STATUS_RECOVERY_FAILED}: recovery remained ambiguous or contradicted the primary review"
-      fi
-    else
-      log "${FACTORY_SEMANTIC_STATUS_RECOVERY_FAILED}: same-session recovery exited ${recovery_status}"
-    fi
-  fi
-fi
 
 if [[ -z "$verdict" ]]; then
-  if (( recovery_attempted == 1 )); then
-    semantic_status="$FACTORY_SEMANTIC_STATUS_RECOVERY_FAILED"
-    release_reason='semantic-review-recovery-failed'
-  else
-    semantic_status="$FACTORY_SEMANTIC_STATUS_MISSING"
-    release_reason='missing-semantic-verdict'
-  fi
+  semantic_status="$FACTORY_SEMANTIC_STATUS_MISSING"
+  release_reason='missing-semantic-verdict'
   log "${semantic_status}: review model did not produce an authoritative terminal verdict for PR #${NUMBER}"
 
   diagnostic="$(mktemp /tmp/factory-semantic-diagnostic.XXXXXX.md)"

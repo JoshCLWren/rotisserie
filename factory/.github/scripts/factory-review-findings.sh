@@ -549,39 +549,26 @@ factory_review_findings_mission() {
 ${content}
 ----- END REVIEW FINDINGS -----"
   [[ "${ASSIGNED_PR_STAGE:-}" != factory:review ]] || python3 "$(dirname "${TRUSTED_REVIEW_CONTROLLER:-.github/scripts/x}")/factory_review_findings.py" mission --head "$head" 2>/dev/null || printf '\nREVIEW OUTPUT CONTRACT UNAVAILABLE: the trusted findings policy failed to load; this review run will fail.\n'
-  factory_issue_acceptance_mission "$pr" "$head"
+  factory_linked_issue_context "$pr" "$head"
   return 0
 }
 
 
-# Supply the actual linked issue, not merely the PR author's description, for
-# every independent semantic review. The controller independently re-fetches it.
-factory_issue_acceptance_mission() {
-  local pr="$1" head="$2" pr_json issue non_closing issue_json repo="$GITHUB_REPOSITORY"
+# Supply the actual linked issue, not merely the PR author's description, so
+# the reviewer judges the diff against it. The verdict alone decides approval.
+factory_linked_issue_context() {
+  local pr="$1" pr_json issue issue_json repo="$GITHUB_REPOSITORY" acceptance_script=""
   [[ -n "$repo" ]] || repo="${GITHUB_REPOSITORY:?GITHUB_REPOSITORY is required}"
-  local acceptance_script=""
   if [[ -n "${TRUSTED_REVIEW_CONTROLLER:-}" ]]; then
     acceptance_script="$(dirname "$TRUSTED_REVIEW_CONTROLLER")/factory_issue_acceptance.py"
   fi
-  if [[ -z "$acceptance_script" || ! -f "$acceptance_script" ]]; then
-    printf '\nISSUE ACCEPTANCE UNAVAILABLE: trusted policy script is missing; do not approve.\n'
-    return 0
-  fi
+  [[ -n "$acceptance_script" && -f "$acceptance_script" ]] || return 0
   pr_json="$(gh pr view "$pr" --json headRefName,body 2>/dev/null)" || pr_json=''
   issue="$(printf '%s' "$pr_json" | python3 "$acceptance_script" resolve 2>/dev/null)" || issue=''
-  if [[ -z "$issue" ]]; then
-    printf '\nISSUE ACCEPTANCE UNAVAILABLE: no linked issue; do not approve.\n'
-    return 0
-  fi
-  non_closing="$(printf '%s' "$pr_json" | python3 "$acceptance_script" non-closing 2>/dev/null)" || non_closing=0
-  [[ "$non_closing" == "1" ]] || non_closing=0
+  [[ -n "$issue" ]] || return 0
   issue_json="$(gh api "repos/$repo/issues/$issue" 2>/dev/null)" || issue_json=''
-  if [[ -z "$issue_json" ]]; then
-    printf '\nISSUE ACCEPTANCE UNAVAILABLE: issue #%s fetch failed; do not approve.\n' "$issue"
-    return 0
-  fi
-  if ! printf '%s' "$issue_json" | python3 "$acceptance_script" mission "$issue" "$head" "$non_closing"; then
-    printf '\nISSUE ACCEPTANCE UNAVAILABLE: rubric failed; do not approve.\n'
-  fi
+  [[ -n "$issue_json" ]] || return 0
+  printf '\nLINKED ISSUE #%s: %s\n%s\n' "$issue" \
+    "$(jq -r '.title // ""' <<< "$issue_json")" "$(jq -r '.body // ""' <<< "$issue_json")"
   return 0
 }

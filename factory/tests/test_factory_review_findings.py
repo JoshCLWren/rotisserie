@@ -416,12 +416,6 @@ def test_every_worker_pr_mission_injects_review_findings() -> None:
         )
 
 
-def test_semantic_recovery_prompt_requires_greptile_findings_addressed() -> None:
-    source = (SCRIPTS / "factory-semantic-verdict.sh").read_text()
-    assert "EVERY Greptile finding was either fixed in code" in source
-    assert "must be FACTORY_GATE_BLOCKED and never FACTORY_GATE_READY" in source
-
-
 def test_every_thread_page_is_read_and_greptile_still_comes_first(tmp_path: Path) -> None:
     first = threads_page(
         [

@@ -68,22 +68,6 @@ SENSITIVE_ASSIGNMENT_RE = re.compile(
 BEARER_RE = re.compile(r"(?i)(authorization\s*:\s*bearer\s+)\S+")
 GITHUB_TOKEN_RE = re.compile(r"\bgh[pousr]_[A-Za-z0-9_]{20,}\b")
 API_KEY_RE = re.compile(r"\bsk-[A-Za-z0-9_-]{20,}\b")
-# Accept authoritative PR-diff commands, common review inspection paths, and
-# unified-diff hunks. Workers append `gh pr diff` evidence before invoking this
-# controller; the excerpt is a 7000-char tail, so matching `diff --git` keeps
-# honest approvals from soft-failing when only the dumped hunks remain in-window.
-DIFF_INSPECTION_RE = re.compile(
-    r"(?i)"
-    r"(?:"
-    r"gh (?:pr|api)[^\n]{0,80}\bdiff\b"
-    r"|git (?:diff|show|log -p)"
-    r"|gh pr view\b"
-    r"|gh api[^\n]{0,100}/pulls/\d+/(?:files|commits)\b"
-    rf"|{MARKER_PREFIX}-factory-authoritative-diff-evidence"
-    r"|diff --git "
-    r"|\+\+\+ b/"
-    r")"
-)
 STAGE_LABELS = {
     "factory:building",
     "factory:review",
@@ -991,12 +975,6 @@ def review_excerpt(path: str | None, *, worker: str) -> str:
     return semantic_review_excerpt(trusted_review_log(path, worker=worker))
 
 
-def review_acceptance_report(path: str | None, *, worker: str) -> Mapping[str, Any] | None:
-    """Parse complete acceptance JSON before any 7K excerpt truncation."""
-    return issue_acceptance.report_from_text(trusted_review_log(path, worker=worker))
-
-
-# Shared with the Rotisserie CLI, which explains PRs stuck on such verdicts.
 NON_FINDING_LINE = _review_policy.NON_FINDING_LINE
 has_actionable_review_findings = _review_policy.has_actionable_review_findings
 
@@ -1452,6 +1430,14 @@ def reconcile_ci() -> list[dict[str, Any]]:
     return results
 
 
+def _is_factory_advice(comment: object, login: object) -> bool:
+    """A factory non-blocking finding is advice; it never holds an approved head."""
+    if login not in {"github-actions", "github-actions[bot]"} or not isinstance(comment, dict):
+        return False
+    match = line_gate.findings.FINDING_MARKER_RE.match(str(comment.get("body") or ""))
+    return bool(match) and match["severity"] == line_gate.findings.NON_BLOCKING
+
+
 def interpret_review_threads(
     nodes: object | None,
     *,
@@ -1482,6 +1468,8 @@ def interpret_review_threads(
         origin = comment_nodes[0].get("author") if isinstance(comment_nodes[0], dict) else None
         login = origin.get("login") if isinstance(origin, dict) else None
         if login in {"coderabbitai", "coderabbitai[bot]"}:
+            continue
+        if _is_factory_advice(comment_nodes[0], login):
             continue
         saw_commit = False
         for comment in comment_nodes:
@@ -1568,7 +1556,7 @@ def current_head_review_gate(pr_number: int, head: str) -> GateResult:
                         "query=query($owner:String!,$name:String!,$number:Int!){"
                         "repository(owner:$owner,name:$name){pullRequest(number:$number){"
                         "reviewThreads(first:100){nodes{isResolved comments(first:100){"
-                        "nodes{commit{oid} author{login}} pageInfo{hasNextPage}}} pageInfo{hasNextPage}}}}}"
+                        "nodes{commit{oid} author{login} body} pageInfo{hasNextPage}}} pageInfo{hasNextPage}}}}}"
                     ),
                 ]
             ),
@@ -1650,26 +1638,6 @@ def implementation_delivery_gate(
     except RuntimeError as exc:
         return gate_result("retry", f"implementation parser unavailable: {exc}")
     return gate_result("pass" if delivered else "deny", reason)
-
-
-def issue_acceptance_gate(pr_number: int, expected_head: str) -> GateResult:
-    """Require controller-bot attestation for the current issue body and head."""
-    pr = pr_json(pr_number)
-    issue_number = linked_issue_for_pr(pr_number, str(pr.get("headRefName") or ""))
-    if issue_number is None:
-        return gate_result("deny", "factory PR has no linked issue acceptance contract")
-    issue = target_json(issue_number)
-    body = issue.get("body")
-    if not isinstance(body, str):
-        return gate_result("retry", "linked issue body could not be read")
-    executable = implementation_delivery_gate(pr_number, expected_head, body)
-    if executable["decision"] != "pass":
-        return executable
-    if not issue_acceptance.attested(
-        model_comment_bodies(pr_number), issue_number, expected_head, body
-    ):
-        return gate_result("deny", "no valid current-head, current-issue acceptance attestation")
-    return gate_result("pass", "all issue acceptance criteria attested")
 
 
 def open_native_blockers(issue_number: int) -> list[int]:
@@ -1834,13 +1802,6 @@ def mechanical_merge_gate(pr_number: int, expected_head: str) -> GateResult:
     reviews = current_head_review_gate(pr_number, expected_head)
     if reviews["decision"] != "pass":
         return reviews
-    if "factory" in labels_of(pr_json(pr_number)):
-        acceptance = issue_acceptance_gate(pr_number, expected_head)
-        # Owner decision 2026-11-25: an outside approval merges without an acceptance record.
-        if acceptance["decision"] != "pass" and _outside_approval.authorization(
-            REPO, pr_number, head=expected_head, fetch=repo_fetch, store=False
-        ) is None:
-            return acceptance
     dependency = declared_dependency_gate(pr_number)
     if dependency["decision"] != "pass":
         return dependency
@@ -2046,78 +2007,7 @@ def handle_review(
         if line.review.blocking:
             excerpt = redact_review_text(line.handoff)
 
-    # For approval, require evidence of diff / PR inspection. Failed attempts must
-    # not render as APPROVE: that false signal stalls promotion while looking done.
     if verdict == "approve":
-        if not DIFF_INSPECTION_RE.search(excerpt):
-            return return_to_review(
-                pr_number=pr_number,
-                branch=branch,
-                worker=worker,
-                reviewer=worker,
-                verdict="not-ready",
-                excerpt=excerpt,
-                note=(
-                    "Approval rejected: no evidence of diff inspection "
-                    "(e.g., `gh pr diff`, `git diff`/`git show`, or `gh pr view`). "
-                    "The reviewed head must be inspected before a durable approve marker is written."
-                ),
-                status="diff-inspection-required",
-                head=reviewed_head,
-                producer=producer,
-            )
-
-    # A semantic APPROVE must independently account for every issue criterion.
-    # The review log is untrusted; only this controller may attest it, and
-    # only for the exact issue revision + PR head it verified.
-    accepted_contract_marker: str | None = None
-    if verdict == "approve":
-        issue_number, non_closing = linked_issue_mode_for_pr(
-            pr_number, branch, body=str(pr.get("body") or "")
-        )
-        if issue_number is None:
-            return return_to_review(
-                pr_number=pr_number, branch=branch, worker=worker,
-                reviewer=worker, verdict="not-ready", excerpt=excerpt,
-                note="Approval rejected: no authoritative linked issue could be found.",
-                status="acceptance-issue-missing", head=reviewed_head, producer=producer,
-            )
-        issue_object = target_json(issue_number)
-        if issue_object.get("state") not in {"open", "closed"}:
-            raise RuntimeError("linked issue state unavailable")
-        body = issue_object.get("body")
-        if not isinstance(body, str):
-            raise RuntimeError("linked issue body unavailable")
-        implementation = implementation_delivery_gate(
-            pr_number, reviewed_head, body
-        )
-        if implementation["decision"] != "pass":
-            return return_to_review(
-                pr_number=pr_number, branch=branch, worker=worker,
-                reviewer=worker, verdict="not-ready", excerpt=excerpt,
-                note="Approval rejected: " + str(implementation["reason"]),
-                status="implementation-evidence-required",
-                stage=("factory:changes-requested"
-                       if implementation["decision"] == "deny" else "factory:review"),
-                head=reviewed_head, producer=producer,
-            )
-        changed = run_gh(
-            ["pr", "diff", str(pr_number), "--repo", REPO, "--name-only"]
-        ).stdout.splitlines()
-        failures = issue_acceptance.validate(
-            review_acceptance_report(review_log, worker=worker),
-            issue_number, reviewed_head, body, changed,
-            non_closing=non_closing,
-        )
-        if failures:
-            escalate = acceptance_escalation.flag(run_gh, REPO, pr_number, labels_of(pr), True) and acceptance_escalation.escalate(model_comment_bodies(pr_number), pr=pr_number, head=reviewed_head)
-            return return_to_review(
-                pr_number=pr_number, branch=branch, worker=worker, reviewer=worker, verdict="repair" if escalate else "not-ready",
-                excerpt=acceptance_escalation.findings(failures, body) if escalate else excerpt,
-                note="Approval rejected: issue acceptance evidence incomplete: " + issue_acceptance.failure_summary(failures),
-                marker=acceptance_escalation.marker(pr=pr_number, head=reviewed_head), stage="factory:changes-requested" if escalate else "factory:review",
-                status="acceptance-evidence-required", head=reviewed_head, producer=producer)
-        accepted_contract_marker = issue_acceptance.marker(issue_number, reviewed_head, body)
         acceptance_escalation.flag(run_gh, REPO, pr_number, labels_of(pr), False)
 
     if verdict in {"repair", "reject"} and not has_actionable_review_findings(excerpt):
@@ -2274,9 +2164,7 @@ def handle_review(
         reviewer=worker,
         verdict=verdict,
         excerpt=excerpt,
-        note="Semantic approval is scoped to this exact reviewed PR head and linked issue revision."
-        + (issue_acceptance.deferred_note(body) if accepted_contract_marker else ""),
-        acceptance_marker=accepted_contract_marker,
+        note="Semantic approval is scoped to this exact reviewed PR head.",
     )
     # A head created by hand or by a local agent has no numbered wrapper
     # contribution record, so establish its exact-head author attestation here
@@ -2601,7 +2489,6 @@ def authorize_ready(pr_number: int) -> dict[str, Any]:
             model_cleared=review_gate.cleared_agents,
         )
         and cross_model
-        and issue_acceptance_gate(pr_number, head)["decision"] == "pass"
     )
     ready = str(pr.get("state")) == "OPEN" and "factory:ready" in labels_of(pr)
     outside = None

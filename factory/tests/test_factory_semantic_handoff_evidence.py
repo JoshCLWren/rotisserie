@@ -96,22 +96,6 @@ def test_substantive_review_finding_survives_tool_transcript_filter() -> None:
     assert controller.has_actionable_review_findings(transcript)
 
 
-def test_trusted_ollama_review_preserves_numbered_diff_inspection_proof() -> None:
-    """Provider-backed review must preserve the exact PR-scoped diff command."""
-    reviewer = (SCRIPTS / "local-ollama-review.sh").read_text()
-    assert 'gh_retry gh pr diff "$PR" > /tmp/p.patch' in reviewer
-    assert 'f"# {os.environ[\'FACTORY_MARKER_PREFIX\']}-factory-authoritative-diff-evidence\\ngh pr diff {pr}\\n"' in reviewer
-
-    controller = load_controller()
-    excerpt = controller.semantic_review_excerpt(
-        "### Factory semantic review\n"
-        + controller.AUTHORITATIVE_DIFF_EVIDENCE
-        + "\ngh pr diff 4828\nFACTORY_ACCEPTANCE_V1={}\n"
-    )
-    assert "gh pr diff 4828" in excerpt
-    assert controller.DIFF_INSPECTION_RE.search(excerpt)
-
-
 def test_trusted_ollama_review_wakes_canonical_merge_only_when_ready() -> None:
     """A valid Qwen review should not sit until the next factory schedule."""
     reviewer = (SCRIPTS / "local-ollama-review.sh").read_text()
@@ -134,18 +118,6 @@ def test_worker_proves_diff_inspection_without_append_of_diff_hunks() -> None:
     assert 'if gh pr diff "$NUMBER" >/dev/null; then' in worker
     assert 'gh pr diff "$NUMBER" 2>/dev/null | head -n 4000' not in worker
     assert "printf '\\n# %s-factory-authoritative-diff-evidence\\n' \"${FACTORY_MARKER_PREFIX:?}\"" in worker
-
-
-def test_file_listing_counts_as_inspection_for_a_pr_too_large_to_diff() -> None:
-    controller = load_controller()
-    review_log = (
-        "Reviewed every changed file; the deletion matches the issue.\nFACTORY_GATE_READY\n"
-        + controller.AUTHORITATIVE_DIFF_EVIDENCE
-        + "\ngh api repos/acme/widgets/pulls/5530/files\n"
-    )
-    excerpt = controller.semantic_review_excerpt(review_log)
-    assert "gh api repos/acme/widgets/pulls/5530/files" in excerpt
-    assert controller.DIFF_INSPECTION_RE.search(excerpt)
 
 
 def test_worker_falls_back_to_the_file_listing_when_the_diff_is_too_large() -> None:

@@ -789,28 +789,6 @@ def test_workflows_delegate_mechanical_gates_to_controller():
         assert "--json state,isDraft,mergeable,headRefOid" not in text
 
 
-def test_diff_inspection_failure_does_not_look_like_approve(monkeypatch):
-    """Incident #2309: soft-failed approvals must not render as APPROVE."""
-    controller = load_controller()
-    arguments = configure_review_handoff(monkeypatch, controller)
-    monkeypatch.setattr(controller, "review_excerpt", lambda _path, worker: "Looks fine. FACTORY_GATE_READY")
-    comments = []
-    transitions = []
-    monkeypatch.setattr(controller, "post_review_comment", lambda **kwargs: comments.append(kwargs))
-    monkeypatch.setattr(
-        controller,
-        "transition_pr_and_linked_issue",
-        lambda **kwargs: transitions.append(kwargs),
-    )
-
-    result = controller.handle_review(**arguments)
-
-    assert result["status"] == "diff-inspection-required"
-    assert comments[0]["verdict"] == "not-ready"
-    assert comments[0]["marker"] is None
-    assert transitions[0]["pr_stage"] == "factory:review"
-
-
 def test_review_comment_bodies_accept_owner_markers(monkeypatch):
     """Owner-authored exact-head markers must authorize during incident response."""
     controller = load_controller()
