@@ -16,7 +16,7 @@ permissions:
   issues: write
   pull-requests: write
 concurrency:
-  group: ${{ (github.event_name == 'pull_request_review' || github.event_name == 'pull_request_review_comment' || (github.event_name == 'pull_request_target' && github.event.action == 'edited')) && format('factory-greptile-routing-pr-{0}', github.event.pull_request.number) || 'factory-issue-pr-state-reconciler' }}
+  group: ${{ (github.event_name == 'pull_request_review' || github.event_name == 'pull_request_review_comment' || github.event_name == 'issue_comment' || (github.event_name == 'pull_request_target' && github.event.action == 'edited')) && format('factory-greptile-routing-pr-{0}', github.event.pull_request.number || github.event.issue.number) || 'factory-issue-pr-state-reconciler' }}
   cancel-in-progress: false
 jobs:
   rotisserie:

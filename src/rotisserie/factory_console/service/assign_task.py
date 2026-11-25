@@ -22,7 +22,8 @@ STEPS = {
         "Implement issue {ref} on a new branch and open a pull request whose body says "
         "`Closes {ref}`. For an incident issue, say `Refs {ref}` instead: the incident closes "
         "only after production evidence.",
-        "End every commit message with a `Model: <your exact model id>` line.",
+        "End every commit message with a `Model: <your exact model id>` line. If your model is not "
+        "exposed, write `Model: <tool name> (model unavailable)`.",
     ),
     "review": (
         "Do not review this pull request if it is labeled `factory:parked`, if you or your "
@@ -35,7 +36,8 @@ STEPS = {
         "problem. If GitHub refuses **Approve** or **Request changes** because your account "
         "opened the PR, submit it as **Comment**.",
         "Post a summary that names the reviewed head commit SHA. End the summary and the "
-        "review body with `Model: <your exact model id>` and then exactly one last line: "
+        "review body with `Model: <your exact model id>` (or `Model: <tool name> (model "
+        "unavailable)` when your model is not exposed) and then exactly one last line: "
         "`Verdict: changes-requested` or `Verdict: approve`.",
         "An approval merges this pull request. Approve only when it meets every acceptance "
         "criterion, its required CI is green at the current head, and no blocking findings "
@@ -47,11 +49,13 @@ STEPS = {
         "Read every unresolved review comment on this pull request.",
         "Push commits to this pull request's branch that fix each verified finding, and "
         "answer each finding you do not fix.",
-        "End every commit message with a `Model: <your exact model id>` line.",
+        "End every commit message with a `Model: <your exact model id>` line. If your model is not "
+        "exposed, write `Model: <tool name> (model unavailable)`.",
     ),
     "ci-repair": (
         "Make this pull request's failing required checks pass. Push the fix to its branch.",
-        "End every commit message with a `Model: <your exact model id>` line.",
+        "End every commit message with a `Model: <your exact model id>` line. If your model is not "
+        "exposed, write `Model: <tool name> (model unavailable)`.",
     ),
     "merge-conflict": (
         "Merge the base branch into this pull request's branch and resolve every conflict, "

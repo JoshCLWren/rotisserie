@@ -17,7 +17,8 @@
 # Issue state is shared by every PR linked to that issue. Serialize all
 # issue-centric reconciliations so duplicate PR events cannot race label
 # replacement. Greptile routing events (pull_request_review, thread replies
-# via pull_request_review_comment, and PR-body `edited`) only touch their own PR, so they use a per-PR group instead: a
+# via pull_request_review_comment, PR-body `edited`) and PR comments (marker and
+# outside-agent `Verdict:` comments) only touch their own PR, so they use a per-PR group instead: a
 # burst of events on one PR can no longer replace a queued routing run for a
 # different PR (run 39140967515 was lost that way). Within one PR group a
 # newer pending run may still replace an older pending one; that is safe

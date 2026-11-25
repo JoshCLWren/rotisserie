@@ -83,7 +83,18 @@ def model_ids(value: str) -> list[str]:
     return [value, *(token for token in ids if re.search(r"[a-z].*[-/]|[-/].*[a-z]", token, re.I))]
 
 
+def tool_identity(value: str) -> str:
+    """A tool name from ``<tool> (model unavailable)`` or a bare name, as one lowercase token.
+
+    Owner decision 2026-11-25: a value that names no model id is that tool's identity.
+    """
+    name = re.sub(r"\(\s*model\s+(?:id(?:entifier)?\s+)?unavailable\s*\)", "", value, flags=re.I)
+    return re.sub(r"[^a-z0-9]+", "-", name.lower()).strip("-")
+
+
 def same_model(approver: str, author: str) -> bool:
+    if tool_identity(approver) and tool_identity(approver) == tool_identity(author):
+        return True
     return any(
         policy.same_actual_model(mine, theirs)
         for mine in model_ids(approver)
@@ -192,7 +203,7 @@ def evaluate(fetch: Fetch, pr: int, *, owner: str) -> Approval:
     model = approver_model(body)
     url = str(found.get("html_url") or "")
     login = str((found.get("user") or {}).get("login") or "")
-    if not model or not substantive(model):
+    if not model or not (substantive(model) or tool_identity(model)):
         return Approval(False, "the approval names no model id", head, model, url, login)
     blocked = change_request(reviews, comments, head=head, owner=owner)
     if blocked:
