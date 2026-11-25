@@ -9,6 +9,7 @@ from collections.abc import Iterable, Mapping
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from factory_adopter import MARKER_PREFIX, reserved_issues
+from factory_merge_linkage import linkage
 
 _eligibility_dir = Path(__file__).resolve().parent
 if not (_eligibility_dir / 'factory_eligibility.py').is_file():
@@ -66,7 +67,6 @@ STAGE_LABELS = frozenset(
 BLOCKED_STATUS_LABELS = frozenset({"ralph-status:blocked"})
 RALPH_STATUS_RE = re.compile(r"^ralph-status:")
 
-BRANCH_ISSUE_RE = re.compile(r"^factory/[0-9]+-(?P<issue>[0-9]+)-")
 MERGE_CLOSURE_MARKER = f"{MARKER_PREFIX}-factory-merge-closure-v1"
 UNREADABLE_WARNING_MARKER = f"{MARKER_PREFIX}-factory-dependency-unreadable-v1"
 SWEEP_MAX_AGE_HOURS = 26
@@ -88,16 +88,7 @@ def linked_issue(branch: str, body: str | None) -> int | None:
         The explicit closing-reference issue when present, otherwise the issue
         encoded by the factory branch, or None when neither is available.
     """
-    closing_issue = eligibility.explicit_closing_issue(body)
-    if closing_issue is not None:
-        return closing_issue
-    match = BRANCH_ISSUE_RE.match(branch or "")
-    if match is not None:
-        issue_number = int(match.group("issue"))
-        if issue_number in eligibility.nonclosing_issue_numbers(body):
-            return None
-        return issue_number
-    return None
+    return linkage(branch, body).issue
 
 
 def target_labels(current: list[str]) -> list[str]:

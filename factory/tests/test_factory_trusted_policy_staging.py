@@ -85,7 +85,11 @@ def test_closure_sibling_modules_are_staged_by_every_worker() -> None:
     ):
         content = (ROOT / ".github/scripts" / name).read_text()
         staging = content.split("stage_trusted_review_controller() {", 1)[1].split("\n}", 1)[0]
-        for sibling in ("factory_post_merge_closure_policy.py", "factory_post_merge_closure_github.py"):
+        for sibling in (
+            "factory_post_merge_closure_policy.py",
+            "factory_post_merge_closure_github.py",
+            "factory_merge_linkage.py",
+        ):
             assert f".github/scripts/{sibling} " in staging, (name, sibling)
 
 
@@ -125,6 +129,7 @@ def test_staged_review_controller_starts_without_source_checkout(tmp_path: Path)
         ".github/scripts/factory_post_merge_closure.py",
         ".github/scripts/factory_post_merge_closure_policy.py",
         ".github/scripts/factory_post_merge_closure_github.py",
+        ".github/scripts/factory_merge_linkage.py",
         ".github/scripts/factory_worker_slots.py",
         ".github/scripts/factory_provider_registry.py",
         ".github/scripts/factory_work_policy.py",

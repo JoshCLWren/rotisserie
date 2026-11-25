@@ -74,6 +74,7 @@
 .github/scripts/factory_opencode_go_oidc.sh
 .github/scripts/factory_omniroute_route.py
 .github/scripts/factory_outcome_reconcile.py
+.github/scripts/factory_merge_linkage.py
 .github/scripts/factory_post_merge_closure.py
 .github/scripts/factory_post_merge_closure_github.py
 .github/scripts/factory_post_merge_closure_policy.py
@@ -157,6 +158,7 @@
 .github/scripts/stale_pr_decay.py
 .github/scripts/test_classify_fixed_model_run.py
 .github/scripts/test_classify_fixed_model_run_provider.py
+.github/scripts/test_factory_merge_linkage.py
 .github/scripts/test_factory_post_merge_closure_acceptance.py
 .github/scripts/test_factory_post_merge_closure_dependencies.py
 .github/scripts/test_factory_post_merge_closure_policy.py

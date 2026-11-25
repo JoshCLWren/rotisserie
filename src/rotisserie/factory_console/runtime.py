@@ -43,6 +43,7 @@ RUNTIME_MODULES = (
     "factory_turso_usage",
     "factory_dynamic_outcome",
     "factory_item_loop",
+    "factory_merge_linkage",
 )
 
 # Every file the wheel must carry, keyed by module name, with its checkout path.

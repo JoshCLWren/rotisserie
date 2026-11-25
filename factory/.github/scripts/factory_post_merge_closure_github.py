@@ -75,7 +75,7 @@ def _pr_info(pr_number: int) -> dict[str, str]:
         "--repo",
         _repo_slug(),
         "--json",
-        "headRefName,headRefOid,mergeCommit,body,state",
+        "headRefName,headRefOid,mergeCommit,body,state,title",
     )
     payload = json.loads(raw)
     return {
@@ -84,6 +84,7 @@ def _pr_info(pr_number: int) -> dict[str, str]:
         "merge": str((payload.get("mergeCommit") or {}).get("oid") or ""),
         "body": str(payload.get("body") or ""),
         "state": str(payload.get("state") or ""),
+        "title": str(payload.get("title") or ""),
     }
 
 

@@ -11,6 +11,10 @@ such change must be called out here and in its release notes.
 
 ### Added
 
+- `baste recap` lists, under "Needs you", merged factory PRs whose issue is
+  still open, with the reason merge closure kept it open: the PR said it is only
+  part of the issue, or named it only in its title. Both control rooms show
+  the rows.
 - An `auto` worker now weighs each eligible live-catalog model by its track
   record over the last 7 days, for the same action (implement, review,
   ci-repair, merge-conflict, review-findings) when it has 3 or more runs
@@ -242,6 +246,12 @@ such change must be called out here and in its release notes.
 
 ### Fixed
 
+- The stranded-closure sweep has its own merge-drain step before the
+  main-health gate. It skipped every drain tick while main was pending, so
+  issues of PRs merged by a person waited for the next green tick.
+- Post-merge closure prints one line per decision with the issue and the reason
+  (for example "the PR says it is only part of #5751, so #5751 stays open"),
+  not a bare `no-linked-issue`.
 - The web UI now has a control for each command its server allowed but the
   page did not offer: Follow, Claim runs, History, Claim and Finish claim for
   one item, checks on `main`, the label doctor dry run and repair, and the
