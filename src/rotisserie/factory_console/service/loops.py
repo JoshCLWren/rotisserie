@@ -130,9 +130,8 @@ def scan(
 
 
 def parked(github: GitHub, *, now: datetime, pulls: Sequence[Obj]) -> list[dict[str, object]]:
-    """Open PRs the factory parked at their current head and stage (the hold is still on)."""
+    """Open PRs the factory parked at their current head, in any stage (the hold is still on)."""
     rules = runtime.module("factory_self_heal_rules")
-    stage_of = runtime.module("factory_work_policy").stage_of
     by_number = {integer(pr, "number") or 0: pr for pr in pulls}
     since = (now - PARK_LOOKBACK).astimezone(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
     query = f'repo:{github.repo} is:pr is:open "Factory self-heal" "Parked" in:comments'
@@ -144,13 +143,10 @@ def parked(github: GitHub, *, now: datetime, pulls: Sequence[Obj]) -> list[dict[
             continue
         records = review._pages(github, f"issues/{number}/comments?since={since}", limit=3)
         head = string(obj(pr.get("head")), "sha")
-        stage = str(stage_of(label_names(pr)) or "factory:review").removeprefix("factory:")
         holds = [
             heal
             for heal in rules.heals(records, pr=number)
-            if heal["kind"] == rules.LOOP_PARKED
-            and heal["head"] == head
-            and heal["ref"].startswith(f"{stage}-")
+            if heal["kind"] == rules.LOOP_PARKED and heal["head"] == head
         ]
         if holds:
             rows.append(

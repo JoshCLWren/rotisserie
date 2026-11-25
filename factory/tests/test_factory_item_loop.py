@@ -188,11 +188,8 @@ def test_the_sweep_parks_a_looping_pr_with_a_comment_and_an_event() -> None:
     assert event["loop"]["reason"] == "work_failure"
 
 
-def test_the_sweep_parks_once_per_head_and_stage() -> None:
-    park = {
-        "at": moment("2026-11-25T00:00:00Z"),
-        "at_heads": {(HEAD, "factory:changes-requested"), (HEAD, "factory:review")},
-    }
+def test_the_sweep_parks_once_per_head_in_any_stage() -> None:
+    park = {"at": moment("2026-11-25T00:00:00Z"), "at_heads": {(HEAD, "factory:changes-requested")}}
     hub, found = sweep(Store({"pr:5766": park}), pull(5766))
     assert hub.writes == [] and found == []
 
@@ -273,7 +270,7 @@ def test_the_dispatcher_holds_a_looping_pr_unless_the_owner_overrides(env) -> No
     assert operations.cooling_prs(repo, heads, frozenset({12})) == set()
 
 
-def test_a_park_holds_its_head_and_stage_only(env) -> None:
+def test_a_park_holds_its_head_in_any_stage(env) -> None:
     _, repo = env
     failures(repo, 12, 5)
     heal.LedgerStore(repo).record(
@@ -290,7 +287,7 @@ def test_a_park_holds_its_head_and_stage_only(env) -> None:
     )
     assert operations.cooling_prs(repo, {12: (HEAD, "factory:review")}) == {12}
     assert operations.cooling_prs(repo, {12: ("e" * 40, "factory:review")}) == set()
-    assert operations.cooling_prs(repo, {12: (HEAD, "factory:changes-requested")}) == set()
+    assert operations.cooling_prs(repo, {12: (HEAD, "factory:changes-requested")}) == {12}
 
 
 def controller_with(
@@ -329,7 +326,7 @@ def controller_with(
     monkeypatch.setattr(
         controller, "assign_candidate", lambda c, *_a, **_k: picked.append(c) or True
     )
-    monkeypatch.setattr(factory_state_operations, "cooling_prs", cooling)
+    monkeypatch.setattr(factory_state_operations, "holds", cooling)
     monkeypatch.setenv("FACTORY_JEV_RANKING_FILE", "")
     return controller, picked
 
@@ -339,9 +336,9 @@ def test_the_controller_skips_a_looping_pr_and_keeps_the_owner_override(
 ) -> None:
     seen: dict[str, Any] = {}
 
-    def cooling(repo: str, heads: dict[int, Any], exempt: frozenset[int] = frozenset()) -> set[int]:
+    def cooling(repo: str, heads: Any, issues: Any, exempt: frozenset[int]) -> dict[int, str]:
         seen["exempt"] = exempt
-        return {12, 13} - exempt
+        return dict.fromkeys({12, 13} - exempt, "held: looping")
 
     controller, picked = controller_with(monkeypatch, cooling)
     chosen = controller.assign_from_pool("6")

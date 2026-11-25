@@ -37,6 +37,7 @@ from factory_lease_owners import ActiveWorkerResult, github_timestamp_epoch
 from factory_state_ledger import enabled as ledger_enabled
 from factory_adopter import MARKER_PREFIX, repository
 import factory_assign_trace as trace
+import factory_dispatch_holds
 from factory_pr_merge_state import fill_merge_state
 REPO = repository()
 GH_TIMEOUT_SECONDS = env_positive_int("FACTORY_GH_TIMEOUT_SECONDS", 120)
@@ -1519,20 +1520,9 @@ def assign_from_pool(worker: str, kinds: tuple[str, ...] | None = None,
     # Hard candidate, dependency, ownership and live-claim checks remain active.
     if operator_force and target is None:
         print('[factory-controller] operator force: bypassing advisory retry cooldown and soft backlog pressure', file=sys.stderr)
-    # Advisory retry cooldown is scoped to exact PR head AND stage.
-    # Manual targets can override retry scheduling, never live merge/CI gates.
+    # Retry cooldown and the loop breaker never hold a manual target or a forced run.
     if target is None and not operator_force:
-        try:
-            from factory_state_operations import cooling_prs
-            pr_heads = {int(pr["number"]): str(pr.get("headRefOid") or "") for pr in prs}
-            lookup = {c.number: (pr_heads.get(c.number, ""), c.stage or "factory:review")
-                      for c in candidates if c.kind == "pr"}
-            cooling = cooling_prs(REPO, lookup, frozenset(c.number for c in candidates if c.override))
-            if cooling:
-                print(f"[factory-controller] exact-head retry cooling: {sorted(cooling)}", file=sys.stderr)
-                candidates = [c for c in candidates if c.number not in cooling or trace.skip(c.number, 'exact-head retry cooling')]
-        except Exception as exc:
-            print(f"[factory-controller] store retry read deferred ({type(exc).__name__})", file=sys.stderr)
+        candidates = factory_dispatch_holds.apply(REPO, candidates, prs)
     candidates = order_candidates_for_worker(
         resolve_review_head_contributors(candidates, prs), worker
     )

@@ -231,4 +231,5 @@ def test_a_park_stays_visible_while_its_hold_is_on() -> None:
     moved = {**held, "head": {"sha": "e" * 40}}
     assert loops.parked(hub, now=AT_0130, pulls=[moved]) == []  # type: ignore[arg-type]
     hub.comments = [park_comment(head, "changes-requested")]
-    assert loops.parked(hub, now=AT_0130, pulls=[held]) == []  # type: ignore[arg-type]
+    rows = loops.parked(hub, now=AT_0130, pulls=[held])  # type: ignore[arg-type]
+    assert [row["number"] for row in rows] == [5766]

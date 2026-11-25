@@ -364,7 +364,7 @@ def test_operator_force_reaches_real_work_without_soft_intake_or_retry_filters(m
                         lambda *_: False)
     monkeypatch.setattr(controller, 'assign_candidate', lambda *_args, **_kwargs: True)
     monkeypatch.setattr(
-        factory_state_operations, 'cooling_prs',
+        factory_state_operations, 'holds',
         lambda *_args, **_kwargs:
         pytest.fail('operator force must bypass only advisory retry cooldown'),
     )

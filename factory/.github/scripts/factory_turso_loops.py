@@ -1,19 +1,24 @@
 """Store reads behind the item-loop breaker: recent terminal worker runs and loop parks.
 
 Two reads on the events time index. The rule itself is ``factory_item_loop``.
-A park holds an item while its head and stage are the ones it was parked at;
-the live rule holds it from the moment it loops until the sweep parks it.
+A park holds a PR while its head is one it was parked at, whatever its stage or
+the kind of work offered: a failed worker's own release flips the stage. The
+live rule holds a PR or an issue from the moment it loops until the sweep
+parks it or its runs age out of the window.
 """
 
 from __future__ import annotations
 
 import sys
+from collections.abc import Collection, Mapping
 from datetime import UTC, datetime
 from typing import Any
 
 import factory_item_loop as loop
 
 PARK_LOOKBACK_SECONDS = 30 * 86400
+PARKED = "held: loop-parked"
+LOOPING = "held: looping"
 
 
 def _moment(epoch: Any) -> datetime:
@@ -72,19 +77,24 @@ def parks(rows: list[dict[str, Any]]) -> dict[str, dict[str, Any]]:
 
 
 def held(
-    db: Any, repo: str, heads: dict[int, tuple[str, str]], exempt: frozenset[int] | set[int]
-) -> set[int]:
-    """PRs the breaker holds: parked at their current head and stage, or looping now."""
+    db: Any,
+    repo: str,
+    heads: Mapping[int, str],
+    issues: Collection[int] = (),
+    exempt: Collection[int] = (),
+) -> dict[int, str]:
+    """Why the breaker holds each PR (by head) or issue: a park at that head, or a loop now."""
     targets = {f"pr:{number}": number for number in heads if number not in exempt}
+    targets |= {f"issue:{number}": number for number in issues if number not in exempt}
     if not targets:
-        return set()
+        return {}
     threshold, window = loop.limits()
     run_rows, park_rows = db.reads([runs_statement(repo, window), parks_statement(repo)])
     parked = parks(park_rows)
     hold = {
-        number
+        number: PARKED
         for target, number in targets.items()
-        if (park := parked.get(target)) and heads[number] in park["at_heads"]
+        if (park := parked.get(target)) and heads.get(number) in parked_heads(park)
     }
     loops = loop.find(
         runs_by_item(run_rows),
@@ -95,11 +105,15 @@ def held(
         window_seconds=window,
     )
     for found in loops:
-        hold.add(found.number)
+        hold.setdefault(targets[found.target], LOOPING)
         print(
             f"[factory-controller] item loop hold: {found.target}: {found.text()}", file=sys.stderr
         )
     return hold
+
+
+def parked_heads(park: Mapping[str, Any]) -> set[str]:
+    return {head for head, _ in park["at_heads"] if head}
 
 
 def evidence(

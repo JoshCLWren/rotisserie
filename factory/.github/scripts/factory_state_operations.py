@@ -51,6 +51,7 @@ from factory_turso_exports import (  # noqa: F401
 )
 from factory_turso_operations import (  # noqa: F401
     cooling_prs,
+    holds,
     daily_usage,
     filter_workers,
     ingest_check,

@@ -11,7 +11,7 @@ Run by the trusted dispatcher once per tick (``sweep``):
 * resolves a bot reviewer's thread that a factory worker answered "Fixed" with
   a commit that is in the current head;
 * parks a PR that loops (``factory_item_loop``): no more workers go to it at
-  its current head and stage until its owner acts.
+  its current head, in any stage, until its owner acts.
 
 Every action leaves a trusted comment (see ``factory_self_heal_rules``), which
 ``baste heal`` and ``baste recap`` read, and an event in the factory store.

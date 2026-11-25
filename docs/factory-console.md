@@ -763,16 +763,21 @@ and the dispatcher all call it. The defaults are 4 runs and 6 hours
 
 The factory acts on it in two places:
 
-- The dispatcher's exact-head retry cooling holds a looping PR, so no new
-  worker goes to it.
-- The dispatcher's self-heal sweep parks it once per head and stage: one
+- The dispatcher's pool pass holds a looping PR or issue, so no new worker of
+  any kind (review, review findings, merge conflict, CI repair, implement) goes
+  to it. Its `none` reason names `held: looping`.
+- The dispatcher's self-heal sweep parks a looping PR once per head: one
   trusted comment that says why and what to do next, and a `loop-parked` store
-  event. The park holds while the PR's head and stage stay the same. A new head
-  or a stage change releases it, and only runs after the park count again.
+  event. The park holds while the PR's head stays the same, in any stage, and
+  the `none` reason names `held: loop-parked`. A stage change does not release
+  it, because a failed worker's own release flips the stage. A new head
+  releases it, and only runs after the park count again.
 
 The park changes no label. A targeted or forced run (`baste run --target
 pr:N`), an owner `factory:override` label and a `factory:claimed` claim are
-never held. A second park at the same head and stage is never posted. `baste
+never held. A second park at the same head is never posted. Issues are not
+parked: the live rule holds a looping issue until its runs age out of the
+window. `baste
 recap` finds parked PRs by their park comment, however old, and lists each
 looping or parked PR under "Needs you" with
 the reason and the next step: review it yourself, merge it, or force one more
