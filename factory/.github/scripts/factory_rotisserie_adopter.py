@@ -25,7 +25,7 @@ from factory_work_policy import (
     FACTORY_PR_WIP_LIMIT,
     NON_EXECUTABLE_ISSUES,
     build_candidates,
-    factory_review_backlog_count,
+    intake_backlog_count,
     factory_pr_wip_count,
     is_manual_only,
     labels_of,
@@ -324,7 +324,7 @@ def intake_verdicts(
                 *command,
                 "--config", str(config_path), "decide", "--snapshot", str(snapshot_path),
                 "--revision", revision, "--at", str(now),
-                "--completion-backlog", str(0 if operator_force else factory_review_backlog_count(prs)),
+                "--completion-backlog", str(0 if operator_force else intake_backlog_count(prs, review_backlog_limit)),
                 "--backlog-limit", str(review_backlog_limit),
                 "--active-changes", str(0 if operator_force else factory_pr_wip_count(prs)),
                 "--wip-limit", str(pr_wip_limit),
@@ -427,7 +427,7 @@ def legacy_decisions(view: dict[str, Any]) -> dict[str, object]:
         if (
             number not in eligible_issues
             and not blocks
-            and factory_review_backlog_count(prs) >= FACTORY_REVIEW_BACKLOG_LIMIT
+            and intake_backlog_count(prs) >= FACTORY_REVIEW_BACKLOG_LIMIT
         ):
             blocks.append("backpressure")
         elif number not in eligible_issues and not blocks:
@@ -609,7 +609,7 @@ def main() -> int:
                 "--at",
                 str(bundle["captured_at"]),
                 "--completion-backlog",
-                str(factory_review_backlog_count(json.loads(raw)["pull_requests"])),
+                str(intake_backlog_count(json.loads(raw)["pull_requests"])),
                 "--backlog-limit",
                 str(FACTORY_REVIEW_BACKLOG_LIMIT),
                 "--active-changes",

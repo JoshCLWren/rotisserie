@@ -4,9 +4,11 @@ from collections.abc import Iterable, Mapping
 from typing import Any
 
 from factory_work_policy_backlog import (
+    factory_parked_count,
     factory_pr_wip_count,
-    factory_review_backlog_count,
+    intake_backlog_count,
     issue_bypasses_wip_limit,
+    parked_pr_limit,
 )
 from factory_work_policy_base import (
     BLOCKED_LABELS,
@@ -249,7 +251,7 @@ def build_candidates(
         raise ValueError('external WIP must be nonnegative')
     pr_wip_full = factory_pr_wip_count(prs) + external_wip >= pr_wip_limit
     review_backlog_full = (
-        factory_review_backlog_count(prs) >= review_backlog_limit
+        intake_backlog_count(prs, review_backlog_limit) >= review_backlog_limit
     )
     incident_issues = set(active_incidents(issues, incidents))
     candidates: list[Candidate] = []
@@ -406,7 +408,7 @@ def explain_issue_report(
         for pr in prs
         if linked_issue_from_pr(pr) == number and pr_suppresses_issue_candidate(pr, issue_map)
     )
-    review_backlog = factory_review_backlog_count(prs)
+    review_backlog = intake_backlog_count(prs, review_backlog_limit)
     in_incident = number in incident_issues
     gates: dict[str, Any] = {
         'active_incidents': incident_issues,
@@ -415,6 +417,8 @@ def explain_issue_report(
         'factory_pr_wip_limit': pr_wip_limit,
         'review_backlog': review_backlog,
         'review_backlog_limit': review_backlog_limit,
+        'parked_prs': factory_parked_count(prs),
+        'parked_pr_limit': parked_pr_limit(review_backlog_limit),
         'bypasses_wip_limit': in_incident or issue_bypasses_wip_limit(payload),
         'bypasses_saturated_review_backlog': in_incident or issue_bypasses_wip_limit(
             payload, review_backlog_saturated=True

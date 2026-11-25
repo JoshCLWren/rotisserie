@@ -30,6 +30,7 @@ from rotisserie.factory_console.github import (
     obj,
     string,
 )
+from rotisserie.factory_console.service import parked
 
 # The exact fields the controller's own discovery reads (factory-work-controller.py).
 ISSUE_FIELDS = "number,title,body,labels,createdAt,updatedAt"
@@ -84,12 +85,15 @@ def _rows(raw: str) -> list[Obj]:
     return items(value)
 
 
-def read_board(github: GitHub, variables: dict[str, str], now: int) -> Board:
+def read_board(
+    github: GitHub, variables: dict[str, str], now: int, looping: frozenset[int] = frozenset()
+) -> Board:
     listing = ("list", "--repo", github.repo, "--state", "open", "--json")
     issues = _rows(github.gh("issue", *listing, ISSUE_FIELDS, "--limit", "1000"))
     prs = _rows(github.gh("pr", *listing, PR_FIELDS, "--limit", "500"))
     wip_limit = runtime.setting_integer("FACTORY_PR_WIP_LIMIT", variables)
     backlog_limit = runtime.setting_integer("FACTORY_REVIEW_BACKLOG_LIMIT", variables)
+    prs = parked.stamp(github, prs, backlog_limit, now, looping)
     board = Board(issues, prs, wip_limit, backlog_limit, intake={})
     board.incidents = runtime.module("factory_work_policy").declared_incidents(variables)
     _read_intake(github, board, now)
@@ -346,10 +350,10 @@ def _limit_lines(explanation: runtime.Explanation) -> list[Reason]:
                 setting="FACTORY_PR_WIP_LIMIT",
             )
         )
-    if (
-        explanation.review_backlog >= explanation.review_backlog_limit
-        and not explanation.bypasses_saturated_review_backlog
-    ):
+    full = explanation.review_backlog >= explanation.review_backlog_limit
+    if full and not explanation.bypasses_saturated_review_backlog and parked.full(explanation):
+        held.append(Reason("parked-limit", parked.text(explanation)))
+    elif full and not explanation.bypasses_saturated_review_backlog:
         held.append(
             Reason(
                 "review-limit",
@@ -375,6 +379,7 @@ CATEGORY_WORDS = {
     "intake": "were held back by Rotisserie intake",
     "wip-limit": "wait for the open-PR limit",
     "review-limit": "wait for the review backlog to drain",
+    "parked-limit": "wait for the owner to handle parked PRs (baste recap)",
     "incident": "wait for an open incident to end",
     "closed": "are closed",
     "other": "for other reasons",

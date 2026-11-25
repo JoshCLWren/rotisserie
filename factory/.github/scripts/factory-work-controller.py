@@ -1426,7 +1426,7 @@ def assign_from_pool(worker: str, kinds: tuple[str, ...] | None = None,
         reconcile_stale_leases()
         reconcile_contradictory_labels()
     issues = list_issues()
-    prs = list_prs()
+    prs = factory_dispatch_holds.stamp(REPO, list_prs())
     # Resolve an issue wakeup to its canonical open PR *before* loading retry
     # history or asking Rotisserie to rank fresh issues. Otherwise every
     # worker candidate reads the entire retry window and authorizes issue
@@ -2225,7 +2225,7 @@ def explain_issue(
         owning PR when one exists, and the dynamic gate results.
     """
     issue_rows = list_issues() if issues is None else list(issues)
-    pr_rows = list_prs() if prs is None else list(prs)
+    pr_rows = factory_dispatch_holds.stamp(REPO, list_prs() if prs is None else list(prs))
     payload = issue
     if payload is None:
         payload = next((row for row in issue_rows if int(row['number']) == number), None)

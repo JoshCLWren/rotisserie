@@ -169,6 +169,19 @@ def plan(
                 setting="FACTORY_REVIEW_BACKLOG_LIMIT",
             )
         )
+    policy = runtime.module("factory_work_policy")
+    parked_now = policy.factory_parked_count([dict(row) for row in board.prs])
+    parked_limit = policy.parked_pr_limit(board.review_backlog_limit)
+    if parked_now >= parked_limit:
+        review_full = True
+        diagnosis.append(
+            queue.Reason(
+                "parked-limit",
+                f"{parked_now} parked PRs waiting on the owner (limit {parked_limit}, "
+                "FACTORY_PARKED_PR_LIMIT). New issues wait until the owner handles them: "
+                "baste recap.",
+            )
+        )
     if wip >= board.pr_wip_limit:
         diagnosis.append(
             queue.Reason(

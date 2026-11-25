@@ -25,7 +25,7 @@ from factory_work_policy import (
     Candidate,
     build_candidates,
     factory_pr_wip_count,
-    factory_review_backlog_count,
+    intake_backlog_count,
     labels_of,
 )
 
@@ -540,7 +540,7 @@ def completion_report(
     window = select_action_window(actions)
     ids = [action.action_id for action in window]
     wip_saturated = factory_pr_wip_count(prs) >= FACTORY_PR_WIP_LIMIT
-    backlog_saturated = factory_review_backlog_count(prs) >= FACTORY_REVIEW_BACKLOG_LIMIT
+    backlog_saturated = intake_backlog_count(prs) >= FACTORY_REVIEW_BACKLOG_LIMIT
     report: dict[str, Any] = {
         "mode": "active-selection",
         "surface": "pr-completion",
@@ -781,7 +781,7 @@ def backpressure_snapshot(issues: list[dict[str, Any]], prs: list[dict[str, Any]
     return {
         "pr_wip": factory_pr_wip_count(prs),
         "pr_wip_limit": FACTORY_PR_WIP_LIMIT,
-        "review_backlog": factory_review_backlog_count(prs),
+        "review_backlog": intake_backlog_count(prs),
         "review_backlog_limit": FACTORY_REVIEW_BACKLOG_LIMIT,
         "leasable_issue_peers": len(leasable_numbers),
         "waiting_issue_peers": sum(
