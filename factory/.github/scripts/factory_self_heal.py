@@ -17,7 +17,9 @@ Run by the trusted dispatcher once per tick (``sweep``):
   the PR and requeues its issue (``factory_self_heal_park_retry``);
 * splits an issue held for its size into child issues (``factory_self_heal_split``);
 * allows self-review on a head that waited 6 hours with no eligible reviewer
-  (``factory_self_heal_self_review``).
+  (``factory_self_heal_self_review``);
+* keeps one open PR per issue and closes the duplicates
+  (``factory_self_heal_duplicates``).
 
 Every action leaves a trusted comment (see ``factory_self_heal_rules``), which
 ``baste heal`` and ``baste recap`` read, and an event in the factory store.
@@ -237,12 +239,13 @@ def sweep(
     from factory_self_heal_park_retry import resolve_long_parks
     from factory_self_heal_split import advance_splits
     from factory_self_heal_self_review import allow_long_waits
+    from factory_self_heal_duplicates import resolve_duplicates
     from factory_self_heal_incident import clear_closed, sync_incident_work
     from factory_self_heal_state import sync_state
 
     out: dict[str, Any] = {
         "dry_run": dry_run, "verdicts": [], "threads": [], "conflicts": [], "loops": [],
-        "park_retries": [], "splits": [], "self_reviews": [],
+        "park_retries": [], "splits": [], "self_reviews": [], "duplicates": [],
         "parked_labels": [], "state_labels": [], "incident_labels": [], "closed_labels": [],
     }
     for name, step in (
@@ -250,6 +253,7 @@ def sweep(
         ("park_retries", resolve_long_parks),
         ("splits", advance_splits),
         ("self_reviews", allow_long_waits),
+        ("duplicates", resolve_duplicates),
         ("verdicts", actions.heal_empty_verdicts),
         ("threads", actions.resolve_answered_threads),
         ("parked_labels", sync_parked),
@@ -294,8 +298,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         max_actions=max(0, args.max_actions),
         dry_run=args.dry_run,
     )
-    for name in ("loops", "park_retries", "splits", "self_reviews", "verdicts", "threads",
-                 "conflicts"):
+    for name in ("loops", "park_retries", "splits", "self_reviews", "duplicates", "verdicts",
+                 "threads", "conflicts"):
         for row in result[name]:
             print(
                 f"self-heal {name}: {row.get('text') or row.get('error') or row}", file=sys.stderr

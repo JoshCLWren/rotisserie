@@ -121,6 +121,8 @@
 .github/scripts/factory_self_heal_actions.py
 .github/scripts/factory_self_heal_loops.py
 .github/scripts/factory_self_heal_park_retry.py
+.github/scripts/factory_self_heal_duplicates.py
+.github/scripts/factory_duplicate_context.py
 .github/scripts/factory_self_heal_split.py
 .github/scripts/factory_split_plan.py
 .github/scripts/factory-split-worker.sh

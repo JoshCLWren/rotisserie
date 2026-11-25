@@ -67,13 +67,19 @@ def parked_in_effect(
 
 def duplicates(pulls: Iterable[Mapping[str, Any]]) -> dict[int, bool]:
     """Open PR number -> whether an older open PR already delivers the same issue."""
+    rows = list(pulls)
+    newer = {n for group in duplicate_groups(rows).values() for n in group[1:]}
+    numbers = [int(pr.get("number") or 0) for pr in rows if int(pr.get("number") or 0)]
+    return {number: number in newer for number in numbers}
+
+
+def duplicate_groups(pulls: Iterable[Mapping[str, Any]]) -> dict[int, list[int]]:
+    """Issue -> its open PR numbers, oldest first, for every issue with more than one."""
     by_issue: dict[int, list[int]] = {}
-    numbers: list[int] = []
     for pr in pulls:
         number = int(pr.get("number") or 0)
         if not number:
             continue
-        numbers.append(number)
         issue = linked_issue(pr)
         if issue is None:
             head = pr.get("head")
@@ -81,8 +87,7 @@ def duplicates(pulls: Iterable[Mapping[str, Any]]) -> dict[int, bool]:
             issue = sliced_issue({**pr, "headRefName": branch or ""})
         if issue is not None:
             by_issue.setdefault(issue, []).append(number)
-    newer = {n for group in by_issue.values() for n in sorted(group)[1:]}
-    return {number: number in newer for number in numbers}
+    return {issue: sorted(group) for issue, group in by_issue.items() if len(group) > 1}
 
 
 def needs_split(issue: Mapping[str, Any]) -> bool:

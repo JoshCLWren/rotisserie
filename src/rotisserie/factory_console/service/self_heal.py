@@ -24,6 +24,7 @@ WORDS = {
     "loop-released": "ended a park",
     "park-retry": "sent one forced run to a long park",
     "park-closed": "closed a PR its forced run could not move",
+    "duplicate-closed": "closed a duplicate PR",
 }
 
 
