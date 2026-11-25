@@ -4,8 +4,11 @@
 An item loops when it has at least ``RUNS`` finished worker runs inside the
 window and at least half of them changed nothing (a failure, or no work done),
 while it is still open and short of ``factory:ready``. A run that never reached
-a model, or failed for a factory or provider reason (control plane, runner
-environment, quota, throttle), does not count: it says nothing about the item.
+a model, or failed for a factory, provider or model-catalog reason (control
+plane, runner environment, quota, throttle, a provider crash, an unclassified
+exit), does not count: it says nothing about the item. A run that delivered work
+(pushed repairs or opened the PR) counts as progress even when its agent then
+hit the deadline.
 Runs before the item's last park do not count, so an owner's retry starts fresh.
 
 ``baste turning``, ``baste recap``, ``baste doctor``, both control rooms, the
@@ -32,6 +35,10 @@ UNCOUNTED = frozenset(
         "worker_environment_failure",
         "provider_quota",
         "provider_throttle",
+        "provider_failure",
+        "unknown_failure",
+        "model_unavailable",
+        "model_retired_410",
     }
 )
 PRODUCTIVE = frozenset({"success"})
@@ -47,18 +54,24 @@ class Run:
     model: str
     outcome: str
     url: str = ""
+    delivered: bool = False
 
     @property
     def wasted(self) -> bool:
-        return self.outcome not in PRODUCTIVE
+        return not self.delivered and self.outcome not in PRODUCTIVE
 
-    def to_dict(self) -> dict[str, str]:
+    @property
+    def counted(self) -> bool:
+        return self.delivered or self.outcome not in UNCOUNTED
+
+    def to_dict(self) -> dict[str, object]:
         return {
             "at": self.at.isoformat(),
             "kind": self.kind,
             "model": self.model,
             "outcome": self.outcome,
             "url": self.url,
+            "delivered": self.delivered,
         }
 
 
@@ -128,7 +141,7 @@ def assess(
         start = since
     counted = tuple(
         sorted(
-            (run for run in runs if start < run.at <= now and run.outcome not in UNCOUNTED),
+            (run for run in runs if start < run.at <= now and run.counted),
             key=lambda run: run.at,
         )
     )

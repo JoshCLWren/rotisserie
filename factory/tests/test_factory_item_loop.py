@@ -44,10 +44,10 @@ def at(text: str, **open_items: list[str]) -> dict[str, loop.Loop]:
 
 def test_the_owner_issue_pr_was_looping_at_0130() -> None:
     found = at("2026-11-25T01:30:00Z")["pr:5766"]
-    assert (found.wasted, len(found.runs)) == (7, 8)
+    assert (found.wasted, len(found.runs)) == (6, 7)
     assert found.reason == "work_failure"
     assert found.text() == (
-        "7 of 8 worker runs in the last 6h changed nothing; most often work_failure (5)."
+        "6 of 7 worker runs in the last 6h changed nothing; most often work_failure (5)."
     )
     assert "baste run --target pr:5766" in found.next_step()
 
@@ -181,7 +181,7 @@ def test_the_sweep_parks_a_looping_pr_with_a_comment_and_an_event() -> None:
     assert path == "issues/5766/comments"
     text = str(body["body"])  # type: ignore[index]
     assert rules.parse_marker(text.splitlines()[0])["kind"] == rules.LOOP_PARKED
-    assert "Parked Normalize the API key at one boundary (#5766): 7 of 8 worker runs" in text
+    assert "Parked Normalize the API key at one boundary (#5766): 6 of 7 worker runs" in text
     assert "baste run --target pr:5766" in text
     event = store.events[0]
     assert (event["kind"], event["stage"], event["head"]) == ("loop-parked", "factory:review", HEAD)

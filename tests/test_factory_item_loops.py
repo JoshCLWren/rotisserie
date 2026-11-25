@@ -83,7 +83,7 @@ def test_scan_reads_the_persisted_outcome_lines_and_finds_the_loop() -> None:
     row = found["pr:5766"]
     assert row["title"] == TITLE
     assert row["text"] == (
-        "7 of 8 worker runs in the last 6h changed nothing; most often work_failure (5)."
+        "6 of 7 worker runs in the last 6h changed nothing; most often work_failure (5)."
     )
     assert row["next"] == (
         "Review it yourself, merge it, or force one more try with `baste run --target pr:5766`."
@@ -117,7 +117,7 @@ def test_turning_says_slowing_for_a_looping_item() -> None:
         "baste recap",
     )
     assert verdict.text == (
-        f"{TITLE} is looping and 1 more: 7 of 8 worker runs in the last 6h changed nothing; "
+        f"{TITLE} is looping and 1 more: 6 of 7 worker runs in the last 6h changed nothing; "
         "most often work_failure (5)."
     )
     assert verdict.evidence["item_loops"][0]["target"] == "pr:5766"  # type: ignore[index]
@@ -128,7 +128,7 @@ def test_turning_shows_the_loop_row(capsys: pytest.CaptureFixture[str]) -> None:
     view.render(Console(), data, AT_0130)
     out = capsys.readouterr().out
     assert "🔁 Looping items: 2" in out
-    assert f"{TITLE} (#5766): 7 of 8 worker runs" in out
+    assert f"{TITLE} (#5766): 6 of 7 worker runs" in out
     assert "👉 Review it yourself, merge it, or force one more try" in out
     assert "review  moonshotai/kimi-k3.1-pro  work_failure" in out
 
@@ -178,7 +178,7 @@ def test_recap_lists_looping_and_parked_items_under_needs_you() -> None:
     rows = recap_build.needs_you(sources(loops=found, parked=held))
     texts = [str(row["text"]) for row in rows if row["kind"] == "loop"]
     assert texts == [
-        f"{TITLE} (#5766) is looping: 7 of 8 worker runs in the last 6h changed nothing; "
+        f"{TITLE} (#5766) is looping: 6 of 7 worker runs in the last 6h changed nothing; "
         "most often work_failure (5). The factory parked it.",
         "Cover sizes (#5674) is looping: 4 of 4 worker runs in the last 6h changed nothing; "
         "most often work_failure (3).",
@@ -233,3 +233,19 @@ def test_a_park_stays_visible_while_its_hold_is_on() -> None:
     hub.comments = [park_comment(head, "changes-requested")]
     rows = loops.parked(hub, now=AT_0130, pulls=[held])  # type: ignore[arg-type]
     assert [row["number"] for row in rows] == [5766]
+
+
+def test_a_run_that_handed_off_a_pr_counts_as_delivered_in_the_console() -> None:
+    class Delivered(Tracker):
+        def log(self, job_id: int, *, final: bool = False) -> str:
+            return (
+                "2026-11-25T00:00:00Z [factory-outcome] code_delivered: Verified PR #5769 was"
+                " handed off; agent outcome: agent_timeout\n" + super().log(job_id, final=final)
+            )
+
+    row = {"outcome": "agent_timeout", "model": "kimi", "target": "pr:5769", "kind": "repair"}
+    run = {"id": 1, "status": "completed", "updated_at": "2026-11-25T00:00:00Z", "html_url": ""}
+    found = loops.read_run(Delivered({1: row}), run)  # type: ignore[arg-type]
+    assert found is not None and found[1].delivered and not found[1].wasted
+    plain = loops.read_run(Tracker({1: row}), run)  # type: ignore[arg-type]
+    assert plain is not None and not plain[1].delivered and plain[1].wasted

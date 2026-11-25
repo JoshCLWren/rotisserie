@@ -29,7 +29,8 @@ def runs_statement(repo: str, seconds: int) -> tuple[str, dict[str, Any]]:
     return (
         "SELECT created_at, detail ->> 'selected_kind' AS kind,"
         " detail ->> 'selected_number' AS number, detail ->> 'action_kind' AS action,"
-        " model, outcome_class FROM factory_state_events"
+        " detail ->> 'delivery_outcome' AS delivery, model, outcome_class"
+        " FROM factory_state_events"
         " WHERE repo = :repo AND event_type IN ('worker_completed', 'worker_idle', 'worker_failed')"
         " AND created_at > unixepoch() - :seconds AND subject_type = 'worker'",
         {"repo": repo, "seconds": seconds},
@@ -48,6 +49,7 @@ def runs_by_item(rows: list[dict[str, Any]]) -> dict[str, list[loop.Run]]:
                 kind=str(row["action"] or ""),
                 model=str(row["model"] or ""),
                 outcome=str(row["outcome_class"] or "unknown_failure"),
+                delivered=row.get("delivery") == "persisted",
             )
         )
     return found

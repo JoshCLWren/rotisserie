@@ -31,7 +31,7 @@ from rotisserie.factory_console.github import (
 from rotisserie.factory_console.service import failures, incident, review
 from rotisserie.factory_console.service.report import search
 from rotisserie.factory_console.tracker import WORKER_WORKFLOW, Tracker, completed, run_version
-from rotisserie.factory_console.verdicts import outcome_class
+from rotisserie.factory_console.verdicts import Result, outcome_class, parse_outcome
 
 LIMIT = 60
 PARKED_LIMIT = 10
@@ -84,12 +84,14 @@ def read_run(tracker: Tracker, run: Obj) -> tuple[str, Any] | None:
     target = found.get("target", "")
     if not target.startswith(("pr:", "issue:")) or not found.get("class"):
         return None
+    verdict = parse_outcome(log)
     item = rule().Run(
         at=finished,
         kind=found.get("kind", ""),
         model=found.get("model", ""),
         outcome=found["class"],
         url=string(run, "html_url"),
+        delivered=verdict is not None and verdict.result == Result.DELIVERED,
     )
     return target, item
 
