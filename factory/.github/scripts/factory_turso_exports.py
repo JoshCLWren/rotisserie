@@ -11,6 +11,7 @@ from datetime import UTC, datetime
 from typing import Any
 
 import factory_turso_core as core
+from factory_health_cooldown import end_sql
 from factory_quota_reset import CAPACITY_OUTCOMES, policy
 from factory_state_operations_backoff import (
     MAX_FIBONACCI_DELAY_SECONDS,
@@ -82,7 +83,8 @@ def _exclusions(
                 "SELECT source, model FROM factory_model_health"
                 " INDEXED BY idx_factory_model_health_blocking WHERE repo = :repo"
                 " AND status IN ('retired', 'unavailable', 'cooling')"
-                " AND (status = 'retired' OR cooldown_until > unixepoch())",
+                " AND (status = 'retired' OR factory_model_health.cooldown_until > unixepoch()"
+                f" AND {end_sql()} > unixepoch())",
                 {"repo": repo},
             ),
             (
@@ -367,10 +369,12 @@ def export_backoffs(repo: str) -> dict[str, Any]:
     health, fib = db.reads(
         [
             (
-                "SELECT source, model, status, last_outcome, cooldown_until, last_run_id"
-                " FROM factory_model_health INDEXED BY idx_factory_model_health_blocking"
+                f"SELECT source, model, status, last_outcome, {end_sql()} AS cooldown_until,"
+                " last_run_id FROM factory_model_health"
+                " INDEXED BY idx_factory_model_health_blocking"
                 " WHERE repo = :repo AND status IN ('retired', 'unavailable', 'cooling')"
-                " AND (status = 'retired' OR cooldown_until > unixepoch())",
+                " AND (status = 'retired' OR factory_model_health.cooldown_until > unixepoch()"
+                f" AND {end_sql()} > unixepoch())",
                 {"repo": repo},
             ),
             (

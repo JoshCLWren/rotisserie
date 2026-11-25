@@ -27,7 +27,7 @@ from factory_state_operations_quota import capacity_hints
 from factory_track_record_cooldown import STRIKE_WINDOW_SECONDS, WORK_OUTCOMES, Heat, delays_for
 from factory_track_record_cooldown import heat, strike_delay
 from factory_track_record_cooldown import UNAVAILABLE_WINDOW_SECONDS, recent_success_seconds
-from factory_track_record_cooldown import unavailable_delay
+from factory_track_record_cooldown import unavailable_cap, unavailable_delay
 from factory_turso_backoff import capacity_statements, clear_statement, streak_upsert
 from factory_turso_operations import roster
 
@@ -263,6 +263,7 @@ def project_runtime(db: Any, repo: str, run_id: int, outcome: dict[str, Any]) ->
             observed,
             run_id,
             guard,
+            unavailable_cap(_kept(db, repo, source, model, "model_unavailable") is not None),
         )
     for f_source, f_model, f_outcome, f_scope in failures:
         if f_outcome in CAPACITY_OUTCOMES:
@@ -276,6 +277,9 @@ def project_runtime(db: Any, repo: str, run_id: int, outcome: dict[str, Any]) ->
                 observed,
                 run_id,
                 guard,
+                unavailable_cap(
+                    _kept(db, repo, f_source, f_model, "model_unavailable") is not None
+                ),
             )
             continue
         f_heat = _kept(db, repo, f_source, f_model, f_outcome)

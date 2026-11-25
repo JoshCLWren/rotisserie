@@ -13,6 +13,7 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from typing import Any
 
+from factory_health_cooldown import end_sql
 from factory_quota_reset import CAPACITY_OUTCOMES
 
 
@@ -32,8 +33,8 @@ def release(
     health, backoffs, account = db.reads(
         [
             (
-                "SELECT status, last_outcome, cooldown_until FROM factory_model_health"
-                " WHERE repo = :repo AND source = :s AND model = :m",
+                f"SELECT status, last_outcome, {end_sql()} AS cooldown_until"
+                " FROM factory_model_health WHERE repo = :repo AND source = :s AND model = :m",
                 {"repo": repo, "s": source, "m": model},
             ),
             (
