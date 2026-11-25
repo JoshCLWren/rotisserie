@@ -17,6 +17,10 @@ on:
         required: false
       PR_REBASE_TOKEN:
         required: false
+      FACTORY_READER_APP_ID:
+        required: false
+      FACTORY_READER_APP_PRIVATE_KEY:
+        required: false
 
 env:
   # The store is required wherever the adopter configured one; missing
@@ -36,6 +40,8 @@ permissions:
 jobs:
   merge-ready:
     runs-on: ubuntu-latest
+    env:
+      FACTORY_READER_APP_ID: ${{ secrets.FACTORY_READER_APP_ID }}
     steps:
       - name: Set up factory Python
         uses: actions/setup-python@v7
@@ -103,17 +109,78 @@ jobs:
           "$gh_dir/gh" pr checks --help | grep -- '--json' >/dev/null
           echo "$gh_dir" >> "$GITHUB_PATH"
 
-      - name: Meter GitHub CLI requests
+      # The REST shim meters every call, keeps repeated run listings for this
+      # job only, and sends pure reads to the read-only App below. Writes and
+      # merges keep the token each step sets.
+      - name: Install REST-backed factory GitHub reads
         shell: bash
         run: |
           set -Eeuo pipefail
-          meter_dir="$RUNNER_TEMP/factory-gh-meter"
-          mkdir -p "$meter_dir"
+          shim_dir="$RUNNER_TEMP/factory-gh-rest"
+          mkdir -p "$shim_dir"
           echo "FACTORY_REAL_GH=$(command -v gh)" >> "$GITHUB_ENV"
-          cp .github/scripts/factory-gh-meter.sh "$meter_dir/gh"
-          chmod +x "$meter_dir/gh"
+          cp .github/scripts/factory-gh-rest-shim.sh "$shim_dir/gh"
+          chmod +x "$shim_dir/gh"
           echo "FACTORY_GH_CALL_LOG=$RUNNER_TEMP/factory-gh-calls.log" >> "$GITHUB_ENV"
-          echo "$meter_dir" >> "$GITHUB_PATH"
+          # Run listings only: merge gates keep reading live checks and the
+          # drain keeps no dispatcher inventory.
+          echo "FACTORY_GH_READ_CACHE_DIR=$RUNNER_TEMP/factory-gh-read-cache" >> "$GITHUB_ENV"
+          echo "FACTORY_GH_CACHE_PR_CHECKS=0" >> "$GITHUB_ENV"
+          echo "$shim_dir" >> "$GITHUB_PATH"
+
+      # Optional read-only factory App (owner-provisioned secrets
+      # FACTORY_READER_APP_ID / FACTORY_READER_APP_PRIVATE_KEY). Pure reads
+      # then spend that App's own 5000/h installation bucket instead of the
+      # repository's shared GITHUB_TOKEN budget. Writes keep the workflow
+      # token, so no extra workflows are ever triggered. Absent or
+      # under-permissioned Apps are a silent no-op.
+      # Resolve the existing App's client ID from authenticated GitHub metadata.
+      - name: Resolve existing read-only App client ID
+        id: read_app_identity
+        if: ${{ env.FACTORY_READER_APP_ID != '' }}
+        continue-on-error: true
+        shell: bash
+        env:
+          FACTORY_APP_ID: ${{ secrets.FACTORY_READER_APP_ID }}
+          FACTORY_APP_PRIVATE_KEY: ${{ secrets.FACTORY_READER_APP_PRIVATE_KEY }}
+        run: python3 .github/scripts/factory_app_client_id.py
+      - name: Mint optional read-only factory App token
+        id: read_token
+        if: ${{ steps.read_app_identity.outputs.client_id != '' }}
+        continue-on-error: true
+        uses: actions/create-github-app-token@v3
+        with:
+          client-id: ${{ steps.read_app_identity.outputs.client_id }}
+          private-key: ${{ secrets.FACTORY_READER_APP_PRIVATE_KEY }}
+          owner: ${{ github.repository_owner }}
+          repositories: ${{ github.event.repository.name }}
+          permission-actions: read
+          permission-checks: read
+          permission-contents: read
+          permission-issues: read
+          permission-pull-requests: read
+
+      - name: Verify and enable read-only factory App token
+        if: ${{ steps.read_token.outputs.token != '' }}
+        continue-on-error: true
+        shell: bash
+        env:
+          READ_TOKEN: ${{ steps.read_token.outputs.token }}
+        run: |
+          set -Eeuo pipefail
+          minted="$(date +%s)"
+          for endpoint in "issues?per_page=1" "pulls?per_page=1" "actions/runs?per_page=1" \
+            "commits/main/check-runs?per_page=1"; do
+            if ! GH_TOKEN="$READ_TOKEN" gh api "repos/${GITHUB_REPOSITORY}/${endpoint}" >/dev/null 2>&1; then
+              echo "::warning::Read-only factory App cannot read ${endpoint%%\?*}; staying on the workflow token"
+              exit 0
+            fi
+          done
+          {
+            echo "FACTORY_READ_TOKEN=$READ_TOKEN"
+            echo "FACTORY_READ_TOKEN_EXPIRES=$((minted + 3000))"
+          } >> "$GITHUB_ENV"
+          echo "Pure GitHub reads use the read-only factory App installation budget"
 
       - name: Self-test post-merge closure logic
         shell: bash
@@ -249,23 +316,13 @@ jobs:
             jq -r '.[]?.workflow_runs[]? | [.id, .head_sha, .name] | @tsv' "$held_runs_file"
           )
 
-          for entry in "${open_heads[@]}"; do
-            IFS=$'\t' read -r open_head open_pr open_branch <<< "$entry"
-            ci_count="$(gh api \
-              "repos/${GITHUB_REPOSITORY}/actions/workflows/ci.yml/runs?head_sha=${open_head}&per_page=1" \
-              --jq '.total_count' 2>/dev/null || echo 0)"
-            guard_count="$(gh api \
-              "repos/${GITHUB_REPOSITORY}/actions/workflows/fixed-model-pr-repair-guard.yml/runs?head_sha=${open_head}&per_page=1" \
-              --jq '.total_count' 2>/dev/null || echo 0)"
-            if [[ "${ci_count:-0}" == "0" ]]; then
-              echo "PR #${open_pr} has no CI run at head ${open_head:0:12}; dispatching recovery"
-              dispatch_recovery "$open_pr" "$open_branch" 'CI' || true
-            fi
-            if [[ "${guard_count:-0}" == "0" ]]; then
-              echo "PR #${open_pr} has no repair-guard run at head ${open_head:0:12}; dispatching recovery"
-              dispatch_recovery "$open_pr" "$open_branch" 'Fixed Model PR Repair Guard' || true
-            fi
-          done
+          # A head that has a run keeps it, so the store remembers it by SHA
+          # and only new heads are counted (43 counts per drain before).
+          while IFS=$'\t' read -r open_pr open_branch workflow_name; do
+            [[ -n "$open_pr" ]] || continue
+            echo "PR #${open_pr} has no ${workflow_name} run at its head; dispatching recovery"
+            dispatch_recovery "$open_pr" "$open_branch" "$workflow_name" || true
+          done < <(printf '%s\n' "${open_heads[@]}" | python3 .github/scripts/factory_drain_run_presence.py)
 
       - name: Check main health before merging
         id: main_health

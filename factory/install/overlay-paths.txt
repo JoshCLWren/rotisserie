@@ -43,6 +43,7 @@
 .github/scripts/factory_delivery_funnel.py
 .github/scripts/factory_deploy_recovery.py
 .github/scripts/factory_discovery.py
+.github/scripts/factory_drain_run_presence.py
 .github/scripts/factory_dispatch_credential_filter.py
 .github/scripts/factory_dispatch_holds.py
 .github/scripts/factory_dynamic_outcome.py
@@ -54,6 +55,7 @@
 .github/scripts/factory_fork_control.py
 .github/scripts/factory_full_completion_controller.py
 .github/scripts/factory_gh_usage.py
+.github/scripts/factory_head_memo.py
 .github/scripts/factory_health_cooldown.py
 .github/scripts/factory_heartbeat_health.py
 .github/scripts/factory_incident.py

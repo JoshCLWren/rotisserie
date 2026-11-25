@@ -21,7 +21,7 @@ else
   factory_gh_is_read() { return 1; }
 fi
 
-# Run-local read cache (dispatcher jobs only; FACTORY_DISCOVERY_DIR is the
+# Run-local read cache (dispatcher and merge drain jobs; FACTORY_DISCOVERY_DIR is the
 # job's scheduling memory). One dispatcher pass re-ran the same reads from
 # many controller processes: 66x `gh pr checks` and 26+26 paginated Entry/
 # fork run listings in a single push-triggered pass (run 44097292205). Only
@@ -29,7 +29,7 @@ fi
 # resource they describe (pr-N, wf-NAME, run-N). A write drops only the
 # resources it can change; a write whose target is unknown drops them all.
 eval "$(declare -f factory_gh_real | sed '1s/factory_gh_real/factory_gh_live/')"
-FACTORY_GH_READ_CACHE="${FACTORY_DISCOVERY_DIR:+$FACTORY_DISCOVERY_DIR/gh-read-cache}"
+FACTORY_GH_READ_CACHE="${FACTORY_GH_READ_CACHE_DIR:-${FACTORY_DISCOVERY_DIR:+$FACTORY_DISCOVERY_DIR/gh-read-cache}}"
 factory_gh_api_path() {
   shift
   while (( $# )); do
@@ -54,6 +54,7 @@ factory_gh_cache_tag() {
   local path
   factory_gh_is_read "$@" || return 1
   if [[ "${1:-} ${2:-}" == "pr checks" ]]; then
+    [[ "${FACTORY_GH_CACHE_PR_CHECKS:-1}" != 0 ]] || return 1
     path="$(factory_gh_number_arg "${@:3}")" || return 1
     printf 'pr-%s\n' "$path"
     return 0
