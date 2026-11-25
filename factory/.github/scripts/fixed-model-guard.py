@@ -71,7 +71,7 @@ def unrelated_repair(
     Empty previous PR diffs represent first implementation commits and are not
     treated as adopted-PR repair work. A file the latest review findings or
     acceptance-gate reasons name, or a test for code the PR changes, counts as
-    overlap: ComicPile PR 5773 lost three real test edits to this guard.
+    overlap: one adopter PR lost three real test edits to this guard.
     """
     excused = {
         path

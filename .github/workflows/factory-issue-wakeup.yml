@@ -14,12 +14,14 @@ permissions:
 jobs:
   wake:
     # Claim labels belong to the label claim controller; waking a factory
-    # worker on them would race the agent that asked for the item.
+    # worker on them would race the agent that asked for the item. State
+    # labels (factory_state_labels.py) only mirror the store.
     if: >-
       github.event.issue.state == 'open' &&
       contains(github.event.issue.labels.*.name, 'factory:unowned') &&
       !contains(github.event.issue.labels.*.name, 'factory:claimed') &&
-      !contains(fromJSON('["factory:available","factory:claimed","factory:claim-rejected"]'), github.event.label.name)
+      !contains(fromJSON('["factory:available","factory:claimed","factory:claim-rejected"]'), github.event.label.name) &&
+      !contains(fromJSON('["factory:parked","factory:needs-owner","factory:needs-split","factory:gate-rejected","factory:duplicate","factory:incident","factory:cooling"]'), github.event.label.name)
     runs-on: ubuntu-latest
     steps:
       - name: Offer changed issue to trusted dispatcher

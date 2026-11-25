@@ -6,9 +6,10 @@ then one trusted comment. The event goes first and the comment follows only a
 fresh insert, so a repeated sweep or a failed store write never posts twice.
 The dispatcher's pool pass reads that event and sends no worker of any kind
 while the head is unchanged, whatever the stage: a failed worker's own release
-flips the stage. Nothing changes the PR's labels, so an owner's targeted run,
-``factory:override`` or claim still reaches it; a new head releases the hold.
-An active incident's PRs are never parked: owner-directed work is not throttled.
+flips the stage. An owner's targeted run, ``factory:override`` or claim still
+reaches it; a new head releases the hold. An active incident's PRs are never
+parked: owner-directed work is not throttled. ``factory:parked`` shows the hold
+while it is in effect; the same pass removes it once the hold ends.
 """
 
 from __future__ import annotations
@@ -22,6 +23,7 @@ import factory_incident as incident
 import factory_item_loop as loop
 import factory_self_heal as heal
 import factory_self_heal_rules as rules
+import factory_state_labels as state
 from factory_turso_loops import parked_heads
 from factory_work_policy_base import stage_of
 
@@ -120,4 +122,43 @@ def park_loops(
         )
         github.api(f"issues/{item.number}/comments", "--method", "POST", payload={"body": body})
         done.append({"kind": rules.LOOP_PARKED, "pr": item.number, "head": head, "text": text})
+    return done
+
+
+def sync_parked(
+    github: heal.GitHub,
+    store: heal.Store,
+    pulls: Sequence[Mapping[str, Any]],
+    budget: Any,
+) -> list[dict[str, Any]]:
+    """Add ``factory:parked`` while the hold is in effect and remove it once it ends.
+
+    Runs after ``park_loops``, so this pass reads the parks it just recorded.
+    """
+    if not store.enabled():
+        return []
+    parks = store.loop_evidence(loop.limits()[1])[1]
+
+    def heads(row: Mapping[str, Any]) -> set[str]:
+        park = parks.get(f"pr:{_number(row)}")
+        return parked_heads(park) if park else set()
+
+    rows = [row for row in pulls if state.PARKED in heal.labels(row) or _head(row) in heads(row)]
+    if not rows:
+        return []
+    exempt = incident_pulls(github, pulls)
+    done: list[dict[str, Any]] = []
+    for row in rows:
+        number, names = _number(row), heal.labels(row)
+        wanted = state.parked_in_effect(
+            heads(row), _head(row), names, incident=number in exempt
+        )
+        action = state.change(names, state.PARKED, wanted)
+        if action is None:
+            continue
+        if budget.dry_run or not budget.take():
+            done.append({"pr": number, "label": state.PARKED, "status": f"would-{action}"})
+            continue
+        state.write(github, number, state.PARKED, action)
+        done.append({"pr": number, "label": state.PARKED, "action": action})
     return done

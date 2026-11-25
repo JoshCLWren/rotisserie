@@ -111,6 +111,8 @@ class Facts:
     offer_action: str | None = None
     claimed_age: int | None = None  # seconds since factory:claimed was added
     rejected_age: int | None = None
+    # State label -> whether the store says it applies; a missing name is unknown.
+    state: Mapping[str, bool] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)
@@ -226,6 +228,11 @@ def plan(facts: Facts) -> Plan:
                 draft.put(stage, f"normalized stage is {stage}")
 
     _claim_labels(facts, draft)
+    for name, wanted in sorted(facts.state.items()):
+        if wanted:
+            draft.put(name, f"the factory store holds {name}")
+        else:
+            draft.drop(name, f"the factory store no longer holds {name}")
 
     return Plan(
         facts.number,

@@ -3,7 +3,7 @@
 Each gate rejection of an approve verdict carries a head-stamped marker. After
 ``LIMIT`` rejections at the same head, another reviewer will not help: the PR
 goes to repair, and the gate's reasons become findings for the implementer.
-ComicPile PR 5737 got 20 rejections at head f5b7366 and stayed in review.
+One adopter PR got 20 rejections at one head and stayed in review.
 Pure: callers bring the trusted comment bodies.
 """
 
