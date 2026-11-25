@@ -46,7 +46,9 @@ def test_refresh_runs_after_all_assignment_work_and_never_fails_the_tick() -> No
     assert step["env"]["STALE_AFTER_SECONDS"] == "840"
 
 
-def _run(tmp_path: Path, generated: str, pending: int) -> list[str]:
+def _run(
+    tmp_path: Path, generated: str, pending: int, extra: dict[str, str] | None = None
+) -> list[str]:
     calls = tmp_path / "calls"
     stats = json.dumps({"generated_at": generated})
     fake = tmp_path / "gh"
@@ -69,11 +71,12 @@ def _run(tmp_path: Path, generated: str, pending: int) -> list[str]:
         "FACTORY_REAL_GH": str(fake),
         "GITHUB_REPOSITORY": "acme/widgets",
         "STALE_AFTER_SECONDS": "840",
+        **(extra or {}),
     }
     subprocess.run(
         ["bash", "-c", str(_step()["run"])], cwd=tmp_path, env=env, check=True, capture_output=True
     )
-    return calls.read_text().splitlines()
+    return calls.read_text().splitlines() if calls.exists() else []
 
 
 @pytest.mark.parametrize(
@@ -95,3 +98,10 @@ def test_refresh_dispatches_only_a_stale_snapshot_without_a_pending_run(
         if dispatched
         else []
     )
+
+
+def test_refresh_reuses_the_snapshot_this_job_already_read(tmp_path: Path) -> None:
+    shared = tmp_path / "factory-stats.json"
+    shared.write_text(json.dumps({"generated_at": datetime.now(UTC).isoformat()}))
+    calls = _run(tmp_path, "", 0, {"FACTORY_STATS_FILE": str(shared)})
+    assert calls == []
