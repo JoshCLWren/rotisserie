@@ -13,6 +13,7 @@ import sys
 import time
 from collections.abc import Mapping
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any, Literal, TypedDict, cast
 
 sys.path.insert(0, os.path.dirname(__file__))
@@ -30,6 +31,7 @@ sys.path.insert(0, str(_eligibility_dir))
 eligibility = importlib.import_module("factory_eligibility")
 _review_policy = importlib.import_module("factory_review_policy")
 _review_exclusion = importlib.import_module("factory_review_exclusion")
+line_gate = importlib.import_module("factory_review_line_gate")
 approval_can_promote = _review_policy.approval_can_promote
 current_head_approvers = _review_policy.current_head_approvers
 current_head_contributors = _review_policy.current_head_contributors
@@ -2029,6 +2031,21 @@ def handle_review(
                 producer=producer,
             )
 
+    # The reviewer's findings decide approve versus repair; its prose never does.
+    line = None
+    if verdict in line_gate.LINE_VERDICTS:
+        line = line_gate.run(SimpleNamespace(**globals()), pr=pr_number, head=reviewed_head,
+                             worker=worker, verdict=verdict, review_log=review_log)
+        if line.verdict == "failed":
+            return return_to_review(
+                pr_number=pr_number, branch=branch, worker=worker, reviewer=worker,
+                verdict="not-ready", excerpt="", note=line.note, status=line.status,
+                head=reviewed_head, producer=producer,
+            )
+        verdict = line.verdict
+        if line.review.blocking:
+            excerpt = redact_review_text(line.handoff)
+
     # For approval, require evidence of diff / PR inspection. Failed attempts must
     # not render as APPROVE: that false signal stalls promotion while looking done.
     if verdict == "approve":
@@ -2160,17 +2177,7 @@ def handle_review(
                     f"<!-- {STRIKE_RESET_MARKER}:issue-{issue}:pr-{pr_number}:"
                     f"excluded-producer-{excluded} -->"
                 )
-                run_gh(
-                    [
-                        "issue",
-                        "comment",
-                        str(issue),
-                        "--repo",
-                        REPO,
-                        "--body",
-                        strike_marker,
-                    ]
-                )
+                run_gh(["issue", "comment", str(issue), "--repo", REPO, "--body", strike_marker])
             transition_pr_and_linked_issue(
                 pr_number=pr_number,
                 branch=branch,
@@ -2229,19 +2236,15 @@ def handle_review(
         run_gh(["pr", "close", str(pr_number), "--repo", REPO])
         return {"status": "rejected", "head": reviewed_head, "producer": producer}
 
-    # Handle terminal verdicts that result in PR closure
     if verdict in {"obsolete", "duplicate", "superseded", "delivered"}:
         if not has_actionable_review_findings(excerpt):
             raise RuntimeError(f"semantic {verdict} requires durable actionable review findings")
-        
-        # Map verdicts to human-readable reasons
         reason_messages = {
             "obsolete": "This PR is obsolete and no longer needed",
             "duplicate": "This PR is a duplicate of other work",
             "superseded": "This PR has been superseded by other changes",
             "delivered": "The changes targeted by this PR are already delivered on main"
         }
-        
         post_review_comment(
             pr_number=pr_number,
             marker=marker,
@@ -2254,32 +2257,17 @@ def handle_review(
                 "The linked issue remains available for a clean implementation."
             ),
         )
-        
-        # Close the PR with terminal state reconciliation
         run_gh(["pr", "close", str(pr_number), "--repo", REPO])
-        
-        # Record terminal reason marker for future reconciliation
+        # Terminal reason marker for future reconciliation.
         terminal_marker = (
             f"<!-- {MARKER_PREFIX}-factory-terminal-state-v1:"
             f"pr-{pr_number}:head-{reviewed_head}:"
             f"verdict-{verdict}:reason-{reason_messages[verdict]} -->"
         )
-        run_gh([
-            "issue", 
-            "comment", 
-            str(linked_issue_from_branch(branch) or pr_number),
-            "--repo", 
-            REPO,
-            "--body", 
-            terminal_marker,
-        ])
-        
-        return {
-            "status": f"terminal-{verdict}", 
-            "head": reviewed_head, 
-            "producer": producer,
-            "reason": reason_messages[verdict]
-        }
+        target = str(linked_issue_from_branch(branch) or pr_number)
+        run_gh(["issue", "comment", target, "--repo", REPO, "--body", terminal_marker])
+        return {"status": f"terminal-{verdict}", "head": reviewed_head, "producer": producer,
+                "reason": reason_messages[verdict]}
 
     post_review_comment(
         pr_number=pr_number,
@@ -2788,7 +2776,7 @@ def main() -> int:
             raise RuntimeError("expected head must be a full lowercase Git SHA")
         result = mechanical_merge_gate(args.pr, args.expected_head)
     print(json.dumps(result, sort_keys=True))
-    return 0
+    return 3 if result.get("status") in line_gate.FAILURE_STATUSES else 0
 
 
 if __name__ == "__main__":

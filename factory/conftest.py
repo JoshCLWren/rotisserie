@@ -32,3 +32,18 @@ os.environ["GH_CONFIG_DIR"] = tempfile.mkdtemp(prefix="factory-tests-gh-")
 # Actions, an unset setting makes claim-gated controller steps hold closed.
 # Tests of that rule set or clear it themselves.
 os.environ["FACTORY_STATE_REQUIRED"] = "false"
+
+import pytest  # noqa: E402
+
+
+@pytest.fixture
+def passthrough_line_review(monkeypatch: pytest.MonkeyPatch) -> None:
+    """For controller tests written before line findings: the submitted verdict stands
+    and no review is posted. Line-findings tests exercise the real step."""
+    import factory_review_findings as findings
+    import factory_review_line_gate as line_gate
+
+    def run(_ctl: object, *, verdict: str, **_kwargs: object) -> line_gate.Outcome:
+        return line_gate.Outcome(verdict, review=findings.Review(parsed=True))
+
+    monkeypatch.setattr(line_gate, "run", run)

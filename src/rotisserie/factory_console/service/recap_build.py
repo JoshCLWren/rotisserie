@@ -68,6 +68,7 @@ class Sources:
     loops: list[dict[str, object]] = field(default_factory=list)
     parked: list[dict[str, object]] = field(default_factory=list)
     open_after_merge: list[dict[str, object]] = field(default_factory=list)
+    reviews: dict[str, int] = field(default_factory=dict)
     unread: list[str] = field(default_factory=list)
 
 

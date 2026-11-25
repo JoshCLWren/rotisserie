@@ -170,6 +170,7 @@ log = (
 )
 if verdict == "APPROVE":
     log += "FACTORY_ACCEPTANCE_V1=" + json.dumps(report, separators=(",", ":")) + "\n"
+    log += "FACTORY_REVIEW_FINDINGS_V1=" + json.dumps({"head": head, "findings": []}) + "\n"
 open("/tmp/opencode-factory-77.log", "w", encoding="utf-8").write(log)
 print(f"Validated {verdict} from local provider for issue #{issue}")
 PY

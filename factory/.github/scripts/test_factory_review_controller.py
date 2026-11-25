@@ -9,6 +9,7 @@ from types import ModuleType, SimpleNamespace
 import pytest
 from tests.workflow_files import adopter_view
 
+pytestmark = pytest.mark.usefixtures("passthrough_line_review")
 SCRIPT_DIR = Path(__file__).parent
 CONTROLLER_PATH = SCRIPT_DIR / "factory-review-controller.py"
 VERDICT_PATH = SCRIPT_DIR / "factory-semantic-verdict.sh"
@@ -458,8 +459,7 @@ def configure_review_handoff(
     )
     monkeypatch.setattr(controller, "review_comment_bodies", lambda _pr: [])
     configure_model_provenance(monkeypatch, controller, HEAD)
-    # These cases exercise mechanical handoff after semantic prerequisites.
-    # Delivery/acceptance refusal has focused controller integration coverage.
+    # Mechanical handoff after semantic prerequisites; delivery/acceptance has its own coverage.
     monkeypatch.setattr(controller, "target_json", lambda _issue: {
         "state": "open", "body": "Implement the requested behavior",
     })

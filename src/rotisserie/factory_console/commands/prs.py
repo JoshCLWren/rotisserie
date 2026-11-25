@@ -15,6 +15,7 @@ from rotisserie.factory_console.service import (
     bridge,
     checks,
     claimops,
+    code_review,
     conflicts,
     main_health,
     review,
@@ -254,6 +255,7 @@ def cmd_review(context: Context, arguments: argparse.Namespace) -> Outcome:
     if not targets:
         raise UsageError("Name pull requests (pr:N) or pass --blocked.")
     reports = [review.inspect(github, number, pull=pull) for number, pull in targets]
+    line_reviews = {report.pr: code_review.latest(github, report.pr) for report in reports}
     held: dict[int, list[stalls.Stall]] = {
         number: stalls.inspect(github, number, pull=pull)
         for number, pull in targets
@@ -269,6 +271,8 @@ def cmd_review(context: Context, arguments: argparse.Namespace) -> Outcome:
             f"  Approvals on this head: {len(report.approvers)}; reviewer models: {reviewers}"
         )
         console.line(f"  {report.reason}")
+        for line in code_review.describe(line_reviews.get(report.pr)):
+            console.line(f"  {line}")
         if report.block_note:
             moved = (
                 f" (written on earlier head {report.block_head[:10]})"
@@ -288,6 +292,7 @@ def cmd_review(context: Context, arguments: argparse.Namespace) -> Outcome:
     data: dict[str, object] = {
         "reports": [report.to_dict() for report in reports],
         "deadlocks": [stall.to_dict() for found in held.values() for stall in found],
+        "code_reviews": [found.to_dict() for found in line_reviews.values() if found],
     }
     if not arguments.requeue:
         return Outcome(Result.COMPLETED, EXIT_OK, data)
