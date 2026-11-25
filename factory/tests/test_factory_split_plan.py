@@ -184,3 +184,26 @@ def test_the_dispatcher_turns_a_split_target_into_a_split_action() -> None:
     controller = (SCRIPTS / "factory-work-controller.py").read_text()
     assert "'split' if requested_action == 'split' else 'implement'" in controller
     assert "({'action': 'split'} if force_slot and target_spec and action == 'split'" in controller
+
+
+def test_the_trusted_classifier_counts_a_split_run_as_success() -> None:
+    import importlib.util
+
+    spec = importlib.util.spec_from_file_location(
+        "factory_dynamic_outcome_split", SCRIPTS / "factory_dynamic_outcome.py"
+    )
+    assert spec and spec.loader
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    tag = "[factory:10001][source:opencode-free][model:a/b] "
+    log = (
+        "Factory 10001 assigned dynamic provider slot: source=opencode-free configured=true\n"
+        f"{tag}checked out issue #{PARENT} on factory/10001-{PARENT}-x at {'a' * 40}\n"
+        f"{tag}FACTORY_EXECUTION_CANDIDATE: source=opencode-free model=a/b runtime=opencode-go/a/b\n"
+        f"{tag}agent exit status 0 for issue #{PARENT}\n"
+        f"{tag}{plans.SENTINEL}: {json.dumps(plans.validate(raw(), PARENT))}\n"
+        f"{tag}FACTORY_TERMINAL_OUTCOME: class=success detail=issue #{PARENT} split plan validated\n"
+    )
+    result = module.classify(log)
+    assert result["outcome_class"] == "success"
+    assert (result["selected_kind"], result["selected_number"]) == ("issue", str(PARENT))
