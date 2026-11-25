@@ -148,6 +148,7 @@
 .github/scripts/local_review_contract.py
 .github/scripts/nvidia-factory-worker.sh
 .github/scripts/omniroute-factory-worker.sh
+.github/scripts/opencode-factory-quota-retry.mjs
 .github/scripts/provision-worker-app.cjs
 .github/scripts/prune-oldest-vcr-image.sh
 .github/scripts/stale_pr_decay.py

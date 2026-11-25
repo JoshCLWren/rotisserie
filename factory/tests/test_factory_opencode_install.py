@@ -64,6 +64,9 @@ def test_unpublished_latest_platform_package_falls_back_to_previous_v2(tmp_path:
     ]
     assert (tmp_path / "github_path").read_text().strip().endswith("factory-opencode-v2/bin")
     assert (tmp_path / "home/.config/opencode/opencode.json").is_file()
+    plugin = tmp_path / "home/.config/opencode/plugins/factory-quota-retry.js"
+    source = ROOT / ".github/scripts/opencode-factory-quota-retry.mjs"
+    assert plugin.read_text() == source.read_text()
 
 
 def test_exhausted_published_versions_fail_closed_without_fake_success(tmp_path: Path) -> None:
