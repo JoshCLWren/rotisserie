@@ -184,19 +184,32 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("issue", type=int)
     parser.add_argument("--repo", required=True)
     args = parser.parse_args(argv)
+    sys.stdout.write(_merged(args.issue, args.repo) + _memory())
+    return 0
+
+
+def _memory() -> str:
+    try:
+        from factory_memory import prompt_context
+    except ImportError:
+        return ""
+    return prompt_context()
+
+
+def _merged(issue: int, repo: str) -> str:
     proc = subprocess.run(
         [
             "gh",
             "pr",
             "list",
             "--repo",
-            args.repo,
+            repo,
             "--state",
             "merged",
             "--limit",
             "20",
             "--search",
-            f'"Part of #{args.issue}" in:body',
+            f'"Part of #{issue}" in:body',
             "--json",
             "number,title,body",
         ],
@@ -206,14 +219,12 @@ def main(argv: list[str] | None = None) -> int:
         check=False,
     )
     if proc.returncode:
-        return 0
+        return ""
     try:
         rows = json.loads(proc.stdout or "[]")
     except ValueError:
-        return 0
-    sys.stdout.write(merged_context(args.issue, rows if isinstance(rows, list) else []))
-    return 0
-
+        return ""
+    return merged_context(issue, rows if isinstance(rows, list) else [])
 
 if __name__ == "__main__":
     with __import__("contextlib").suppress(ImportError):
