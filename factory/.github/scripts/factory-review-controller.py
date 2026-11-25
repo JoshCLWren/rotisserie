@@ -2109,16 +2109,15 @@ def handle_review(
             non_closing=non_closing,
         )
         if failures:
-            escalate = acceptance_escalation.escalate(model_comment_bodies(pr_number), pr=pr_number, head=reviewed_head)
+            escalate = acceptance_escalation.flag(run_gh, REPO, pr_number, labels_of(pr), True) and acceptance_escalation.escalate(model_comment_bodies(pr_number), pr=pr_number, head=reviewed_head)
             return return_to_review(
                 pr_number=pr_number, branch=branch, worker=worker, reviewer=worker, verdict="repair" if escalate else "not-ready",
                 excerpt=acceptance_escalation.findings(failures, body) if escalate else excerpt,
                 note="Approval rejected: issue acceptance evidence incomplete: " + issue_acceptance.failure_summary(failures),
                 marker=acceptance_escalation.marker(pr=pr_number, head=reviewed_head), stage="factory:changes-requested" if escalate else "factory:review",
                 status="acceptance-evidence-required", head=reviewed_head, producer=producer)
-        accepted_contract_marker = issue_acceptance.marker(
-            issue_number, reviewed_head, body
-        )
+        accepted_contract_marker = issue_acceptance.marker(issue_number, reviewed_head, body)
+        acceptance_escalation.flag(run_gh, REPO, pr_number, labels_of(pr), False)
 
     if verdict in {"repair", "reject"} and not has_actionable_review_findings(excerpt):
         return return_to_review(

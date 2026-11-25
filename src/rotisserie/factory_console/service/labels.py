@@ -141,10 +141,9 @@ def audit(
     """Plan every open item's repair without writing anything."""
     lp = policy()
     instant = now or datetime.now(UTC)
-    settled = state if state is not None else state_labels.desired(github, now=instant)
-    parked_label = runtime.module("factory_state_labels").PARKED
     snap = snapshot or frontier.capture(github, now=instant)
     rows = items if items is not None else open_items(github)
+    settled = state if state is not None else state_labels.desired(github, now=instant, items=rows)
     leases, problem = frontier._active_leases(github.repo)
     neon_known = snap.authoritative_claim_available and not problem
     offers = {offer.target: offer for offer in snap.offers}
@@ -210,7 +209,7 @@ def audit(
             offer.action if offer else None,
             claimed_age,
             rejected_age,
-            dict(settled.get(f"{kind}:{number}", {})) if kind == "pr" else {parked_label: False},
+            dict(settled.get(f"{kind}:{number}", {})),
         )
         result = lp.plan(facts)
         if result.changes:

@@ -227,16 +227,18 @@ def sweep(
     pulls = open_pulls(github)
     budget = actions.Budget(actions=max_actions, syncs=max_syncs, dry_run=dry_run)
     from factory_self_heal_loops import park_loops, sync_parked
+    from factory_self_heal_state import sync_state
 
     out: dict[str, Any] = {
         "dry_run": dry_run, "verdicts": [], "threads": [], "conflicts": [], "loops": [],
-        "parked_labels": [],
+        "parked_labels": [], "state_labels": [],
     }
     for name, step in (
         ("loops", park_loops),
         ("verdicts", actions.heal_empty_verdicts),
         ("threads", actions.resolve_answered_threads),
         ("parked_labels", sync_parked),
+        ("state_labels", sync_state),
     ):
         try:
             out[name] = step(github, store, pulls, budget)

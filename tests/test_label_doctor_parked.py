@@ -32,9 +32,15 @@ class Hub(FakeGitHub):  # type: ignore[misc]
     def gh(self, *args: str, **kwargs: Any) -> str:
         return "[]" if args[:2] == ("variable", "list") else super().gh(*args, **kwargs)
 
+    bodies: dict[int, str] = {}
+
+    def _row(self, number: int) -> dict[str, Any]:
+        return {**super()._row(number), "body": self.bodies.get(number, "")}
+
     def _gh(self, *args: str) -> str:
-        if args[1].endswith("/labels") and "name=" + PARKED in args:
-            self.writes.append(("define", 0, PARKED))
+        names = [a.removeprefix("name=") for a in args if a.startswith("name=")]
+        if args[1].endswith("/labels") and names:
+            self.writes.append(("define", 0, names[0]))
             return "{}"
         return str(super()._gh(*args))
 

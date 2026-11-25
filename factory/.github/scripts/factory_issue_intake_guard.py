@@ -119,6 +119,9 @@ def request_splits(
     asked: list[int] = []
     for issue in issues:
         labels = _labels(issue)
+        if NEEDS_SPLIT in labels and (BYPASS & labels or split_reason(issue, limit) is None):
+            write(f"issues/{int(issue['number'])}/labels/{NEEDS_SPLIT.replace(':', '%3A')}", None)
+            continue
         if len(asked) >= budget or NEEDS_SPLIT in labels or BYPASS & labels:
             continue
         if int(issue["number"]) in _ASKED or not issue_is_static_candidate(dict(issue), set()):

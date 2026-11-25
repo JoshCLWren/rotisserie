@@ -812,6 +812,24 @@ inside the recap window. It says 🔥🔥 Burning only when that stretch is stil
 going and the doctor's `work turning` check fails; otherwise it states the gap. Both control rooms show the verdict at the top
 of the overview, above the morning recap.
 
+### Factory state labels
+
+These labels mirror facts the factory already holds. They never start or stop
+work: the store and the controllers decide, and the label-triggered workflows
+ignore their events. The code that changes the state writes the label with the
+workflow token. The label doctor (`baste labels`) fixes the ones it can read.
+
+| Label | On when | Off when | Written by |
+| --- | --- | --- | --- |
+| `factory:parked` | The loop breaker holds the PR at its head | New head, `factory:override`, a claim, incident work | Self-heal sweep, doctor |
+| `factory:needs-split` | The issue is over the size limit or labeled epic, umbrella or tracking | The issue fits, or gets `factory:override` | Dispatcher, doctor |
+| `factory:gate-rejected` | The acceptance gate rejected an approval at the PR's head | New head, or the gate passes at the head | Review controller, self-heal sweep, doctor |
+| `factory:duplicate` | An older open PR delivers the same issue (put on the newer PRs) | One PR is left | Self-heal sweep, doctor |
+| `factory:cooling` | The store holds the PR with retry cooling or review churn (not a park) | The hold expires | Self-heal sweep only |
+
+`factory:incident` is not in this table. It is the owner's input that declares
+an incident, so its events still wake work.
+
 ### Issue intake holds
 
 The dispatcher's pool pass sends no implement run to an issue in two cases
