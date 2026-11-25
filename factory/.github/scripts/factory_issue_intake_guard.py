@@ -8,9 +8,9 @@
   implement run gets the merged PRs as context instead.
 * An issue whose body is over ``BODY_LIMIT`` characters, or that carries an
   epic, umbrella or tracking label, is not one task. The factory posts one
-  comment that asks the owner for a split proposal and labels it
-  ``factory:needs-split``. The owner approves each split; the factory never
-  creates child issues (Rotisserie issue #56).
+  comment and labels it ``factory:needs-split``; the self-heal sweep then splits
+  it into child issues on its own (``factory_self_heal_split``). The owner undoes
+  a split by closing the children.
 
 An owner ``factory:override`` label, a claim or a targeted run is never held.
 """
@@ -29,7 +29,7 @@ BODY_LIMIT = 16_000
 BODY_LIMIT_SETTING = "FACTORY_ISSUE_BODY_LIMIT"
 SPLIT_LABELS = frozenset({"epic", "umbrella", "tracking"})
 NEEDS_SPLIT = "factory:needs-split"
-NEEDS_SPLIT_DEFINITION = ("d93f0b", "Too large for one factory task; the owner approves a split")
+NEEDS_SPLIT_DEFINITION = ("d93f0b", "Too large for one factory task; the factory splits it")
 BYPASS = frozenset({"factory:override", "factory:claimed"})
 MARKER = "factory-split-request-v1"
 PART_OF_RE = re.compile(r"(?im)^[ \t]*part[ \t]+of[ \t]+#(?P<issue>\d+)\b")
@@ -95,9 +95,10 @@ def split_comment(number: int, reason: str) -> str:
     return (
         f"<!-- {MARKER}:issue-{number} -->\n\n"
         f"**Factory intake:** issue #{number} needs a split before the factory takes it: "
-        f"{reason}. The factory does not dispatch it as one task. Post a split proposal"
-        " (the child issues and what each one delivers) and create the issues you approve;"
-        " the factory never creates them. Add `factory:override` to send it as one task anyway."
+        f"{reason}. The factory does not dispatch it as one task. It sends one split run to"
+        " the model with the best track record, creates the child issues from the validated"
+        " plan, and tracks this issue through them. Close the children to undo the split. Add"
+        " `factory:override` to send it as one task anyway."
     )
 
 

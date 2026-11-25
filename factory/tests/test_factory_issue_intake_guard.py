@@ -97,7 +97,7 @@ def test_a_split_request_is_posted_once_with_a_label() -> None:
     assert paths == ["labels", "issues/4335/labels", "issues/4335/comments"]
     comment = str(writes[-1][1]["body"])  # type: ignore[index]
     assert "25,713 characters, over the 16,000-character limit" in comment
-    assert "never creates them" in comment
+    assert "creates the child issues from the validated plan" in comment
     labelled = issue(4335, "x" * EPIC_4335_BODY, guard.NEEDS_SPLIT)
     assert guard.request_splits([labelled], lambda *_: writes.append(("again", None))) == []
 

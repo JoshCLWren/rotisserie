@@ -15,7 +15,7 @@ Later sweeps judge the run from the store's worker outcomes:
   findings and the last review, keeps its branch, and puts the linked issue
   back in the queue with a link to the closed PR;
 * no counted run within ``LAPSE_SECONDS`` (the run never started or hit only
-  capacity limits): one more dispatch, then closure.
+  capacity limits): another dispatch. A pause or quota outage never closes a PR.
 
 A push ends the park by itself, because a park holds only its parked heads.
 The exemptions of the park itself apply: owner override or claim, an outside
@@ -37,7 +37,7 @@ from factory_work_policy_base import linked_issue_from_pr, stage_of
 
 PARK_SECONDS = 12 * 3600
 LAPSE_SECONDS = 6 * 3600
-MAX_DISPATCHES = 2
+MAX_PER_SWEEP = 3
 LOOKBACK_SECONDS = 3 * 86400
 DISPATCH_WORKFLOW = "fixed-model-factory-dispatch.yml"
 NOTE_MARKER = "factory-park-closed-v1"
@@ -70,8 +70,8 @@ def attempts_statement(repo: str) -> tuple[str, dict[str, Any]]:
     )
 
 
-def evidence(repo: str, now: datetime) -> dict[str, Any]:
-    """Parks, forced attempts, closures, park texts and the runs since the oldest open attempt."""
+def evidence(repo: str) -> dict[str, Any]:
+    """Parks, forced attempts, closures and park texts."""
     import factory_turso_core as core
 
     db = core.store()
@@ -94,19 +94,21 @@ def evidence(repo: str, now: datetime) -> dict[str, Any]:
         attempts.setdefault(key, []).append(
             Attempt(pr, key[1], int(row["attempt"] or 1), at, str(row["model"] or ""))
         )
-    runs: dict[str, list[loop.Run]] = {}
-    open_starts = [tries[-1].at for key, tries in attempts.items() if key not in closed]
-    if open_starts:
-        seconds = int((now - min(open_starts)).total_seconds()) + 3600
-        statement = turso_loops.runs_statement(repo, min(max(seconds, 3600), LOOKBACK_SECONDS))
-        runs = turso_loops.runs_by_item(db.reads([statement])[0])
     return {
         "parks": turso_loops.parks(park_rows),
         "attempts": attempts,
         "closed": closed,
         "texts": texts,
-        "runs": runs,
     }
+
+
+def runs_since(repo: str, start: datetime, now: datetime) -> dict[str, list[loop.Run]]:
+    """Worker outcomes since ``start``, read only when an open attempt needs judging."""
+    import factory_turso_core as core
+
+    seconds = int((now - start).total_seconds()) + 3600
+    statement = turso_loops.runs_statement(repo, min(max(seconds, 3600), LOOKBACK_SECONDS))
+    return turso_loops.runs_by_item(core.store().reads([statement])[0])
 
 
 def judge(attempt: Attempt, runs: Sequence[loop.Run], now: datetime) -> str:
@@ -228,11 +230,10 @@ def closing_text(
     pull: Mapping[str, Any], tries: Sequence[Attempt], verdict: str, park: str, review: str
 ) -> str:
     pr = _number(pull)
-    ran = "changed nothing" if verdict == "stuck" else "never ran to an outcome"
     models = ", ".join(dict.fromkeys(attempt.model for attempt in tries)) or "auto"
     return (
         f"Closed #{pr}: it was parked for 12 hours ({park or 'a worker loop'}), and the factory's"
-        f" forced run ({models}) {ran}. Last review: {review}. The branch `{_branch(pull)}` stays"
+        f" forced run ({models}) changed nothing. Last review: {review}. The branch `{_branch(pull)}` stays"
         f" at `{_head(pull)[:12]}`; the linked issue is back in the queue with this PR as"
         " context. Reopen this PR to undo."
     )
@@ -327,7 +328,7 @@ def resolve_long_parks(
     if not store.enabled():
         return []
     now = now or datetime.now(UTC)
-    found = evidence(github.repo, now)
+    found = evidence(github.repo)
     due = []
     for pull in pulls:
         park = found["parks"].get(f"pr:{_number(pull)}")
@@ -339,7 +340,15 @@ def resolve_long_parks(
     from factory_self_heal_loops import incident_pulls
 
     incidents = incident_pulls(github, pulls)
+    starts = [
+        tries[-1].at
+        for pull, park in due
+        if (tries := found["attempts"].get((_number(pull), park)))
+        and (_number(pull), park) not in found["closed"]
+    ]
+    runs = runs_since(github.repo, min(starts), now) if starts else {}
     done: list[dict[str, Any]] = []
+    taken = 0
     for pull, park in due:
         pr = _number(pull)
         why = exempt(store, pull, incidents)
@@ -353,14 +362,15 @@ def resolve_long_parks(
         if not tries:
             verdict = "due"
         else:
-            verdict = judge(tries[-1], found["runs"].get(f"pr:{pr}", []), now)
-            if verdict == "lapsed" and tries[-1].number < MAX_DISPATCHES:
+            verdict = judge(tries[-1], runs.get(f"pr:{pr}", []), now)
+            if verdict == "lapsed":
                 verdict = "due"
         if verdict == "pending":
             continue
-        if budget.dry_run or not budget.take():
+        if budget.dry_run or taken >= MAX_PER_SWEEP or not budget.take():
             done.append({"pr": pr, "status": f"would-{verdict}"})
             continue
+        taken += 1
         if verdict == "due":
             row = dispatch(github, store, pull, park, (tries[-1].number + 1) if tries else 1)
         elif verdict == "progress":

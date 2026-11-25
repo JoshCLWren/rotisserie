@@ -2218,7 +2218,7 @@ def forced_target_candidate(kind: str, number: int, requested_action: str = 'adv
     if kind == 'issue':
         candidate = Candidate('issue', number, provenance_lane(labels), 0,
                               str(target.get('created_at') or ''), stage=stage_of(labels))
-        return candidate, 'implement', 'factory:building'
+        return candidate, 'split' if requested_action == 'split' else 'implement', 'factory:building'
     live = live_pr_state(number)
     conflicted = (live.get('mergeable') is False
                   or str(live.get('mergeable_state') or '').upper() == 'DIRTY')
@@ -2441,7 +2441,7 @@ def dispatch_next(
                 'workflow', 'run', 'free-model-factory-entry.yml', '--repo', REPO,
                 '--ref', 'main', '-f', f'worker={worker}',
                 '-f', 'assignment=' + json.dumps(
-                    assignment_context(candidate, worker) | ({'exact_model': True} if exact else {}) | ({'operator_forced': True} if force_slot and target_spec else {})),
+                    assignment_context(candidate, worker) | ({'exact_model': True} if exact else {}) | ({'operator_forced': True} if force_slot and target_spec else {}) | ({'action': 'split'} if force_slot and target_spec and action == 'split' else {})),
                 '-f', f'model={model}', '-f', f'provider={source}',
             ])
         except RuntimeError:
@@ -2451,7 +2451,7 @@ def dispatch_next(
             raise RuntimeError('Could not confirm worker dispatch. Inspect Actions before retrying.') from None
         factory_active_workers.note_dispatched(REPO, worker)
         if candidate.kind == 'issue':
-            chosen_action: str | None = 'implement'
+            chosen_action: str | None = 'split' if force_slot and action == 'split' else 'implement'
         elif force_slot and target_spec and action != 'advance':
             chosen_action = action
         elif force_slot:
@@ -2614,7 +2614,7 @@ def main() -> int:
     next_parser.add_argument('--slot-index', type=int)
     next_parser.add_argument('--target', default='')
     next_parser.add_argument('--action', default='advance', choices=(
-        'advance', 'implement', 'merge-conflict', 'ci-repair', 'review-findings', 'review',
+        'advance', 'implement', 'merge-conflict', 'ci-repair', 'review-findings', 'review', 'split',
     ))
     target_parser = subparsers.add_parser('dispatch-target')
     target_parser.add_argument('--kind', required=True, choices=('issue', 'pr'))
