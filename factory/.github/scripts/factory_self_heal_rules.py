@@ -31,9 +31,10 @@ LOOP_PARKED = "loop-parked"
 LOOP_RELEASED = "loop-released"
 PARK_RETRY = "park-retry"
 PARK_CLOSED = "park-closed"
+DUPLICATE_CLOSED = "duplicate-closed"
 KINDS = (
     EMPTY_VERDICT, CONFLICT_SYNC, THREAD_RESOLVED, LOOP_PARKED, LOOP_RELEASED, PARK_RETRY,
-    PARK_CLOSED,
+    PARK_CLOSED, DUPLICATE_CLOSED,
 )
 CHANGES_REQUESTED = "factory:changes-requested"
 VERDICT_HEADER = "### Factory semantic review"

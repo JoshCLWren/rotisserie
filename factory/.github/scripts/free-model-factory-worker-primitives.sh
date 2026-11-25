@@ -59,10 +59,9 @@ contains_skip_pr() {
 }
 
 stage_trusted_guard() {
-  # The worker starts on the trusted main checkout. Copy the guard to a
-  # stable location BEFORE any checkout_target switches onto an adopted PR
-  # branch, then invoke only this copy for pre-push decisions. A stale PR
-  # branch copy of fixed-model-guard.py can never downgrade the decision.
+  # The worker starts on the trusted main checkout. Copy the guard to a stable location BEFORE any
+  # checkout_target switches onto an adopted PR branch, then invoke only this copy for pre-push
+  # decisions. A stale PR branch copy of fixed-model-guard.py can never downgrade the decision.
   TRUSTED_GUARD="${TRUSTED_GUARD:-}"
   if [[ -z "$TRUSTED_GUARD" ]]; then
     TRUSTED_GUARD="$(mktemp /tmp/factory-fixed-model-guard.XXXXXX.py)"
@@ -363,7 +362,7 @@ stage_trusted_review_controller() {
     cp .github/scripts/factory_review_policy.py "$trusted_dir/factory_review_policy.py"
   cp .github/scripts/factory_issue_acceptance.py .github/scripts/factory_acceptance_criteria.py .github/scripts/factory_acceptance_escalation.py .github/scripts/factory_crash.py "$trusted_dir/"
   cp .github/scripts/factory_implementation_delivery.py "$trusted_dir/factory_implementation_delivery.py"
-    cp .github/scripts/factory_post_merge_closure.py .github/scripts/factory_post_merge_closure_policy.py .github/scripts/factory_post_merge_closure_github.py .github/scripts/factory_merge_linkage.py .github/scripts/factory_review_exclusion.py .github/scripts/factory_review_findings.py .github/scripts/factory_review_line_gate.py .github/scripts/factory_self_review_allowance.py .github/scripts/factory_outside_approval.py .github/scripts/factory_outside_verdict.py "$trusted_dir/"
+    cp .github/scripts/factory_post_merge_closure.py .github/scripts/factory_post_merge_closure_policy.py .github/scripts/factory_post_merge_closure_github.py .github/scripts/factory_merge_linkage.py .github/scripts/factory_review_exclusion.py .github/scripts/factory_review_findings.py .github/scripts/factory_review_line_gate.py .github/scripts/factory_self_review_allowance.py .github/scripts/factory_outside_approval.py .github/scripts/factory_outside_verdict.py .github/scripts/factory_duplicate_context.py "$trusted_dir/"
     cp .github/scripts/factory_main_health.py "$trusted_dir/factory_main_health.py"
     cp scripts/factory_eligibility.py "$trusted_dir/factory_eligibility.py"
     # Bind model provenance to a trusted main checkout snapshot, not PR data.
@@ -495,6 +494,7 @@ run_agent() {
     mission="Resume this PR. Inspect the exact current head, required CI, review submissions, and every inline review thread. Greptile (greptile-apps[bot]) review findings are HIGH PRIORITY, must-address feedback: fix each open one in code or rebut it with concrete evidence, and record every outcome in the outcome file described below; the wrapper posts those outcomes as the thread replies and blocks FACTORY_GATE_READY while any open Greptile finding lacks one. Never resolve a Greptile thread yourself. Fix closure-critical defects and resolve or concretely rebut actionable threads. If no edits are required, decide whether the PR fully completes its declared scope and is safe to merge. End your final response with FACTORY_GATE_READY only when no semantic blocker remains; otherwise end with FACTORY_GATE_NOT_READY."
     findings="$(factory_review_findings_mission "$number" "${EXPECTED_HEAD:-$(git rev-parse HEAD)}")"
     mission+=" ${findings}"
+    mission+="$(python3 "$(dirname "${TRUSTED_REVIEW_CONTROLLER:-.github/scripts/x}")/factory_duplicate_context.py" "$number" --repo "$GITHUB_REPOSITORY" 2>/dev/null || true)"
     if completion_line="$(trusted_completion_action_line)"; then
       mission+=" ${completion_line}"
     else

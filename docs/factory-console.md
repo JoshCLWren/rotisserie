@@ -919,6 +919,22 @@ A closed or merged item loses every state label: the sweep finds them with one
 search per pass. `factory:incident` is not in this table. It is the owner's
 input that declares an incident, so its events still wake work.
 
+### Duplicate PRs
+
+Two or more open PRs that deliver the same issue (the `factory:duplicate`
+rule) resolve themselves in the self-heal sweep
+(`factory_self_heal_duplicates.py`). The sweep keeps the PR with green CI at
+its head. Among several green PRs, or none, it keeps the one with the fewest
+unresolved review threads, then the older one. For each other PR it posts a
+trusted comment that links the kept PR and lists the files that PR changed and
+the kept PR does not, leaves the same list on the kept PR, and closes the
+duplicate. The closed branch stays. The kept PR's next repair run reads that
+list as context (`factory_duplicate_context.py`, staged from trusted main) and
+ports what applies. A store event per closure keeps a reopened PR from being
+closed again. While any PR of the group has a worker owner label
+(`factory:N`, `factory:local`) or an `agent:*` label, the whole group waits.
+One sweep resolves at most two groups.
+
 ### Issue intake holds
 
 The dispatcher's pool pass sends no implement run to an issue in two cases
