@@ -68,6 +68,14 @@ def quota_reset_hints(clean_log: str, worker: str) -> list[dict[str, object]]:
     return list(found.values())
 
 
+def failover_evidence(clean_log: str, marker_at: int) -> str:
+    """The last error line the agent printed before a failover marker, bounded."""
+    before = clean_log[max(0, marker_at - 4000):marker_at].splitlines()[-12:]
+    errors = [line for line in before if re.search(r"error|unavailable|not found|404", line, re.I)]
+    text = re.sub(r"^\d{4}-\d{2}-\d{2}T\S+Z ", "", errors[-1]) if errors else ""
+    return text.strip()[:240]
+
+
 def refine_trusted_failover_models(outcome: dict[str, Any], job_log: str) -> dict[str, Any]:
     """Attest exact failed pairs, account scope and final provider transitions.
 
@@ -104,9 +112,10 @@ def refine_trusted_failover_models(outcome: dict[str, Any], job_log: str) -> dic
             continue
         if scope == "pool" and classification != "provider_quota":
             continue
+        seen_error = failover_evidence(clean, match.start())
         failures.append({
             "source": source, "model": model, "outcome": classification,
-            "scope": scope or "model",
+            "scope": scope or "model", **({"evidence": seen_error} if seen_error else {}),
         })
         seen.add((source, model))
 

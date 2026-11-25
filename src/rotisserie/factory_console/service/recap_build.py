@@ -294,6 +294,7 @@ def providers(sources: Sources) -> dict[str, list[dict[str, object]]]:
         "wasted": [],
         "off": [],
         "paused": [],
+        "kept_hot": [],
     }
     if sources.stats is not None:
         for name, runs, delivered, _done, _idle, failed in provider_rows(sources.stats, "24h"):
@@ -304,10 +305,20 @@ def providers(sources: Sources) -> dict[str, list[dict[str, object]]]:
             elif int(failed) >= WASTED_RUNS:
                 found["wasted"].append({"provider": name, "runs": int(runs), "failed": int(failed)})
         found["paused"] = _paused(sources.stats, sources.now)
+        found["kept_hot"] = _kept_hot(sources.stats)
     if sources.fleet is not None:
         offs = [*sources.fleet.providers.values(), *sources.fleet.models.values()]
         found["off"] = [off.to_dict() for off in offs]
     return found
+
+
+def _kept_hot(stats: Obj) -> list[dict[str, object]]:
+    hot: dict[str, list[str]] = {}
+    for entry in items(stats, "models"):
+        if entry.get("kept_hot"):
+            name = runtime.provider_for_source(string(entry, "source"))
+            hot.setdefault(name, []).append(string(entry, "model"))
+    return [{"provider": name, "models": sorted(models)} for name, models in sorted(hot.items())]
 
 
 def _paused(stats: Obj, now: datetime) -> list[dict[str, object]]:

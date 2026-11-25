@@ -139,6 +139,9 @@ def _render_providers(console: Console, found: object) -> None:
         name = f"{row['provider']} {row['model']}" if row.get("model") else row["provider"]
         reason = row.get("reason") or "no reason given"
         console.line(f"  {console.warn_mark} {name} is switched off: {reason}")
+    for row in _rows(found.get("kept_hot")):
+        models = ", ".join(str(name) for name in _list(row.get("models")))
+        console.line(f"  {console.ok_mark} {row['provider']} kept hot: {models}")
     for row in _rows(found.get("paused")):
         why = f" after {row['why']}" if row.get("why") else ""
         console.line(

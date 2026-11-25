@@ -72,11 +72,13 @@ def streak_upsert(
     keep_streak_sql: str,
     guard: Guard,
     detail: Mapping[str, Any] | None = None,
+    delays: str = DELAYS,
 ) -> tuple[str, dict[str, Any]]:
     """Grow one Fibonacci streak; an older run never overwrites a newer one.
 
     ``keep_streak_sql`` decides, against the stored row, whether the stored
     streak continues; otherwise the historical ``fallback`` restarts it.
+    ``delays`` is the JSON table of seconds per streak (a hot model's is shorter).
     """
     condition, guard_params = guard
     new_streak = f"CASE WHEN {keep_streak_sql} THEN factory_backoff.streak ELSE :fallback END + 1"
@@ -108,7 +110,7 @@ def streak_upsert(
         "fallback": fallback,
         "run_id": run_id,
         "observed": observed,
-        "delays": DELAYS,
+        "delays": delays,
         "max_row": MAX_STREAK_ROW,
         "ttl": STATE_TTL_SECONDS,
         "detail": json.dumps({"suspended": False, **(detail or {})}, sort_keys=True),

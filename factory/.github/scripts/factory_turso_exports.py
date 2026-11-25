@@ -15,6 +15,7 @@ from factory_quota_reset import CAPACITY_OUTCOMES, policy
 from factory_state_operations_backoff import (
     MAX_FIBONACCI_DELAY_SECONDS,
     effective_retry_at,
+    fibonacci_worker_delay,
     legacy_capacity_backoff,
 )
 from factory_turso_core import REPO_RE
@@ -355,6 +356,7 @@ def export_backoffs(repo: str) -> dict[str, Any]:
             {
                 "health": [],
                 "fibonacci": [],
+                "kept_hot": [],
                 "capacity": [],
                 "reset_policy": f"{rule.period} {rule.scope}",
                 "probe": rule.probe,
@@ -365,9 +367,9 @@ def export_backoffs(repo: str) -> dict[str, Any]:
     health, fib = db.reads(
         [
             (
-                "SELECT source, model, status, last_outcome, cooldown_until FROM factory_model_health"
-                " INDEXED BY idx_factory_model_health_blocking WHERE repo = :repo"
-                " AND status IN ('retired', 'unavailable', 'cooling')"
+                "SELECT source, model, status, last_outcome, cooldown_until, last_run_id"
+                " FROM factory_model_health INDEXED BY idx_factory_model_health_blocking"
+                " WHERE repo = :repo AND status IN ('retired', 'unavailable', 'cooling')"
                 " AND (status = 'retired' OR cooldown_until > unixepoch())",
                 {"repo": repo},
             ),
@@ -378,19 +380,40 @@ def export_backoffs(repo: str) -> dict[str, Any]:
             ),
         ]
     )
+    told = {(r["source"], r["model"]): state(r) for r in fib if r["kind"] == "model"}
     for row in health:
         until = _when(row["cooldown_until"])
+        why = told.get((row["source"], row["model"]), {})
+        same_run = why.get("run_id") == row["last_run_id"]
         bucket(str(row["source"]))["health"].append(
             {
                 "model": row["model"],
                 "status": row["status"],
                 "outcome": row["last_outcome"],
                 "until": until.isoformat() if until else None,
+                "run_id": int(row["last_run_id"] or 0) or None,
+                "evidence": why.get("evidence") if same_run else None,
+                "kept_hot": why.get("kept_hot") is True,
             }
         )
     for row in fib:
         found = state(row)
         until = effective_retry_at(found, _when(row["updated_at"]))
+        streak = int(found.get("streak") or 0)
+        if found.get("kept_hot") is True and streak > 0:
+            normal = _when(row["updated_at"] + fibonacci_worker_delay(streak))
+            if normal is not None and normal > now:
+                bucket(str(found.get("source") or ""))["kept_hot"].append(
+                    {
+                        "kind": row["kind"],
+                        "model": found.get("model"),
+                        "outcome": found.get("outcome"),
+                        "streak": streak,
+                        "until": until.isoformat() if until and until > now else None,
+                        "normal_until": normal.isoformat(),
+                        "track_record": found.get("track_record"),
+                    }
+                )
         if until is None or until <= now:
             continue
         bucket(str(found.get("source") or ""))["fibonacci"].append(
@@ -402,6 +425,8 @@ def export_backoffs(repo: str) -> dict[str, Any]:
                 "streak": int(found.get("streak") or 0),
                 "until": until.isoformat(),
                 "quota_caused": found.get("outcome") in CAPACITY_OUTCOMES,
+                "run_id": int(found.get("run_id") or 0) or None,
+                "evidence": found.get("evidence"),
             }
         )
     for where, rows in active_capacity_cooldowns(db, repo).items():
