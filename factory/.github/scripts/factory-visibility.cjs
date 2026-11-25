@@ -2,6 +2,7 @@ const {
   SCHEDULED_WORKER_IDS,
   loadExpectedWorkerIds,
 } = require('./factory-expected-workers.cjs');
+const outsideVerdict = require('./factory-outside-verdict.cjs');
 
 const {
   expectedWorkers: EXPECTED_WORKER_IDS,
@@ -51,42 +52,23 @@ const DEFINITIONS = {
   'factory:claim-rejected': ['E4E669', 'The last claim request was refused; the status comment says why'],
 };
 
-const OWNER_LABELS = [
-  ...new Set([
-    ...SCHEDULED_OWNER_LABELS,
-    ...FIXED_MODEL_OWNER_LABELS,
-    ...RETIRED_OWNER_LABELS,
-    'factory:local',
-    'factory:unowned',
-  ]),
-];
+const OWNER_LABELS = [...new Set([
+  ...SCHEDULED_OWNER_LABELS, ...FIXED_MODEL_OWNER_LABELS, ...RETIRED_OWNER_LABELS, 'factory:local', 'factory:unowned',
+])];
 
 function isOwnerLabel(label) {
-  return label === 'factory:local'
-    || label === 'factory:unowned'
-    || /^factory:\d+$/.test(label);
+  return label === 'factory:local' || label === 'factory:unowned' || /^factory:\d+$/.test(label);
 }
 
 const STAGE_LABELS = [
-  'factory:building',
-  'factory:review',
-  'factory:changes-requested',
-  'factory:ci',
-  'factory:ready',
-  'factory:blocked',
+  'factory:building', 'factory:review', 'factory:changes-requested', 'factory:ci', 'factory:ready', 'factory:blocked',
 ];
 const ADVANCED_PR_STAGES = new Set(['factory:review', 'factory:ci', 'factory:ready']);
 // Review outcome is an informational second axis, never a stage or merge gate.
 const APPROVAL_LABEL = 'factory:approved';
 const MANUAL_ONLY_MARKER = '<!-- factory-execution:manual-only -->';
 // Lockstep with factory_work_policy.BLOCKED_LABELS / issue_labels_block_reconciliation.
-const BLOCKED_LABELS = new Set([
-  'factory:blocked',
-  'ralph-status:blocked',
-  'wontfix',
-  'invalid',
-  'duplicate',
-]);
+const BLOCKED_LABELS = new Set(['factory:blocked', 'ralph-status:blocked', 'wontfix', 'invalid', 'duplicate']);
 
 // Derived observability labels describe GitHub-reported state; they are never
 // stages and never affect precedence, blockers, or queue selection (#3138).
@@ -1137,6 +1119,10 @@ async function reconcile({ github, context }) {
   if (context.eventName === 'issue_comment') {
     const comment = context.payload.comment;
     const body = comment?.body || '';
+    if (context.payload.issue.pull_request && !body.includes(`${MARKER_PREFIX}-factory-`) && outsideVerdict.verdictOf(body)) {
+      await routeOutsideVerdict(github, context, context.payload.issue.number);
+      return;
+    }
     if (!body.includes(`${MARKER_PREFIX}-factory-`)) return;
     if (!trusted(comment)) return;
 
@@ -1185,6 +1171,7 @@ async function reconcile({ github, context }) {
   if (context.eventName === 'pull_request_review_comment') {
     // A thread reply (including Greptile pushback on an answered finding) can
     // reopen a finding; recompute routing from live state.
+    if ((await routeOutsideVerdict(github, context, context.payload.pull_request.number)).routed) return;
     await routeGreptileFindings(github, context, context.payload.pull_request.number);
     return;
   }
@@ -1262,9 +1249,17 @@ async function reconcile({ github, context }) {
     }
     // Submitted reviews recompute Greptile findings from live state.
     // Native APPROVED never moves labels by itself.
+    if ((await routeOutsideVerdict(github, context, pullRequest.number)).routed) return;
     await routeGreptileFindings(github, context, pullRequest.number);
     return;
   }
+}
+
+function routeOutsideVerdict(github, context, number) {
+  return outsideVerdict.route(github, context, number, {
+    currentLabels, livePullRequest, reconcileLabels, ownerFromLinkedIssue, isOwnerLabel,
+    withRetryLogged, manualPaginationWithLogging, markerPrefix: MARKER_PREFIX,
+  });
 }
 
 module.exports = reconcile;
@@ -1297,7 +1292,7 @@ module.exports._test = {
   greptileThreadState,
   greptileSummaryFindings,
   openSummaryFindings,
-  routeGreptileFindings,
+  routeGreptileFindings, routeOutsideVerdict,
   isGreptileAck,
   isTrustedResponder,
   summaryFindingId,

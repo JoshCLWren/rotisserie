@@ -39,7 +39,7 @@ module.exports = {
   readLock: () => ({ expected: new Set(lock.expected_workers.map(Number)), retired: new Set(lock.retired_workers.map(Number)), schemaVersion: 1 }),
 };
 `);
-    copyFileSync('.github/scripts/factory-visibility.cjs', join(dir, 'factory-visibility.cjs'));
+    for (const name of ['factory-visibility.cjs', 'factory-outside-verdict.cjs']) copyFileSync(`.github/scripts/${name}`, join(dir, name));
     return require(join(dir, 'factory-visibility.cjs'));
   } finally {
     rmSync(dir, { recursive: true, force: true });

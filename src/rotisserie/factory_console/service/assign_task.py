@@ -26,8 +26,12 @@ STEPS = {
     "review": (
         "Read the full diff of this pull request at its current head.",
         "Submit one formal GitHub review on that head, **Approve** or **Request changes**. "
+        "If GitHub refuses because your account opened the PR, submit it as **Comment**. "
         "Put each blocking problem as an inline comment on the changed line.",
         "The review body must include one line: `Model: <your exact model id>`.",
+        "Then post one summary comment that names the head SHA you reviewed, has the `Model:` "
+        "line, and ends with exactly one last line: `Verdict: changes-requested` or "
+        "`Verdict: approve`.",
         "If you approve, also include the `FACTORY_ACCEPTANCE_V1={{...}}` report that covers "
         "the issue's criteria, each citing a changed file and the test or check that proves it.",
     ),
