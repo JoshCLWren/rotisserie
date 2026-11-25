@@ -2096,8 +2096,7 @@ def handle_review(
             return return_to_review(
                 pr_number=pr_number, branch=branch, worker=worker,
                 reviewer=worker, verdict="not-ready", excerpt=excerpt,
-                note="Approval rejected: issue acceptance evidence incomplete: "
-                     + "; ".join(failures[:8]),
+                note="Approval rejected: issue acceptance evidence incomplete: " + issue_acceptance.failure_summary(failures),
                 status="acceptance-evidence-required", head=reviewed_head,
                 producer=producer,
             )
@@ -2288,7 +2287,8 @@ def handle_review(
         reviewer=worker,
         verdict=verdict,
         excerpt=excerpt,
-        note="Semantic approval is scoped to this exact reviewed PR head and linked issue revision.",
+        note="Semantic approval is scoped to this exact reviewed PR head and linked issue revision."
+        + (issue_acceptance.deferred_note(body) if accepted_contract_marker else ""),
         acceptance_marker=accepted_contract_marker,
     )
     # A head created by hand or by a local agent has no numbered wrapper

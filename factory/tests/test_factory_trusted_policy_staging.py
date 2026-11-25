@@ -125,6 +125,7 @@ def test_staged_review_controller_starts_without_source_checkout(tmp_path: Path)
         ".github/scripts/factory_review_policy.py",
         ".github/scripts/factory_review_exclusion.py",
         ".github/scripts/factory_issue_acceptance.py",
+        ".github/scripts/factory_acceptance_criteria.py",
         ".github/scripts/factory_implementation_delivery.py",
         ".github/scripts/factory_post_merge_closure.py",
         ".github/scripts/factory_post_merge_closure_policy.py",

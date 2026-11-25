@@ -10,68 +10,22 @@ from typing import Any
 
 # Callers load this module by file path, so its directory may not be on sys.path.
 sys.path.insert(0, str(Path(__file__).resolve().parent))
+from factory_acceptance_criteria import (  # noqa: E402, F401
+    BULLET,
+    CONTEXT_HEADINGS,
+    HEADING,
+    HEADINGS,
+    VERIFY_AFTER_MERGE,
+    criteria,
+    deferred,
+    deferred_note,
+    failure_summary,
+    requirements,
+    uncited,
+)
 from factory_adopter import MARKER_PREFIX  # noqa: E402
 
 PREFIX = "FACTORY_ACCEPTANCE_V1="
-HEADINGS = ("scope", "implementation required", "requirements", "acceptance", "verification before", "required evidence", "completion evidence", "expected behavior", "outcome")
-HEADING = re.compile(r"^#{1,6}\s+(.+?)\s*$")
-BULLET = re.compile(r"^\s*(?:[-*+]|\d+[.)])\s+(.*\S)\s*$")
-# Bug reports describe what happened and how to reproduce it. No changed file
-# can prove a repro step, so these sections are context, not criteria.
-CONTEXT_HEADINGS = ("observed", "repro", "steps to reproduce", "notes", "related", "background", "context")
-
-
-def requirements(body: str) -> list[str]:
-    """Preserve every issue requirement, including unrecognized headings and prose.
-
-    Args:
-        body: Complete authoritative issue body.
-
-    Returns:
-        Ordered paragraphs and bullets with their heading context.
-
-    Raises:
-        ValueError: If the issue provides no reviewable requirement text.
-    """
-    section = "Issue"
-    entries: list[tuple[bool, str]] = []
-    current: list[str] = []
-
-    def flush() -> None:
-        """Finish an entry without losing continuation lines."""
-        if current:
-            context = section.lower().startswith(CONTEXT_HEADINGS)
-            entries.append((context, f"{section}: {' '.join(current)}"))
-            current.clear()
-
-    for source in body.splitlines():
-        line = source.strip()
-        if line.startswith("<!--") and line.endswith("-->"):
-            continue
-        heading = HEADING.match(source)
-        if heading:
-            flush()
-            section = heading.group(1).strip()
-            continue
-        if not line:
-            flush()
-            continue
-        item = BULLET.match(source)
-        if item:
-            flush()
-            line = re.sub(r"^\[[ xX]\]\s*", "", item.group(1)).strip()
-        # Dependency links are verified by the separate factory dependency gate.
-        # Do not make an implementation PR change code merely to satisfy a
-        # pointer to an already-delivered prerequisite.
-        if re.fullmatch(r"#\d+", line) or re.fullmatch(r"Part of #\d+(?:\s+and\s+governed by #\d+)?\.", line):
-            continue
-        if line:
-            current.append(line)
-    flush()
-    if not entries:
-        raise ValueError("Issue has no reviewable criteria, clarification required")
-    criteria = [text for context, text in entries if not context]
-    return criteria or [text for _, text in entries]
 
 
 def digest(body: str) -> str:
@@ -201,7 +155,7 @@ def validate(
     if report.get("issue_digest") != digest(body):
         return ["issue requirements changed during review; require fresh review"]
     items = report.get("items")
-    rubric = requirements(body)
+    rubric = criteria(body)
     if not isinstance(items, list) or len(items) != len(rubric):
         return [f"report must cover all {len(rubric)} issue criteria"]
     changed = set(changed_paths)
@@ -217,6 +171,8 @@ def validate(
             errors.append(f"invalid/duplicate criterion {name!r}")
             continue
         seen.add(name)
+        if rubric[int(name[1:]) - 1].verify_after_merge:
+            continue
         status = item.get("status")
         allowed = {"pass", "remaining"} if non_closing else {"pass"}
         if status not in allowed:
@@ -227,14 +183,11 @@ def validate(
             if not isinstance(evidence, str) or len(evidence.strip()) < 30:
                 errors.append(f"{name}: name the remaining work with evidence")
             continue
-        cited_file = item.get("file")
-        # Human review citations often include exact changed-file line ranges,
-        # e.g. path.py:33-69 or path.rs:191-342,245-336. Only the pathname
-        # participates in diff membership; arbitrary suffixes still fail.
-        if isinstance(cited_file, str):
-            cited_file = re.sub(r":\d+(?:-\d+)?(?:,\d+(?:-\d+)?)*$", "", cited_file)
-        if not isinstance(cited_file, str) or cited_file not in changed:
-            errors.append(f"{name}: cite a file changed by this PR")
+        missing = uncited(item.get("file"), changed)
+        if missing is None:
+            errors.append(f"{name}: cite a file changed by this PR (no file cited)")
+        elif missing:
+            errors.append(f"{name}: cite a file changed by this PR (not changed: {', '.join(missing)})")
         evidence = item.get("evidence")
         if not isinstance(evidence, str) or len(evidence.strip()) < 30:
             errors.append(f"{name}: give specific implementation evidence")
@@ -321,8 +274,8 @@ def linked_issue(branch: str, body: str) -> int | None:
 def mission(issue: int, head: str, body: str, non_closing: bool = False) -> str:
     """Give the reviewer an exact, complete acceptance schema for this issue."""
     revision = digest(body)
-    criteria = requirements(body)
-    count = len(criteria)
+    rubric = criteria(body)
+    count = len(rubric)
     if non_closing:
         scope = (
             " This is a review-only `Part of` handoff: it does not close the issue."
@@ -336,9 +289,17 @@ def mission(issue: int, head: str, body: str, non_closing: bool = False) -> str:
     # incident the model copied the old one-item example despite a longer rubric.
     # Placeholders are deliberately invalid, not synthetic acceptance evidence.
     items = ",".join(
-        f'{{"id":"A{index}","status":"unverified","file":"","evidence":"","test":""}}'
-        for index in range(1, count + 1)
+        f'{{"id":"A{index}","status":"{"deferred" if item.verify_after_merge else "unverified"}",'
+        '"file":"","evidence":"","test":""}'
+        for index, item in enumerate(rubric, 1)
     )
+    later = "".join(f" A{index}" for index, item in enumerate(rubric, 1) if item.verify_after_merge)
+    if later:
+        scope += (
+            f" Criteria marked [{VERIFY_AFTER_MERGE}] ({later.strip()}) need a deployed"
+            " environment: report them with status `deferred`. They do not block"
+            " approval and keep the issue open after merge."
+        )
     template = (
         f'{PREFIX}{{"issue":{issue},"head":"{head}",'
         f'"issue_digest":"{revision}","items":[{items}]}}'
@@ -360,7 +321,10 @@ def mission(issue: int, head: str, body: str, non_closing: bool = False) -> str:
         " criterion is missing, unsafe or unsupported, finish with"
         " FACTORY_GATE_BLOCKED rather than READY.\n"
         f"{template}\n"
-        + "\n".join(f"A{index}: {item}" for index, item in enumerate(criteria, 1))
+        + "\n".join(
+            f"A{index}{f' [{VERIFY_AFTER_MERGE}]' if item.verify_after_merge else ''}: {item.text}"
+            for index, item in enumerate(rubric, 1)
+        )
     )
 
 
@@ -436,7 +400,7 @@ def report_matches_mission(report: Mapping[str, Any] | None, mission_text: str) 
         and all(
             isinstance(item, dict)
             and item.get("id") == f"A{index}"
-            and item.get("status") in {"pass", "remaining"}
+            and item.get("status") in {"pass", "remaining", "deferred"}
             for index, item in enumerate(items, 1)
         )
     )

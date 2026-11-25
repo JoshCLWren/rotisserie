@@ -41,6 +41,7 @@ import sys
 import unittest
 from datetime import datetime, timezone
 
+import factory_acceptance_criteria as acceptance_criteria
 import factory_implementation_delivery as implementation_delivery
 import factory_post_merge_closure_github as github
 from factory_merge_linkage import explain, linkage
@@ -49,6 +50,7 @@ from factory_post_merge_closure_policy import (
     CLOSED_STATE,
     FACTORY_LABEL,
     MANUAL_ONLY_MARKER,
+    MARKER_PREFIX,
     OWNER_RE,
     PROTECTED_ISSUES,
     STAGE_LABELS,
@@ -113,6 +115,40 @@ def _acceptance_parent_has_incomplete_gates(
     return False
 
 
+VERIFY_AFTER_MERGE_MARKER = f"{MARKER_PREFIX}-factory-verify-after-merge-v1"
+
+
+def _hold_for_verification(
+    pr_number: int, issue_number: int, issue: dict, labels: list[str], dry_run: bool
+) -> str | None:
+    """Keep a delivered issue open while its verify-after-merge criteria are unchecked.
+
+    The issue gets the terminal done label so no factory selects it again, and
+    one checklist comment per merged PR names what a person must confirm.
+    """
+    pending = acceptance_criteria.pending_after_merge(str(issue.get("body") or ""))
+    if not pending:
+        return None
+    if dry_run:
+        return "dry-run:verify-after-merge"
+    github._replace_labels(issue_number, target_labels(labels))
+    if str(issue["state"]) == CLOSED_STATE:
+        github._run_gh("issue", "reopen", str(issue_number), "--repo", github._repo_slug())
+    marker = f"<!-- {VERIFY_AFTER_MERGE_MARKER}:pr-{pr_number}:issue-{issue_number} -->"
+    try:
+        posted = any(marker in body for body in github._issue_comment_bodies(issue_number))
+    except (RuntimeError, TypeError, ValueError):
+        posted = False
+    if not posted:
+        checklist = "\n".join(f"- [ ] {name}: {text}" for name, text in pending)
+        github._comment_issue(issue_number, (
+            f"{marker}\nPR #{pr_number} merged. These criteria need verification after"
+            " deploy, so this issue stays open. Once each one is confirmed, check its box"
+            f" in the issue body if it has one, then close the issue.\n\n{checklist}"
+        ))
+    return "verify-after-merge"
+
+
 def close_merged_pr_issue(
     pr_number: int,
     *,
@@ -138,7 +174,8 @@ def close_merged_pr_issue(
         ``manual-only-issue``, ``reopened-by-person``, ``acceptance-parent-incomplete``,
         ``acceptance-parent-requires-verdict``, ``not-merged``,
         ``not-delivered:<reason>``, ``delivery-unverified:<reason>``,
-        ``open-dependency`` or ``open-dependency: #N``, or ``dry-run:<action>``.
+        ``open-dependency`` or ``open-dependency: #N``, ``verify-after-merge``,
+        or ``dry-run:<action>``.
     """
     info = info or github._pr_info(pr_number)
     issue_number = linked_issue(info["branch"], info["body"])
@@ -266,6 +303,9 @@ def close_merged_pr_issue(
                         github._run_gh("issue", "reopen", str(issue_number), "--repo", github._repo_slug())
                     github._record_dependency_block(pr_number, issue_number, open_deps)
                 return "open-dependency: " + ", ".join(f"#{number}" for number in open_deps)
+            held = _hold_for_verification(pr_number, issue_number, issue, labels, dry_run)
+            if held:
+                return held
             # Dependencies resolved: restore the canonical delivery labels and
             # close. The closure marker only deduplicates the comment; label
             # repair happens on every visit so a re-completed issue never
@@ -330,6 +370,9 @@ def close_merged_pr_issue(
         delivered and str(issue["state"]) == CLOSED_STATE and github._closed_by_pr(issue_number, info)
     ):
         return "already-closed"
+    held = _hold_for_verification(pr_number, issue_number, issue, labels, dry_run)
+    if held:
+        return held
     if dry_run:
         return f"dry-run:replace-labels-with{target_labels(labels)}+close"
     # The marker only deduplicates the closure comment; label repair runs on
