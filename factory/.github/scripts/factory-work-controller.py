@@ -31,6 +31,7 @@ from factory_source_budget import budget_block_reason, worker_sources
 from factory_attempt_history import read_comment_history
 from factory_discovery import canonical_target, discover, update_labels
 from factory_state_ledger import acquire_lease, forced_refusal, release_lease, worker_claim, external_wip_count
+import factory_active_workers
 import factory_lease_owners
 import factory_state_ledger
 from factory_lease_owners import ActiveWorkerResult, github_timestamp_epoch
@@ -798,105 +799,18 @@ def load_no_diff_attempts(now_epoch: int | None=None) -> dict[int, int]:
 
 def unresolved_run_has_credible_liveness(run: dict[str, Any], *, now_epoch: int) -> bool:
     """Return whether an unresolved active-status run still merits a safety fence."""
-    status = str(run.get('status') or '').lower()
-    if status not in ('queued', 'in_progress'):
-        return True
-    run_activity = [
-        epoch
-        for key in ('created_at', 'updated_at')
-        if (epoch := github_timestamp_epoch(run.get(key))) is not None
-    ]
-    if not run_activity:
-        return True
-    if now_epoch - max(run_activity) <= FIXED_LEASE_TTL_SECONDS:
-        return True
-    run_id = str(run.get('id') or '')
-    if not run_id.isdigit():
-        return True
-    try:
-        pages = gh_json(['api', '--paginate', '--slurp', f'repos/{REPO}/actions/runs/{run_id}/jobs?per_page=100'])
-    except RuntimeError:
-        return True
-    page_values = pages if isinstance(pages, list) else []
-    jobs: list[dict[str, Any]] = []
-    saw_jobs_payload = False
-    for page in page_values:
-        if not isinstance(page, dict):
-            continue
-        page_jobs = page.get('jobs')
-        if not isinstance(page_jobs, list):
-            continue
-        saw_jobs_payload = True
-        jobs.extend(job for job in page_jobs if isinstance(job, dict))
-    if not saw_jobs_payload:
-        return True
-    if not jobs:
-        return False
-    for job in jobs:
-        job_status = str(job.get('status') or '').lower()
-        if job_status in ('queued', 'in_progress'):
-            return True
-        job_activity = [
-            epoch
-            for key in ('started_at', 'completed_at')
-            if (epoch := github_timestamp_epoch(job.get(key))) is not None
-        ]
-        if not job_activity:
-            return True
-        if now_epoch - max(job_activity) <= FIXED_LEASE_TTL_SECONDS:
-            return True
-    return False
+    return factory_active_workers.run_is_live(
+        run, repo=REPO, gh_json=lambda args: gh_json(args), now_epoch=now_epoch,
+        ttl=FIXED_LEASE_TTL_SECONDS,
+    )
 
 
 def active_fixed_workers() -> ActiveWorkerResult:
     """Return resolved workers and credible unresolved active-status runs."""
-    workers: set[int] = set()
-    runs: list[dict[str, Any]] = []
-    unresolved_run_ids: set[str] = set()
-    unresolved_runs: dict[str, dict[str, Any]] = {}
-    for workflow in ('free-model-factory-entry.yml', 'factory-fork-execution.yml'):
-        for status in ('queued', 'in_progress'):
-            try:
-                pages = gh_json(['api', '--paginate', '--slurp', f'repos/{REPO}/actions/workflows/{workflow}/runs?status={status}&per_page=100'])
-            except RuntimeError:
-                prefix = '' if workflow == 'free-model-factory-entry.yml' else 'fork-'
-                unresolved_run_ids.add(f'{prefix}{status}-run-query-unavailable')
-                continue
-            page_values = pages if isinstance(pages, list) else []
-            for page in page_values:
-                if isinstance(page, dict):
-                    runs.extend(cast(list[dict[str, Any]], page.get('workflow_runs') or []))
-    resolved_by_store: dict[str, str] = {}
-    for index, run in enumerate(runs):
-        if worker := factory_lease_owners.run_worker(run, {}):
-            workers.add(int(worker))
-            continue
-        run_id = str(run.get('id') or '')
-        unresolved_id = run_id or f'missing-run-id-{index}'
-        unresolved_run_ids.add(unresolved_id)
-        if run_id:
-            unresolved_runs[run_id] = run
-    numeric_unresolved = {value for value in unresolved_run_ids if value.isdigit()}
-    if numeric_unresolved:
-        try:
-            from factory_runtime_view import run_workers
-            matches = run_workers(REPO, sorted(numeric_unresolved))
-            for run_id, worker in matches.items():
-                if run_id in numeric_unresolved and worker.isdecimal() and is_authorized_fixed_worker(worker):
-                    workers.add(int(worker))
-                    resolved_by_store[run_id] = worker
-                    unresolved_run_ids.discard(run_id)
-        except Exception as exc:
-            print(f'[factory-controller] run-to-worker evidence unavailable ({type(exc).__name__}); preserving unresolved run fence', file=sys.stderr)
-    now_epoch = int(time.time())
-    for run_id, run in unresolved_runs.items():
-        if run_id not in unresolved_run_ids:
-            continue
-        if unresolved_run_has_credible_liveness(run, now_epoch=now_epoch):
-            continue
-        unresolved_run_ids.discard(run_id)
-        print(f'[factory-controller] ignoring expired unresolved active-status run {run_id}: no credible worker execution evidence', file=sys.stderr)
-    return ActiveWorkerResult(workers, unresolved_run_ids, runs, resolved_by_store)
+    return factory_active_workers.active_workers(
+        REPO, gh_json=lambda args: gh_json(args), authorized=is_authorized_fixed_worker,
+        live=lambda run, now: unresolved_run_has_credible_liveness(run, now_epoch=now),
+    )
 
 
 def owned_targets(issues: list[dict[str, Any]] | None=None, prs: list[dict[str, Any]] | None=None) -> list[tuple[int, str]]:
@@ -2553,7 +2467,9 @@ def dispatch_next(
         except RuntimeError:
             # An accepted but timed-out workflow_dispatch may already exist.
             # Retaining the lease is safer than risking duplicate execution.
+            factory_active_workers.forget(REPO)
             raise RuntimeError('Could not confirm worker dispatch. Inspect Actions before retrying.') from None
+        factory_active_workers.note_dispatched(REPO, worker)
         if candidate.kind == 'issue':
             chosen_action: str | None = 'implement'
         elif force_slot and target_spec and action != 'advance':
@@ -2665,7 +2581,9 @@ def dispatch_target(kind: str, number: int, action: str, model: str = 'auto') ->
         except RuntimeError:
             # A timed-out POST can already have queued the worker. Keep its lease
             # so another manual request cannot start duplicate work.
+            factory_active_workers.forget(REPO)
             raise RuntimeError('Could not confirm worker dispatch. Check Actions before retrying.') from None
+        factory_active_workers.note_dispatched(REPO, worker)
         return {
             'kind': candidate.kind,
             'number': candidate.number,

@@ -28,6 +28,7 @@
 .github/scripts/factory-work-controller.py
 .github/scripts/factory-worker-outcome.sh
 .github/scripts/factory-worker-push-token.sh
+.github/scripts/factory_active_workers.py
 .github/scripts/factory_adopter.py
 .github/scripts/factory_app_client_id.py
 .github/scripts/factory_assign_trace.py

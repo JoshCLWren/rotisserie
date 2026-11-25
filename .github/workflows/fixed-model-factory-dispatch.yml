@@ -688,8 +688,10 @@ jobs:
               echo "Starting Factory ${worker} (dispatch attempt ${attempt}/3)"
               if gh workflow run free-model-factory-entry.yml --ref main -f worker="$worker" -f assignment="$assignment"; then
                 dispatched_count=$((dispatched_count + 1))
+                python3 .github/scripts/factory_active_workers.py note-dispatched --worker "$worker" || true
                 return 0
               fi
+              python3 .github/scripts/factory_active_workers.py forget || true
               if (( attempt < 3 )); then
                 sleep $((attempt * 3))
               fi
