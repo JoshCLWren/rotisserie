@@ -9,7 +9,7 @@ from __future__ import annotations
 import os
 import subprocess
 import sys
-from collections.abc import Iterable, Mapping
+from collections.abc import Callable, Iterable, Mapping
 from typing import Any
 
 import factory_assign_trace as trace
@@ -23,8 +23,8 @@ PARKED_LABEL = "factory:parked"
 AUTOMATIC = frozenset({"github-actions[bot]"})
 
 
-def apply(repo: str, candidates: list[Any], prs: Iterable[Mapping[str, Any]]) -> list[Any]:
-    """Drop every held candidate; a failed store read holds nothing."""
+def reasons(repo: str, candidates: list[Any], prs: Iterable[Mapping[str, Any]]) -> dict[int, str]:
+    """Why each held candidate is held; a failed store read holds nothing."""
     try:
         from factory_state_operations import holds
 
@@ -36,17 +36,35 @@ def apply(repo: str, candidates: list[Any], prs: Iterable[Mapping[str, Any]]) ->
         }
         issues = frozenset(c.number for c in candidates if c.kind == "issue")
         exempt = frozenset(c.number for c in candidates if c.override or c.incident)
-        found = holds(repo, heads, issues, exempt)
+        return dict(holds(repo, heads, issues, exempt))
     except Exception as exc:  # noqa: BLE001 - advisory holds never block the pool
         print(
             f"[factory-controller] store retry read deferred ({type(exc).__name__})",
             file=sys.stderr,
         )
-        return candidates
-    for reason in sorted(set(found.values())):
-        numbers = sorted(number for number, why in found.items() if why == reason)
-        print(f"[factory-controller] {reason}: {numbers}", file=sys.stderr)
-    return [c for c in candidates if c.number not in found or trace.skip(c.number, found[c.number])]
+        return {}
+
+
+def reader(repo: str, prs: Iterable[Mapping[str, Any]]) -> Callable[[list[Any]], dict[int, str]]:
+    """A hold reader for ``factory_ready.pool`` that names each hold in the trace."""
+
+    def read(candidates: list[Any]) -> dict[int, str]:
+        found = reasons(repo, candidates, prs)
+        for reason in sorted(set(found.values())):
+            numbers = sorted(number for number, why in found.items() if why == reason)
+            print(f"[factory-controller] {reason}: {numbers}", file=sys.stderr)
+        for candidate in candidates:
+            if candidate.number in found:
+                trace.skip(candidate.number, found[candidate.number])
+        return found
+
+    return read
+
+
+def apply(repo: str, candidates: list[Any], prs: Iterable[Mapping[str, Any]]) -> list[Any]:
+    """Drop every held candidate; a failed store read holds nothing."""
+    found = reader(repo, prs)(candidates)
+    return [c for c in candidates if c.number not in found]
 
 
 def stamp(

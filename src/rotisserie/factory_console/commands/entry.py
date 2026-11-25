@@ -50,6 +50,7 @@ from rotisserie.factory_console.commands.prs import (
     cmd_review,
     cmd_sync,
 )
+from rotisserie.factory_console.commands.ready import cmd_ready
 from rotisserie.factory_console.commands.recap import cmd_recap
 from rotisserie.factory_console.commands.report import cmd_report, cmd_stats
 from rotisserie.factory_console.commands.run import cmd_run
@@ -178,6 +179,7 @@ def _help_text() -> str:
             "  baste stats         reliable providers and models",
             "  baste settings      limits, worker counts, priorities",
             "  baste why [issue:N] why work is or is not being picked up",
+            "  baste ready         claimable work in the order the dispatcher takes it",
             "  baste next         ranked read-only work offers for agents",
             "  baste wait-for-work [--can ACTION]  wait until an agent can take work",
             "  baste reserve-next --client AGENT [--can ACTION] [--target pr:N]",
@@ -249,6 +251,7 @@ HANDLERS = {
     "prioritize": cmd_prioritize,
     "why": cmd_why,
     "next": cmd_next,
+    "ready": cmd_ready,
     "wait-for-work": cmd_wait_for_work,
     "reserve-next": cmd_external,
     "renew": cmd_external,

@@ -56,6 +56,8 @@ def candidate(
         stage=stage,
         producer_worker=None,
         head_contributors=frozenset(contributors),
+        incident=False,
+        override=False,
     )
 
 
@@ -258,9 +260,10 @@ def test_capture_passes_repository_capacity_to_shared_policy(
             return {}
 
     policy = PolicyProxy()
+    pool = runtime.module("factory_ready")
     monkeypatch.setattr(runtime, "completion_backlog", lambda rows: [])
     monkeypatch.setattr(runtime, "pr_wip_count", lambda rows: 0)
-    monkeypatch.setattr(runtime, "module", lambda name: policy)
+    monkeypatch.setattr(runtime, "module", lambda name: pool if name == "factory_ready" else policy)
     monkeypatch.setattr(providers, "repository_variables", lambda gh: {})
     monkeypatch.setattr(frontier, "_active_leases", lambda repo: ({}, ""))
     monkeypatch.setattr(frontier, "_retry_history", lambda gh, core, now: [])
@@ -331,7 +334,10 @@ def test_unreadable_retry_history_holds_issue_intake_like_the_controller(
 
     monkeypatch.setattr(runtime, "completion_backlog", lambda rows: [])
     monkeypatch.setattr(runtime, "pr_wip_count", lambda rows: 0)
-    monkeypatch.setattr(runtime, "module", lambda name: PolicyProxy())
+    pool = runtime.module("factory_ready")
+    monkeypatch.setattr(
+        runtime, "module", lambda name: pool if name == "factory_ready" else PolicyProxy()
+    )
     monkeypatch.setattr(providers, "repository_variables", lambda gh: {})
     monkeypatch.setattr(frontier, "_active_leases", lambda repo: ({}, ""))
     board = queue.Board([issue(7)], [], 8, 6, {})

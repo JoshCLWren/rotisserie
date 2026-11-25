@@ -258,6 +258,21 @@ jobs:
           jq -r '"Factory crash groups in 24h: \(.crashes.groups | length)"' \
             site/factory-stats.json >> "$GITHUB_STEP_SUMMARY"
 
+      # The dispatcher's last ready list: number, title, stage and action only.
+      - name: Add the ready list to the published stats
+        continue-on-error: true
+        env:
+          PYTHONPATH: .github/scripts
+        run: |
+          set -Eeuo pipefail
+          [[ -s site/factory-stats.json ]] || exit 0
+          python3 .github/scripts/factory_ready.py published --repo "$GITHUB_REPOSITORY" \
+            > "$RUNNER_TEMP/ready.json"
+          jq -e '.items | type == "array"' "$RUNNER_TEMP/ready.json" >/dev/null
+          jq --slurpfile ready "$RUNNER_TEMP/ready.json" '.ready = $ready[0]' \
+            site/factory-stats.json > site/factory-stats.json.tmp
+          mv site/factory-stats.json.tmp site/factory-stats.json
+
       # Per-job GitHub request counts and the workflow token's budget, as the
       # dispatcher and merge drain recorded them; read by `baste recap` and
       # `baste limits`.

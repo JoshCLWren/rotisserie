@@ -64,6 +64,17 @@ async function crashGroups(hours) {
   return {exit_code: 0, source: "published", published: true,
     generated_at: block.generated_at, groups};
 }
+async function readyList() {
+  const stats = await cached("stats", "factory-stats.json").catch(() => null);
+  const block = stats && stats.ready;
+  if (!block || !Array.isArray(block.items)) {
+    return {exit_code: 0, source: "published", published: false, ready: [], ready_count: 0,
+      cycles: [], notes: ["The dispatcher has not published a ready list yet."]};
+  }
+  return {exit_code: 0, source: "published", published: true, generated_at: block.generated_at,
+    ready: block.items, ready_count: block.items.length, cycles: block.cycles || [],
+    notes: ["The dispatcher's ready list from its last pass; the next pass may differ."]};
+}
 function crashFinding(found) {
   const fatal = found.groups.filter(g => g.fatal);
   return {
@@ -174,6 +185,7 @@ async function publicRead(name, params) {
     const hours = Number((params.get("since") || "6h").replace(/h$/, "")) || 6;
     return crashGroups(Math.min(hours, 24));
   }
+  if (name === "ready") return readyList();
   const s = await snapshot();
   if (name === "status") return {exit_code: 0, working: asWork(s), generated_at: s.generated_at};
   if (name === "report") {

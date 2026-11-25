@@ -31,6 +31,7 @@ TABLES = {
     "factory_model_attempt_daily": ("repo", "day", "source", "model", "outcome_class"),
     "factory_cursor": ("repo", "name"),
     "factory_crash": ("id",),
+    "factory_dep": ("repo", "src", "dst", "kind"),
 }
 
 

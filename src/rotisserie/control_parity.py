@@ -21,6 +21,7 @@ CONTROLS: dict[str, tuple[str, ...]] = {
     "settings": ("read:settings", "write:settings"),
     "prioritize": ("write:prioritize",),
     "why": ("read:why",),
+    "ready": ("read:ready",),
     "claim": ("write:claim",),
     "finish": ("write:finish",),
     "runs": ("read:runs",),

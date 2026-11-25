@@ -2,12 +2,13 @@ from __future__ import annotations
 
 import argparse
 
-from rotisserie.factory_console.commands import _shared
+from rotisserie.factory_console.commands import _shared, ready
 from rotisserie.factory_console.service import estimate_neon as neon
 from rotisserie.factory_console.service.estimate import DEFAULT_SAMPLE, SAMPLE_RANGE
 
 
 def add_insight_parsers(commands: argparse._SubParsersAction[argparse.ArgumentParser]) -> None:
+    ready.add_parser(commands)
     controller_runs = commands.add_parser(
         "runs", help="recent label-claim controller runs for an item, with their results"
     )

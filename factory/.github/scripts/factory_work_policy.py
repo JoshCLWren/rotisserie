@@ -85,7 +85,6 @@ from factory_work_policy_candidates import (
     build_candidates,
     explain_issue_report,
     issue_is_static_candidate,
-    _leading_reference_numbers,
     matching_pr_no_diff_attempts,
     parse_depends_on_numbers,
     pr_is_static_candidate,

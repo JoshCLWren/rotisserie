@@ -446,6 +446,7 @@ def test_factory_work_controller_assign_has_kinds_param() -> None:
     assert "def assign(worker: str, kinds:" in text, (
         "assign() must accept a kinds parameter for filtering candidates"
     )
-    assert "if kinds is not None" in text, (
+    pool = (CONTROLLER_PATH.parent / "factory_ready.py").read_text(encoding="utf-8")
+    assert "kinds=kinds" in text and "if kinds is not None" in pool, (
         "assign() must filter candidates when kinds is provided"
     )

@@ -472,9 +472,14 @@ def _number(row: Obj) -> int:
 
 
 def answer_issue(
-    github: GitHub, number: int, *, now: int, variables: Mapping[str, str]
+    github: GitHub,
+    number: int,
+    *,
+    now: int,
+    variables: Mapping[str, str],
+    board: Board | None = None,
 ) -> IssueAnswer:
-    board = read_board(github, dict(variables), now)
+    board = board or read_board(github, dict(variables), now)
     row = issue_row(github, board, number)
     blocked, detail = open_blocker(github, number)
     explanation = explain(board, row, blocker=blocked)

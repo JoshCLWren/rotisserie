@@ -59,6 +59,7 @@ READ_ONLY = frozenset(
         "backoffs",
         "db-usage",
         "crashes",
+        "ready",
         "crash-trace",
         "store",
         "schema",
@@ -68,7 +69,9 @@ READ_ONLY = frozenset(
     )
 )
 # Served on GitHub Pages from the published snapshot without sign-in.
-PUBLIC_READS = frozenset(("status", "report", "stats", "doctor", "outcomes", "db-usage", "crashes"))
+PUBLIC_READS = frozenset(
+    ("status", "report", "stats", "doctor", "outcomes", "db-usage", "crashes", "ready")
+)
 # Need a live evaluation: the hosted page runs them in the read-only workflow.
 LIVE_READS = READ_ONLY - PUBLIC_READS
 WRITE_OPERATIONS = frozenset(
