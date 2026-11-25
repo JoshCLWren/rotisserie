@@ -15,7 +15,7 @@ from datetime import datetime, timedelta
 
 from rotisserie.factory_console import runtime
 from rotisserie.factory_console.github import Obj, integer, items, label_names, obj, string
-from rotisserie.factory_console.service import db_usage, reliability
+from rotisserie.factory_console.service import db_usage, gh_usage, reliability
 from rotisserie.factory_console.service.doctor import Finding
 from rotisserie.factory_console.service.failures import (
     FAILED_CONCLUSIONS,
@@ -346,6 +346,16 @@ def database(sources: Sources) -> dict[str, object] | None:
     if sources.stats is None or state in ("unpublished", "not_configured"):
         return None
     return {"status": state, "text": db_usage.summary(report)}
+
+
+def github_usage(sources: Sources) -> dict[str, object] | None:
+    """GitHub requests per factory job and the factory's budget, once published."""
+    report = gh_usage.from_stats(sources.stats)
+    if report["status"] == "unpublished":
+        return None
+    lines = [gh_usage.kind_line(row) for row in report["kinds"]]
+    lines.append(gh_usage.budget_line(report["budget"]))
+    return {"status": report["status"], "text": gh_usage.summary(report), "lines": lines}
 
 
 def age_words(age: timedelta) -> str:

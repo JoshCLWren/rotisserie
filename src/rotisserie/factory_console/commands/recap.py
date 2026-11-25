@@ -97,6 +97,13 @@ def render(console: Console, data: dict[str, object]) -> None:
         console.line(console.bold("Database"))
         mark = console.ok_mark if database.get("status") == "ok" else console.warn_mark
         console.line(f"  {mark} {database.get('text')}")
+    github = data.get("github")
+    if isinstance(github, dict):
+        console.line()
+        console.line(console.bold("GitHub requests"))
+        mark = console.ok_mark if github.get("status") == "ok" else console.warn_mark
+        for line in github.get("lines") or [github.get("text")]:
+            console.line(f"  {mark} {line}")
     unread = data.get("unread")
     if isinstance(unread, list) and unread:
         console.line()

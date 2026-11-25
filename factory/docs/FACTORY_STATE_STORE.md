@@ -72,6 +72,7 @@ API calls and all individual targets/checks/reviews/mutations remain live.
 | Runtime projection idempotence | `factory_runtime_event_keys` | A duplicate completion changes nothing |
 | Lifecycle, assignment and attempt history | `factory_state_events` | `event_id` is UNIQUE; lifecycle events expire after 30 days, raw model attempts after 120 days into daily counts |
 | Model attempt retention | `factory_model_attempt_daily` | |
+| Resumable read cursors | `factory_cursor` | One row per name, added in schema version 3. `attempt-history` keeps the last retry-history read time and only its trusted markers, so the next dispatch job reads one delta page (a full read every 6 hours). `outcome-reconcile` lets one dispatcher job per 15 minutes backfill Entry outcomes. `gh-usage:dispatch` and `gh-usage:merge` keep the last 12 jobs' GitHub request counts and the workflow token budget for `baste recap` and `baste limits`. |
 
 Not carried from Neon: the discovery and projection key families
 (`factory-github-get-v1`, `factory-projection-v1`, open issue and PR lists),

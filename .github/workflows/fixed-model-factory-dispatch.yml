@@ -939,15 +939,38 @@ jobs:
           gh workflow run local-ollama-review.yml \
             --repo "$GITHUB_REPOSITORY" --ref main -f "pr=${pr}"
 
+      - name: Reconcile Entry outcomes missing from the factory store
+        if: always() && steps.api_budget.outputs.allow == 'true'
+        continue-on-error: true
+        timeout-minutes: 5
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -Eeuo pipefail
+          # Entry persisters that hit the installation rate limit (runs
+          # 44031401652, 44032359658) left no store outcome. One dispatcher job
+          # per 15 minutes backfills a bounded number of them with the same
+          # classifier; every Entry run used to list the last 100 Entry runs.
+          if [[ -s "${FACTORY_STATS_FILE:-}" ]] && jq -e '.models | type == "array"' "$FACTORY_STATS_FILE" >/dev/null 2>&1; then
+            export FACTORY_TRACK_RECORD_FILE="$FACTORY_STATS_FILE"
+          fi
+          python3 .github/scripts/factory_outcome_reconcile.py \
+            --repo "$GITHUB_REPOSITORY" --hours 12 --limit 5 --min-interval 900
+
       - name: Report GitHub CLI request usage
         if: ${{ always() }}
         continue-on-error: true
         shell: bash
         env:
+          GH_TOKEN: ${{ github.token }}
           USAGE_LABEL: dispatch ${{ inputs.target || inputs.mode || github.event_name }}
         run: |
+          rest="$RUNNER_TEMP/factory-rate-limit.json"
+          "${FACTORY_REAL_GH:-gh}" api rate_limit > "$rest" 2>/dev/null || rm -f "$rest"
           python3 .github/scripts/factory_gh_usage.py "${FACTORY_GH_CALL_LOG:-/dev/null}" \
-            --label "$USAGE_LABEL" --summary "$GITHUB_STEP_SUMMARY"
+            --label "$USAGE_LABEL" --summary "$GITHUB_STEP_SUMMARY" \
+            --rate-limit "$rest" --record "$GITHUB_REPOSITORY"
 
       - name: Report factory query measurements
         if: always() && inputs.measure

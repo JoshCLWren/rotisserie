@@ -15,6 +15,7 @@ from rotisserie.factory_console.github import GitHubError, GitHubRateLimitError
 from rotisserie.factory_console.service import (
     baseline,
     doctor,
+    gh_usage,
     limits,
     outcomes,
     turning,
@@ -322,9 +323,35 @@ def _show_rate_limits(
     return result
 
 
+def _show_factory_usage(context: Context) -> dict[str, object] | None:
+    """The factory's own budget and per-job requests, as its jobs published them."""
+    console = context.console
+    try:
+        report = gh_usage.published(context.github)
+    except GitHubError as exc:
+        console.warn(f"Cannot read the factory's published GitHub usage: {exc}")
+        return None
+    console.heading("Factory GitHub usage (published by its jobs)")
+    if report["status"] == "unpublished":
+        console.line("  No factory job has published its GitHub request counts yet.")
+        return report
+    budget = report["budget"]
+    line = gh_usage.budget_line(budget)
+    if budget is not None and (at := gh_usage.moment(budget.get("at"))) is not None:
+        line += f" ({local_time(at)})"
+    console.line(f"  {line}")
+    for row in report["kinds"]:
+        console.line(f"  {gh_usage.kind_line(row)}")
+    return report
+
+
 def cmd_limits(context: Context, arguments: argparse.Namespace) -> Outcome:
     data = _show_rate_limits(context)
     data["factory_app"] = show_app_budget(context, data.get("rate_limits"))
+    buckets = data.get("rate_limits")
+    core = buckets.get("core") if isinstance(buckets, dict) else None
+    spent = isinstance(core, dict) and core.get("remaining") == 0
+    data["factory_usage"] = None if spent else _show_factory_usage(context)
     return Outcome(Result.COMPLETED, EXIT_OK, data)
 
 

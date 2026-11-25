@@ -32,6 +32,7 @@ from factory_attempt_history import read_comment_history
 from factory_discovery import canonical_target, discover, update_labels
 from factory_state_ledger import acquire_lease, forced_refusal, release_lease, worker_claim, external_wip_count
 import factory_active_workers
+import factory_attempt_history_store
 import factory_lease_owners
 import factory_state_ledger
 from factory_lease_owners import ActiveWorkerResult, github_timestamp_epoch
@@ -770,10 +771,11 @@ def recent_factory_comments(
         return flatten_pages(pages), len(pages)
 
     cache = os.environ.get('FACTORY_ATTEMPT_HISTORY_CACHE', '')
+    shared = factory_attempt_history_store.for_repo(REPO, reset_seconds=FACTORY_NO_DIFF_RETRY_RESET_SECONDS) if cache and target_pr is None else None
     return read_comment_history(
         now_epoch=now_epoch, reset_seconds=FACTORY_NO_DIFF_RETRY_RESET_SECONDS,
         scope=f'{REPO}:pr:{target_pr}' if target_pr is not None else REPO,
-        cache_path=Path(cache) if cache else None, fetch_pages=fetch_pages,
+        cache_path=Path(cache) if cache else None, fetch_pages=fetch_pages, shared=shared,
     )
 
 
@@ -799,18 +801,13 @@ def load_no_diff_attempts(now_epoch: int | None=None) -> dict[int, int]:
 
 def unresolved_run_has_credible_liveness(run: dict[str, Any], *, now_epoch: int) -> bool:
     """Return whether an unresolved active-status run still merits a safety fence."""
-    return factory_active_workers.run_is_live(
-        run, repo=REPO, gh_json=lambda args: gh_json(args), now_epoch=now_epoch,
-        ttl=FIXED_LEASE_TTL_SECONDS,
-    )
+    return factory_active_workers.run_is_live(run, repo=REPO, gh_json=lambda args: gh_json(args), now_epoch=now_epoch, ttl=FIXED_LEASE_TTL_SECONDS)
 
 
 def active_fixed_workers() -> ActiveWorkerResult:
     """Return resolved workers and credible unresolved active-status runs."""
-    return factory_active_workers.active_workers(
-        REPO, gh_json=lambda args: gh_json(args), authorized=is_authorized_fixed_worker,
-        live=lambda run, now: unresolved_run_has_credible_liveness(run, now_epoch=now),
-    )
+    return factory_active_workers.active_workers(REPO, gh_json=lambda args: gh_json(args), authorized=is_authorized_fixed_worker,
+                                                 live=lambda run, now: unresolved_run_has_credible_liveness(run, now_epoch=now))
 
 
 def owned_targets(issues: list[dict[str, Any]] | None=None, prs: list[dict[str, Any]] | None=None) -> list[tuple[int, str]]:

@@ -86,6 +86,24 @@ def test_a_store_behind_this_code_is_reported_then_upgraded_and_recorded(
     assert last["workflow"] == "Factory Dispatch" and last["run_id"] == "4242"
 
 
+def test_a_version_2_store_gains_the_cursor_table_beside_the_upgrade_record(
+    tmp_path: Path,
+) -> None:
+    store = _store(tmp_path)
+    _sql(
+        tmp_path / "store.db",
+        "DROP TABLE factory_cursor",
+        "DELETE FROM _schema_version WHERE version > 2",
+    )
+    report = schema.status(store)
+    assert report["stored_version"] == 2 and report["missing"] == ["factory_cursor"]
+    assert libsql.SCHEMA_VERSION == 3
+    assert libsql.ensure_schema(store) is True
+    after = schema.status(store)
+    assert after["status"] == "ok" and after["stored_version"] == 3
+    assert after["last_upgrade"]["created"] == ["factory_cursor"]
+
+
 class RefusesUpgrades(libsql.FileStore):
     """Refuses the schema batch, as a token without DDL rights would, but takes the record."""
 

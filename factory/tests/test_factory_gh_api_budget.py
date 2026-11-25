@@ -26,7 +26,7 @@ def _meter(tmp_path: Path, *args: str) -> str:
     log = tmp_path / "calls.log"
     env = {**os.environ, "FACTORY_GH_CALL_LOG": str(log), "FACTORY_REAL_GH": "/bin/true"}
     subprocess.run(["bash", str(METER), *args], check=True, env=env)
-    return log.read_text().splitlines()[-1].split("\t", 1)[1]
+    return log.read_text().splitlines()[-1].split("\t")[1]
 
 
 def test_meter_normalizes_endpoints_and_methods(tmp_path: Path) -> None:
@@ -339,3 +339,9 @@ def test_quota_sampler_is_read_only_and_on_demand() -> None:
     data = yaml.safe_load(adopter_view("factory-api-quota-sampler.yml"))
     assert set(data[True]) == {"workflow_dispatch"}
     assert data["permissions"] == {"actions": "read", "contents": "read"}
+
+
+def test_a_workflow_run_without_a_workflow_name_drops_every_resource(tmp_path: Path) -> None:
+    _warm(tmp_path)
+    _shim(tmp_path, "workflow", "run", "--ref", "main")
+    assert _refetched(tmp_path, CHECKS_5, CHECKS_6, ENTRY_RUNS) == [True, True, True]

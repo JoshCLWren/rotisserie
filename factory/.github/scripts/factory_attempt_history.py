@@ -1,11 +1,12 @@
-"""Reuse retry history within one trusted dispatch pass, refreshing changed comments."""
+"""Reuse retry history within a dispatch pass and across passes, refreshing changed comments."""
 
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 import json
 from pathlib import Path
 import sys
 import tempfile
+from typing import Protocol
 
 
 Comment = dict[str, object]
@@ -84,9 +85,14 @@ def _write_snapshot(
             pending.unlink(missing_ok=True)
 
 
+class Shared(Protocol):
+    def load(self, *, now: int) -> HistorySnapshot | None: ...
+    def save(self, snapshot: HistorySnapshot) -> None: ...
+
+
 def read_comment_history(
     *, now_epoch: int, reset_seconds: int, scope: str,
-    cache_path: Path | None, fetch_pages: FetchPages,
+    cache_path: Path | None, fetch_pages: FetchPages, shared: Shared | None = None,
 ) -> list[Comment]:
     """Read full history once per pass, then fully paginate fresh changed comments.
 
@@ -96,6 +102,7 @@ def read_comment_history(
         scope: Repository identity; snapshots cannot cross repositories.
         cache_path: Trusted runner-local, unique-per-pass file, or None for live reads.
         fetch_pages: Fetch every page since the supplied epoch; errors must propagate.
+        shared: Cross-job snapshot, read and saved by the first read of each pass.
 
     Returns:
         Fresh comment rows for the existing trusted-marker/window parser.
@@ -104,7 +111,10 @@ def read_comment_history(
         _read_snapshot(cache_path, now=now_epoch, reset_seconds=reset_seconds, scope=scope)
         if cache_path is not None else None
     )
-    reused = snapshot is not None
+    source = "delta" if snapshot is not None else "full"
+    if snapshot is None and shared is not None:
+        snapshot = shared.load(now=now_epoch)
+        source = "shared" if snapshot is not None else source
     # GitHub timestamps have second precision. Overlap the previous query start,
     # not its completion, so updates during pagination cannot fall into a gap.
     since = max(0, snapshot.fetched_at - 1 if snapshot else now_epoch - reset_seconds)
@@ -123,15 +133,20 @@ def read_comment_history(
             rows = _comments(rows)
         except ValueError as exc:
             raise RuntimeError("retry history returned invalid comment identities") from exc
-        snapshot = HistorySnapshot(
-            snapshot.created_at if snapshot else now_epoch,
-            now_epoch, snapshot.full_pages if snapshot else pages, rows,
-        )
-        _write_snapshot(cache_path, snapshot, reset_seconds=reset_seconds, scope=scope)
+    current = HistorySnapshot(
+        snapshot.created_at if snapshot else now_epoch,
+        now_epoch, snapshot.full_pages if snapshot else pages, rows,
+    )
+    if cache_path is not None:
+        # A shared snapshot may predate this pass; the pass bound starts now.
+        local = replace(current, created_at=now_epoch) if source == "shared" else current
+        _write_snapshot(cache_path, local, reset_seconds=reset_seconds, scope=scope)
+    if shared is not None and source != "delta":
+        shared.save(current)
     print(
-        f"[factory-controller] attempt-history source={'delta' if reused else 'full'} "
+        f"[factory-controller] attempt-history source={source} "
         f"pages_read={pages} comments={len(rows)} "
-        f"full_history_pages={snapshot.full_pages if snapshot else pages}",
+        f"full_history_pages={current.full_pages}",
         file=sys.stderr,
     )
     return rows

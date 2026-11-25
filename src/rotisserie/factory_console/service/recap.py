@@ -58,6 +58,7 @@ class Recap:
     unread: list[str]
     burning: dict[str, object] | None = None
     reviews: dict[str, int] | None = None
+    github: dict[str, object] | None = None
 
     def to_dict(self) -> dict[str, object]:
         return {
@@ -77,6 +78,7 @@ class Recap:
             "unread": self.unread,
             "burning": self.burning,
             "reviews": self.reviews,
+            "github": self.github,
         }
 
 
@@ -117,6 +119,7 @@ def assemble(sources: build.Sources) -> Recap:
         unread=sorted(sources.unread),
         burning=burning_stretch(sources),
         reviews=reviews_by_result(sources),
+        github=build.github_usage(sources),
     )
 
 

@@ -72,7 +72,9 @@ factory_gh_cache_tag() {
 factory_gh_write_tags() {
   local path number
   case "${1:-} ${2:-}" in
-    "workflow run") printf 'wf-%s\n' "${3:-*}"; return ;;
+    "workflow run")
+      if [[ -n "${3:-}" && "${3}" != -* ]]; then printf 'wf-%s\n' "$3"; else printf '*\n'; fi
+      return ;;
     "label "*) return ;;
     "api graphql")
       local arg

@@ -437,9 +437,14 @@ jobs:
         if: ${{ always() }}
         continue-on-error: true
         shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
+          rest="$RUNNER_TEMP/factory-rate-limit.json"
+          "${FACTORY_REAL_GH:-gh}" api rate_limit > "$rest" 2>/dev/null || rm -f "$rest"
           python3 .github/scripts/factory_gh_usage.py "${FACTORY_GH_CALL_LOG:-/dev/null}" \
-            --label "merge drain" --summary "$GITHUB_STEP_SUMMARY"
+            --label "merge drain" --summary "$GITHUB_STEP_SUMMARY" \
+            --rate-limit "$rest" --record "$GITHUB_REPOSITORY"
       - name: Remove the factory store token
         if: always()
         run: rm -f "$RUNNER_TEMP/factory-store-token"

@@ -33,6 +33,7 @@
 .github/scripts/factory_app_client_id.py
 .github/scripts/factory_assign_trace.py
 .github/scripts/factory_attempt_history.py
+.github/scripts/factory_attempt_history_store.py
 .github/scripts/factory_billing_pool.py
 .github/scripts/factory_branch_sync.py
 .github/scripts/factory_candidate_health.py
@@ -127,6 +128,7 @@
 .github/scripts/factory_turso_backoff.py
 .github/scripts/factory_turso_backup.py
 .github/scripts/factory_turso_core.py
+.github/scripts/factory_turso_cursors.py
 .github/scripts/factory_turso_events.py
 .github/scripts/factory_turso_exports.py
 .github/scripts/factory_turso_external.py

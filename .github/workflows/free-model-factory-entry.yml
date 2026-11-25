@@ -333,23 +333,6 @@ jobs:
             exit 1
           fi
 
-      # Deferred reconciliation: a persister that hit the installation rate
-      # limit (runs 44031401652, 44032359658) left no store outcome. Each later
-      # Entry persister backfills a bounded number of earlier misses with the
-      # same classifier. Never blocks or changes this run's own verdict.
-      - name: Reconcile earlier Entry outcomes missing from the factory store
-        if: ${{ always() }}
-        continue-on-error: true
-        timeout-minutes: 5
-        shell: bash
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          set -Eeuo pipefail
-          python3 .github/scripts/factory_outcome_reconcile.py \
-            --repo "$GITHUB_REPOSITORY" --hours 12 --limit 3 \
-            --exclude-run "$GITHUB_RUN_ID"
-
       # The signed-in Actions run, not the store, owns this durable handoff record.
       # A failed agent remains failed; this artifact never upgrades the verdict.
       - name: Preserve attested worker outcome artifact
