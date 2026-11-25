@@ -7,6 +7,7 @@ RUN apt-get update \
  && rm -rf /var/lib/apt/lists/*
 RUN pip install --break-system-packages --quiet uv
 COPY .github/scripts/install-opencode-v2.sh /opt/install-opencode-v2.sh
+COPY .github/scripts/opencode-factory-quota-retry.mjs /opt/opencode-factory-quota-retry.mjs
 RUN RUNNER_TEMP=/opt GITHUB_PATH=/opt/opencode-path HOME=/root bash /opt/install-opencode-v2.sh \
  && ln -s "$(cat /opt/opencode-path)/opencode" /usr/local/bin/opencode \
  && opencode --version

@@ -75,4 +75,9 @@ cat > "$HOME/.config/opencode/opencode.json" <<'JSON'
 }
 JSON
 chmod 600 "$HOME/.config/opencode/opencode.json"
+# OpenCode loads every .js file in its global plugins directory. This one stops
+# retries of quota refusals; see the rule at the top of the plugin.
+plugin_source="$(dirname "${BASH_SOURCE[0]}")/opencode-factory-quota-retry.mjs"
+mkdir -p "$HOME/.config/opencode/plugins"
+cp "$plugin_source" "$HOME/.config/opencode/plugins/factory-quota-retry.js"
 printf 'OpenCode %s installed from the current release\n' "$version"
