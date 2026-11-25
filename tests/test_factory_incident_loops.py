@@ -73,10 +73,10 @@ def test_turning_names_incident_work_and_leads_with_the_real_loop(
     )
     view.render(Console(), verdict.to_dict(), AT_0130)
     out = capsys.readouterr().out
-    assert f"{TITLE} (#5766) [incident]: 7 of 8 worker runs" in out
+    assert f"{TITLE} (#5766) [incident]: 6 of 7 worker runs" in out
     only = turning.assess(evidence(loops=incident_scan()[:1]))
     assert only.text == (
-        f"{TITLE} is incident work, not held: 7 of 8 worker runs in the last 6h changed "
+        f"{TITLE} is incident work, not held: 6 of 7 worker runs in the last 6h changed "
         "nothing; most often work_failure (5)."
     )
 

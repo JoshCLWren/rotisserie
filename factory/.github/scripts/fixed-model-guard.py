@@ -5,8 +5,15 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 import unittest
+from collections.abc import Iterable
+from pathlib import Path, PurePosixPath
 from typing import cast
+
+TEST_DIRS = frozenset({"tests", "test", "__tests__", "spec"})
+TEST_NAME_RE = re.compile(r"^(?:test_.+|.+_test\.\w+|.+\.(?:test|spec)\.\w+)$")
+MARKER_FILE_RE = re.compile(r"^FACTORY_[A-Z0-9_]+$")
 
 FACTORY_CONTROL_PREFIXES: tuple[str, ...] = (
     ".github/workflows/fixed-model-",
@@ -56,25 +63,56 @@ def task_allows_factory_control(title: str, body: str) -> bool:
     return any(needle in text for needle in FACTORY_TASK_NEEDLES)
 
 
-def unrelated_repair(previous_pr_files: set[str], latest_commit_files: set[str]) -> bool:
+def unrelated_repair(
+    previous_pr_files: set[str], latest_commit_files: set[str], named: str = ""
+) -> bool:
     """Reject only an existing-PR repair whose latest commit has zero overlap.
 
     Empty previous PR diffs represent first implementation commits and are not
-    treated as adopted-PR repair work.
-
-    Args:
-        previous_pr_files: Paths already present on the PR before the latest commit.
-        latest_commit_files: Paths touched by the latest commit.
-
-    Returns:
-        True when the latest commit is an unrelated repair that should be rejected.
-
+    treated as adopted-PR repair work. A file the latest review findings or
+    acceptance-gate reasons name, or a test for code the PR changes, counts as
+    overlap: one adopter PR lost three real test edits to this guard.
     """
+    excused = {
+        path
+        for path in latest_commit_files
+        if not is_factory_control_path(path)
+        and (path in named or is_related_test(path, previous_pr_files))
+    }
     return bool(
         previous_pr_files
         and latest_commit_files
         and previous_pr_files.isdisjoint(latest_commit_files)
+        and not excused
     )
+
+
+def is_related_test(path: str, pr_files: Iterable[str]) -> bool:
+    """A test file beside, above or named for a file the PR already changes."""
+    pure = PurePosixPath(path)
+    if not (TEST_NAME_RE.match(pure.name) or TEST_DIRS & set(pure.parts[:-1])):
+        return False
+    home = "/".join(part for part in pure.parts[:-1] if part not in TEST_DIRS)
+    roots = {home, home.rpartition("/")[0] if "/" in home else home}
+    stem = re.sub(r"^test_|_test$", "", pure.name.split(".", 1)[0])
+    for changed in pr_files:
+        source = PurePosixPath(changed)
+        folder = str(source.parent) if str(source.parent) != "." else ""
+        near = any(folder == root or folder.startswith(f"{root}/") for root in roots)
+        if source.stem == stem or near or not home:
+            return True
+    return False
+
+
+def _normalized(paths: Iterable[str]) -> set[str]:
+    found = set()
+    for path in paths:
+        normalized = path.replace("\\", "/")
+        while normalized.startswith("./"):
+            normalized = normalized[2:]
+        if normalized:
+            found.add(normalized)
+    return found
 
 
 def reject_decision(
@@ -90,6 +128,7 @@ def reject_decision(
     conflict_markers: bool = False,
     head_changed: bool = False,
     foreign_main_commits: bool = False,
+    named: str = "",
 ) -> dict[str, object]:
     """Decide whether a factory persistence attempt must be rejected.
 
@@ -103,7 +142,8 @@ def reject_decision(
     2. Factory-control paths already present in the prior PR diff are rejected
        for non-factory tasks, so an adopted PR branch carrying stale factory
        contamination cannot be pushed further.
-    3. Zero overlap with an existing PR diff is rejected.
+    3. A new FACTORY_* marker file is rejected; then zero overlap with an
+       existing PR diff is, unless findings name the file or it is a test.
     4. Factory-control paths in the latest diff are rejected unless the
        selected task is about fixed-model factory infrastructure.
 
@@ -142,22 +182,10 @@ def reject_decision(
             "factory_control_files": [],
         }
 
-    latest = set()
-    for path in latest_commit_files:
-        if not path:
-            continue
-        normalized = path.replace("\\", "/")
-        while normalized.startswith("./"):
-            normalized = normalized[2:]
-        latest.add(normalized)
-    previous = set()
-    for path in previous_pr_files:
-        if not path:
-            continue
-        normalized = path.replace("\\", "/")
-        while normalized.startswith("./"):
-            normalized = normalized[2:]
-        previous.add(normalized)
+    latest, previous = _normalized(latest_commit_files), _normalized(previous_pr_files)
+    markers = sorted(p for p in latest - previous if MARKER_FILE_RE.match(PurePosixPath(p).name))
+    if markers:
+        return {"reject": True, "reason": "factory-marker-file", "factory_control_files": markers}
 
     prior_control_files = sorted(path for path in previous if is_factory_control_path(path))
     if prior_control_files and not task_allows_factory_control(title, body):
@@ -167,7 +195,7 @@ def reject_decision(
             "factory_control_files": prior_control_files,
         }
 
-    if unrelated_repair(previous, latest):
+    if unrelated_repair(previous, latest, named):
         return {
             "reject": True,
             "reason": "zero-overlap-with-existing-pr-diff",
@@ -401,6 +429,13 @@ class GuardTests(unittest.TestCase):
         self.assertFalse(unrelated_repair({"app/service.py"}, {"app/service.py", "tests/test_service.py"}))
 
 
+def _read(path: str) -> str:
+    try:
+        return Path(path).read_text(encoding="utf-8", errors="replace")[:200_000] if path else ""
+    except OSError:
+        return ""
+
+
 def main() -> int:
     """CLI entrypoint for the repair guard decision or self-tests.
 
@@ -415,6 +450,7 @@ def main() -> int:
     parser.add_argument("--git-state", default="{}")
     parser.add_argument("--title", default="")
     parser.add_argument("--body", default="")
+    parser.add_argument("--findings-file", default="")
     args = parser.parse_args()
 
     if args.self_test:
@@ -438,6 +474,7 @@ def main() -> int:
                 conflict_markers=git_state.get("conflict_markers", False),
                 head_changed=git_state.get("head_changed", False),
                 foreign_main_commits=git_state.get("foreign_main_commits", False),
+                named=_read(args.findings_file),
             )
         )
     )

@@ -9,6 +9,7 @@ re-reading the item, so a label someone adds meanwhile is never overwritten.
 from __future__ import annotations
 
 import json
+from collections.abc import Mapping
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from types import ModuleType
@@ -23,7 +24,7 @@ from rotisserie.factory_console.github import (
     obj,
     string,
 )
-from rotisserie.factory_console.service import agent_holds, external, frontier
+from rotisserie.factory_console.service import agent_holds, external, frontier, state_labels
 
 LIST_CAP = 3000
 
@@ -135,10 +136,13 @@ def audit(
     now: datetime | None = None,
     snapshot: frontier.Frontier | None = None,
     items: list[dict[str, Any]] | None = None,
+    state: Mapping[str, Mapping[str, bool]] | None = None,
 ) -> tuple[Report, list[tuple[dict[str, Any], Any]]]:
     """Plan every open item's repair without writing anything."""
     lp = policy()
     instant = now or datetime.now(UTC)
+    settled = state if state is not None else state_labels.desired(github, now=instant)
+    parked_label = runtime.module("factory_state_labels").PARKED
     snap = snapshot or frontier.capture(github, now=instant)
     rows = items if items is not None else open_items(github)
     leases, problem = frontier._active_leases(github.repo)
@@ -206,6 +210,7 @@ def audit(
             offer.action if offer else None,
             claimed_age,
             rejected_age,
+            dict(settled.get(f"{kind}:{number}", {})) if kind == "pr" else {parked_label: False},
         )
         result = lp.plan(facts)
         if result.changes:
@@ -248,7 +253,22 @@ def _fresh_labels(github: GitHub, number: int) -> set[str]:
     }
 
 
+def _define(github: GitHub, names: tuple[str, ...]) -> None:
+    """Create a missing state label with its color and description before first use."""
+    definitions = runtime.module("factory_state_labels").DEFINITIONS
+    for name in names:
+        if name not in definitions:
+            continue
+        color, description = definitions[name]
+        fields = ["-f", f"name={name}", "-f", f"color={color}", "-f", f"description={description}"]
+        try:
+            github.gh("api", f"repos/{github.repo}/labels", "--method", "POST", *fields)
+        except GitHubError:
+            pass  # it exists already
+
+
 def _write(github: GitHub, number: int, add: tuple[str, ...], remove: tuple[str, ...]) -> None:
+    _define(github, add)
     if add:
         fields = [arg for label in add for arg in ("-f", f"labels[]={label}")]
         github.gh("api", f"repos/{github.repo}/issues/{number}/labels", "--method", "POST", *fields)
@@ -271,10 +291,11 @@ def repair(
     now: datetime | None = None,
     snapshot: frontier.Frontier | None = None,
     items: list[dict[str, Any]] | None = None,
+    state: Mapping[str, Mapping[str, bool]] | None = None,
 ) -> Report:
     """Apply each planned change that still matches the item's live labels."""
     rows = items if items is not None else open_items(github)
-    report, plans = audit(github, now=now, snapshot=snapshot, items=rows)
+    report, plans = audit(github, now=now, snapshot=snapshot, items=rows, state=state)
     report.mode = "repair"
     if items is None:
         report.released_agents = agent_holds.release(

@@ -44,6 +44,7 @@ RUNTIME_MODULES = (
     "factory_turso_usage",
     "factory_dynamic_outcome",
     "factory_item_loop",
+    "factory_state_labels",
     "factory_merge_linkage",
     "factory_review_findings",
     "factory_acceptance_criteria",

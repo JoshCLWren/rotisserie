@@ -831,9 +831,18 @@ The factory acts on it in two places:
   it, because a failed worker's own release flips the stage. A new head
   releases it, and only runs after the park count again.
 
-The park changes no label. A targeted or forced run (`baste run --target
-pr:N`), an owner `factory:override` label and a `factory:claimed` claim are
-never held. A second park at the same head is never posted. Issues are not
+The park adds the `factory:parked` label. The same sweep removes it when the
+hold ends: a new head, an owner `factory:override` label, a `factory:claimed`
+claim or active incident work. The label doctor (`baste labels`) fixes it to match
+the park at the PR's current head. The label never holds or releases anything;
+the store does. A targeted or forced run (`baste run --target pr:N`), an owner
+`factory:override` label and a `factory:claimed` claim are never held. A
+targeted run that pushes nothing leaves the park, and the label, in place.
+
+A run that delivered work (pushed repairs or opened its PR) counts as progress
+even when its agent then hit the deadline. Runs that failed for a provider or
+model-catalog reason, or with no class at all (`provider_failure`,
+`unknown_failure`, `model_unavailable`, `model_retired_410`), do not count. A second park at the same head is never posted. Issues are not
 parked: the live rule holds a looping issue until its runs age out of the
 window. `baste
 recap` finds parked PRs by their park comment, however old, and lists each
