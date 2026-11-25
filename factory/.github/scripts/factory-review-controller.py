@@ -33,6 +33,7 @@ sys.path.insert(0, str(_eligibility_dir))
 eligibility = importlib.import_module("factory_eligibility")
 _review_policy = importlib.import_module("factory_review_policy")
 _review_exclusion = importlib.import_module("factory_review_exclusion")
+_outside_approval = importlib.import_module("factory_outside_approval")
 line_gate = importlib.import_module("factory_review_line_gate")
 approval_can_promote = _review_policy.approval_can_promote
 current_head_approvers = _review_policy.current_head_approvers
@@ -1835,7 +1836,10 @@ def mechanical_merge_gate(pr_number: int, expected_head: str) -> GateResult:
         return reviews
     if "factory" in labels_of(pr_json(pr_number)):
         acceptance = issue_acceptance_gate(pr_number, expected_head)
-        if acceptance["decision"] != "pass":
+        # Owner decision 2026-11-25: an outside approval merges without an acceptance record.
+        if acceptance["decision"] != "pass" and _outside_approval.authorization(
+            REPO, pr_number, head=expected_head, fetch=repo_fetch, store=False
+        ) is None:
             return acceptance
     dependency = declared_dependency_gate(pr_number)
     if dependency["decision"] != "pass":
@@ -2554,13 +2558,8 @@ def reconcile_terminal_pr(pr_number: int) -> dict[str, Any]:
             terminal_marker,
         ])
         
-        return {
-            "pr": pr_number, 
-            "status": "terminal-closed", 
-            "verdict": terminal_verdict,
-            "reason": terminal_reason,
-            "head": current_head
-        }
+        return {"pr": pr_number, "status": "terminal-closed", "verdict": terminal_verdict,
+                "reason": terminal_reason, "head": current_head}
         
     except RuntimeError as exc:
         return {"pr": pr_number, "status": "reconciliation-failed", "error": str(exc)}
@@ -2604,16 +2603,15 @@ def authorize_ready(pr_number: int) -> dict[str, Any]:
         and cross_model
         and issue_acceptance_gate(pr_number, head)["decision"] == "pass"
     )
-    if authorized:
-        return {
-            "authorized": True,
-            "head": head,
-            "producer": producer,
-            "contributors": sorted(contributors),
-            "provenance_complete": provenance_complete,
-            "approvers": sorted(approvers),
-            "cross_model_review": True,
-        }
+    ready = str(pr.get("state")) == "OPEN" and "factory:ready" in labels_of(pr)
+    outside = None
+    if ready and not authorized:
+        outside = _outside_approval.authorization(REPO, pr_number, head=head, fetch=repo_fetch)
+    if authorized or outside:
+        return {"authorized": True, "head": head, "producer": producer,
+                "contributors": sorted(contributors), "provenance_complete": provenance_complete,
+                "approvers": sorted(approvers),
+                "cross_model_review": bool(authorized), "outside_approval": outside}
 
     if str(pr.get("state")) == "OPEN" and "factory:ready" in labels_of(pr):
         replace_factory_labels(pr_number, "factory:unowned", "factory:review")

@@ -76,8 +76,7 @@ factory_greptile_pr_summary() {
 #   $5 PR number                        $6 exact head SHA
 factory_format_review_findings() {
   local threads_json="$1" reviews_json="$2" body_file="$3" checks_json="$4" pr="$5" head="$6"
-  local summary_file status=0
-  summary_file="$(mktemp)"
+  local summary_file status=0; summary_file="$(mktemp)"
   factory_greptile_pr_summary < "$body_file" > "$summary_file" || true
   jq -nr \
     --slurpfile threads "$threads_json" \
@@ -308,6 +307,7 @@ factory_collect_review_findings() {
     warnings+=('formatting')
     printf '# Review findings for PR #%s at head %s\n' "$pr" "$head" > "$out"
   fi
+  python3 "${BASH_SOURCE[0]%/*}/factory_outside_verdict.py" "$dir/reviews.json" "$dir/comments.json" "$head" "${repo%%/*}" "$FACTORY_MARKER_PREFIX" >> "$out" 2>/dev/null || true
   if (( ${#warnings[@]} )); then
     printf '\nWARNING: INCOMPLETE REVIEW DATA. The wrapper could not fetch or format: %s. Do not end with FACTORY_GATE_READY until you have inspected every review thread, Greptile review, and PR-Agent check directly with gh.\n' \
       "$(IFS=,; echo "${warnings[*]}")" >> "$out"

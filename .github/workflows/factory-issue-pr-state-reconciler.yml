@@ -39,10 +39,11 @@ permissions:
 
 jobs:
   reconcile:
-    # Ignore ordinary discussion. Only an exact review-marker event needs
-    # this workflow; the handler rechecks trust, PR identity and live head.
+    # Ignore ordinary discussion. Only an exact review-marker event or an
+    # outside agent's `Verdict:` summary needs this workflow; the handler
+    # rechecks trust, PR identity and live head.
     # Factory state labels (factory_state_labels.py) only mirror the store.
-    if: ${{ !((github.event.action == 'labeled' || github.event.action == 'unlabeled') && contains(fromJSON('["factory:parked","factory:needs-split","factory:gate-rejected","factory:duplicate","factory:cooling","factory:incident-work"]'), github.event.label.name)) && (github.event_name != 'issue_comment' || (github.event.issue.pull_request && (contains(github.event.comment.body, format('{0}-factory-semantic-review-v1:', github.event.repository.name)) || contains(github.event.comment.body, format('{0}-factory-review-v2:', github.event.repository.name))))) }}
+    if: ${{ !((github.event.action == 'labeled' || github.event.action == 'unlabeled') && contains(fromJSON('["factory:parked","factory:needs-split","factory:gate-rejected","factory:duplicate","factory:cooling","factory:incident-work"]'), github.event.label.name)) && (github.event_name != 'issue_comment' || (github.event.issue.pull_request && (contains(github.event.comment.body, format('{0}-factory-semantic-review-v1:', github.event.repository.name)) || contains(github.event.comment.body, format('{0}-factory-review-v2:', github.event.repository.name)) || contains(github.event.comment.body, 'Verdict:')))) }}
     runs-on: ubuntu-latest
     timeout-minutes: 8
     steps:
@@ -112,6 +113,19 @@ jobs:
             } else {
               await visibility.reconcileMissingPrLabels({ github, context });
             }
+
+      - name: Make an outside agent's approved PR ready to merge
+        # Owner decision 2026-11-25: an outside approval at the current head
+        # merges through the ready drain. factory_outside_approval.py checks
+        # the head, the approver's independence and open change requests.
+        if: >-
+          steps.api_budget.outputs.allow != 'false' && github.event.sender.login == github.repository_owner &&
+          (github.event_name == 'pull_request_review' || github.event_name == 'pull_request_review_comment' ||
+          (github.event_name == 'issue_comment' && github.event.issue.pull_request))
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ github.event.pull_request.number || github.event.issue.number }}
+        run: python3 .github/scripts/factory_outside_approval.py promote --repo "$GITHUB_REPOSITORY" --pr "$PR_NUMBER"
 
       - name: Settle the owner's self-review exception on this PR
         # The exception lasts one head: a push or a close removes the label.

@@ -17,6 +17,7 @@
 .github/scripts/factory-fork-worker.sh
 .github/scripts/factory-gh-meter.sh
 .github/scripts/factory-gh-rest-shim.sh
+.github/scripts/factory-outside-verdict.cjs
 .github/scripts/factory-quota-observer.py
 .github/scripts/factory-review-controller.py
 .github/scripts/factory-review-findings.sh
@@ -81,6 +82,8 @@
 .github/scripts/factory_model_failover.py
 .github/scripts/factory_model_track_record.py
 .github/scripts/factory_ready.py
+.github/scripts/factory_outside_approval.py
+.github/scripts/factory_outside_verdict.py
 .github/scripts/factory_track_record_cooldown.py
 .github/scripts/factory_manual_model.py
 .github/scripts/factory_forced_model.py
