@@ -95,3 +95,33 @@ def test_a_gate_escalation_ends_the_empty_verdict_self_heal() -> None:
     )
     assert rules.empty_verdict([verdict(NARRATION)], 44) is not None
     assert rules.empty_verdict([verdict(NARRATION), trusted(escalated)], 44) is None
+
+
+def gated(monkeypatch: MonkeyPatch, failures: list[str], *labels: str) -> list[list[str]]:
+    module = load_review_controller()
+    payload = pr_payload(worker="17", branch_worker="43")
+    payload["labels"] += [{"name": name} for name in labels]
+    _, _, commands = wire_controller(
+        monkeypatch, module, [payload, payload], comments=producer_contribution()
+    )
+    monkeypatch.setattr(module, "target_json", lambda _n: {"state": "open", "body": ISSUE})
+    monkeypatch.setattr(module.issue_acceptance, "validate", lambda *_a, **_k: list(failures))
+    module.handle_review(
+        worker="17",
+        pr_number=1390,
+        verdict="approve",
+        reviewed_head=REVIEWED_HEAD,
+        review_log="/tmp/model.log",
+    )
+    return [c for c in commands if any("gate-rejected" in part for part in c)]
+
+
+def test_a_gate_rejection_adds_the_gate_rejected_label(monkeypatch: MonkeyPatch) -> None:
+    writes = gated(monkeypatch, FAILURES)
+    assert any("labels[]=factory:gate-rejected" in c for c in writes)
+
+
+def test_a_gate_pass_removes_the_gate_rejected_label(monkeypatch: MonkeyPatch) -> None:
+    writes = gated(monkeypatch, [], "factory:gate-rejected")
+    assert any(c[-2:] == ["--method", "DELETE"] for c in writes)
+    assert gated(monkeypatch, []) == []
