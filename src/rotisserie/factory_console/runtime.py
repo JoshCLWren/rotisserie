@@ -46,6 +46,7 @@ RUNTIME_MODULES = (
     "factory_item_loop",
     "factory_merge_linkage",
     "factory_review_findings",
+    "factory_acceptance_criteria",
 )
 
 # Every file the wheel must carry, keyed by module name, with its checkout path.

@@ -13,6 +13,7 @@ from typing import TextIO
 from rotisserie.factory_console import runtime
 from rotisserie.factory_console.commands._shared import EXIT_INTERRUPTED, EXIT_OK, EXIT_USAGE
 from rotisserie.factory_console.commands.agents import cmd_external, cmd_wait_for_work
+from rotisserie.factory_console.commands.assign import cmd_assign, cmd_assigned
 from rotisserie.factory_console.commands.backoffs import cmd_backoffs
 from rotisserie.factory_console.commands.claims import (
     cmd_claim,
@@ -38,6 +39,7 @@ from rotisserie.factory_console.commands.history import cmd_history, cmd_use
 from rotisserie.factory_console.commands.incident import cmd_incident
 from rotisserie.factory_console.commands.models import cmd_close, cmd_groom
 from rotisserie.factory_console.commands.parser import add_parser
+from rotisserie.factory_console.commands.pause import cmd_pause, cmd_resume
 from rotisserie.factory_console.commands.prs import (
     cmd_checks,
     cmd_conflicts,
@@ -195,6 +197,8 @@ def _help_text() -> str:
             "  baste schema        store tables, indexes and the last schema upgrade",
             "  baste doctor        is the factory itself healthy",
             "  baste claim pr:N    request work by label; finish pr:N ends it",
+            "  baste assign pr:N --agent NAME  hand it to an outside agent; assigned lists them",
+            "  baste pause --reason TEXT  drain: turn off dispatch and claims; resume undoes it",
             "  baste follow pr:N   each lifecycle change until done; runs pr:N",
             "  baste limits        GitHub API quota and reset time",
             "  baste estimate issue:N  attempts, time and unattended chance",
@@ -279,6 +283,10 @@ HANDLERS = {
     "heal": cmd_heal,
     "store": cmd_store,
     "turning": cmd_turning,
+    "assign": cmd_assign,
+    "assigned": cmd_assigned,
+    "pause": cmd_pause,
+    "resume": cmd_resume,
 }
 
 

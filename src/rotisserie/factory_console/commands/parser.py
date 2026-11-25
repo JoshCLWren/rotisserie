@@ -20,6 +20,7 @@ from rotisserie.factory_console.commands.parser_insight import (
     _via,
     add_insight_parsers,
 )
+from rotisserie.factory_console.commands.parser_ops import add_operator_parsers
 from rotisserie.factory_console.service import external
 
 
@@ -493,3 +494,4 @@ def add_parser(
     store.add_parser(commands)
     schema.add_parser(commands)
     turning.add_parser(commands)
+    add_operator_parsers(commands)

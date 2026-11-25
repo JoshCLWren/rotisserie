@@ -23,6 +23,7 @@ INTEGER = re.compile(r"^[0-9]{1,7}$")
 REASON = re.compile(r"^[A-Za-z0-9 _.,:;()'/+#-]{0,180}$")
 CHECKS = re.compile(r"^(?:pr:[1-9][0-9]*|main)$")
 RUN_ID = re.compile(r"^[1-9][0-9]{0,19}$")
+AGENT = re.compile(r"^[a-z0-9][a-z0-9._-]{0,38}$")
 REQUEST_ID = re.compile(r"^[A-Za-z0-9-]{8,64}$")
 ACTIONS = frozenset(
     ("advance", "implement", "review", "review-findings", "ci-repair", "merge-conflict")
@@ -58,6 +59,7 @@ READ_ONLY = frozenset(
         "db-usage",
         "store",
         "schema",
+        "assigned",
     )
 )
 # Served on GitHub Pages from the published snapshot without sign-in.
@@ -89,6 +91,7 @@ WRITE_OPERATIONS = frozenset(
         "store_export",
         "store_migrate",
         "schema_apply",
+        "assign",
     )
 )
 MAX_BODY = 4096
@@ -277,6 +280,21 @@ def _close(data: Mapping[str, Any]) -> list[str]:
     return args
 
 
+def _assign(data: Mapping[str, Any]) -> list[str]:
+    target = _match(_string(data, "target", required=True), TARGET, "target")
+    agent = _match(_string(data, "agent", required=True), AGENT, "agent")
+    args = ["assign", target, "--agent", agent, "--no-wait"]
+    kind = _string(data, "kind")
+    if kind:
+        if kind not in ACTIONS - {"advance"}:
+            raise InvalidRequest("Invalid kind")
+        args.append(f"--kind={kind}")
+    task = _match(_string(data, "task"), REASON, "task").strip()
+    if task:
+        args.append(f"--task={task}")
+    return args
+
+
 def write_command(data: Mapping[str, Any]) -> list[str]:
     """Explicit operations map to CLI guards. No arbitrary arguments accepted."""
     name = _string(data, "operation", required=True)
@@ -329,6 +347,8 @@ def write_command(data: Mapping[str, Any]) -> list[str]:
         return ["backoffs", "reset", "--quota-only", "--yes", "--via", "github"]
     if name in ("store_selftest", "store_export"):
         return ["store", name.removeprefix("store_"), "--no-wait"]
+    if name == "assign":
+        return _assign(data)
     if name == "store_migrate":
         dry_run = data.get("dry_run", True)
         if not isinstance(dry_run, bool):

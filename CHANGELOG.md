@@ -11,6 +11,18 @@ such change must be called out here and in its release notes.
 
 ### Added
 
+- `baste assign pr:N|issue:N --agent NAME` hands an item to an outside agent.
+  It claims the item as the owner (`factory:claimed`), adds `agent:NAME`, and
+  posts one task comment that follows the item's stage, with conflicting files,
+  failing checks and the linked issue's criteria. `baste assigned` lists who
+  holds what and for how long, and `baste finish` also removes `agent:*`.
+
+- `baste pause --reason TEXT` and `baste resume`: a maintenance drain. Pause
+  turns off the dispatch, claim and state-writing workflows and records the
+  reason in `FACTORY_PAUSED`; `status`, `turning` and `recap` show it. Resume
+  turns on only what pause turned off. Both need the owner's `gh` login with
+  the workflow scope.
+
 - `baste schema` shows each table and index of the factory store schema and
   whether it exists, the stored schema version against the code's version,
   and the last upgrade result and error (#265). `--apply` runs the idempotent
