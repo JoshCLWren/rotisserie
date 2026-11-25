@@ -237,7 +237,7 @@ def authorship_lines(report: ReviewReport) -> list[str]:
         how = "Model: trailer" if report.head_author_source == "trailer" else "controller record"
         lines = [f"Head author: {names} (its {how})"]
     if report.self_review_allowed_by:
-        lines.append(f"self-review allowed by owner (label by {report.self_review_allowed_by})")
+        lines.append(str(_exclusion().allowance.grant_text(report.self_review_allowed_by)))
     elif report.head_authors:
         lines.append(f"Excluded from reviewing this head: {names}")
     same = _policy().same_actual_model

@@ -120,6 +120,7 @@
 .github/scripts/factory_self_heal_split.py
 .github/scripts/factory_split_plan.py
 .github/scripts/factory-split-worker.sh
+.github/scripts/factory_self_heal_self_review.py
 .github/scripts/factory_state_labels.py
 .github/scripts/factory_self_heal_state.py
 .github/scripts/factory_self_heal_incident.py
