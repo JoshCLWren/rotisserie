@@ -181,7 +181,7 @@ jobs:
             cat "$forced_note" >&2
             exit 1
           }
-          if [[ -s "$forced_note" ]]; then
+          if [[ "$operator_forced" == true && -s "$forced_note" ]]; then
             echo "::notice::$(head -c 400 "$forced_note" | tr '\n' ' ')"
             { echo "### Operator-forced model"; echo; head -c 400 "$forced_note"; echo; } >> "$GITHUB_STEP_SUMMARY"
           fi
