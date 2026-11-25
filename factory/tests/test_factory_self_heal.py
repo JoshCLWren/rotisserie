@@ -104,6 +104,9 @@ class Store:
     def holder(self, number: int) -> str | None:
         return self.held
 
+    def loop_evidence(self, seconds: int) -> tuple[dict[str, Any], dict[str, Any]]:
+        return {}, {}
+
 
 def pull(labels: list[str], *, head: str = HEAD) -> dict[str, Any]:
     names = ["factory", *labels]

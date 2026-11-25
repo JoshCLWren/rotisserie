@@ -1,0 +1,213 @@
+{
+ "note": "Finished factory worker runs on four looping PRs, 2026-11-24 22:00Z to 2026-11-25 02:30Z, from each run's persisted outcome-class line.",
+ "runs": [
+  {
+   "run": 45500605069,
+   "finished_at": "2026-11-24T22:29:08Z",
+   "target": "pr:5766",
+   "kind": "",
+   "model": "iceman-contributor-free",
+   "outcome": "no_work"
+  },
+  {
+   "run": 45501624440,
+   "finished_at": "2026-11-24T22:34:55Z",
+   "target": "pr:5766",
+   "kind": "",
+   "model": "iceman-contributor-free",
+   "outcome": "work_failure"
+  },
+  {
+   "run": 45500834041,
+   "finished_at": "2026-11-24T22:35:20Z",
+   "target": "pr:5674",
+   "kind": "",
+   "model": "iceman-contributor-free",
+   "outcome": "work_failure"
+  },
+  {
+   "run": 45500745952,
+   "finished_at": "2026-11-24T23:39:33Z",
+   "target": "pr:5681",
+   "kind": "",
+   "model": "nvidia/nemotron-3.5-lightning-30b-a3b",
+   "outcome": "work_failure"
+  },
+  {
+   "run": 45502566297,
+   "finished_at": "2026-11-24T23:40:03Z",
+   "target": "pr:5766",
+   "kind": "",
+   "model": "kilo-auto/small",
+   "outcome": "unknown_failure"
+  },
+  {
+   "run": 45512011797,
+   "finished_at": "2026-11-24T23:49:50Z",
+   "target": "pr:5766",
+   "kind": "review",
+   "model": "iceman-contributor-free",
+   "outcome": "work_failure"
+  },
+  {
+   "run": 45502718311,
+   "finished_at": "2026-11-25T00:12:47Z",
+   "target": "pr:5674",
+   "kind": "",
+   "model": "stepfun-ai/step-5-preview",
+   "outcome": "agent_timeout"
+  },
+  {
+   "run": 45513389318,
+   "finished_at": "2026-11-25T00:15:56Z",
+   "target": "pr:5766",
+   "kind": "review-findings",
+   "model": "hungerg-free",
+   "outcome": "success"
+  },
+  {
+   "run": 45516295546,
+   "finished_at": "2026-11-25T00:29:55Z",
+   "target": "pr:5674",
+   "kind": "merge-conflict",
+   "model": "hungerg-free",
+   "outcome": "work_failure"
+  },
+  {
+   "run": 45518712033,
+   "finished_at": "2026-11-25T00:38:26Z",
+   "target": "pr:5674",
+   "kind": "merge-conflict",
+   "model": "iceman-contributor-free",
+   "outcome": "work_failure"
+  },
+  {
+   "run": 45511818526,
+   "finished_at": "2026-11-25T00:41:55Z",
+   "target": "pr:5681",
+   "kind": "merge-conflict",
+   "model": "moonshotai/kimi-k3.1-pro",
+   "outcome": "work_failure"
+  },
+  {
+   "run": 45520097101,
+   "finished_at": "2026-11-25T00:49:40Z",
+   "target": "pr:5681",
+   "kind": "merge-conflict",
+   "model": "hungerg-free",
+   "outcome": "work_failure"
+  },
+  {
+   "run": 45517449012,
+   "finished_at": "2026-11-25T00:52:00Z",
+   "target": "pr:5766",
+   "kind": "review",
+   "model": "moonshotai/kimi-k3.1-pro",
+   "outcome": "work_failure"
+  },
+  {
+   "run": 45521550540,
+   "finished_at": "2026-11-25T01:02:07Z",
+   "target": "pr:5737",
+   "kind": "review",
+   "model": "north-mini-code-1.0",
+   "outcome": "no_work"
+  },
+  {
+   "run": 45522704809,
+   "finished_at": "2026-11-25T01:14:35Z",
+   "target": "pr:5737",
+   "kind": "review-findings",
+   "model": "hungerg-free",
+   "outcome": "success"
+  },
+  {
+   "run": 45521577222,
+   "finished_at": "2026-11-25T01:16:57Z",
+   "target": "pr:5766",
+   "kind": "review",
+   "model": "mistralai/mistral-large-4-1t-a52b",
+   "outcome": "work_failure"
+  },
+  {
+   "run": 45524778794,
+   "finished_at": "2026-11-25T01:24:30Z",
+   "target": "pr:5766",
+   "kind": "review",
+   "model": "iceman-contributor-free",
+   "outcome": "work_failure"
+  },
+  {
+   "run": 45525047571,
+   "finished_at": "2026-11-25T01:26:12Z",
+   "target": "pr:5737",
+   "kind": "review",
+   "model": "iceman-contributor-free",
+   "outcome": "no_work"
+  },
+  {
+   "run": 45525738815,
+   "finished_at": "2026-11-25T01:31:43Z",
+   "target": "pr:5766",
+   "kind": "review-findings",
+   "model": "iceman-contributor-free",
+   "outcome": "work_failure"
+  },
+  {
+   "run": 45525701204,
+   "finished_at": "2026-11-25T01:32:29Z",
+   "target": "pr:5737",
+   "kind": "review",
+   "model": "iceman-contributor-free",
+   "outcome": "no_work"
+  },
+  {
+   "run": 45519853767,
+   "finished_at": "2026-11-25T01:36:08Z",
+   "target": "pr:5674",
+   "kind": "merge-conflict",
+   "model": "mistralai/mistral-large-4-1t-a52b",
+   "outcome": "work_failure"
+  },
+  {
+   "run": 45526548142,
+   "finished_at": "2026-11-25T01:53:07Z",
+   "target": "pr:5737",
+   "kind": "review",
+   "model": "nvidia/nemotron-3.5-super-vl-120b-a12b",
+   "outcome": "no_work"
+  },
+  {
+   "run": 45526572361,
+   "finished_at": "2026-11-25T02:10:14Z",
+   "target": "pr:5766",
+   "kind": "review",
+   "model": "moonshotai/kimi-k3.1-pro",
+   "outcome": "provider_throttle"
+  },
+  {
+   "run": 45521100990,
+   "finished_at": "2026-11-25T02:24:38Z",
+   "target": "pr:5681",
+   "kind": "merge-conflict",
+   "model": "mistralai/mistral-large-4-1t-a52b",
+   "outcome": "agent_timeout"
+  },
+  {
+   "run": 45527115569,
+   "finished_at": "2026-11-25T02:24:45Z",
+   "target": "pr:5674",
+   "kind": "merge-conflict",
+   "model": "nvidia/nemotron-3.5-super-vl-120b-a12b",
+   "outcome": "no_work"
+  },
+  {
+   "run": 45531154476,
+   "finished_at": "2026-11-25T02:27:44Z",
+   "target": "pr:5766",
+   "kind": "review",
+   "model": "kilo-auto/free",
+   "outcome": "work_failure"
+  }
+ ]
+}

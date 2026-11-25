@@ -15,8 +15,8 @@ from typing import Any
 import factory_turso_core as core
 from factory_libsql import placeholders
 from factory_state_operations_backoff import MODEL_RETRY_CLASSES, worker_backoff_reason
-from factory_turso_core import HEAD_RE
 from factory_turso_backoff import record
+from factory_turso_core import HEAD_RE
 
 REVIEW_ABORT_LIMIT = 2
 REVIEW_ABORT_LOOKBACK_SECONDS = 24 * 3600
@@ -209,9 +209,17 @@ def _review_churn(db: core.Store, repo: str, heads: dict[int, tuple[str, str]]) 
     }
 
 
-def cooling_prs(repo: str, heads: dict[int, tuple[str, str]]) -> set[int]:
+def cooling_prs(
+    repo: str, heads: dict[int, tuple[str, str]], exempt: frozenset[int] = frozenset()
+) -> set[int]:
+    """Exact-head retry cooling, review churn and the item-loop breaker.
+
+    ``exempt`` PRs carry an owner override or claim: the loop breaker never holds them.
+    """
     if not core.enabled() or not heads:
         return set()
+    from factory_turso_loops import held
+
     db = core.store()
     rows = db.read(
         "SELECT pr_number, head_sha, stage FROM factory_pr_stage_retry"
@@ -223,7 +231,7 @@ def cooling_prs(repo: str, heads: dict[int, tuple[str, str]]) -> set[int]:
         for r in rows
         if heads.get(int(r["pr_number"])) == (r["head_sha"], r["stage"])
     }
-    return cooling | _review_churn(db, repo, heads)
+    return cooling | _review_churn(db, repo, heads) | held(db, repo, heads, exempt)
 
 
 def ingest_check(repo: str, event: dict[str, Any]) -> int:

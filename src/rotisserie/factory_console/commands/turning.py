@@ -32,8 +32,10 @@ Is the factory actually moving work right now? 🍗🔄 Turning, 🐢 Slowing or
 
 Burning: no worker started for longer than --idle (45m) while eligible work or
 workers exist. Slowing: --failures (3) or more control workflow runs failed in
---window (1h). Unknown: the worker runs could not be read. Each verdict names
-its most likely reason and the command that digs further.
+--window (1h), or an item loops: 4 or more worker runs on it in 6h, at least
+half of them wasted, and it is still short of factory:ready. Unknown: the
+worker runs could not be read. Each verdict names its most likely reason and
+the command that digs further.
 
 --follow prints only changes. It exits 10 on Burning and 11 on Slowing, the
 first reading included, so scripts and agents can wake on it.
@@ -131,7 +133,22 @@ def render(console: Console, data: dict[str, object], now: datetime) -> None:
     for row in failures[:6] if isinstance(failures, list) else []:
         step = f" at '{row['step']}'" if row.get("step") else ""
         console.line(f"    {row['workflow']}{step}  {_when(row.get('at'))}  {row.get('url')}")
+    _render_loops(console, ev.get("item_loops"))
     _render_capacity(console, ev)
+
+
+def _render_loops(console: Console, rows: object) -> None:
+    found = [row for row in rows if isinstance(row, dict)] if isinstance(rows, list) else []
+    console.line(f"🔁 Looping items: {len(found)}")
+    for row in found[:5]:
+        name = f"{row.get('title') or row.get('target')} (#{row.get('number')})"
+        console.line(f"    {name}: {row.get('text')}  {row.get('url') or ''}".rstrip())
+        console.line(f"      👉 {row.get('next')}")
+        for run in (row.get("runs") or [])[-6:]:
+            kind = run.get("kind") or "?"
+            console.line(
+                f"      {_when(run.get('at'))}  {kind}  {run.get('model')}  {run.get('outcome')}"
+            )
 
 
 def _render_capacity(console: Console, ev: dict[str, object]) -> None:

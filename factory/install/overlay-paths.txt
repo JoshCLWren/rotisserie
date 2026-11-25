@@ -56,6 +56,7 @@
 .github/scripts/factory_implementation_delivery.py
 .github/scripts/factory_issue_acceptance.py
 .github/scripts/factory_issue_pr_state_policy.py
+.github/scripts/factory_item_loop.py
 .github/scripts/factory_label_policy.py
 .github/scripts/factory_jev_shadow.py
 .github/scripts/factory_kilo_catalog.py
@@ -95,6 +96,7 @@
 .github/scripts/factory_runtime_view.py
 .github/scripts/factory_self_heal.py
 .github/scripts/factory_self_heal_actions.py
+.github/scripts/factory_self_heal_loops.py
 .github/scripts/factory_self_heal_rules.py
 .github/scripts/factory_settings.py
 .github/scripts/factory_snapshot_age.py
@@ -119,6 +121,7 @@
 .github/scripts/factory_turso_exports.py
 .github/scripts/factory_turso_external.py
 .github/scripts/factory_turso_leases.py
+.github/scripts/factory_turso_loops.py
 .github/scripts/factory_turso_operations.py
 .github/scripts/factory_turso_runtime.py
 .github/scripts/factory_turso_slots.py

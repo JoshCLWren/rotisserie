@@ -20,6 +20,7 @@ WORDS = {
     "empty-verdict": "moved back to review",
     "conflict-sync": "merged main in",
     "thread-resolved": "resolved an answered thread",
+    "loop-parked": "parked a looping item",
 }
 
 

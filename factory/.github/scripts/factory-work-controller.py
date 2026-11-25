@@ -1527,7 +1527,7 @@ def assign_from_pool(worker: str, kinds: tuple[str, ...] | None = None,
             pr_heads = {int(pr["number"]): str(pr.get("headRefOid") or "") for pr in prs}
             lookup = {c.number: (pr_heads.get(c.number, ""), c.stage or "factory:review")
                       for c in candidates if c.kind == "pr"}
-            cooling = cooling_prs(REPO, lookup)
+            cooling = cooling_prs(REPO, lookup, frozenset(c.number for c in candidates if c.override))
             if cooling:
                 print(f"[factory-controller] exact-head retry cooling: {sorted(cooling)}", file=sys.stderr)
                 candidates = [c for c in candidates if c.number not in cooling or trace.skip(c.number, 'exact-head retry cooling')]

@@ -21,6 +21,7 @@ from rotisserie.factory_console.service import (
     doctor,
     failures,
     fleet,
+    loops,
     reliability,
     review,
     self_heal,
@@ -168,6 +169,12 @@ def gather(
     def work() -> None:
         sources.work = current_work(github, with_session=False)
 
+    def looping() -> None:
+        pulls = review.open_pulls(github)
+        sources.parked = loops.parked(github, now=now, pulls=pulls)
+        held = [int(str(row["number"])) for row in sources.parked]
+        sources.loops = loops.scan(github, now=now, pulls=pulls, parked=held)
+
     reads: dict[str, Callable[[], None]] = {
         "doctor": checks,
         "worker runs": worker_runs,
@@ -178,6 +185,7 @@ def gather(
         "reliability snapshot": stats,
         "provider switches": switches,
         "current work": work,
+        "looping items": looping,
     }
 
     def attempt(name: str) -> None:

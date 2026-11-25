@@ -16,6 +16,7 @@ from rotisserie.factory_console.service import (
     doctor,
     failures,
     fleet,
+    loops,
     recap,
     reliability,
     review,
@@ -340,6 +341,8 @@ def test_a_failed_read_is_named_and_the_rest_still_reads(monkeypatch: pytest.Mon
     monkeypatch.setattr(reliability, "load_stats", lambda _g: None)
     monkeypatch.setattr(fleet, "read", lambda _g: FleetState({}, {}))
     monkeypatch.setattr(recap, "current_work", lambda *_a, **_k: [])
+    monkeypatch.setattr(loops, "parked", lambda *_a, **_k: [])
+    monkeypatch.setattr(loops, "scan", lambda *_a, **_k: [])
 
     class Hub:
         repo = "acme/widgets"
