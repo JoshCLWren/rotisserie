@@ -21,6 +21,7 @@ from factory_turso_core import HEAD_RE
 REVIEW_ABORT_LIMIT = 2
 REVIEW_ABORT_LOOKBACK_SECONDS = 24 * 3600
 REVIEW_ABORT_MAX_COOLDOWN_SECONDS = 6 * 3600
+RETRY_COOLING = "exact-head retry cooling"
 
 
 def roster() -> dict[str, tuple[str, str]]:
@@ -212,26 +213,43 @@ def _review_churn(db: core.Store, repo: str, heads: dict[int, tuple[str, str]]) 
 def cooling_prs(
     repo: str, heads: dict[int, tuple[str, str]], exempt: frozenset[int] = frozenset()
 ) -> set[int]:
-    """Exact-head retry cooling, review churn and the item-loop breaker.
+    """PRs held by exact-head retry cooling, review churn or the item-loop breaker."""
+    return set(holds(repo, heads, exempt=exempt))
 
-    ``exempt`` PRs carry an owner override or claim: the loop breaker never holds them.
+
+def holds(
+    repo: str,
+    heads: dict[int, tuple[str, str]],
+    issues: frozenset[int] = frozenset(),
+    exempt: frozenset[int] = frozenset(),
+) -> dict[int, str]:
+    """Why each held PR or issue gets no pool worker; the loop breaker's reason wins.
+
+    Retry cooling and review churn are scoped to a PR's exact head and stage. The
+    breaker holds a parked PR at its head in any stage, and any looping PR or issue.
+    ``exempt`` items carry an owner override or claim: the breaker never holds them.
     """
-    if not core.enabled() or not heads:
-        return set()
+    if not core.enabled() or not (heads or issues):
+        return {}
     from factory_turso_loops import held
 
     db = core.store()
-    rows = db.read(
-        "SELECT pr_number, head_sha, stage FROM factory_pr_stage_retry"
-        " WHERE repo = :repo AND retry_after > unixepoch()",
-        {"repo": repo},
-    )
-    cooling = {
-        int(r["pr_number"])
-        for r in rows
-        if heads.get(int(r["pr_number"])) == (r["head_sha"], r["stage"])
-    }
-    return cooling | _review_churn(db, repo, heads) | held(db, repo, heads, exempt)
+    found: dict[int, str] = {}
+    if heads:
+        rows = db.read(
+            "SELECT pr_number, head_sha, stage FROM factory_pr_stage_retry"
+            " WHERE repo = :repo AND retry_after > unixepoch()",
+            {"repo": repo},
+        )
+        cooling = {
+            int(r["pr_number"])
+            for r in rows
+            if heads.get(int(r["pr_number"])) == (r["head_sha"], r["stage"])
+        }
+        found = dict.fromkeys(cooling | _review_churn(db, repo, heads), RETRY_COOLING)
+    pr_heads = {number: head for number, (head, _) in heads.items()}
+    found.update(held(db, repo, pr_heads, issues, exempt))
+    return found
 
 
 def ingest_check(repo: str, event: dict[str, Any]) -> int:

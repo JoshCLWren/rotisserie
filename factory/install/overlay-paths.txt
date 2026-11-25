@@ -42,6 +42,7 @@
 .github/scripts/factory_deploy_recovery.py
 .github/scripts/factory_discovery.py
 .github/scripts/factory_dispatch_credential_filter.py
+.github/scripts/factory_dispatch_holds.py
 .github/scripts/factory_dynamic_outcome.py
 .github/scripts/factory_explain_report.py
 .github/scripts/factory_external_review.py

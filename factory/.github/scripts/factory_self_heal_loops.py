@@ -4,10 +4,10 @@
 A park is a ``loop-parked`` store event that names the PR's head and stage,
 then one trusted comment. The event goes first and the comment follows only a
 fresh insert, so a repeated sweep or a failed store write never posts twice.
-The dispatcher's exact-head cooling reads that event and sends no more workers
-while the head and stage are unchanged. Nothing changes
-the PR's labels, so an owner's targeted run, ``factory:override`` or claim
-still reaches it; a new head or stage releases the hold by itself.
+The dispatcher's pool pass reads that event and sends no worker of any kind
+while the head is unchanged, whatever the stage: a failed worker's own release
+flips the stage. Nothing changes the PR's labels, so an owner's targeted run,
+``factory:override`` or claim still reaches it; a new head releases the hold.
 """
 
 from __future__ import annotations
@@ -19,6 +19,7 @@ from typing import Any
 import factory_item_loop as loop
 import factory_self_heal as heal
 import factory_self_heal_rules as rules
+from factory_turso_loops import parked_heads
 from factory_work_policy_base import stage_of
 
 
@@ -35,8 +36,8 @@ def _head(row: Mapping[str, Any]) -> str:
 def park_text(found: loop.Loop, title: str) -> str:
     name = f"{title} (#{found.number})" if title else f"#{found.number}"
     return (
-        f"Parked {name}: {found.text()} The factory sends no more workers to it at this head "
-        f"and stage. {found.next_step()} An owner `factory:override` label also sends it back."
+        f"Parked {name}: {found.text()} The factory sends no more workers to it at this head."
+        f" {found.next_step()} An owner `factory:override` label also sends it back."
     )
 
 
@@ -48,7 +49,7 @@ def park_loops(
     *,
     now: datetime | None = None,
 ) -> list[dict[str, Any]]:
-    """Park each looping open PR once per head and stage."""
+    """Park each looping open PR once per head."""
     if not store.enabled():
         return []
     threshold, window = loop.limits()
@@ -72,7 +73,7 @@ def park_loops(
         head = _head(pull)
         stage = stage_of(names) or "factory:review"
         park = parks.get(item.target)
-        if park and (head, stage) in park["at_heads"]:
+        if park and head in parked_heads(park):
             continue
         text = park_text(item, str(pull.get("title") or ""))
         if budget.dry_run or not budget.take():
