@@ -10,6 +10,14 @@ record_terminal_outcome() {
       return 2
       ;;
   esac
+  # A diff the scope guard reset was real model output, not an idle run.
+  if [[ "$outcome" == no_work && -n "${FACTORY_SCOPE_REJECTED_REASON:-}" ]]; then
+    outcome=work_failure
+    detail="${detail}; the model's diff was rejected before push (${FACTORY_SCOPE_REJECTED_REASON})"
+  fi
+  if [[ "$outcome" == work_failure && -n "${FACTORY_FAST_CHECK_FAILURES:-}" ]]; then
+    detail="${detail}; validation failed: ${FACTORY_FAST_CHECK_FAILURES}"
+  fi
   detail="${detail//$'\n'/ }"
   detail="${detail//$'\t'/ }"
   printf '%s\t%s\n' "$outcome" "$detail" > "$TERMINAL_OUTCOME_FILE"
@@ -17,6 +25,10 @@ record_terminal_outcome() {
   # plane failure only from the worker's own [factory:W] line.
   if [[ "$outcome" == control_plane_failure ]] && declare -F log >/dev/null; then
     log "control_plane_failure: ${detail}"
+  fi
+  # The worker's own decision outranks phrases in agent tool output.
+  if declare -F log >/dev/null; then
+    log "FACTORY_TERMINAL_OUTCOME: class=${outcome} detail=${detail}" >&2
   fi
 }
 

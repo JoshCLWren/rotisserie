@@ -634,7 +634,7 @@ reject_out_of_scope_diff() {
   if [[ "$(jq -r .reject <<< "$decision")" != true ]]; then
     return 0
   fi
-  reason="$(jq -r .reason <<< "$decision")"
+  reason="$(jq -r .reason <<< "$decision")" && FACTORY_SCOPE_REJECTED_REASON="$reason"
   log "rejecting out-of-scope ${mode} #${number} diff before push (${reason}): git_state=$(jq -c .git_state <<< "$decision") factory_control_files=$(jq -c .factory_control_files <<< "$decision")"
   git reset --hard "$base_ref" >/dev/null
   git clean -fd >/dev/null

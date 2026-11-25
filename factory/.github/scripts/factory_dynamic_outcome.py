@@ -105,6 +105,61 @@ def _clean_final_exit(execution_log: str, worker: str) -> bool:
     return _ZERO_EXIT_REFUSAL not in execution_log[exits[-1].end():]
 
 
+_OVERRIDABLE_BY_WORKER = frozenset({"work_failure", "no_work", "unknown_failure"})
+_WORKER_LABELS = {"success": "HEALTHY / PRODUCTIVE", "no_work": "NO WORK",
+                  "work_failure": "WORK FAILURE"}
+_FAST_CHECK_NAMES = re.compile(r"(?m)^(?:\S+Z )?factory fast checks failed: (?P<names>.+?) \(log: ")
+_SCOPE_REJECTED = re.compile(r"rejecting out-of-scope (?:issue|pr) #\d+ diff before push \((?P<reason>[^)]+)\)")
+# Legacy logs predate FACTORY_TERMINAL_OUTCOME; these are the worker's own
+# decision lines for the same record_terminal_outcome calls.
+_WORKER_DECISIONS = (
+    (re.compile(r"^FACTORY_TERMINAL_OUTCOME: class=(?P<cls>[a-z_0-9]+) detail=(?P<detail>.*)$"), "", ""),
+    (re.compile(r"^factory_work_result_merged: "), "success", "PR merged at the reviewed head during the review"),
+    (re.compile(r"^semantic_review_(?:approved|blocked): submitting (?P<verdict>\w+) semantic verdict"),
+     "success", "semantic review submitted its {verdict} verdict"),
+    (re.compile(r"^semantic_review_(?:missing_verdict|recovery_failed): review model did not produce"),
+     "work_failure", "semantic review ended without an authoritative terminal verdict"),
+    (re.compile(r"emitted contradictory semantic markers$"), "work_failure",
+     "semantic review emitted contradictory terminal markers"),
+    (re.compile(r"^fast checks (?:still )?failed for (?:pr|issue) #\d+"), "work_failure",
+     "validation failed before push"),
+    (re.compile(r"(?:produced|found|required) no persisted change"), "no_work",
+     "the target received no persisted change"),
+)
+
+
+def worker_terminal(execution_log: str, worker: str) -> tuple[str, str] | None:
+    """The worker's own last terminal decision, from its [factory:W] lines."""
+    line_re = re.compile(
+        r"(?m)^(?:\d{4}-\d{2}-\d{2}T\S+Z )?\[factory:" + re.escape(worker)
+        + r"\](?:\[[^\]\n]+\])*\s+(?P<msg>[^\n]*)$")
+    lines = [m["msg"].rstrip() for m in line_re.finditer(execution_log)]
+    for index in range(len(lines) - 1, -1, -1):
+        for pattern, cls, detail in _WORKER_DECISIONS:
+            match = pattern.search(lines[index])
+            if match is None:
+                continue
+            if not cls:
+                return match["cls"], match["detail"]
+            if "verdict" in pattern.groupindex:
+                if not any(line.startswith("assignment complete") for line in lines[index:]):
+                    continue
+                detail = detail.format(verdict=match["verdict"])
+            reasons = [m["reason"] for line in lines[:index] for m in [_SCOPE_REJECTED.search(line)] if m]
+            if cls == "no_work" and reasons:
+                return "work_failure", f"the model's diff was rejected before push ({reasons[-1]})"
+            recovery = [line.split(": ", 1)[1] for line in lines[:index]
+                        if line.startswith("semantic_review_recovery_failed: ")]
+            if cls == "work_failure" and recovery:
+                detail = f"{detail}; recovery: {recovery[-1]}"
+            if pattern.pattern.startswith("^fast checks"):
+                names = list(_FAST_CHECK_NAMES.finditer(execution_log))
+                if names:
+                    detail = f"validation failed: {names[-1]['names']}"
+            return cls, detail
+    return None
+
+
 def strip_step_metadata(log: str) -> str:
     """Drop echoed step metadata lines before any evidence matching."""
     return "\n".join(
@@ -198,6 +253,11 @@ def classify(log: str) -> dict[str, Any]:
                 canonical.QUOTA_RE, canonical.RATE_LIMIT_RE, canonical.MODEL_MISSING_RE))
         )
         result = canonical.classify(lock + filtered)
+    if result.outcome_class in _OVERRIDABLE_BY_WORKER:
+        terminal = worker_terminal(execution_log, worker)
+        if terminal and terminal[0] in _WORKER_LABELS:
+            result = replace(result, outcome=_WORKER_LABELS[terminal[0]],
+                             outcome_class=terminal[0], detail=terminal[1])
     # Account-wide refusal is different from one inaccessible model. Do not
     # turn a failed model into a provider-wide outage or rate limit.
     executed_lines = "\n".join(
