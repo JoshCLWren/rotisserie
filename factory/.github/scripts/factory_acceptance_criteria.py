@@ -5,6 +5,9 @@ and verbatim reporter evidence describe the problem. No changed file can prove
 them, so they are never criteria. A heading is context when it starts with a
 context word, or when a later segment (after ``/`` or ``(``) starts with one
 and the heading names no criteria section such as "requirements".
+"User-visible problem", "Reported examples" and "Symptoms" describe the bug
+too, unless the heading also names "acceptance", "criteria" or "definition
+of done".
 
 Verify after merge: a criterion that instructs verification in a deployed
 environment cannot be proven by a pre-merge diff. Two conditions are both
@@ -34,6 +37,7 @@ HEADINGS = (
 )
 HEADING = re.compile(r"^#{1,6}\s+(.+?)\s*$")
 BULLET = re.compile(r"^\s*(?:[-*+]|\d+[.)])\s+(.*\S)\s*$")
+PROBLEM_HEADINGS = ("user-visible problem", "user visible problem", "reported example", "symptom")
 CONTEXT_HEADINGS = (
     "observed",
     "repro",
@@ -45,7 +49,9 @@ CONTEXT_HEADINGS = (
     "original report",
     "reporter evidence",
     "verbatim",
+    *PROBLEM_HEADINGS,
 )
+_EXPLICIT_CRITERIA = re.compile(r"\b(?:acceptance|criteria|definition of done)\b")
 _SEGMENT_SPLIT = re.compile(r"[/()]")
 _CRITERIA_WORD = re.compile(r"\b(?:" + "|".join(map(re.escape, HEADINGS)) + r")\b")
 _VERIFY_FIRST = re.compile(
@@ -77,6 +83,8 @@ class Criterion:
 def is_context_heading(heading: str) -> bool:
     """Return whether a heading introduces context rather than criteria."""
     lowered = heading.lower()
+    if lowered.startswith(PROBLEM_HEADINGS) and _EXPLICIT_CRITERIA.search(lowered):
+        return False
     if lowered.startswith(CONTEXT_HEADINGS):
         return True
     segments = [part.strip() for part in _SEGMENT_SPLIT.split(lowered)[1:]]

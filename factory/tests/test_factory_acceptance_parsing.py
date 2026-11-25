@@ -42,10 +42,12 @@ def check(body, items, *, non_closing=False, changed=CHANGED):
 
 def test_issue_5692_context_sections_are_not_criteria():
     criteria = acceptance.requirements(FIXTURE["issue_body"])
-    assert len(criteria) == 23 < len(FIXTURE["report"]["items"])
+    assert len(criteria) == 19 < len(FIXTURE["report"]["items"])
     for text in criteria:
         assert not text.startswith("Existing implementation / related work")
         assert not text.startswith("Original reporter evidence")
+        assert not text.startswith(("User-visible problem", "Reported examples"))
+    assert criteria[1].startswith("Expected behavior: The existing Queue cover feature")
     assert criteria[-1].startswith("Testable acceptance criteria: Verify the actual fix")
 
 
@@ -68,14 +70,48 @@ def test_heading_suffixes_still_mark_context_but_criteria_words_win():
 
 def test_issue_5692_replay_splits_citations_and_defers_production_check():
     body, report = FIXTURE["issue_body"], FIXTURE["report"]
-    replay = {**report, "items": report["items"][:23]}
+    kept = [report["items"][0], *report["items"][5:23]]
+    items = [{**entry, "id": f"A{index}"} for index, entry in enumerate(kept, 1)]
+    replay = {**report, "items": items}
     errors = acceptance.validate(
         replay, 5692, report["head"], body, FIXTURE["changed_paths"], non_closing=False
     )
     failed = [error.split(":", 1)[0] for error in errors]
-    assert failed == ["A2", "A3", "A5", "A6", "A7", "A9", "A11", "A12", "A15", "A17", "A21"]
+    assert failed == ["A2", "A3", "A5", "A7", "A8", "A11", "A13", "A17"]
     assert all("cite a file changed by this PR (not changed:" in error for error in errors)
-    assert [name for name, _ in acceptance.deferred(body)] == ["A23"]
+    assert [name for name, _ in acceptance.deferred(body)] == ["A19"]
+
+
+def test_problem_sections_are_context_but_explicit_criteria_stay():
+    body = (
+        "## Bug\n- Covers vanish.\n\n"
+        "## User-Visible Problem\n- Rows show alt text.\n\n"
+        "### Acceptance criteria\n- Rows show the cover.\n\n"
+        "## Reported example\n- Row #29.\n\n"
+        "## Symptoms\n- Spinner forever.\n\n"
+        "## Observed behavior\n- Broken icon.\n\n"
+        "## Reported examples / criteria\n- Row #30 shows its cover.\n\n"
+        "## User visible problem (definition of done)\n- No spinner remains.\n\n"
+        "## Criteria\n- Tests cover blocked rows.\n\n"
+        "## Definition of done\n- The queue loads.\n"
+    )
+    assert acceptance.requirements(body) == [
+        "Bug: Covers vanish.",
+        "Acceptance criteria: Rows show the cover.",
+        "Reported examples / criteria: Row #30 shows its cover.",
+        "User visible problem (definition of done): No spinner remains.",
+        "Criteria: Tests cover blocked rows.",
+        "Definition of done: The queue loads.",
+    ]
+
+
+def test_problem_only_issue_keeps_every_entry_and_cannot_pass_empty():
+    body = "## User-visible problem\n- Rows show alt text.\n\n## Reported examples\n- Row #29.\n"
+    assert acceptance.requirements(body) == [
+        "User-visible problem: Rows show alt text.",
+        "Reported examples: Row #29.",
+    ]
+    assert check(body, []) == ["report must cover all 2 issue criteria"]
 
 
 def test_comma_semicolon_and_and_citations_each_must_be_changed():
