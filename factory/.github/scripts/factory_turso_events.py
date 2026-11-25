@@ -144,7 +144,12 @@ def record_runtime_outcome(
     ]
     if status == "no_capacity" and str(outcome.get("detail") or "").startswith(NO_REVIEWER):
         head = str(outcome.get("assigned_head") or "")
-        entries[0] |= {"no_reviewer": True, "head": head if HEAD_RE.fullmatch(head) else ""}
+        number = str(outcome.get("assigned_number") or outcome.get("selected_number") or "")
+        entries[0] |= {
+            "no_reviewer": True,
+            "head": head if HEAD_RE.fullmatch(head) else "",
+            "no_reviewer_pr": int(number) if number.isdecimal() else None,
+        }
     if job_log is not None:
         from factory_model_attempt_events import model_attempt_events
 

@@ -648,11 +648,12 @@ The factory grants the same exception itself after a long wait
 (`factory_self_heal_self_review.py`). A review run that finds no eligible
 reviewer model, because every eligible model authored the current head, ends
 `no_capacity` with "No reviewer model". The trusted Entry persister stores that
-worker event with `no_reviewer` and the assigned head, so the store dates the
-wait. When the first such event for the PR's current head is 6 hours old, the
+worker event with `no_reviewer`, the assigned PR and the assigned head (that
+run's log names no target), so the store dates the wait. When the first such event for the PR's current head is 6 hours old, the
 newest is at most 3 hours old, and the head author is still excluded, the
-self-heal sweep posts a trusted comment ("The factory allowed self-review on
-this PR: ...") with a marker that binds that one head, and records a
+self-heal sweep posts a trusted comment whose first line is a marker that
+binds that one head ("The factory allowed self-review on this PR: ..."); a
+marker quoted anywhere else in a comment never grants, and records a
 `self_review_allowed` store event marked `automatic` with its reason. No label
 is added. A new head is not covered. `factory:override`, a claim or an
 outside agent's label skips the PR, and one sweep grants at most two. An

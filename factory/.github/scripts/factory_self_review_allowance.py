@@ -15,7 +15,7 @@ the PR closes or its head changes.
 The factory grants the same exception itself (``factory_self_heal_self_review``)
 when a PR waited ``factory_self_heal_self_review.WAIT_SECONDS`` in review because
 every eligible reviewer authored its head: a trusted controller comment with
-``AUTO_RE`` names that one head, and the store records the automatic grant and
+``auto_marker`` as its first line names that one head, and the store records the automatic grant and
 its reason. No label is involved; a new head is not covered.
 """
 
@@ -40,7 +40,6 @@ MARKER_RE = re.compile(
     r"<!-- factory-self-review-allowed pr=(?P<pr>\d+) event=(?P<event>\d+)"
     r" head=(?P<head>[0-9a-f]{40}) actor=(?P<actor>[A-Za-z0-9-]+) -->"
 )
-AUTO_RE = re.compile(r"<!-- factory-self-review-auto pr=(?P<pr>\d+) head=(?P<head>[0-9a-f]{40}) -->")
 AUTO_ACTOR = "the factory"
 AUTO_NOTE = "self-review allowed by the factory: no eligible reviewer for 6 hours"
 ORIGIN = "self-review-allowance"
@@ -171,13 +170,18 @@ def check(
     return Allowance(True, NOTE, actor, event_id, labeled_at)
 
 
+def auto_marker(pr: int, head: str) -> str:
+    return f"<!-- factory-self-review-auto pr={pr} head={head} -->"
+
+
 def auto_granted(comments: Iterable[str], pr: int, head: str) -> bool:
-    """A trusted automatic grant names this exact head."""
-    return any(
-        int(match["pr"]) == pr and match["head"] == head
-        for body in comments
-        for match in AUTO_RE.finditer(str(body or ""))
-    )
+    """A trusted comment whose first line is the automatic grant for this exact head.
+
+    Only the first line counts: trusted comments quote model text (verdict
+    excerpts, closing summaries), and a quoted marker must never grant.
+    """
+    wanted = auto_marker(pr, head)
+    return any(str(body or "").split("\n", 1)[0].strip() == wanted for body in comments)
 
 
 def grant_text(allowed_by: str) -> str:
