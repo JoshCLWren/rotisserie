@@ -812,6 +812,23 @@ inside the recap window. It says 🔥🔥 Burning only when that stretch is stil
 going and the doctor's `work turning` check fails; otherwise it states the gap. Both control rooms show the verdict at the top
 of the overview, above the morning recap.
 
+### Issue intake holds
+
+The dispatcher's pool pass sends no implement run to an issue in two cases
+(`factory/.github/scripts/factory_issue_intake_guard.py`):
+
+- An open PR delivers part of it: a `Part of #N.` line or a
+  `factory/work-checkpoints/issue-N/` branch. A closing PR (`Closes #N`) already
+  holds its issue. Merged slices do not hold it; the implement run's prompt
+  names them and asks for only the remaining work.
+- It is too large for one task: its body is over 16,000 characters
+  (`FACTORY_ISSUE_BODY_LIMIT`), or it carries an `epic`, `umbrella` or
+  `tracking` label. The factory comments once to ask for a split proposal and
+  adds `factory:needs-split`. The owner approves each split and creates the
+  child issues; the factory never does.
+
+A targeted run, `factory:override` and `factory:claimed` are never held.
+
 ### Looping items and the breaker
 
 One rule, `factory/.github/scripts/factory_item_loop.py`, decides whether an

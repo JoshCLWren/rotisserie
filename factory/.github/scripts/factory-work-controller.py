@@ -40,6 +40,7 @@ from factory_state_ledger import enabled as ledger_enabled
 from factory_adopter import MARKER_PREFIX, repository
 import factory_assign_trace as trace
 import factory_dispatch_holds
+import factory_issue_intake_guard
 from factory_pr_merge_state import fill_merge_state
 REPO = repository()
 GH_TIMEOUT_SECONDS = env_positive_int("FACTORY_GH_TIMEOUT_SECONDS", 120)
@@ -1338,10 +1339,8 @@ def assign_from_pool(worker: str, kinds: tuple[str, ...] | None = None,
         reconcile_contradictory_labels()
     issues = list_issues()
     prs = factory_dispatch_holds.stamp(REPO, list_prs(), issues)
-    # Resolve an issue wakeup to its canonical open PR *before* loading retry
-    # history or asking Rotisserie to rank fresh issues. Otherwise every
-    # worker candidate reads the entire retry window and authorizes issue
-    # intake even though only the existing PR can be advanced.
+    # Resolve an issue wakeup to its canonical open PR *before* loading retry history or asking
+    # Rotisserie to rank fresh issues; otherwise every worker reads the whole retry window.
     if target is not None and target[0] == 'issue':
         issue_number = target[1]
         linked_prs = [
@@ -1354,8 +1353,7 @@ def assign_from_pool(worker: str, kinds: tuple[str, ...] | None = None,
         if linked_prs:
             target = ('pr', int(linked_prs[0]['number']))
     try:
-        # Targeted PR wakeups require only that PR's retry evidence.
-        # A full roster pass still needs the whole issue/PR retry window.
+        # A targeted PR wakeup needs only that PR's retry evidence; a full pass needs the window.
         attempt_records: list[NoDiffAttempt] | None = (
             load_no_diff_attempt_records(target_pr=target[1])
             if target is not None and target[0] == 'pr'
@@ -1384,10 +1382,12 @@ def assign_from_pool(worker: str, kinds: tuple[str, ...] | None = None,
         no_diff_attempt_records=attempt_records,
         include_backpressured_issues=operator_force,
         external_wip=external_wip,
+        intake_holds=target is None,
     )
-    # A PR-only target never leases new issue work; issue-intake authorization
-    # is unnecessary and can fail closed or consume remote calls on every
-    # targeted repair/review wakeup.
+    if target is None:
+        factory_issue_intake_guard.request_splits_gh(issues, REPO)
+    # A PR-only target never leases new issue work; issue-intake authorization is unnecessary
+    # and can fail closed or consume remote calls on every targeted repair/review wakeup.
     if target is None or target[0] == 'issue':
         authorized_issues = (
             rotisserie_issue_intake(issues, prs, operator_force=True)

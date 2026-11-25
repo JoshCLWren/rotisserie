@@ -12,7 +12,7 @@ ROOT = Path(__file__).resolve().parents[1]
 WORK_POLICY_SIBLINGS = tuple(
     f"factory_work_policy_{part}.py"
     for part in ("assignment", "backlog", "base", "candidates", "priority")
-) + ("factory_incident.py",)
+) + ("factory_incident.py", "factory_issue_intake_guard.py")
 WORKER_SCRIPTS = (
     "free-model-factory-worker.sh",
     "nvidia-factory-worker.sh",

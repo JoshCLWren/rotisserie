@@ -504,7 +504,7 @@ run_agent() {
     fi
   else
     target="issue #${number}"
-    mission="Implement the full closure-critical acceptance contract for this issue with code and focused tests. Do not stop at planning or optional polish."
+    mission="Implement the full closure-critical acceptance contract for this issue with code and focused tests. Do not stop at planning or optional polish.$(python3 .github/scripts/factory_issue_intake_guard.py merged-context "$number" --repo "$GITHUB_REPOSITORY" 2>/dev/null || true)"
   fi
 
   if [[ "$mode" == 'pr' && -n "${FACTORY_FAST_CHECK_FEEDBACK_FILE:-}" ]]; then

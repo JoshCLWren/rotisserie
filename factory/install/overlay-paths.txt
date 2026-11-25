@@ -154,6 +154,7 @@
 .github/scripts/factory_work_policy_backlog.py
 .github/scripts/factory_work_policy_base.py
 .github/scripts/factory_work_policy_candidates.py
+.github/scripts/factory_issue_intake_guard.py
 .github/scripts/factory_work_policy_priority.py
 .github/scripts/factory_worker_github_app.py
 .github/scripts/factory_worker_slots.py

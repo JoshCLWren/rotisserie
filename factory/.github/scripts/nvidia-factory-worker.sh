@@ -300,7 +300,7 @@ run_agent() {
     mission+=" ${findings}"
   else
     target="issue #${number}"
-    mission="Implement the full closure-critical acceptance contract for this issue with code and focused tests. Do not stop at planning or optional polish."
+    mission="Implement the full closure-critical acceptance contract for this issue with code and focused tests. Do not stop at planning or optional polish.$(python3 .github/scripts/factory_issue_intake_guard.py merged-context "$number" --repo "$GITHUB_REPOSITORY" 2>/dev/null || true)"
   fi
   prompt="Read AGENTS.md first and follow its instructions, including any policy documents it names. Josh directly requires product-first V22 behavior: user-reported product bugs outrank unrelated CI/E2E/test plumbing, and a run is a work session rather than a one-ticket punch.  Edit only the assigned target, run focused validation, and use GitHub for review context. Do not commit or push; the wrapper persists changes. Do not enable auto-merge, push main, touch production databases, or alter automation schedules. Run context: Worker: ${WORKER_ID}; model: ${MODEL}; target: ${target}. ${mission}"
   timeout --signal=TERM --kill-after=30s "${timeout_seconds}s" opencode run --standalone -m "$MODEL" --agent build "$prompt" 2>&1 | tee "/tmp/opencode-factory-${WORKER}.log"
@@ -392,7 +392,7 @@ stage_trusted_review_controller() {
     # Pin model identity to trusted main, never to the adopted PR checkout.
     cp .github/scripts/factory_worker_slots.py "$trusted_dir/factory_worker_slots.py"
     cp .github/scripts/factory_provider_registry.py "$trusted_dir/factory_provider_registry.py"
-    cp .github/scripts/factory_work_policy.py .github/scripts/factory_work_policy_assignment.py .github/scripts/factory_work_policy_backlog.py .github/scripts/factory_work_policy_base.py .github/scripts/factory_work_policy_candidates.py .github/scripts/factory_work_policy_priority.py .github/scripts/factory_incident.py "$trusted_dir/"
+    cp .github/scripts/factory_work_policy.py .github/scripts/factory_work_policy_assignment.py .github/scripts/factory_work_policy_backlog.py .github/scripts/factory_work_policy_base.py .github/scripts/factory_work_policy_candidates.py .github/scripts/factory_issue_intake_guard.py .github/scripts/factory_work_policy_priority.py .github/scripts/factory_incident.py "$trusted_dir/"
     cp .github/scripts/factory_settings.py "$trusted_dir/factory_settings.py"
     chmod +x "$trusted_dir/factory-review-controller.py"
     TRUSTED_REVIEW_CONTROLLER="$trusted_dir/factory-review-controller.py"
