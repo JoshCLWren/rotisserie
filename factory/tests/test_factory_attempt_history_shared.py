@@ -176,3 +176,19 @@ def test_one_caller_claims_each_interval(store: object) -> None:
     assert cursors.claim_interval("acme/widgets", "sweep", 3600)
     assert not cursors.claim_interval("acme/widgets", "sweep", 3600)
     assert cursors.claim_interval("acme/widgets", "sweep", 0)
+
+
+def test_an_app_authored_marker_stays_trusted_after_compaction(
+    store: object, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    posted = {**_attempt(1, NOW - 10), "author_association": "CONTRIBUTOR",
+              "performed_via_github_app": {"slug": "github-actions", "id": 15368, "owner": {}}}
+    forged = {**_attempt(2, NOW - 9), "author_association": "CONTRIBUTOR",
+              "performed_via_github_app": {"slug": "worker-app"}}
+    monkeypatch.setattr(CONTROLLER, "gh_json", GitHub([[[posted, forged]], [[]]]))
+    _job(monkeypatch, tmp_path, "job-1", NOW)
+    found = cursors.get(CONTROLLER.REPO, "attempt-history")
+    assert found is not None
+    assert found[1]["comments"][0]["performed_via_github_app"] == {"slug": "github-actions"}
+    second = _job(monkeypatch, tmp_path, "job-2", NOW + 100)
+    assert [attempt.epoch for attempt in second] == [NOW - 10]

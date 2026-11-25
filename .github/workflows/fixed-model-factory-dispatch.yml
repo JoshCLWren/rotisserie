@@ -952,6 +952,9 @@ jobs:
           # 44031401652, 44032359658) left no store outcome. One dispatcher job
           # per 15 minutes backfills a bounded number of them with the same
           # classifier; every Entry run used to list the last 100 Entry runs.
+          if [[ -s "${FACTORY_STATS_FILE:-}" ]] && jq -e '.models | type == "array"' "$FACTORY_STATS_FILE" >/dev/null 2>&1; then
+            export FACTORY_TRACK_RECORD_FILE="$FACTORY_STATS_FILE"
+          fi
           python3 .github/scripts/factory_outcome_reconcile.py \
             --repo "$GITHUB_REPOSITORY" --hours 12 --limit 5 --min-interval 900
 
