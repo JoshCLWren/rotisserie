@@ -11,6 +11,21 @@ CREATE TABLE IF NOT EXISTS _schema_version (
     applied_at INTEGER NOT NULL
 ) STRICT;
 
+-- The last schema upgrade attempt, so `baste schema` and doctor show it
+-- without a search through run logs. One database-wide row, like
+-- _schema_version; created is a JSON list, or NULL when it was not read.
+CREATE TABLE IF NOT EXISTS _schema_upgrade (
+    name TEXT PRIMARY KEY CHECK (name = 'last'),
+    version INTEGER NOT NULL,
+    result TEXT NOT NULL CHECK (result IN ('ok', 'failed')),
+    error TEXT,
+    created TEXT CHECK (created IS NULL OR json_valid(created)),
+    source TEXT NOT NULL,
+    workflow TEXT,
+    run_id TEXT,
+    at INTEGER NOT NULL
+) STRICT;
+
 -- Worker, target, slot and external claims. One row per held key; every row
 -- of one claim shares claim_id, so release and renewal are fenced by it.
 -- An expired external row still holds its target until an identity-fenced
@@ -187,3 +202,4 @@ CREATE TABLE IF NOT EXISTS factory_model_attempt_daily (
 ) STRICT;
 
 INSERT OR IGNORE INTO _schema_version (version, applied_at) VALUES (1, unixepoch());
+INSERT OR IGNORE INTO _schema_version (version, applied_at) VALUES (2, unixepoch());

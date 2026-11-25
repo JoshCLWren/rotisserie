@@ -10,6 +10,7 @@ import pytest
 SCHEMA = Path(__file__).resolve().parents[1] / ".github" / "factory-state.sqlite.sql"
 TABLES = {
     "_schema_version",
+    "_schema_upgrade",
     "factory_lease",
     "factory_provider_reservation",
     "factory_provider_budget",
@@ -41,12 +42,12 @@ def test_schema_is_idempotent_strict_and_versioned() -> None:
     found = {name: strict for name, strict in rows if not name.startswith("sqlite_")}
     assert set(found) == TABLES
     assert all(found.values())
-    assert conn.execute("SELECT version FROM _schema_version").fetchall() == [(1,)]
+    assert conn.execute("SELECT version FROM _schema_version").fetchall() == [(1,), (2,)]
 
 
 def test_every_table_carries_a_repository_column() -> None:
     conn = _db()
-    for table in TABLES - {"_schema_version"}:
+    for table in TABLES - {"_schema_version", "_schema_upgrade"}:
         columns = {row[1] for row in conn.execute(f"PRAGMA table_info({table})")}
         assert "repo" in columns, table
 

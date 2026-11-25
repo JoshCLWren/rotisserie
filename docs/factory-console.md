@@ -151,7 +151,10 @@ failed worker runs of the last 10 hours. Test factory store and Back up factory
 store start `baste store selftest` and `baste store export` with
 `--no-wait`. Migrate store (dry run) starts `baste store migrate --dry-run`,
 and Migrate store starts the real copy after a confirmation. Read store run
-shows the result of a self-test, backup or migration run by its ID. `tests/test_control_parity.py` checks that every `baste`
+shows the result of a self-test, backup or migration run by its ID. Store
+schema reads `baste schema` (the hosted page runs it in the read workflow), and
+Apply store schema runs `baste schema --apply --via github` after a
+confirmation. `tests/test_control_parity.py` checks that every `baste`
 command has a control in both control rooms, or a reason in
 `src/rotisserie/control_parity.py` why it has none. The Diagnostics page starts a
 label doctor dry run or repair on GitHub and links the run. The Models page
@@ -899,6 +902,38 @@ Unknown, stale or unconfigured usage never pauses.
 
 Both control rooms show it on the Diagnostics page (Database usage). The
 hosted page serves it from the published snapshot without sign-in.
+
+### Store schema
+
+```bash
+baste schema --via github           # status, read with the read-only store token
+baste schema --apply --via github   # run every schema statement now
+baste schema --json                 # direct, inside a trusted job with the store
+```
+
+The status lists each table and index that `factory-state.sqlite.sql` creates
+and whether the store holds it, the stored `_schema_version` against the
+code's `SCHEMA_VERSION`, and the last upgrade attempt from the
+`_schema_upgrade` table: its result, the objects it created, the workflow run
+and the error. `--via github` runs the read in the Rotisserie Operator Read
+workflow. `--apply` runs the `schema-apply` mode of the label claim workflow,
+which holds the write token. Each schema statement is `IF NOT EXISTS` or
+`INSERT OR IGNORE`, so apply only creates what is missing. It also restores an
+object that is missing at the current version, which the version-gated upgrade
+skips.
+
+| Status | When |
+|---|---|
+| `ok` | every object exists and the stored version matches the code |
+| `missing` | one or more expected tables or indexes do not exist |
+| `behind` | the stored version is lower than the code's version |
+| `failed` | the last upgrade attempt failed |
+| `ahead` | the stored version is higher than the code's version |
+
+The status page job publishes the status as `schema` in `factory-stats.json`.
+`baste doctor` reads that value and warns when the status is not `ok` or is
+over an hour old. An adopter must re-run the installer to get the
+`schema-apply` option in its label claim caller.
 
 ### Moving the factory state from Neon to Turso
 

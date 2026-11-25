@@ -136,6 +136,7 @@
 .github/scripts/factory_turso_slots.py
 .github/scripts/factory_turso_usage.py
 .github/scripts/factory_turso_selftest.py
+.github/scripts/factory_turso_schema.py
 .github/scripts/factory_turso_migrate.py
 .github/scripts/factory_turso_migrate_map.py
 .github/scripts/factory_turso_migrate_neon.py

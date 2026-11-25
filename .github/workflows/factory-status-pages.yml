@@ -221,6 +221,25 @@ jobs:
           jq -r '"Turso usage: \(.db_usage.status) \(.db_usage.label // "")"' site/factory-stats.json \
             >> "$GITHUB_STEP_SUMMARY"
 
+      # Reads only; publishes object names, versions and the last upgrade's error.
+      - name: Add the store schema status to the published stats
+        continue-on-error: true
+        env:
+          PYTHONPATH: .github/scripts
+        run: |
+          set -Eeuo pipefail
+          if [[ ! -s site/factory-stats.json ]]; then
+            echo "::warning::No reliability stats to carry the schema status; skipped"
+            exit 0
+          fi
+          python3 .github/scripts/factory_turso_schema.py status > "$RUNNER_TEMP/schema.json" || true
+          jq -e 'type == "object" and has("status")' "$RUNNER_TEMP/schema.json" >/dev/null
+          jq --slurpfile schema "$RUNNER_TEMP/schema.json" '.schema = $schema[0]' \
+            site/factory-stats.json > site/factory-stats.json.tmp
+          mv site/factory-stats.json.tmp site/factory-stats.json
+          jq -r '"Store schema: \(.schema.status) \(.schema.reasons | join("; "))"' \
+            site/factory-stats.json >> "$GITHUB_STEP_SUMMARY"
+
       - name: Publish live dashboard snapshot
         env:
           GH_TOKEN: ${{ github.token }}

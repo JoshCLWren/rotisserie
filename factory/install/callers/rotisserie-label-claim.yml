@@ -12,9 +12,9 @@ on:
   workflow_dispatch:
     inputs:
       mode:
-        description: Label doctor mode, leases or backoffs to read the factory store, estimate-history, or db-usage
+        description: Label doctor mode, leases or backoffs to read the factory store, estimate-history, db-usage, or schema-apply
         type: choice
-        options: [dry-run, repair, delete-legacy, leases, backoffs, estimate-history, db-usage]
+        options: [dry-run, repair, delete-legacy, leases, backoffs, estimate-history, db-usage, schema-apply]
         default: dry-run
       targets:
         description: For leases, space-separated issue:N / pr:N (blank means every lease)

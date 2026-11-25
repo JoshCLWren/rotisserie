@@ -297,6 +297,12 @@ properties that queries filter on, a unique `event_id`, epoch-second times
 compared against the database clock, a `repo` column on every table and a
 `_schema_version` table (Turso Cloud cannot set `PRAGMA user_version`). The
 dispatcher's `bootstrap` step applies it; every statement is idempotent.
+`ensure_schema` runs the statements only when the stored version is behind
+`SCHEMA_VERSION`, unless it is forced (`baste schema --apply`). Each attempt
+stores its result, the objects it created and any error in the one-row
+`_schema_upgrade` table. A failed attempt is stored in a second write, then
+the error is raised. `factory_turso_schema.py status` reads the result and the
+objects without a write, so the read-only token can run it.
 
 ## libSQL store
 

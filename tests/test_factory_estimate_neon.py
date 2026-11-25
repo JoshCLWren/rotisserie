@@ -184,7 +184,7 @@ def test_the_label_claim_workflow_runs_only_the_bounded_history_command() -> Non
     workflow = (ROOT / ".github/workflows/rotisserie-label-claim.yml").read_text()
     assert "estimate-history) args=(factory estimate-history) ;;" in workflow
     caller = (ROOT / "factory/install/callers/rotisserie-label-claim.yml").read_text()
-    assert "estimate-history, db-usage]" in caller
+    assert "estimate-history, db-usage, schema-apply]" in caller
 
 
 def test_the_web_ui_starts_and_reads_a_neon_estimate() -> None:
