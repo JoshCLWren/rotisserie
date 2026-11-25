@@ -13,6 +13,7 @@ from datetime import UTC, datetime
 from typing import Any
 
 import factory_turso_core as core
+from factory_health_cooldown import end_sql
 from factory_libsql import placeholders
 from factory_state_operations_backoff import MODEL_RETRY_CLASSES, worker_backoff_reason
 from factory_turso_backoff import record
@@ -48,8 +49,8 @@ def eligibility(db: core.Store, repo: str, workers: list[str]) -> tuple[list[str
     results = db.reads(
         [
             (
-                "SELECT source, model, status, cooldown_until FROM factory_model_health"
-                " WHERE repo = :repo AND source = :s AND model = :m",
+                f"SELECT source, model, status, {end_sql()} AS cooldown_until"
+                " FROM factory_model_health WHERE repo = :repo AND source = :s AND model = :m",
                 {"repo": repo, "s": source, "m": model},
             )
             for source, model in pairs
@@ -344,9 +345,11 @@ def stats(repo: str) -> dict[str, Any]:
                 {"repo": repo},
             ),
             (
-                "SELECT source, model, status, cooldown_until FROM factory_model_health"
-                " INDEXED BY idx_factory_model_health_blocking WHERE repo = :repo AND status IN ('retired', 'unavailable', 'cooling')"
-                " AND cooldown_until > unixepoch() ORDER BY cooldown_until",
+                f"SELECT source, model, status, {end_sql()} AS cooldown_until"
+                " FROM factory_model_health INDEXED BY idx_factory_model_health_blocking"
+                " WHERE repo = :repo AND status IN ('retired', 'unavailable', 'cooling')"
+                " AND factory_model_health.cooldown_until > unixepoch()"
+                f" AND {end_sql()} > unixepoch() ORDER BY 4",
                 {"repo": repo},
             ),
         ]

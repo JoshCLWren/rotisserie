@@ -12,9 +12,11 @@ from collections.abc import Mapping
 from datetime import UTC, datetime
 from typing import Any
 
+from factory_health_cooldown import end_sql
 from factory_quota_reset import OVERSIZE, resolve, scope
 from factory_state_operations_backoff import fibonacci_worker_delay
 from factory_state_operations_quota import POOL_PREFIX, PROVIDER_PREFIX
+from factory_track_record_cooldown import outcome_cap
 
 STATE_TTL_SECONDS = 90 * 86400
 MAX_STREAK_ROW = 40
@@ -137,8 +139,15 @@ def capacity_statements(
     observed: datetime,
     run_id: int,
     guard: Guard,
+    unavailable_cap: int | None = None,
 ) -> list[tuple[str, dict[str, Any]]]:
-    """The one cooldown a capacity refusal earns; never shortens an active one."""
+    """The one cooldown a capacity refusal earns.
+
+    The model health row ends at the later of the new end and the older row's
+    end clamped to its own cause's current cap (``factory_health_cooldown``),
+    and names whichever cause owns that end. ``unavailable_cap`` is the cap for
+    an older ``model_unavailable`` row: 15 minutes for a kept model.
+    """
     reset = resolve(source, outcome, hint, observed)
     if reset.kind == OVERSIZE or reset.until is None:
         return []
@@ -175,18 +184,28 @@ def capacity_statements(
                 },
             )
         )
+    kept_end = (
+        "CASE WHEN factory_model_health.status IN ('cooling', 'unavailable')"
+        f" THEN coalesce({end_sql(':unavailable_cap')}, 0) ELSE 0 END"
+    )
+    older = f"{kept_end} > excluded.cooldown_until"
+    if unavailable_cap is None:
+        unavailable_cap = outcome_cap("model_unavailable")
     statements.append(
         (
             "INSERT INTO factory_model_health (repo, source, model, status, last_outcome,"
             " cooldown_until, last_run_id, updated_at)"
             " SELECT :repo, :source, :model, 'cooling', :outcome, :until, :run_id, unixepoch()"
             f" WHERE {condition}"
-            " ON CONFLICT(repo, source, model) DO UPDATE SET status = excluded.status,"
-            " last_outcome = excluded.last_outcome,"
-            " cooldown_until = max(excluded.cooldown_until, CASE WHEN factory_model_health.status"
-            " IN ('cooling', 'unavailable') THEN coalesce(factory_model_health.cooldown_until, 0)"
-            " ELSE 0 END),"
-            " last_run_id = excluded.last_run_id, updated_at = unixepoch()"
+            " ON CONFLICT(repo, source, model) DO UPDATE SET"
+            f" status = CASE WHEN {older} THEN factory_model_health.status"
+            " ELSE excluded.status END,"
+            f" last_outcome = CASE WHEN {older} THEN factory_model_health.last_outcome"
+            " ELSE excluded.last_outcome END,"
+            f" cooldown_until = max(excluded.cooldown_until, {kept_end}),"
+            f" updated_at = CASE WHEN {older} THEN factory_model_health.updated_at"
+            " ELSE unixepoch() END,"
+            " last_run_id = excluded.last_run_id"
             " WHERE factory_model_health.last_run_id <= excluded.last_run_id"
             " AND factory_model_health.status != 'retired'",
             {
@@ -197,6 +216,7 @@ def capacity_statements(
                 "outcome": outcome,
                 "until": until,
                 "run_id": run_id,
+                "unavailable_cap": unavailable_cap,
             },
         )
     )

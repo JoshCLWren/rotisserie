@@ -76,7 +76,7 @@ def unavailable_delay(strikes: int, kept: bool) -> int:
     if strikes < 1:
         raise ValueError("strike count must be positive")
     if kept:
-        return 0 if strikes == 1 else _setting("UNAVAILABLE_KEPT_MAX", UNAVAILABLE_KEPT_MAX)
+        return 0 if strikes == 1 else unavailable_cap(True)
     first = _setting("UNAVAILABLE_FIRST", UNAVAILABLE_FIRST)
     return min(first * 2 ** min(strikes - 1, 10), UNAVAILABLE_CAP)
 
@@ -100,10 +100,17 @@ def strike_delay(outcome: str, strike: int, proven: bool = False) -> int:
     return delay // 2 if proven else delay
 
 
+def unavailable_cap(kept: bool) -> int:
+    """The longest a ``model_unavailable`` signal benches a model."""
+    if kept:
+        return _setting("UNAVAILABLE_KEPT_MAX", UNAVAILABLE_KEPT_MAX)
+    return UNAVAILABLE_CAP
+
+
 def outcome_cap(outcome: str) -> int:
     """The longest wait ``outcome`` can earn; readers clamp older rows to it."""
     if outcome == "model_unavailable":
-        return UNAVAILABLE_CAP
+        return unavailable_cap(False)
     if outcome in LONG_OUTCOMES:
         return LONG_COOLDOWN
     if outcome in TASK_OUTCOMES:

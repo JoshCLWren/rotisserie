@@ -52,6 +52,7 @@
 .github/scripts/factory_fork_control.py
 .github/scripts/factory_full_completion_controller.py
 .github/scripts/factory_gh_usage.py
+.github/scripts/factory_health_cooldown.py
 .github/scripts/factory_heartbeat_health.py
 .github/scripts/factory_incident.py
 .github/scripts/factory_implementation_delivery.py
