@@ -81,3 +81,17 @@ def test_the_findings_pass_the_actionable_findings_check() -> None:
 
     text = escalation.findings(FAILURES, ISSUE)
     assert policy.has_actionable_review_findings(text)
+
+
+def test_a_gate_escalation_ends_the_empty_verdict_self_heal() -> None:
+    import factory_self_heal_rules as rules
+    from tests.test_factory_self_heal import NARRATION, trusted, verdict
+
+    head = "c" * 40
+    escalated = (
+        escalation.marker(pr=44, head=head)
+        + "\n\n### Factory semantic review · Factory 17 · REPAIR\n\n"
+        + escalation.findings(FAILURES, ISSUE)
+    )
+    assert rules.empty_verdict([verdict(NARRATION)], 44) is not None
+    assert rules.empty_verdict([verdict(NARRATION), trusted(escalated)], 44) is None

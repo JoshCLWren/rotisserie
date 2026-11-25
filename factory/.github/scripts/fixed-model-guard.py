@@ -93,11 +93,13 @@ def is_related_test(path: str, pr_files: Iterable[str]) -> bool:
     if not (TEST_NAME_RE.match(pure.name) or TEST_DIRS & set(pure.parts[:-1])):
         return False
     home = "/".join(part for part in pure.parts[:-1] if part not in TEST_DIRS)
+    roots = {home, home.rpartition("/")[0] if "/" in home else home}
     stem = re.sub(r"^test_|_test$", "", pure.name.split(".", 1)[0])
     for changed in pr_files:
         source = PurePosixPath(changed)
         folder = str(source.parent) if str(source.parent) != "." else ""
-        if source.stem == stem or folder == home or folder.startswith(f"{home}/") or not home:
+        near = any(folder == root or folder.startswith(f"{root}/") for root in roots)
+        if source.stem == stem or near or not home:
             return True
     return False
 

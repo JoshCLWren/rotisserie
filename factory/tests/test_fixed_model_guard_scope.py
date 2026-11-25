@@ -31,10 +31,20 @@ def decide(previous: set[str], latest: set[str], named: str = "") -> dict[str, o
     return guard().reject_decision(previous, latest, title="Reader cards", body="", named=named)
 
 
-def test_test_files_for_the_changed_components_are_kept() -> None:
+def test_the_three_test_files_run_45594349578_lost_are_kept() -> None:
+    lost = (
+        "frontend/src/unit/CompactIssueCardTrigger.test.tsx",
+        "frontend/src/unit/HistoryPage.issue-card.test.tsx",
+        "frontend/src/unit/ReadingListReader.test.tsx",
+    )
+    assert decide(PR_5773, set(lost))["reject"] is False
+    for path in lost:
+        assert decide(PR_5773, {path})["reject"] is False, path
+
+
+def test_test_files_beside_or_above_the_changed_components_are_kept() -> None:
     latest = {
         "frontend/src/components/__tests__/ComicIssueCard.test.tsx",
-        "frontend/src/components/ReaderIssueActions.test.tsx",
         "frontend/tests/reader-issue-actions.spec.ts",
     }
     assert decide(PR_5773, latest)["reject"] is False

@@ -291,10 +291,11 @@ def repair(
     now: datetime | None = None,
     snapshot: frontier.Frontier | None = None,
     items: list[dict[str, Any]] | None = None,
+    state: Mapping[str, Mapping[str, bool]] | None = None,
 ) -> Report:
     """Apply each planned change that still matches the item's live labels."""
     rows = items if items is not None else open_items(github)
-    report, plans = audit(github, now=now, snapshot=snapshot, items=rows)
+    report, plans = audit(github, now=now, snapshot=snapshot, items=rows, state=state)
     report.mode = "repair"
     if items is None:
         report.released_agents = agent_holds.release(

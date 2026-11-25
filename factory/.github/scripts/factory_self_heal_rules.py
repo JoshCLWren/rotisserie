@@ -31,6 +31,8 @@ LOOP_PARKED = "loop-parked"
 KINDS = (EMPTY_VERDICT, CONFLICT_SYNC, THREAD_RESOLVED, LOOP_PARKED)
 CHANGES_REQUESTED = "factory:changes-requested"
 VERDICT_HEADER = "### Factory semantic review"
+# A gate escalation (factory_acceptance_escalation) is a repair handoff with findings.
+ACCEPTANCE_ESCALATION = "-factory-acceptance-rejected-v1:"
 HEADLINE = "**Factory self-heal:**"
 # The merge gate ignores this retired reviewer's threads; so do these rules.
 IGNORED_REVIEWERS = frozenset({"coderabbitai", "coderabbitai[bot]"})
@@ -158,7 +160,7 @@ def empty_verdict(records: Sequence[Mapping[str, Any]], number: int) -> EmptyVer
         first = body.splitlines()[0] if body else ""
         found = policy.parse_review_marker(first)
         if not found:
-            if first.startswith(VERDICT_HEADER):
+            if first.startswith(VERDICT_HEADER) or ACCEPTANCE_ESCALATION in first:
                 return None
             continue
         if int(found["pr"]) != number:

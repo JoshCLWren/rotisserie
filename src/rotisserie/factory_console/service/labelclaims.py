@@ -377,6 +377,9 @@ def handle(
 
 
 def doctor_after(github: GitHub, number: int) -> dict[str, object]:
-    """Repair the one item the event touched, so its projection settles at once."""
+    """Repair the one item the event touched, so its projection settles at once.
+
+    State labels wait for the full doctor: their reads cost a PR list and a search.
+    """
     row = obj(github.repo_api(f"issues/{number}"))
-    return labels.repair(github, items=[row]).to_dict()
+    return labels.repair(github, items=[row], state={}).to_dict()

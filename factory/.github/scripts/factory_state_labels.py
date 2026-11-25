@@ -35,6 +35,9 @@ IGNORED_BY_WORKFLOWS = (
 )
 
 
+_DEFINED: set[tuple[str, str]] = set()
+
+
 class GitHub(Protocol):
     repo: str
 
@@ -57,7 +60,10 @@ def change(labels: Iterable[str], name: str, wanted: bool) -> str | None:
 
 
 def ensure(github: GitHub, name: str) -> None:
-    """Create the label definition when it is missing; an existing one is left alone."""
+    """Create the label definition when it is missing, once per process."""
+    if (github.repo, name) in _DEFINED:
+        return
+    _DEFINED.add((github.repo, name))
     color, description = DEFINITIONS[name]
     try:
         github.api(

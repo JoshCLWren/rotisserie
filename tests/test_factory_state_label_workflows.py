@@ -46,3 +46,12 @@ def test_the_migration_lane_release_only_wakes_on_its_own_labels() -> None:
     condition = job_condition("factory-migration-lane-release.yml")
     allowed = json.loads(re.search(r"fromJSON\('(?P<list>\[.*?\])'\)", condition)["list"])  # type: ignore[index]
     assert allowed and not set(allowed) & set(ignored())
+
+
+def test_the_pr_review_wakeup_and_label_claim_wake_only_on_their_own_label() -> None:
+    review = job_condition("factory-pr-review-wakeup.yml")
+    assert "github.event.action == 'labeled' && github.event.label.name == 'factory:review'" in (
+        review
+    )
+    claim = (WORKFLOWS / "rotisserie-label-claim.yml").read_text()
+    assert "github.event.label.name == 'factory:claimed')" in claim

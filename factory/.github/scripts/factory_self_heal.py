@@ -234,9 +234,9 @@ def sweep(
     }
     for name, step in (
         ("loops", park_loops),
-        ("parked_labels", sync_parked),
         ("verdicts", actions.heal_empty_verdicts),
         ("threads", actions.resolve_answered_threads),
+        ("parked_labels", sync_parked),
     ):
         try:
             out[name] = step(github, store, pulls, budget)

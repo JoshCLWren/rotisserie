@@ -6,9 +6,15 @@ from typing import Any
 
 import factory_self_heal_loops as loops
 import factory_state_labels as state
+import pytest
 from tests.test_factory_item_loop import HEAD, Hub, Store, heal_budget, moment, pull, sweep
 
 NEW_HEAD = "e" * 40
+
+
+@pytest.fixture(autouse=True)
+def fresh_definitions() -> None:
+    state._DEFINED.clear()
 
 
 def parked_at(head: str = HEAD) -> Store:
