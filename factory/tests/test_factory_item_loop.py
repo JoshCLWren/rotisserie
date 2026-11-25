@@ -189,8 +189,20 @@ def test_the_sweep_parks_a_looping_pr_with_a_comment_and_an_event() -> None:
 
 
 def test_the_sweep_parks_once_per_head_and_stage() -> None:
-    park = {"at": moment("2026-11-25T00:00:00Z"), "head": HEAD, "stage": "factory:review"}
+    park = {
+        "at": moment("2026-11-25T00:00:00Z"),
+        "at_heads": {(HEAD, "factory:changes-requested"), (HEAD, "factory:review")},
+    }
     hub, found = sweep(Store({"pr:5766": park}), pull(5766))
+    assert hub.writes == [] and found == []
+
+
+def test_a_repeated_or_failed_park_never_posts_a_second_comment() -> None:
+    class Seen(Store):
+        def record(self, entries: list[dict[str, Any]]) -> int:
+            return 0
+
+    hub, found = sweep(Seen(), pull(5766))
     assert hub.writes == [] and found == []
 
 
@@ -279,3 +291,68 @@ def test_a_park_holds_its_head_and_stage_only(env) -> None:
     assert operations.cooling_prs(repo, {12: (HEAD, "factory:review")}) == {12}
     assert operations.cooling_prs(repo, {12: ("e" * 40, "factory:review")}) == set()
     assert operations.cooling_prs(repo, {12: (HEAD, "factory:changes-requested")}) == set()
+
+
+def controller_with(
+    monkeypatch: pytest.MonkeyPatch, cooling: Any
+) -> tuple[Any, list[Any]]:
+    import importlib.util
+    import sys
+
+    import factory_state_operations
+
+    root = Path(__file__).resolve().parents[1]
+    spec = importlib.util.spec_from_file_location(
+        "factory_work_controller_loop_hold", root / ".github/scripts/factory-work-controller.py"
+    )
+    assert spec and spec.loader
+    controller = importlib.util.module_from_spec(spec)
+    monkeypatch.setitem(sys.modules, spec.name, controller)
+    spec.loader.exec_module(controller)
+    looping = controller.Candidate("pr", 12, 1, 4, "2026-11-20T00:00:00Z", stage="factory:review")
+    owner = controller.Candidate(
+        "pr", 13, 1, 4, "2026-11-21T00:00:00Z", stage="factory:review", override=True
+    )
+    prs = [{"number": n, "headRefOid": HEAD} for n in (12, 13)]
+    picked: list[Any] = []
+    monkeypatch.setattr(controller, "reconcile_stale_leases", lambda: [])
+    monkeypatch.setattr(controller, "reconcile_contradictory_labels", lambda: [])
+    monkeypatch.setattr(controller, "list_issues", lambda: [])
+    monkeypatch.setattr(controller, "list_prs", lambda: prs)
+    monkeypatch.setattr(controller, "load_no_diff_attempt_records", lambda **_: [])
+    monkeypatch.setattr(controller, "build_candidates", lambda *_a, **_k: [looping, owner])
+    monkeypatch.setattr(controller, "rotisserie_issue_intake", lambda *_a, **_k: None)
+    monkeypatch.setattr(controller, "resolve_review_head_contributors", lambda rows, _p: rows)
+    monkeypatch.setattr(controller, "order_candidates_for_worker", lambda rows, _w: rows)
+    monkeypatch.setattr(controller, "candidate_is_live_executable", lambda _: True)
+    monkeypatch.setattr(controller, "issue_excludes_worker_on_strike_retry", lambda *_: False)
+    monkeypatch.setattr(
+        controller, "assign_candidate", lambda c, *_a, **_k: picked.append(c) or True
+    )
+    monkeypatch.setattr(factory_state_operations, "cooling_prs", cooling)
+    monkeypatch.setenv("FACTORY_JEV_RANKING_FILE", "")
+    return controller, picked
+
+
+def test_the_controller_skips_a_looping_pr_and_keeps_the_owner_override(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    seen: dict[str, Any] = {}
+
+    def cooling(repo: str, heads: dict[int, Any], exempt: frozenset[int] = frozenset()) -> set[int]:
+        seen["exempt"] = exempt
+        return {12, 13} - exempt
+
+    controller, picked = controller_with(monkeypatch, cooling)
+    chosen = controller.assign_from_pool("6")
+    assert seen["exempt"] == frozenset({13})
+    assert chosen.number == 13 and [c.number for c in picked] == [13]
+
+
+def test_a_targeted_run_is_never_held(monkeypatch: pytest.MonkeyPatch) -> None:
+    def cooling(*_a: Any, **_k: Any) -> set[int]:
+        raise AssertionError("a targeted run must not read the breaker")
+
+    controller, picked = controller_with(monkeypatch, cooling)
+    controller.assign_from_pool("6", target=("pr", 12))
+    assert [c.number for c in picked] == [12]

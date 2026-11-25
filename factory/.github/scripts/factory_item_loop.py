@@ -4,8 +4,9 @@
 An item loops when it has at least ``RUNS`` finished worker runs inside the
 window and at least half of them changed nothing (a failure, or no work done),
 while it is still open and short of ``factory:ready``. A run that never reached
-a model (``no_capacity``) does not count. Runs before the item's last park do
-not count, so an owner's retry starts fresh.
+a model, or failed for a factory or provider reason (control plane, runner
+environment, quota, throttle), does not count: it says nothing about the item.
+Runs before the item's last park do not count, so an owner's retry starts fresh.
 
 ``baste turning``, ``baste recap``, ``baste doctor``, both control rooms, the
 dispatcher's cooling and the self-heal sweep all call ``find``. Pure: callers
@@ -23,7 +24,16 @@ RUNS = 4
 WINDOW_SECONDS = 6 * 3600
 RUNS_SETTING = "FACTORY_LOOP_RUNS"
 WINDOW_SETTING = "FACTORY_LOOP_WINDOW_SECONDS"
-UNCOUNTED = frozenset({"no_capacity"})
+UNCOUNTED = frozenset(
+    {
+        "no_capacity",
+        "control_plane_failure",
+        "environment_failure",
+        "worker_environment_failure",
+        "provider_quota",
+        "provider_throttle",
+    }
+)
 PRODUCTIVE = frozenset({"success"})
 READY = "factory:ready"
 BYPASS_LABELS = frozenset({"factory:override", "factory:claimed"})

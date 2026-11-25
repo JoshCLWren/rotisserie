@@ -1,9 +1,11 @@
 #!/usr/bin/env python3
 """Park looping PRs: the self-heal sweep's circuit breaker (``factory_item_loop``).
 
-A park is one trusted comment plus a ``loop-parked`` store event that names the
-PR's head and stage. The dispatcher's exact-head cooling reads that event and
-sends no more workers while the head and stage are unchanged. Nothing changes
+A park is a ``loop-parked`` store event that names the PR's head and stage,
+then one trusted comment. The event goes first and the comment follows only a
+fresh insert, so a repeated sweep or a failed store write never posts twice.
+The dispatcher's exact-head cooling reads that event and sends no more workers
+while the head and stage are unchanged. Nothing changes
 the PR's labels, so an owner's targeted run, ``factory:override`` or claim
 still reaches it; a new head or stage releases the hold by itself.
 """
@@ -70,22 +72,27 @@ def park_loops(
         head = _head(pull)
         stage = stage_of(names) or "factory:review"
         park = parks.get(item.target)
-        if park and (park["head"], park["stage"]) == (head, stage):
+        if park and (head, stage) in park["at_heads"]:
             continue
         text = park_text(item, str(pull.get("title") or ""))
         if budget.dry_run or not budget.take():
             done.append({"pr": item.number, "status": "would-park", "text": text})
             continue
-        done.append(
-            heal.report(
-                github,
-                store,
-                kind=rules.LOOP_PARKED,
-                pr=item.number,
-                head=head,
-                ref=f"{stage.removeprefix('factory:')}-{head[:12] or 'none'}",
-                text=text,
-                detail={"stage": stage, "loop": item.to_dict()},
-            )
+        ref = f"{stage.removeprefix('factory:')}-{head[:12] or 'none'}"
+        entry = heal.event(
+            kind=rules.LOOP_PARKED,
+            pr=item.number,
+            head=head,
+            ref=ref,
+            text=text,
+            stage=stage,
+            loop=item.to_dict(),
         )
+        if not store.record([entry]):
+            continue
+        body = rules.comment_body(
+            kind=rules.LOOP_PARKED, pr=item.number, head=head, ref=ref, text=text
+        )
+        github.api(f"issues/{item.number}/comments", "--method", "POST", payload={"body": body})
+        done.append({"kind": rules.LOOP_PARKED, "pr": item.number, "head": head, "text": text})
     return done

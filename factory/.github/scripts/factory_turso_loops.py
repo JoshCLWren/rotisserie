@@ -59,15 +59,15 @@ def parks_statement(repo: str) -> tuple[str, dict[str, Any]]:
 
 
 def parks(rows: list[dict[str, Any]]) -> dict[str, dict[str, Any]]:
-    """The newest loop park per PR target: when, and at which head and stage."""
+    """Per PR target: the newest park time and every (head, stage) it was parked at."""
     found: dict[str, dict[str, Any]] = {}
     for row in rows:
         if not str(row["pr"] or "").isdecimal():
             continue
-        target = f"pr:{int(row['pr'])}"
+        entry = found.setdefault(f"pr:{int(row['pr'])}", {"at": None, "at_heads": set()})
         at = _moment(row["created_at"])
-        if target not in found or found[target]["at"] < at:
-            found[target] = {"at": at, "head": str(row["head"] or ""), "stage": row["stage"] or ""}
+        entry["at"] = at if entry["at"] is None or entry["at"] < at else entry["at"]
+        entry["at_heads"].add((str(row["head"] or ""), str(row["stage"] or "")))
     return found
 
 
@@ -84,7 +84,7 @@ def held(
     hold = {
         number
         for target, number in targets.items()
-        if (park := parked.get(target)) and (park["head"], park["stage"]) == heads[number]
+        if (park := parked.get(target)) and heads[number] in park["at_heads"]
     }
     loops = loop.find(
         runs_by_item(run_rows),

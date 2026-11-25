@@ -9,6 +9,7 @@ from typing import Any
 
 import pytest
 
+from rotisserie.factory_console import runtime
 from rotisserie.factory_console.commands import turning as view
 from rotisserie.factory_console.service import loops, recap_build, turning
 from rotisserie.factory_console.service.self_heal import Heal
@@ -149,7 +150,16 @@ def sources(**changes: Any) -> recap_build.Sources:
     return recap_build.Sources(**base)
 
 
-def parked(number: int) -> Heal:
+def parked(number: int, title: str) -> dict[str, object]:
+    return {
+        "number": number,
+        "title": title,
+        "url": f"https://github.com/acme/widgets/pull/{number}",
+        "text": "Parked it.",
+    }
+
+
+def heal(number: int) -> Heal:
     return Heal(
         pr=number,
         kind="loop-parked",
@@ -162,7 +172,10 @@ def parked(number: int) -> Heal:
 
 
 def test_recap_lists_looping_and_parked_items_under_needs_you() -> None:
-    rows = recap_build.needs_you(sources(loops=scan(), healed=[parked(5766), parked(5737)]))
+    found = scan()
+    found[0]["parked"] = True
+    held = [parked(5766, TITLE), parked(5737, "Queue covers")]
+    rows = recap_build.needs_you(sources(loops=found, parked=held))
     texts = [str(row["text"]) for row in rows if row["kind"] == "loop"]
     assert texts == [
         f"{TITLE} (#5766) is looping: 7 of 8 worker runs in the last 6h changed nothing; "
@@ -171,7 +184,7 @@ def test_recap_lists_looping_and_parked_items_under_needs_you() -> None:
         "most often work_failure (3).",
         "Queue covers (#5737) is parked: it was looping.",
     ]
-    assert recap_build.healed(sources(healed=[parked(5766)])) == []
+    assert recap_build.healed(sources(healed=[heal(5766)])) == []
 
 
 def test_an_owner_override_is_not_asked_of_the_owner_again() -> None:
@@ -184,3 +197,38 @@ def test_both_control_rooms_render_the_loop_row() -> None:
     from test_control_parity import UI  # type: ignore[import-not-found]
 
     assert "🔁 Looping items: " in UI and "e.item_loops" in UI
+
+
+class Hub:
+    repo = "acme/widgets"
+
+    def __init__(self, comments: list[dict[str, Any]]) -> None:
+        self.comments = comments
+
+    def api(self, path: str) -> dict[str, Any]:
+        assert path.startswith("search/issues")
+        return {"items": [{"number": 5766}, {"number": 9}]}
+
+    def repo_api(self, path: str) -> list[dict[str, Any]]:
+        assert path.startswith("issues/5766/comments?since=")
+        return self.comments
+
+
+def park_comment(head: str, stage: str) -> dict[str, Any]:
+    rules = runtime.module("factory_self_heal_rules")
+    body = rules.comment_body(
+        kind="loop-parked", pr=5766, head=head, ref=f"{stage}-{head[:12]}", text="Parked it."
+    )
+    return {"user": {"login": "github-actions[bot]", "type": "Bot"}, "body": body}
+
+
+def test_a_park_stays_visible_while_its_hold_is_on() -> None:
+    head = "d" * 40
+    held = {**pull(5766, TITLE), "head": {"sha": head}}
+    hub = Hub([park_comment(head, "review")])
+    rows = loops.parked(hub, now=AT_0130, pulls=[held])  # type: ignore[arg-type]
+    assert [(row["number"], row["text"]) for row in rows] == [(5766, "Parked it.")]
+    moved = {**held, "head": {"sha": "e" * 40}}
+    assert loops.parked(hub, now=AT_0130, pulls=[moved]) == []  # type: ignore[arg-type]
+    hub.comments = [park_comment(head, "changes-requested")]
+    assert loops.parked(hub, now=AT_0130, pulls=[held]) == []  # type: ignore[arg-type]

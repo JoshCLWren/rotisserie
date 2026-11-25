@@ -66,6 +66,7 @@ class Sources:
     fleet: FleetState | None = None
     work: list[Item] = field(default_factory=list)
     loops: list[dict[str, object]] = field(default_factory=list)
+    parked: list[dict[str, object]] = field(default_factory=list)
     unread: list[str] = field(default_factory=list)
 
 
@@ -169,7 +170,7 @@ def needs_you(sources: Sources) -> list[dict[str, object]]:
 
 
 def _loop_rows(sources: Sources, pulls: dict[int, Obj], add: Callable[..., None]) -> None:
-    parked = {heal.pr: heal for heal in sources.healed if heal.kind == LOOP_PARKED}
+    parked = {int(str(row.get("number") or 0)): row for row in sources.parked}
     looping = set()
     for row in sources.loops:
         number = int(str(row.get("number") or 0))
@@ -184,15 +185,15 @@ def _loop_rows(sources: Sources, pulls: dict[int, Obj], add: Callable[..., None]
             str(row.get("next")),
             str(row.get("url") or ""),
         )
-    for number, heal in parked.items():
-        if number in looping or number not in pulls:
+    for number, row in parked.items():
+        if number in looping:
             continue
         add(
             "loop",
-            f"{named(string(pulls[number], 'title'), number)} is parked: it was looping.",
+            f"{named(str(row.get('title') or ''), number)} is parked: it was looping.",
             f"Review it yourself, merge it, or force one more try with "
             f"`baste run --target pr:{number}`.",
-            heal.url,
+            str(row.get("url") or ""),
         )
 
 

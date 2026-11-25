@@ -170,7 +170,10 @@ def gather(
         sources.work = current_work(github, with_session=False)
 
     def looping() -> None:
-        sources.loops = loops.scan(github, now=now)
+        pulls = review.open_pulls(github)
+        sources.parked = loops.parked(github, now=now, pulls=pulls)
+        held = [int(str(row["number"])) for row in sources.parked]
+        sources.loops = loops.scan(github, now=now, pulls=pulls, parked=held)
 
     reads: dict[str, Callable[[], None]] = {
         "doctor": checks,

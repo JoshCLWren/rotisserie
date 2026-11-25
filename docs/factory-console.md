@@ -726,7 +726,8 @@ The evidence:
 - 🔁 looping items: each open PR that had 4 or more finished worker runs in the
   last 6 hours, at least half of them wasted (a failure, or a run that ended
   with no work), while it stayed short of `factory:ready`. A run that never
-  reached a model (`no_capacity`) does not count. Each row names the item, its
+  reached a model, or failed for a factory or provider reason (control plane,
+  runner environment, quota, throttle), does not count. Each row names the item, its
   runs (time, action, model, outcome class), the most common wasted outcome and
   the next step.
 - 🧊 providers whose models are all cooling, 📦 eligible issues, open factory
@@ -771,7 +772,9 @@ The factory acts on it in two places:
 
 The park changes no label. A targeted or forced run (`baste run --target
 pr:N`), an owner `factory:override` label and a `factory:claimed` claim are
-never held. `baste recap` lists a looping or parked PR under "Needs you" with
+never held. A second park at the same head and stage is never posted. `baste
+recap` finds parked PRs by their park comment, however old, and lists each
+looping or parked PR under "Needs you" with
 the reason and the next step: review it yourself, merge it, or force one more
 try with `baste run --target pr:N`.
 
