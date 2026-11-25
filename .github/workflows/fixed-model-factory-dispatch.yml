@@ -519,7 +519,9 @@ jobs:
       # in, once per head. Comments use the workflow token so they stay trusted
       # records; the merge uses the rebase token so the PR's CI starts. Cost: one
       # open-PR list, one paginated GraphQL thread read, one comment read per
-      # changes-requested PR, and at most 10 writes plus 3 merges.
+      # changes-requested PR, and at most 10 writes plus 3 merges. A PR parked
+      # for 12 hours gets one forced run on the model with the best track
+      # record, then its park ends or the PR closes and its issue is requeued.
       - name: Clear self-healable factory stalls
         if: steps.api_budget.outputs.allow == 'true' && !(inputs.target || inputs.provider)
         continue-on-error: true
@@ -532,6 +534,9 @@ jobs:
           set -Eeuo pipefail
           syncs=3
           [[ "$MAIN_STATE" != red ]] || syncs=0
+          if [[ -s "${FACTORY_STATS_FILE:-}" ]] && jq -e '.models | type == "array"' "$FACTORY_STATS_FILE" >/dev/null 2>&1; then
+            export FACTORY_TRACK_RECORD_FILE="$FACTORY_STATS_FILE"
+          fi
           python3 .github/scripts/factory_self_heal.py sweep --max-syncs "$syncs" --max-actions 10
 
       # Rotisserie owns branch synchronization: `rotisserie factory sync` (or an

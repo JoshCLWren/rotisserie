@@ -29,7 +29,12 @@ CONFLICT_SYNC = "conflict-sync"
 THREAD_RESOLVED = "thread-resolved"
 LOOP_PARKED = "loop-parked"
 LOOP_RELEASED = "loop-released"
-KINDS = (EMPTY_VERDICT, CONFLICT_SYNC, THREAD_RESOLVED, LOOP_PARKED, LOOP_RELEASED)
+PARK_RETRY = "park-retry"
+PARK_CLOSED = "park-closed"
+KINDS = (
+    EMPTY_VERDICT, CONFLICT_SYNC, THREAD_RESOLVED, LOOP_PARKED, LOOP_RELEASED, PARK_RETRY,
+    PARK_CLOSED,
+)
 CHANGES_REQUESTED = "factory:changes-requested"
 VERDICT_HEADER = "### Factory semantic review"
 # A gate escalation (factory_acceptance_escalation) is a repair handoff with findings.

@@ -878,6 +878,27 @@ targeted or forced run on a parked PR ends the park, even if it pushes nothing:
 the dispatcher records a `loop-released` store event and removes the label.
 Only runs after the release count toward a new park.
 
+A park the owner leaves alone resolves itself. After 12 hours at a parked head,
+the sweep sends the PR one forced run on the model with the best track record
+for its stage (the highest success floor among proven models in the published
+stats; without one, normal selection), and records a `park-retry` store event
+keyed on the park time, so the same park never gets a second retry. Later
+sweeps judge that run from the worker outcomes in the store:
+
+- A push ends the park by itself (new head). A delivered or successful run
+  ends it through the same `loop-released` event as an owner's run.
+- A counted run that changed nothing closes the PR. The closing comment gives
+  the park's findings and the last review. The branch stays. The linked issue
+  gets a comment with a link to the closed PR and goes back to the queue (an
+  oversized or umbrella issue then waits for a split, see "Issue intake
+  holds").
+- A run that never reached an outcome in 6 hours (it did not start, or hit
+  only quota or provider limits) gets one more dispatch, then the PR closes.
+
+An owner override, a claim, an outside agent, incident work or a live lease
+exempts the PR, as for the park itself. Reopening the closed PR undoes the
+closure; the factory does not close the same park twice.
+
 A run that delivered work (pushed repairs or opened its PR) counts as progress
 even when its agent then hit the deadline. Runs that failed for a provider or
 model-catalog reason, or with no class at all (`provider_failure`,
