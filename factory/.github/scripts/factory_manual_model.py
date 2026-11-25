@@ -21,19 +21,22 @@ class ManualModelUnavailable(ValueError):
     pass
 
 
+def runtime_prefix(source: str) -> str:
+    if source == 'opencode-free':
+        return 'opencode-go/'
+    if source == 'openrouter-free':
+        return 'openrouter/'
+    if source == 'kilo-auto':
+        return 'kilo/'
+    if source in PROVIDERS:
+        return PROVIDERS[source].provider + '/'
+    raise ManualModelUnavailable(f'Provider does not support exact-model selection: {source}')
+
+
 def validate_model_syntax(source: str, runtime_model: str) -> None:
     if not isinstance(runtime_model, str) or not re.fullmatch(r'[^\s\x00-\x1f]+/[^\s\x00-\x1f]+', runtime_model):
         raise ManualModelUnavailable('Invalid provider/model identifier')
-    if source == 'opencode-free':
-        prefix = 'opencode-go/'
-    elif source == 'openrouter-free':
-        prefix = 'openrouter/'
-    elif source == 'kilo-auto':
-        prefix = 'kilo/'
-    elif source in PROVIDERS:
-        prefix = PROVIDERS[source].provider + '/'
-    else:
-        raise ManualModelUnavailable(f'Provider does not support exact-model selection: {source}')
+    prefix = runtime_prefix(source)
     if not runtime_model.startswith(prefix) or runtime_model == prefix:
         raise ManualModelUnavailable(f'Model does not belong to provider {source}')
     if source == 'openrouter-free' and not runtime_model.endswith(':free'):

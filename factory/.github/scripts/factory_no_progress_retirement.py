@@ -174,31 +174,31 @@ def has_retirement_marker(
     )
 
 
+PR_STAGE_LABELS = frozenset({
+    "factory:building",
+    "factory:review",
+    "factory:changes-requested",
+    "factory:ci",
+    "factory:ready",
+    "ralph-status:in-progress",
+    "ralph-status:in-review",
+    "ralph-status:validation",
+})
+
+
+def requeued_labels(current: set[str]) -> set[str] | None:
+    """The issue's labels back in the queue; None when a worker or person owns it."""
+    if "factory:unowned" not in current or any(OWNER_RE.fullmatch(label) for label in current):
+        return None
+    return (current - PR_STAGE_LABELS) | {"factory", "factory:unowned", "ralph-status:pending"}
+
+
 def restore_issue_intake(issue: dict[str, Any]) -> None:
     """Preserve unrelated labels while dropping the obsolete PR stage."""
     number = int(issue["number"])
-    current = labels_of(issue)
-    if (
-        issue.get("state") != "open"
-        or "factory:unowned" not in current
-        or any(OWNER_RE.fullmatch(label) for label in current)
-    ):
+    labels = requeued_labels(labels_of(issue)) if issue.get("state") == "open" else None
+    if labels is None:
         raise RuntimeError("Issue changed ownership before requeue")
-    labels = {
-        label
-        for label in current
-        if label not in {
-            "factory:building",
-            "factory:review",
-            "factory:changes-requested",
-            "factory:ci",
-            "factory:ready",
-            "ralph-status:in-progress",
-            "ralph-status:in-review",
-            "ralph-status:validation",
-        }
-    }
-    labels.update({"factory", "factory:unowned", "ralph-status:pending"})
     gh(
         ["api", "--method", "PUT", f"repos/{REPO}/issues/{number}/labels",
          "--input", "-"],

@@ -12,7 +12,9 @@ Run by the trusted dispatcher once per tick (``sweep``):
   a commit that is in the current head, and the factory's own line-anchored
   finding thread once a later commit changed the lines it cites;
 * parks a PR that loops (``factory_item_loop``): no more workers go to it at
-  its current head, in any stage, until its owner acts.
+  its current head, in any stage, until its owner acts;
+* sends a PR parked for 12 hours one forced run, then ends the park or closes
+  the PR and requeues its issue (``factory_self_heal_park_retry``).
 
 Every action leaves a trusted comment (see ``factory_self_heal_rules``), which
 ``baste heal`` and ``baste recap`` read, and an event in the factory store.
@@ -229,15 +231,18 @@ def sweep(
     pulls = open_pulls(github)
     budget = actions.Budget(actions=max_actions, syncs=max_syncs, dry_run=dry_run)
     from factory_self_heal_loops import park_loops, sync_parked
+    from factory_self_heal_park_retry import resolve_long_parks
     from factory_self_heal_incident import clear_closed, sync_incident_work
     from factory_self_heal_state import sync_state
 
     out: dict[str, Any] = {
         "dry_run": dry_run, "verdicts": [], "threads": [], "conflicts": [], "loops": [],
+        "park_retries": [],
         "parked_labels": [], "state_labels": [], "incident_labels": [], "closed_labels": [],
     }
     for name, step in (
         ("loops", park_loops),
+        ("park_retries", resolve_long_parks),
         ("verdicts", actions.heal_empty_verdicts),
         ("threads", actions.resolve_answered_threads),
         ("parked_labels", sync_parked),
@@ -282,7 +287,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         max_actions=max(0, args.max_actions),
         dry_run=args.dry_run,
     )
-    for name in ("loops", "verdicts", "threads", "conflicts"):
+    for name in ("loops", "park_retries", "verdicts", "threads", "conflicts"):
         for row in result[name]:
             print(
                 f"self-heal {name}: {row.get('text') or row.get('error') or row}", file=sys.stderr

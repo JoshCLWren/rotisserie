@@ -114,6 +114,7 @@
 .github/scripts/factory_self_heal.py
 .github/scripts/factory_self_heal_actions.py
 .github/scripts/factory_self_heal_loops.py
+.github/scripts/factory_self_heal_park_retry.py
 .github/scripts/factory_state_labels.py
 .github/scripts/factory_self_heal_state.py
 .github/scripts/factory_self_heal_incident.py
