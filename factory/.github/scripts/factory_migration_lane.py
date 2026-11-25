@@ -217,8 +217,23 @@ def pr_changed_files(pr_number: int) -> list[dict[str, Any]]:
     return flatten_pages(pages)
 
 
+def touches_migration(number: int, sha: str, memo: Any) -> bool:
+    """A head's changed files never change, so its answer is kept by SHA."""
+    known = memo.get(sha) if sha else None
+    if isinstance(known, bool):
+        return known
+    found = any(changed_file_is_migration(row) for row in pr_changed_files(number))
+    if sha:
+        memo.put(sha, found)
+    return found
+
+
 def current_migration_prs() -> list[MigrationPr]:
     """Load only factory PRs currently relevant to migration finalization."""
+    from factory_head_memo import HeadMemo
+
+    memo = HeadMemo(REPO, "migration-files")
+    heads: set[str] = set()
     result: list[MigrationPr] = []
     for pr in open_pull_requests():
         labels = label_names(pr.get("labels"))
@@ -234,10 +249,11 @@ def current_migration_prs() -> list[MigrationPr]:
         number = int(pr.get("number") or 0)
         if number <= 0:
             continue
-        files = pr_changed_files(number)
-        if not any(changed_file_is_migration(row) for row in files):
-            continue
         head = pr.get("head") or {}
+        sha = str(head.get("sha") or "") if isinstance(head, dict) else ""
+        heads.add(sha)
+        if not touches_migration(number, sha, memo):
+            continue
         branch = str(head.get("ref") or "") if isinstance(head, dict) else ""
         result.append(
             MigrationPr(
@@ -247,6 +263,7 @@ def current_migration_prs() -> list[MigrationPr]:
                 branch=branch,
             )
         )
+    memo.save(heads)
     return result
 
 

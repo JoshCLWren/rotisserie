@@ -126,11 +126,10 @@ def test_held_workflow_recovery_is_unbounded_and_observable() -> None:
     assert "now - 3600" not in drain
     assert "Approval errors:" in drain
     assert 'gh workflow run "$workflow_file" --ref "$branch"' in drain
-    assert "actions/workflows/ci.yml/runs?head_sha=${open_head}&per_page=1" in drain
-    assert (
-        "actions/workflows/fixed-model-pr-repair-guard.yml/runs?"
-        "head_sha=${open_head}&per_page=1"
-    ) in drain
+    assert "factory_drain_run_presence.py" in drain
+    presence = (REPO_ROOT / ".github/scripts/factory_drain_run_presence.py").read_text()
+    assert "actions/workflows/{workflow}/runs?head_sha={sha}&per_page=1" in presence
+    assert '"ci.yml", "CI"' in presence and "fixed-model-pr-repair-guard.yml" in presence
     assert "commits/${open_head}/check-runs" not in drain
     assert "workflow_dispatch:" in guard
 

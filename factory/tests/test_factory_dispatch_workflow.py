@@ -657,10 +657,10 @@ def test_merge_drain_meters_its_github_calls() -> None:
         WORKFLOW.with_name("factory-ready-merge-drain.yml").read_text(encoding="utf-8")
     )["jobs"]["merge-ready"]["steps"]
     names = [step.get("name") for step in steps]
-    meter = names.index("Meter GitHub CLI requests")
+    meter = names.index("Install REST-backed factory GitHub reads")
     assert meter > names.index("Ensure GitHub CLI supports JSON PR checks")
     assert names[-2:] == ["Report GitHub CLI request usage", "Remove the factory store token"]
-    assert "factory-gh-meter.sh" in steps[meter]["run"]
+    assert all(part in steps[meter]["run"] for part in ("rest-shim.sh", "FACTORY_GH_CALL_LOG"))
 
 
 def test_chain_and_review_wakeup_dispatches_retry() -> None:
