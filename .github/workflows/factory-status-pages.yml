@@ -240,6 +240,23 @@ jobs:
           jq -r '"Store schema: \(.schema.status) \(.schema.reasons | join("; "))"' \
             site/factory-stats.json >> "$GITHUB_STEP_SUMMARY"
 
+      # Per-job GitHub request counts and the workflow token's budget, as the
+      # dispatcher and merge drain recorded them; read by `baste recap` and
+      # `baste limits`.
+      - name: Add GitHub request usage to the published stats
+        continue-on-error: true
+        env:
+          PYTHONPATH: .github/scripts
+        run: |
+          set -Eeuo pipefail
+          [[ -s site/factory-stats.json ]] || exit 0
+          python3 .github/scripts/factory_gh_usage.py export --repo "$GITHUB_REPOSITORY" \
+            > "$RUNNER_TEMP/gh-usage.json"
+          jq --slurpfile usage "$RUNNER_TEMP/gh-usage.json" --arg at "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+            '.gh_usage = {generated_at: $at, jobs: $usage[0]}' \
+            site/factory-stats.json > site/factory-stats.json.tmp
+          mv site/factory-stats.json.tmp site/factory-stats.json
+
       - name: Publish live dashboard snapshot
         env:
           GH_TOKEN: ${{ github.token }}

@@ -7,7 +7,8 @@
 # it. It never logs arguments that could carry secrets or bodies.
 factory_gh_meter_record() {
   [[ -n "${FACTORY_GH_CALL_LOG:-}" ]] || return 0
-  local group="${1:-}" name="${2:-}" key method='' paginate='' fields=0 arg
+  local group="${1:-}" name="${2:-}" key method='' paginate='' fields=0 arg bucket=workflow
+  factory_gh_uses_read_token "$@" && bucket=reader
   if [[ "$group" == api ]]; then
     shift
     key=''
@@ -34,7 +35,15 @@ factory_gh_meter_record() {
   else
     key="gh ${group} ${name}"
   fi
-  printf '%s\t%s\n' "$(date +%s)" "$key" >> "$FACTORY_GH_CALL_LOG" 2>/dev/null || true
+  printf '%s\t%s\t%s\n' "$(date +%s)" "$key" "$bucket" >> "$FACTORY_GH_CALL_LOG" 2>/dev/null || true
+}
+
+# The quota bucket a call spends: the read-only App's, or the workflow token's.
+factory_gh_uses_read_token() {
+  [[ -n "${FACTORY_READ_TOKEN:-}" ]] \
+    && (( $(date +%s) < ${FACTORY_READ_TOKEN_EXPIRES:-0} )) \
+    && ! factory_gh_reads_workflow_budget "$@" \
+    && factory_gh_is_read "$@"
 }
 
 # True for gh invocations that only read GitHub state. Those may use the
@@ -101,10 +110,7 @@ factory_gh_real() {
     return 127
   }
   # Installation tokens expire after an hour; long sessions fall back.
-  if [[ -n "${FACTORY_READ_TOKEN:-}" ]] \
-    && (( $(date +%s) < ${FACTORY_READ_TOKEN_EXPIRES:-0} )) \
-    && ! factory_gh_reads_workflow_budget "$@" \
-    && factory_gh_is_read "$@"; then
+  if factory_gh_uses_read_token "$@"; then
     FACTORY_GH_SHIM_DEPTH=$((depth + 1)) GH_TOKEN="$FACTORY_READ_TOKEN" "$real" "$@"
   else
     FACTORY_GH_SHIM_DEPTH=$((depth + 1)) "$real" "$@"

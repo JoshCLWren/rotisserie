@@ -26,7 +26,7 @@ def _meter(tmp_path: Path, *args: str) -> str:
     log = tmp_path / "calls.log"
     env = {**os.environ, "FACTORY_GH_CALL_LOG": str(log), "FACTORY_REAL_GH": "/bin/true"}
     subprocess.run(["bash", str(METER), *args], check=True, env=env)
-    return log.read_text().splitlines()[-1].split("\t", 1)[1]
+    return log.read_text().splitlines()[-1].split("\t")[1]
 
 
 def test_meter_normalizes_endpoints_and_methods(tmp_path: Path) -> None:
