@@ -87,10 +87,29 @@ def remove_agent_labels(github: GitHub, number: int, *, keep: str = "") -> list[
     return removed
 
 
+COMMENTS = "comments(last:100){nodes{body url}}"
+RECENT = (
+    "query($owner:String!,$name:String!,$number:Int!){repository(owner:$owner,name:$name)"
+    "{issueOrPullRequest(number:$number){... on Issue{" + COMMENTS + "}"
+    "... on PullRequest{" + COMMENTS + "}}}}"
+)
+
+
 def _posted(github: GitHub, number: int, marker: str) -> str:
-    for row in items(github.repo_api(f"issues/{number}/comments?per_page=100")):
+    """The newest comments, since factory PRs carry hundreds of bot comments."""
+    owner, name = github.repo.split("/", 1)
+    raw = github.gh(
+        "api", "graphql", "-f", f"query={RECENT}",
+        "-f", f"owner={owner}", "-f", f"name={name}", "-F", f"number={number}",
+    )  # fmt: skip
+    try:
+        found = json.loads(raw)
+    except ValueError:
+        return ""
+    node = obj(obj(obj(obj(found).get("data")).get("repository")).get("issueOrPullRequest"))
+    for row in items(obj(node.get("comments")), "nodes"):
         if marker in string(row, "body"):
-            return string(row, "html_url")
+            return string(row, "url")
     return ""
 
 
@@ -108,6 +127,7 @@ def assign(
     """Claim, label and brief. Nothing is labelled when the controller refuses the claim."""
     _, number = claimops.parse_target(target)
     agent = check_agent(agent)
+    chosen = (kind or "custom") if task.strip() else (kind or assign_task.kind_for(github, target))
     answer = claimops.claim(github, clock, target, wait=wait, timeout=timeout)
     status = str(answer.get("status") or "unknown")
     data: dict[str, object] = {
@@ -120,9 +140,9 @@ def assign(
     if status not in HELD:
         return {**data, "status": "refused", "reason": answer.get("reason") or status}
     if task.strip():
-        data["kind"] = kind or "custom"
+        data["kind"] = chosen
     else:
-        data["kind"], task = assign_task.build(github, target, kind)
+        data["kind"], task = assign_task.build(github, target, chosen)
     label = PREFIX + agent
     data["label_created"] = _ensure_label(github, label)
     data["replaced"] = remove_agent_labels(github, number, keep=label)

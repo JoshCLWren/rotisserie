@@ -11,7 +11,7 @@ from typing import Any
 from rotisserie.factory_console import runtime
 from rotisserie.factory_console.github import GitHub, GitHubError, obj, string
 from rotisserie.factory_console.service import checks, conflicts
-from rotisserie.factory_console.service.external_target import action_for
+from rotisserie.factory_console.service.external_checks import _required_checks_outcome
 
 KINDS = ("implement", "review", "review-findings", "ci-repair", "merge-conflict")
 MAX_CRITERIA = 10
@@ -87,12 +87,34 @@ def _issue(github: GitHub, pr: dict[str, Any], number: int) -> tuple[int | None,
     return int(link), string(issue, "body")
 
 
+class NoDefaultTask(ValueError):
+    """The PR's stage asks for no outside work, so the owner must name the task."""
+
+
 def stage_kind(github: GitHub, kind: str, number: int, item: dict[str, Any]) -> str:
     if kind == "issue":
         return "implement"
-    if string(item, "mergeable_state") == "dirty":
+    labels = runtime.module("factory_work_policy").labels_of(item)
+    if string(item, "mergeable_state") == "dirty" or "factory:merge-conflict" in labels:
         return "merge-conflict"
-    return action_for(github, kind, number, item, actor="")
+    if "factory:changes-requested" in labels:
+        return "review-findings"
+    if "factory:ci" in labels and _required_checks_outcome(github, number) == "failed":
+        return "ci-repair"
+    if "factory:review" in labels:
+        return "review"
+    stage = runtime.module("factory_work_policy").stage_of(labels) or "no factory stage"
+    raise NoDefaultTask(
+        f"PR #{number} is at {stage}, which has no default task; pass --kind or --task"
+    )
+
+
+def kind_for(github: GitHub, target: str) -> str:
+    noun, _, raw = target.partition(":")
+    number = int(raw)
+    if noun == "issue":
+        return "implement"
+    return stage_kind(github, noun, number, obj(github.repo_api(f"pulls/{number}")))
 
 
 def _details(github: GitHub, kind: str, number: int) -> list[str]:

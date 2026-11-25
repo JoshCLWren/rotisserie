@@ -8,6 +8,7 @@ from pathlib import Path
 from rotisserie.factory_console.commands._shared import EXIT_OK, Outcome, _rows
 from rotisserie.factory_console.commands.why import _bridge_failed, _show_bridge
 from rotisserie.factory_console.context import Context, UsageError
+from rotisserie.factory_console.github import GitHubError
 from rotisserie.factory_console.service import assign, bridge, claimops, labelclaims, labels
 from rotisserie.factory_console.tracker import EXIT_CODES, Result
 from rotisserie.factory_console.ui import Console
@@ -62,7 +63,13 @@ def cmd_finish(context: Context, arguments: argparse.Namespace) -> Outcome:
         timeout=float(arguments.timeout),
     )
     context.console.finish()
-    data["agent_labels_removed"] = removed = assign.remove_agent_labels(context.github, number)
+    try:
+        removed = assign.remove_agent_labels(context.github, number)
+    except GitHubError as exc:
+        removed = []
+        data["agent_labels_error"] = str(exc)
+        context.console.warn(f"Could not remove the agent:* labels: {exc}")
+    data["agent_labels_removed"] = removed
     for name in removed:
         context.console.line(f"  Removed {name}")
     return _show_claim_answer(context.console, data)

@@ -1068,7 +1068,9 @@ review-findings or implement. It adds the files main also changed (as
 `baste conflicts` shows them), the failing checks (as `baste checks` shows
 them) and the linked issue's acceptance criteria. Each task tells the agent
 to put a `Model:` line on its commits or review, and to end with
-`baste finish`. When the controller refuses the claim, nothing is labelled.
+`baste finish`. A PR at another stage (building, ready or blocked) has no
+default task, so `assign` refuses it unless you pass `--kind` or `--task`.
+When the controller refuses the claim, nothing is labelled.
 A repeated `assign` with the same task does not post it again. The web UI's
 Item tracker has Assign to agent and Agent holds.
 

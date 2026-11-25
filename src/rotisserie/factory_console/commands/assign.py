@@ -6,7 +6,7 @@ from pathlib import Path
 from rotisserie.factory_console.commands._shared import EXIT_OK, Outcome
 from rotisserie.factory_console.commands.pause import paused_refusal
 from rotisserie.factory_console.context import Context, UsageError
-from rotisserie.factory_console.service import assign, claimops
+from rotisserie.factory_console.service import assign, assign_task, claimops
 from rotisserie.factory_console.tracker import EXIT_CODES, Result
 
 MAX_TASK = 20000
@@ -39,16 +39,20 @@ def cmd_assign(context: Context, arguments: argparse.Namespace) -> Outcome:
         return refusal
     console = context.console
     console.waiting(f"Claiming {arguments.what} for agent:{agent}")
-    data = assign.assign(
-        context.github,
-        context.clock,
-        arguments.what,
-        agent,
-        task=task,
-        kind=arguments.kind or "",
-        wait=not arguments.no_wait,
-        timeout=float(arguments.timeout),
-    )
+    try:
+        data = assign.assign(
+            context.github,
+            context.clock,
+            arguments.what,
+            agent,
+            task=task,
+            kind=arguments.kind or "",
+            wait=not arguments.no_wait,
+            timeout=float(arguments.timeout),
+        )
+    except assign_task.NoDefaultTask as exc:
+        console.finish()
+        raise UsageError(str(exc)) from None
     console.finish()
     if data["status"] != "assigned":
         console.warn(f"{arguments.what}: not assigned; the claim was {data.get('reason')}")

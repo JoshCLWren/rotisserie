@@ -14,7 +14,7 @@ from rotisserie import control_contract as contract
 from rotisserie.factory_console.commands.assign import cmd_assign, cmd_assigned
 from rotisserie.factory_console.commands.claims import cmd_finish
 from rotisserie.factory_console.context import Context, UsageError
-from rotisserie.factory_console.github import JSON, GitHub, GitHubNotFoundError
+from rotisserie.factory_console.github import JSON, GitHub, GitHubError, GitHubNotFoundError
 from rotisserie.factory_console.service import assign, assign_task
 from rotisserie.factory_console.tracker import Clock, Result
 from rotisserie.factory_console.ui import Console, Prompt
@@ -30,8 +30,13 @@ class FakeGitHub(GitHub):
         self.known = set(known or ())
         self.comments: list[dict[str, Any]] = []
         self.writes: list[tuple[str, str, dict[str, str]]] = []
+        self.stage = "factory:review"
 
     def gh(self, *args: str, stdin: str | None = None, allow_exit_one: bool = False) -> str:
+        if args[:2] == ("api", "graphql") and "comments(last:100)" in args[3]:
+            nodes = [{"body": row["body"], "url": row["html_url"]} for row in self.comments]
+            item = {"comments": {"nodes": nodes}}
+            return json.dumps({"data": {"repository": {"issueOrPullRequest": item}}})
         if args[:2] == ("api", "graphql"):
             nodes = [
                 {"createdAt": "2026-11-25T15:16:00Z", "label": {"name": "agent:claude"}},
@@ -92,7 +97,7 @@ class FakeGitHub(GitHub):
             return {
                 "number": 7, "state": "open", "title": "Fix roll faces", "mergeable_state": "clean",
                 "body": "Closes #5", "head": {"ref": "factory/42-5-roll-faces", "sha": "a" * 40},
-                "labels": [{"name": name} for name in sorted(self.labels | {"factory:review"})],
+                "labels": [{"name": name} for name in sorted(self.labels | {self.stage})],
                 "user": {"login": "factory-bot"},
             }  # fmt: skip
         if path == "issues/5":
@@ -235,3 +240,41 @@ def test_the_control_rooms_send_assign_pause_and_resume() -> None:
     ):
         with pytest.raises(contract.InvalidRequest):
             contract.write_command(bad)
+
+
+def test_a_pr_stage_without_outside_work_needs_a_named_task() -> None:
+    github = FakeGitHub(labels=set())
+    github.stage = "factory:ready"
+    ctx, _ = context(github)
+    with pytest.raises(UsageError, match="factory:ready, which has no default task"):
+        cmd_assign(ctx, arguments())
+    assert github.writes == []
+
+
+def test_finish_still_reports_when_the_agent_label_cannot_be_removed(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from rotisserie.factory_console.service import claimops
+
+    monkeypatch.setattr(
+        claimops, "finish", lambda *a, **k: {"status": "released", "target": "pr:7"}
+    )
+
+    def broken(*args: object, **kwargs: object) -> list[str]:
+        raise GitHubError("GitHub request failed: HTTP 502")
+
+    monkeypatch.setattr(assign, "remove_agent_labels", broken)
+    ctx, stream = context(FakeGitHub(labels={"agent:claude"}))
+    outcome = cmd_finish(ctx, argparse.Namespace(what="pr:7", no_wait=True, timeout=600))
+    assert outcome.result == Result.COMPLETED
+    assert "HTTP 502" in str(outcome.data["agent_labels_error"])
+    assert "Could not remove the agent:* labels" in stream.getvalue()
+
+
+def test_status_turning_and_recap_show_the_pause_first() -> None:
+    import inspect
+
+    from rotisserie.factory_console.commands import recap, status, turning
+
+    for command in (status.cmd_status, turning.cmd_turning, recap.cmd_recap):
+        assert "show_pause(context" in inspect.getsource(command), command.__name__
