@@ -5,6 +5,7 @@ import re
 from datetime import datetime, timedelta
 
 from rotisserie.factory_console.commands._shared import EXIT_OK, TARGET, Outcome, _split_target
+from rotisserie.factory_console.commands.pause import show_pause
 from rotisserie.factory_console.context import Context, UsageError
 from rotisserie.factory_console.github import obj, string
 from rotisserie.factory_console.tracker import EXIT_CODES, Result, Tracker
@@ -15,6 +16,8 @@ from rotisserie.factory_console.work import Item, current_work, lookup, one_per_
 def cmd_status(context: Context, arguments: argparse.Namespace) -> Outcome:
     console = context.console
     now = context.clock.now()
+    paused: dict[str, object] = {}
+    show_pause(context, paused)
     work = current_work(context.github)
     jobs = one_per_worker(work)
     rows = [_work_row(item, now) for item in jobs]
@@ -46,7 +49,8 @@ def cmd_status(context: Context, arguments: argparse.Namespace) -> Outcome:
                 else None,
             }
             for item in work
-        ]
+        ],
+        **paused,
     }
     return Outcome(Result.COMPLETED, EXIT_OK, data)
 

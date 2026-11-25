@@ -1050,6 +1050,48 @@ refuses that review. `claim`, `finish` and `labels --via github` take
 GitHub failure now names the request that failed (`failed_request` in
 `--json`), without field values.
 
+### Handing an item to an outside agent
+
+```bash
+baste assign pr:N --agent claude                 # claim, label agent:claude, post the task
+baste assign pr:N --agent chatgpt --task-file task.md
+baste assign issue:N --agent freebuff --kind implement
+baste assigned                                   # who holds what, and for how long
+baste finish pr:N                                # the agent ends it; removes agent:NAME too
+```
+
+`assign` reuses your label claim, so factory workers stay off the item. Then
+it adds the `agent:NAME` label (it creates the label when it is missing),
+removes any other `agent:*` label, and posts one task comment. Without
+`--task` the task follows the item's stage: review, merge-conflict, ci-repair,
+review-findings or implement. It adds the files main also changed (as
+`baste conflicts` shows them), the failing checks (as `baste checks` shows
+them) and the linked issue's acceptance criteria. Each task tells the agent
+to put a `Model:` line on its commits or review, and to end with
+`baste finish`. When the controller refuses the claim, nothing is labelled.
+A repeated `assign` with the same task does not post it again. The web UI's
+Item tracker has Assign to agent and Agent holds.
+
+### Pausing the factory for maintenance
+
+```bash
+baste pause --reason "store migration"   # turn off dispatch, claims and state writers
+baste resume                             # turn back on what pause turned off
+```
+
+`pause` turns off the dispatcher, dispatch recovery, the compatibility
+dispatcher, the roster successor, the label and external claim controllers,
+the runtime observer, check projection and the status pages. It records the
+reason, the time and the list in the `FACTORY_PAUSED` repository variable.
+`status`, `turning` and `recap` then start with "paused since TIME: reason".
+Running work is not cancelled. `resume` turns on only the workflows in that
+list, so a workflow that was already off stays off, and it lists each one.
+Both need your own `gh` login with the workflow scope
+(`gh auth refresh -s workflow`). A GitHub Actions token cannot write the
+variable, so the hosted control room's Pause and Resume buttons fail with
+that message. While paused, `assign` refuses, because no claim controller
+answers.
+
 ## Other front ends
 
 The console's logic lives in `rotisserie.factory_console.service`, which never

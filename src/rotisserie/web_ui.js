@@ -47,7 +47,7 @@ async function act(body,source,resumed){
  if(state.mutating)return;
  state.mutating=true;state.lastJob=null;
  const button=source&&source.tagName==="BUTTON"?source:null;
- const operation=({claim:"Requesting claim",finish:"Finishing claim",labels:"Starting label doctor",incident_start:"Starting incident",incident_stop:"Ending incident",provider_switch:"Switching provider",model_switch:"Switching model",run:"Submitting worker request",unstick:"Unblocking work",cancel:"Stopping worker",sync:"Synchronizing PR",doctor_fix:"Applying safe repairs",release_expired:"Releasing expired leases",settings:"Saving setting",close:"Closing pull request",allow_self_review:"Allowing self-review",backoffs_reset:"Resetting quota backoffs",store_migrate:"Starting store migration",schema_apply:"Applying the store schema",prioritize:"Setting priority"})[body.operation]||"Applying change";
+ const operation=({claim:"Requesting claim",finish:"Finishing claim",labels:"Starting label doctor",incident_start:"Starting incident",incident_stop:"Ending incident",provider_switch:"Switching provider",model_switch:"Switching model",run:"Submitting worker request",unstick:"Unblocking work",cancel:"Stopping worker",sync:"Synchronizing PR",doctor_fix:"Applying safe repairs",release_expired:"Releasing expired leases",settings:"Saving setting",close:"Closing pull request",allow_self_review:"Allowing self-review",backoffs_reset:"Resetting quota backoffs",assign:"Assigning to agent",pause:"Pausing the factory",resume:"Resuming the factory",store_migrate:"Starting store migration",schema_apply:"Applying the store schema",prioritize:"Setting priority"})[body.operation]||"Applying change";
  if(button){button.disabled=true;button.classList.add("is-loading");}
  el("operation-status").textContent=operation+"…";
  el("message").className="message";
@@ -453,6 +453,10 @@ el("incident-start").onclick=()=>{const number=el("incident-number").value;if(!/
 el("item-claim").onclick=()=>itemWrite("claim","Claim");
 el("item-estimate-neon").onclick=estimateNeon;
 el("item-finish").onclick=()=>itemWrite("finish","End your claim on");
+el("item-assign").onclick=()=>{const t=itemTarget(),agent=el("item-agent").value.trim();if(!t||!agent){notice("Enter an item number and an agent name.",true);return}if(window.confirm("Claim "+t+" as you and hand it to agent:"+agent+" with the task for its current stage?"))act({operation:"assign",target:t,agent},el("item-assign"))};
+el("item-assigned").onclick=async()=>{el("item-content").innerHTML=empty("Reading agent holds…");try{const d=ok(await get("assigned"));el("item-content").innerHTML=sourceNote(d)+((d.assigned||[]).map(x=>'<div class="item"><div class="item-title">'+h(x.target)+' · agent:'+h(x.agent)+' · '+h(x.held_for)+'</div><div class="meta">'+h(x.title)+'</div></div>').join("")||empty("No item is held by an outside agent."))}catch(err){el("item-content").innerHTML=empty(err.message)}};
+el("factory-pause").onclick=()=>{const reason=el("pause-reason").value.trim();if(!reason){notice("Enter why the factory is paused.",true);return}if(window.confirm("Turn off factory dispatch, claims and state-writing workflows? Running work continues."))act({operation:"pause",reason},el("factory-pause"))};
+el("factory-resume").onclick=()=>{if(window.confirm("Turn the paused factory workflows back on?"))act({operation:"resume"},el("factory-resume"))};
 el("labels-dry-run").onclick=()=>act({operation:"labels",mode:"dry-run"},el("labels-dry-run"));
 el("labels-repair").onclick=()=>{if(window.confirm("Start a label repair run? It changes labels on the repository."))act({operation:"labels",mode:"repair"},el("labels-repair"))};
 el("unstick").onclick=()=>act({operation:"unstick"},el("unstick"));

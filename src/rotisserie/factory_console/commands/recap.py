@@ -4,6 +4,7 @@ import argparse
 
 from rotisserie.factory_console.commands._shared import EXIT_OK, Outcome
 from rotisserie.factory_console.commands.parser_insight import _common
+from rotisserie.factory_console.commands.pause import show_pause
 from rotisserie.factory_console.commands.status import parse_since
 from rotisserie.factory_console.commands.turning import decorate
 from rotisserie.factory_console.context import Context
@@ -165,5 +166,6 @@ def cmd_recap(context: Context, arguments: argparse.Namespace) -> Outcome:
     context.console.waiting("Reading the factory's night")
     data = recap.recap(context.github, since=start, now=now, clock=context.clock).to_dict()
     context.console.finish()
+    show_pause(context, data)
     render(context.console, data)
     return Outcome(Result.COMPLETED, EXIT_OK, data)

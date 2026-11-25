@@ -8,7 +8,7 @@ from pathlib import Path
 from rotisserie.factory_console.commands._shared import EXIT_OK, Outcome, _rows
 from rotisserie.factory_console.commands.why import _bridge_failed, _show_bridge
 from rotisserie.factory_console.context import Context, UsageError
-from rotisserie.factory_console.service import bridge, claimops, labelclaims, labels
+from rotisserie.factory_console.service import assign, bridge, claimops, labelclaims, labels
 from rotisserie.factory_console.tracker import EXIT_CODES, Result
 from rotisserie.factory_console.ui import Console
 
@@ -52,7 +52,7 @@ def cmd_claim(context: Context, arguments: argparse.Namespace) -> Outcome:
 
 
 def cmd_finish(context: Context, arguments: argparse.Namespace) -> Outcome:
-    claimops.parse_target(arguments.what)
+    _, number = claimops.parse_target(arguments.what)
     context.console.waiting(f"Finishing {arguments.what} and waiting for the hand-off")
     data = claimops.finish(
         context.github,
@@ -62,6 +62,9 @@ def cmd_finish(context: Context, arguments: argparse.Namespace) -> Outcome:
         timeout=float(arguments.timeout),
     )
     context.console.finish()
+    data["agent_labels_removed"] = removed = assign.remove_agent_labels(context.github, number)
+    for name in removed:
+        context.console.line(f"  Removed {name}")
     return _show_claim_answer(context.console, data)
 
 

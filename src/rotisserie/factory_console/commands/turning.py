@@ -8,6 +8,7 @@ from datetime import datetime, timedelta
 
 from rotisserie.factory_console.commands._shared import EXIT_OK, Outcome
 from rotisserie.factory_console.commands.parser_insight import _common
+from rotisserie.factory_console.commands.pause import show_pause
 from rotisserie.factory_console.commands.status import parse_since
 from rotisserie.factory_console.context import Context, UsageError
 from rotisserie.factory_console.service import turning
@@ -234,6 +235,7 @@ def cmd_turning(context: Context, arguments: argparse.Namespace) -> Outcome:
         console.waiting("Checking whether the factory is turning")
         data = check()
         console.finish()
+        show_pause(context, data)
         render(console, data, context.clock.now())
         return Outcome(Result.COMPLETED, EXIT_OK, data)
     changes: list[dict[str, object]] = []
