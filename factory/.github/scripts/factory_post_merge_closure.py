@@ -43,6 +43,7 @@ from datetime import datetime, timezone
 
 import factory_implementation_delivery as implementation_delivery
 import factory_post_merge_closure_github as github
+from factory_merge_linkage import explain, linkage
 from factory_post_merge_closure_policy import (
     ACTIVE_OWNER_RE,
     CLOSED_STATE,
@@ -70,6 +71,7 @@ SELF_TEST_MODULES = (
     "test_factory_post_merge_closure_sweep",
     "test_factory_post_merge_closure_reopen",
     "test_factory_post_merge_closure_person_reopen",
+    "test_factory_merge_linkage",
 )
 
 
@@ -116,6 +118,7 @@ def close_merged_pr_issue(
     *,
     dry_run: bool = False,
     require_quiescent: bool = False,
+    info: dict[str, str] | None = None,
 ) -> str:
     """Close the issue delivered by one merged factory PR.
 
@@ -127,6 +130,7 @@ def close_merged_pr_issue(
             it re-examines old merges without fresh gate verification; direct
             post-merge closure omits it because the exact-head gates were just
             verified for the delivered scope.
+        info: The PR view when the caller already read it.
 
     Returns:
         One of ``closed``, ``already-closed``, ``no-linked-issue``,
@@ -136,7 +140,7 @@ def close_merged_pr_issue(
         ``not-delivered:<reason>``, ``delivery-unverified:<reason>``,
         ``open-dependency`` or ``open-dependency: #N``, or ``dry-run:<action>``.
     """
-    info = github._pr_info(pr_number)
+    info = info or github._pr_info(pr_number)
     issue_number = linked_issue(info["branch"], info["body"])
     if issue_number is None:
         return "no-linked-issue"
@@ -339,6 +343,27 @@ def close_merged_pr_issue(
     return "closed"
 
 
+def decide(
+    pr_number: int, *, dry_run: bool = False, require_quiescent: bool = False
+) -> tuple[str, str]:
+    """Run closure for one merged PR and explain the decision.
+
+    Args:
+        pr_number: The merged PR number.
+        dry_run: When True, report the intended action without mutating GitHub.
+        require_quiescent: Passed through to ``close_merged_pr_issue``.
+
+    Returns:
+        The closure outcome and one plain line naming the issue and the reason.
+    """
+    info = github._pr_info(pr_number)
+    outcome = close_merged_pr_issue(
+        pr_number, dry_run=dry_run, require_quiescent=require_quiescent, info=info
+    )
+    link = linkage(info["branch"], info["body"], info.get("title", ""))
+    return outcome, explain(pr_number, outcome, link)
+
+
 def sweep_stranded_closures(*, dry_run: bool = False, max_age_hours: int = SWEEP_MAX_AGE_HOURS) -> list[str]:
     """Heal issues stranded open by merges that predate direct closure.
 
@@ -370,8 +395,8 @@ def sweep_stranded_closures(*, dry_run: bool = False, max_age_hours: int = SWEEP
         merged_at = pr.get("mergedAt")
         if not merged_within_age(str(merged_at) if merged_at else None, now, max_age_hours):
             continue
-        outcome = close_merged_pr_issue(pr_number, dry_run=dry_run, require_quiescent=True)
-        outcomes.append(f"PR {pr_number}: {outcome}")
+        _outcome, line = decide(pr_number, dry_run=dry_run, require_quiescent=True)
+        outcomes.append(line)
     return outcomes
 
 
@@ -406,7 +431,9 @@ def main() -> int:
 
     if args.pr is None:
         parser.error("--pr or --sweep is required unless --self-test is used")
-    print(close_merged_pr_issue(args.pr, dry_run=args.dry_run))
+    outcome, line = decide(args.pr, dry_run=args.dry_run)
+    print(line, file=sys.stderr)
+    print(outcome)
     return 0
 
 

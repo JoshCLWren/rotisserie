@@ -120,6 +120,19 @@ jobs:
         run: |
           python3 .github/scripts/factory_post_merge_closure.py --self-test
 
+      # Runs before the main-health gate: a pending main skips the drain step,
+      # and person-merged PRs are reached only by this sweep.
+      - name: Close issues of recently merged factory PRs
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -Eeuo pipefail
+          echo 'Sweeping recently merged factory PRs for stranded issue closures'
+          python3 .github/scripts/factory_post_merge_closure.py --sweep || {
+            echo 'Stranded-closure sweep failed; retrying on the next drain' >&2
+          }
+
       - name: Reconcile serialized migration finalization lane
         shell: bash
         env:
@@ -318,11 +331,6 @@ jobs:
             else
               echo "Could not dispatch verification of the resulting main; the next drain dispatches it" >&2
             fi
-          }
-
-          echo 'Sweeping recently merged factory PRs for stranded issue closures'
-          python3 "$closure_script" --sweep || {
-            echo 'Stranded-closure sweep failed; retrying on the next drain' >&2
           }
 
           mapfile -t ready_prs < <(

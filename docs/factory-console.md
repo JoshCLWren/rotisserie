@@ -778,6 +778,13 @@ looping or parked PR under "Needs you" with
 the reason and the next step: review it yourself, merge it, or force one more
 try with `baste run --target pr:N`.
 
+`baste recap` also lists, under "Needs you", each factory PR merged in the
+window whose issue is still open. Merge closure keeps an issue open when the PR
+says it is only part of the issue (`Part of #N.` or "does not close #N"), or
+names the issue only in its title. That issue stays claimable, so a worker can
+take it again. The row says which case applies and how to close the issue when
+the merge finished it. Both control rooms show the same rows.
+
 ## Is the factory itself healthy?
 
 `baste doctor` runs the checks behind problems that were first

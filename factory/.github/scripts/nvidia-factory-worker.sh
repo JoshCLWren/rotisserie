@@ -386,7 +386,7 @@ stage_trusted_review_controller() {
     trusted_dir="$(mktemp -d "${RUNNER_TEMP:-/tmp}/factory-review-controller.XXXXXX")"
     cp .github/scripts/factory-review-controller.py "$trusted_dir/factory-review-controller.py"
     cp .github/scripts/factory_adopter.py "$trusted_dir/factory_adopter.py"
-    cp .github/scripts/factory_post_merge_closure.py .github/scripts/factory_post_merge_closure_policy.py .github/scripts/factory_post_merge_closure_github.py .github/scripts/factory_review_exclusion.py "$trusted_dir/"
+    cp .github/scripts/factory_post_merge_closure.py .github/scripts/factory_post_merge_closure_policy.py .github/scripts/factory_post_merge_closure_github.py .github/scripts/factory_merge_linkage.py .github/scripts/factory_review_exclusion.py "$trusted_dir/"
     cp .github/scripts/factory_main_health.py "$trusted_dir/factory_main_health.py"
     cp .github/scripts/factory_review_policy.py "$trusted_dir/factory_review_policy.py"
     # Pin model identity to trusted main, never to the adopted PR checkout.

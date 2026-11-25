@@ -67,6 +67,7 @@ class Sources:
     work: list[Item] = field(default_factory=list)
     loops: list[dict[str, object]] = field(default_factory=list)
     parked: list[dict[str, object]] = field(default_factory=list)
+    open_after_merge: list[dict[str, object]] = field(default_factory=list)
     unread: list[str] = field(default_factory=list)
 
 
@@ -159,6 +160,8 @@ def needs_you(sources: Sources) -> list[dict[str, object]]:
                 f"When you are done, run `baste finish {kind}:{number}`.",
                 string(item, "html_url"),
             )
+    for row in sources.open_after_merge:
+        add("merged-open", *_merged_open_line(row), str(row.get("url") or ""))
     quota = Counter(row.provider or "unknown" for row in sources.failures if _out_of_quota(row))
     for provider, count in quota.most_common():
         add(
@@ -195,6 +198,27 @@ def _loop_rows(sources: Sources, pulls: dict[int, Obj], add: Callable[..., None]
             f"`baste run --target pr:{number}`.",
             str(row.get("url") or ""),
         )
+
+
+def _merged_open_line(row: dict[str, object]) -> tuple[str, str]:
+    issue_number = row["issue"] if isinstance(row["issue"], int) else None
+    pr_number = row["pr"] if isinstance(row["pr"], int) else None
+    issue = named(str(row["issue_title"]), issue_number)
+    pr = named(str(row["pr_title"]), pr_number)
+    if row["closes"]:
+        return (
+            f"{pr} merged, but {issue} is still open. Workers can take it again.",
+            "The next merge drain closes it. If a person reopened it, leave it open.",
+        )
+    how = (
+        "names it only in its title"
+        if row["kind"] == "title-only"
+        else "says it is only part of it"
+    )
+    return (
+        f"{pr} merged. It {how}, so {issue} stays open. Workers can take it again.",
+        f"If the merge finished it, close it: `gh issue close {issue_number}`.",
+    )
 
 
 def clearing(sources: Sources) -> list[dict[str, object]]:

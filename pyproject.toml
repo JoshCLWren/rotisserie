@@ -105,6 +105,7 @@ packages = ["src/rotisserie"]
 "factory/.github/scripts/factory_turso_usage.py" = "rotisserie/factory_console/factory_runtime/factory_turso_usage.py"
 "factory/.github/scripts/factory_dynamic_outcome.py" = "rotisserie/factory_console/factory_runtime/factory_dynamic_outcome.py"
 "factory/.github/scripts/factory_item_loop.py" = "rotisserie/factory_console/factory_runtime/factory_item_loop.py"
+"factory/.github/scripts/factory_merge_linkage.py" = "rotisserie/factory_console/factory_runtime/factory_merge_linkage.py"
 "factory/scripts/factory_eligibility.py" = "rotisserie/factory_console/factory_runtime/factory_eligibility.py"
 
 [tool.pytest.ini_options]

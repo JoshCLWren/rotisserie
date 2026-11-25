@@ -22,6 +22,7 @@ from rotisserie.factory_console.service import (
     failures,
     fleet,
     loops,
+    merged_open,
     reliability,
     review,
     self_heal,
@@ -156,6 +157,10 @@ def gather(
 
     def merged() -> None:
         sources.merged = search(github, f"repo:{github.repo} is:pr is:merged merged:>={iso}")
+        try:
+            sources.open_after_merge = merged_open.scan(github, sources.merged)
+        except READ_ERRORS:
+            sources.unread.append("issues left open by merges")
 
     def checks() -> None:
         sources.findings = doctor.run_checks(github, now=now, clock=clock)

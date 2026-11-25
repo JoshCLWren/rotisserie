@@ -61,7 +61,11 @@ class FactoryPostMergeClosureSweepTests(ClosureIssueMixin, unittest.TestCase):
                                     ):
                                         with patch.object(mod, "_close_issue") as mock_close:
                                             outcomes = sweep_stranded_closures(dry_run=True)
-        self.assertEqual(outcomes, ["PR 4024: open-dependency: #4008"])
+        self.assertEqual(
+            outcomes,
+            ["Post-merge closure: PR #4024 -> issue #4010: open-dependency: #4008 "
+             "(the PR body says it closes #4010)"],
+        )
         mock_close.assert_not_called()
 
     def test_sweep_closes_when_dependencies_complete(self) -> None:
@@ -111,8 +115,9 @@ class FactoryPostMergeClosureSweepTests(ClosureIssueMixin, unittest.TestCase):
                                     outcomes = sweep_stranded_closures(dry_run=True)
         self.assertEqual(
             outcomes,
-            ["PR 4034: dry-run:replace-labels-with"
-             "['enhancement', 'factory', 'ralph-status:done']+close"],
+            ["Post-merge closure: PR #4034 -> issue #4017: dry-run:replace-labels-with"
+             "['enhancement', 'factory', 'ralph-status:done']+close "
+             "(the PR body says it closes #4017)"],
         )
 
     def test_open_declared_dependency_blocks_closure_4017_4016(self) -> None:
