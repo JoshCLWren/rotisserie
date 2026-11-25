@@ -39,6 +39,7 @@ TABLES = (
     "factory_runtime_event_keys",
     "factory_state_events",
     "factory_model_attempt_daily",
+    "factory_cursor",
 )
 
 

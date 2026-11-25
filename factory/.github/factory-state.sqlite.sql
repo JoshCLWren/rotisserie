@@ -201,5 +201,16 @@ CREATE TABLE IF NOT EXISTS factory_model_attempt_daily (
     PRIMARY KEY (repo, day, source, model, outcome_class)
 ) STRICT;
 
+-- Small resumable cursors: a read watermark and the compact state that goes
+-- with it, such as trusted retry markers or the last outcome reconcile time.
+CREATE TABLE IF NOT EXISTS factory_cursor (
+    repo TEXT NOT NULL,
+    name TEXT NOT NULL,
+    cursor_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL,
+    detail TEXT NOT NULL DEFAULT '{}' CHECK (json_valid(detail)),
+    PRIMARY KEY (repo, name)
+) STRICT;
+
 INSERT OR IGNORE INTO _schema_version (version, applied_at) VALUES (1, unixepoch());
 INSERT OR IGNORE INTO _schema_version (version, applied_at) VALUES (2, unixepoch());

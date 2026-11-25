@@ -29,6 +29,7 @@ TABLES = {
     "factory_runtime_event_keys": ("repo", "run_id"),
     "factory_state_events": ("id",),
     "factory_model_attempt_daily": ("repo", "day", "source", "model", "outcome_class"),
+    "factory_cursor": ("repo", "name"),
 }
 
 
