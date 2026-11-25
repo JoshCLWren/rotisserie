@@ -4,8 +4,10 @@ The full reset (``reset_model_health``) and the quota-only reset clear every
 model in the repository. This one deletes the ``factory_model_health`` rows
 and the model-scoped ``factory_backoff`` rows of one model (optionally of one
 source) and returns each deleted row, so the operator sees what was cleared.
-Worker, provider and pool backoffs stay, and so does the repository's reset
-marker: a later failure of this model can still count recent history.
+Worker, provider and pool backoffs stay, retired (HTTP 410) records stay as the
+full reset keeps them, and so does the repository's reset marker: a later
+failure of this model can still count recent history. ``model`` may also be
+the ``source/model`` form that run titles print.
 """
 
 from __future__ import annotations
@@ -28,11 +30,14 @@ def reset_one_model(repo: str, model: str, source: str = "") -> dict[str, Any]:
     if source and not SOURCE_RE.fullmatch(source):
         raise ValueError("invalid source")
     params = {"repo": repo, "model": model, "source": source}
-    scope = "repo = :repo AND model = :model AND (:source = '' OR source = :source)"
+    scope = (
+        "repo = :repo AND (model = :model OR source || '/' || model = :model)"
+        " AND (:source = '' OR source = :source)"
+    )
     health, backoffs = core.store().batch(
         [
             (
-                f"DELETE FROM factory_model_health WHERE {scope}"
+                f"DELETE FROM factory_model_health WHERE status != 'retired' AND {scope}"
                 " RETURNING source, model, status, last_outcome, last_run_id",
                 params,
             ),

@@ -14,11 +14,13 @@ Clear one model's health bench and backoff rows, and nothing else.
   baste health reset nvidia/moonshotai/kimi-k3.1-pro --via github
   baste health reset MODEL --source nvidia --via github
 
-It deletes the model's factory_model_health rows and its model backoff rows
-(for every source, or only --source), and lists each row it deleted. Worker,
-provider, pool and quota cooldowns of other models stay. The repository's
-reset marker stays too, so a new failure of this model can still count its
-recent history. 'backoffs reset --quota-only' is the repository-wide reset.
+MODEL is the model ID as 'baste backoffs' shows it, or the source/model form
+that run titles print. It deletes the model's factory_model_health rows and
+its model backoff rows (for every source, or only --source), and lists each
+row it deleted. Worker, provider and pool cooldowns stay, retired (HTTP 410)
+records stay, and other models are untouched. The repository's reset marker
+stays too, so a new failure of this model can still count its recent history.
+'backoffs reset --quota-only' is the repository-wide reset.
 """
 
 
@@ -63,7 +65,9 @@ def cmd_health(context: Context, arguments: argparse.Namespace) -> Outcome:
         console.table(["Row", "Source", "State", "Last outcome"], rows)
     else:
         console.warn(f"Nothing was cleared for {model}{where}.")
-        console.line("  See what waits: baste backoffs --via github")
+        console.line(
+            "  Use the model ID that 'baste backoffs --via github' lists, or add --source."
+        )
     kept = data.get("worker_backoffs_kept")
     if isinstance(kept, int) and kept:
         console.line(f"  {kept} worker backoffs on this model were kept (baste backoffs).")

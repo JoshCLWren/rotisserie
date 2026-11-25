@@ -27,6 +27,7 @@ def test_only_the_named_model_is_cleared(env) -> None:
     support.health(db, repo, "nvidia", "kimi", "cooling", 1200)
     support.health(db, repo, "groq", "kimi", "cooling", 1200)
     support.health(db, repo, "nvidia", "other", "cooling", 1200)
+    support.health(db, repo, "cerebras", "kimi", "retired", None)
     support.backoff(db, repo, "model", source="nvidia", model="kimi", streak=5, retry_in=60)
     support.backoff(db, repo, "model", source="nvidia", model="other", retry_in=60)
     support.backoff(db, repo, "worker", worker="41", source="nvidia", model="kimi", retry_in=60)
@@ -38,7 +39,11 @@ def test_only_the_named_model_is_cleared(env) -> None:
     left = db.read(
         "SELECT source, model FROM factory_model_health WHERE repo = :r ORDER BY 1, 2", {"r": repo}
     )
-    assert left == [{"source": "groq", "model": "kimi"}, {"source": "nvidia", "model": "other"}]
+    assert left == [
+        {"source": "cerebras", "model": "kimi"},
+        {"source": "groq", "model": "kimi"},
+        {"source": "nvidia", "model": "other"},
+    ]
     kinds = db.read(
         "SELECT kind, model FROM factory_backoff WHERE repo = :r ORDER BY 1, 2", {"r": repo}
     )
@@ -48,9 +53,13 @@ def test_only_the_named_model_is_cleared(env) -> None:
         {"kind": "worker", "model": "kimi"},
     ]
     assert db.read("SELECT * FROM factory_repo_state WHERE repo = :r", {"r": repo}) == []
-    every_source = reset.reset_one_model(repo, "kimi")
-    assert [r["source"] for r in every_source["model_health_rows"]] == ["groq"]
+    titled = reset.reset_one_model(repo, "groq/kimi")
+    assert [r["source"] for r in titled["model_health_rows"]] == ["groq"]
     assert reset.reset_one_model(repo, "kimi")["model_health_rows"] == []
+    retired = db.read(
+        "SELECT status FROM factory_model_health WHERE repo = :r AND model = 'kimi'", {"r": repo}
+    )
+    assert retired == [{"status": "retired"}]
 
 
 @pytest.mark.parametrize("model", ["", "a b", "x" * 181])

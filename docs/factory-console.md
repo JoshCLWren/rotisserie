@@ -1100,8 +1100,10 @@ baste health reset MODEL --source nvidia --via github
 
 `health reset` deletes one model's health bench rows and model backoff rows,
 for every source or only `--source`, through the trusted model health reset
-workflow. It lists each deleted row. Worker, provider, pool and quota
-cooldowns stay, and so does every other model's state. The repository's reset
+workflow. MODEL is the ID that `baste backoffs` lists, or the `source/model`
+form that run titles print. It lists each deleted row. Worker, provider and
+pool cooldowns stay, retired (HTTP 410) records stay, and so does every other
+model's state. The repository's reset
 marker stays too, so a new failure of this model can still count its recent
 failures. `backoffs reset --quota-only` is the repository-wide reset. An
 adopter whose reset caller predates the `model` input gets "re-run the
