@@ -45,10 +45,16 @@ def scan(github: GitHub, merged: list[Obj]) -> list[dict[str, object]]:
             continue
         owner = policy.owner_of(label_names(found))
         owned = owner not in (None, "factory:unowned")
-        unowned = {**found, "number": issue, "labels": [{"name": "factory:unowned"}] + [
-            label for label in items(found, "labels")
-            if not policy.OWNER_RE.fullmatch(string(label, "name"))
-        ]}
+        unowned = {
+            **found,
+            "number": issue,
+            "labels": [{"name": "factory:unowned"}]
+            + [
+                label
+                for label in items(found, "labels")
+                if not policy.OWNER_RE.fullmatch(string(label, "name"))
+            ],
+        }
         if not policy.issue_is_static_candidate(unowned, set()):
             continue
         rows.append(
