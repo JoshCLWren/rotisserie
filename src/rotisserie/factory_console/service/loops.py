@@ -189,9 +189,9 @@ def parked(
         holds = [
             heal
             for heal in rules.heals(records, pr=number)
-            if heal["kind"] == rules.LOOP_PARKED and heal["head"] == head
+            if heal["kind"] in (rules.LOOP_PARKED, rules.LOOP_RELEASED) and heal["head"] == head
         ]
-        if holds:
+        if holds and holds[-1]["kind"] == rules.LOOP_PARKED:
             rows.append(
                 {
                     "number": number,

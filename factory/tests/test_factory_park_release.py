@@ -70,18 +70,21 @@ class Candidate:
 
 
 def test_released_drops_the_parked_label(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv("GITHUB_ACTOR", raising=False)
     calls: list[list[str]] = []
     monkeypatch.setattr(turso_loops, "release", lambda *_a: True)
     monkeypatch.setattr(holds.subprocess, "run", lambda args, **_k: calls.append(args))
     prs = [{"number": 12, "headRefOid": HEAD, "labels": [{"name": state.PARKED}]}]
     assert holds.released("o/r", Candidate(), prs) is True
-    assert calls and calls[0][-1].endswith("/issues/12/labels/factory%3Aparked")
+    assert calls[0][-1].startswith("body=<!-- ") and "kind-loop-released" in calls[0][-1]
+    assert calls[1][-1].endswith("/issues/12/labels/factory%3Aparked")
 
 
 def test_released_never_blocks_the_run(monkeypatch: pytest.MonkeyPatch) -> None:
     def broken(*_a: Any) -> bool:
         raise RuntimeError("store down")
 
+    monkeypatch.delenv("GITHUB_ACTOR", raising=False)
     monkeypatch.setattr(turso_loops, "release", broken)
     assert holds.released("o/r", Candidate(), [{"number": 12, "headRefOid": HEAD}]) is True
 
@@ -151,3 +154,42 @@ def test_closed_items_lose_every_state_label() -> None:
     }
     assert "is:closed" in hub.query and '"factory:parked"' in hub.query
     assert ("issues/5768/labels/factory%3Aparked", None) in hub.writes
+
+
+def test_a_wakeup_target_never_ends_a_park(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("GITHUB_ACTOR", "github-actions[bot]")
+
+    def forbidden(*_a: Any) -> bool:
+        raise AssertionError("an automatic wakeup must not release a park")
+
+    monkeypatch.setattr(turso_loops, "release", forbidden)
+    assert holds.released("o/r", Candidate(), [{"number": 12, "headRefOid": HEAD}]) is True
+
+
+def test_an_operator_forced_run_releases_the_park(monkeypatch: pytest.MonkeyPatch) -> None:
+    from tests.test_factory_item_loop import controller_with
+
+    controller, picked = controller_with(monkeypatch, lambda *_a, **_k: {})
+    seen: list[int] = []
+    monkeypatch.setattr(
+        controller.factory_dispatch_holds,
+        "released",
+        lambda _repo, candidate, _prs: seen.append(candidate.number) or True,
+    )
+    controller.assign_from_pool("6", operator_force=True)
+    assert seen == [picked[0].number]
+    seen.clear()
+    controller.assign_from_pool("6")
+    assert seen == []
+
+
+def test_the_sweep_parks_the_same_head_again_after_a_release() -> None:
+    import factory_self_heal_loops as loops
+    from tests.test_factory_item_loop import moment, pull, sweep
+
+    released = moment("2026-11-24T20:00:00Z")
+    store = Store({"pr:5766": {"at": released, "at_heads": set(), "released": released}})
+    hub, found = sweep(store, pull(5766))
+    assert [row["pr"] for row in found] == [5766]
+    assert store.events[0]["ref"] == f"review-{HEAD[:12]}-r{int(released.timestamp())}"
+    assert loops.park_ref("factory:review", HEAD, None) == f"review-{HEAD[:12]}"
