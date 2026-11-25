@@ -15,7 +15,12 @@ from types import ModuleType
 from typing import Any
 
 from rotisserie.factory_console import runtime
-from rotisserie.factory_console.github import GitHub, GitHubNotFoundError
+from rotisserie.factory_console.github import (
+    GitHub,
+    GitHubError,
+    GitHubNotFoundError,
+    GitHubRateLimitError,
+)
 from rotisserie.factory_console.service import fleet, providers
 from rotisserie.factory_console.service.labelclaims import _add, _remove
 
@@ -134,6 +139,16 @@ def _with_issue(github: GitHub, incident: Incident) -> Incident:
 
 def read(github: GitHub) -> list[Incident]:
     return [_with_issue(github, item) for item in state(providers.repository_variables(github))]
+
+
+def active_issues(github: GitHub) -> frozenset[int]:
+    """Issues of the active incidents; a failed read names none."""
+    try:
+        return frozenset(item.issue for item in read(github) if item.active)
+    except GitHubRateLimitError:
+        raise
+    except GitHubError, ValueError, KeyError, TypeError:
+        return frozenset()
 
 
 def _save(github: GitHub, incidents: Mapping[int, int]) -> None:

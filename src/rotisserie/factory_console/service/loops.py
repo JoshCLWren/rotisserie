@@ -10,7 +10,7 @@ one search and at most three comment pages for each of ``PARKED_LIMIT`` PRs.
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Collection, Mapping, Sequence
 from concurrent.futures import ThreadPoolExecutor
 from datetime import UTC, datetime, timedelta
 from types import ModuleType
@@ -28,7 +28,7 @@ from rotisserie.factory_console.github import (
     string,
     timestamp,
 )
-from rotisserie.factory_console.service import failures, review
+from rotisserie.factory_console.service import failures, incident, review
 from rotisserie.factory_console.service.report import search
 from rotisserie.factory_console.tracker import WORKER_WORKFLOW, Tracker, completed, run_version
 from rotisserie.factory_console.verdicts import outcome_class
@@ -36,10 +36,31 @@ from rotisserie.factory_console.verdicts import outcome_class
 LIMIT = 60
 PARKED_LIMIT = 10
 PARK_LOOKBACK = timedelta(days=30)
+INCIDENT_NEXT = (
+    "Incident work: the loop breaker does not hold it. `baste incident` lists incidents."
+)
 
 
 def rule() -> ModuleType:
     return runtime.module("factory_item_loop")
+
+
+def is_incident(pr: Mapping[str, Any], incident_issues: Collection[int]) -> bool:
+    return bool(incident_issues) and (
+        runtime.module("factory_incident").linked_issue(pr) in incident_issues
+    )
+
+
+def mark_incidents(
+    rows: Sequence[dict[str, object]], pulls: Sequence[Obj], incident_issues: Collection[int]
+) -> None:
+    """Flag each loop or park row whose PR is an active incident's work."""
+    by_number = {integer(pr, "number") or 0: pr for pr in pulls}
+    for row in rows:
+        pr = by_number.get(int(str(row.get("number") or 0)), {})
+        row["incident"] = is_incident(pr, incident_issues)
+        if row["incident"] and "target" in row:
+            row["next"] = INCIDENT_NEXT
 
 
 def read_run(tracker: Tracker, run: Obj) -> tuple[str, Any] | None:
@@ -81,6 +102,7 @@ def scan(
     runs: Sequence[Obj] | None = None,
     pulls: Sequence[Obj] | None = None,
     parked: Sequence[int] = (),
+    incident_issues: Collection[int] = (),
 ) -> list[dict[str, object]]:
     """Every looping open PR, worst first, with its title, link and runs."""
     module = rule()
@@ -126,11 +148,28 @@ def scan(
                 "owner": module.bypassed(label_names(pr)),
             }
         )
+    mark_incidents(rows, open_rows, incident_issues)
+    return rows
+
+
+def live(
+    github: GitHub, *, now: datetime, tracker: Tracker | None = None
+) -> list[dict[str, object]]:
+    """``scan`` over the open PRs, each row marked when it is an active incident's work."""
+    pulls = review.open_pulls(github)
+    rows = scan(github, now=now, tracker=tracker, pulls=pulls)
+    if rows:
+        mark_incidents(rows, pulls, incident.active_issues(github))
     return rows
 
 
 def parked(
-    github: GitHub, *, now: datetime, pulls: Sequence[Obj], limit: int = PARKED_LIMIT
+    github: GitHub,
+    *,
+    now: datetime,
+    pulls: Sequence[Obj],
+    limit: int = PARKED_LIMIT,
+    incident_issues: Collection[int] = (),
 ) -> list[dict[str, object]]:
     """Open PRs the factory parked at their current head, in any stage (the hold is still on)."""
     rules = runtime.module("factory_self_heal_rules")
@@ -159,12 +198,14 @@ def parked(
                     "text": holds[-1]["text"],
                 }
             )
+    mark_incidents(rows, pulls, incident_issues)
     return rows
 
 
 def summary(rows: Sequence[dict[str, object]]) -> str:
     if not rows:
         return ""
-    first = rows[0]
+    first = sorted(rows, key=lambda row: bool(row.get("incident")))[0]
     more = f" and {len(rows) - 1} more" if len(rows) > 1 else ""
-    return f"{first['title'] or first['target']} is looping{more}: {first['text']}"
+    state = "is incident work, not held" if first.get("incident") else "is looping"
+    return f"{first['title'] or first['target']} {state}{more}: {first['text']}"

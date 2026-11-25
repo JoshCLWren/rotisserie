@@ -32,6 +32,7 @@ from factory_work_policy_base import (
     stage_of,
 )
 from factory_incident import active as active_incidents
+from factory_incident import linked_issue as incident_issue_of
 from factory_work_policy_priority import (
     OVERRIDE_LABEL,
     Candidate,
@@ -336,7 +337,7 @@ def build_candidates(
                 head_contributors=head_contributors_from_pr(pr),
                 is_fork=pr.get('isCrossRepository') is True,
                 override=OVERRIDE_LABEL in labels,
-                incident=linked in incident_issues,
+                incident=incident_issue_of(pr) in incident_issues,
             )
         )
     return sorted(candidates, key=Candidate.sort_key)

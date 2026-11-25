@@ -30,7 +30,12 @@ from typing import Any
 from urllib.parse import quote
 
 from factory_settings import repository_variables
-from factory_work_policy_base import labels_of, linked_issue_from_branch, owner_of
+from factory_work_policy_base import (
+    labels_of,
+    linked_issue_from_branch,
+    linked_issue_from_pr,
+    owner_of,
+)
 
 INCIDENTS_VAR = "FACTORY_INCIDENTS"
 NOTES_VAR = "FACTORY_INCIDENT_NOTES"
@@ -40,6 +45,7 @@ MAX_ATTEMPTS = 6
 ENTRY_RE = re.compile(r"^([1-9][0-9]{0,8})(?::([1-9][0-9]?))?$")
 SUPERSEDED_MARKER = "factory-incident-superseded-v1"
 HELD_LABELS = frozenset({"factory:claimed", "factory:override"})
+CHECKPOINT_RE = re.compile(r"^factory/work-checkpoints/issue-([1-9][0-9]*)/")
 
 
 def parse(raw: str) -> dict[int, int]:
@@ -83,6 +89,33 @@ def active(
         if _is_open(issue) and LABEL in labels_of(dict(issue))
     }
     return {number: attempts for number, attempts in wanted.items() if number in live}
+
+
+def linked_issue(pr: Mapping[str, Any]) -> int | None:
+    """The issue a PR works on, for incident ranking and holds.
+
+    A checkpoint handoff PR (``factory/work-checkpoints/issue-N/...``) only
+    refers to its issue, so ``linked_issue_from_pr`` misses it.
+    """
+    head = pr.get("headRefName")
+    if head is None and isinstance(pr.get("head"), Mapping):
+        head = pr["head"].get("ref")
+    linked = linked_issue_from_pr({**pr, "headRefName": head})
+    if linked is not None:
+        return linked
+    match = CHECKPOINT_RE.match(str(head or ""))
+    return int(match.group(1)) if match else None
+
+
+def incident_prs(
+    prs: Iterable[Mapping[str, Any]], active_issues: Collection[int]
+) -> frozenset[int]:
+    """Open PRs linked to an active incident: owner-directed work no throttle holds."""
+    if not active_issues:
+        return frozenset()
+    return frozenset(
+        int(pr["number"]) for pr in prs if _is_open(pr) and linked_issue(pr) in active_issues
+    )
 
 
 def _attempt_prs(prs: Iterable[Mapping[str, Any]], number: int) -> list[Mapping[str, Any]]:

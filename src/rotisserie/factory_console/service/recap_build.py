@@ -178,6 +178,15 @@ def _loop_rows(sources: Sources, pulls: dict[int, Obj], add: Callable[..., None]
     for row in sources.loops:
         number = int(str(row.get("number") or 0))
         looping.add(number)
+        if row.get("incident"):
+            name = named(str(row.get("title") or ""), number)
+            add(
+                "incident",
+                f"{name} is incident work: {row.get('text')}",
+                str(row.get("next")),
+                str(row.get("url") or ""),
+            )
+            continue
         if row.get("owner"):
             continue
         state = " The factory parked it." if number in parked else ""
@@ -190,6 +199,15 @@ def _loop_rows(sources: Sources, pulls: dict[int, Obj], add: Callable[..., None]
         )
     for number, row in parked.items():
         if number in looping:
+            continue
+        if row.get("incident"):
+            name = named(str(row.get("title") or ""), number)
+            add(
+                "incident",
+                f"{name} is incident work: its loop park does not hold it.",
+                "`baste incident` lists incidents.",
+                str(row.get("url") or ""),
+            )
             continue
         add(
             "loop",

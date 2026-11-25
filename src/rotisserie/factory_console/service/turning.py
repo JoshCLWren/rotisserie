@@ -313,7 +313,7 @@ def gather(
         found.holds = hold_state(github)
 
     def looping() -> None:
-        found.loops = loops.scan(github, now=now, tracker=tracker)
+        found.loops = loops.live(github, now=now, tracker=tracker)
 
     steps: dict[str, Callable[[], None]] = {
         "worker runs": workers,
@@ -335,7 +335,9 @@ def gather(
     with ThreadPoolExecutor(max_workers=len(steps)) as pool:
         list(pool.map(attempt, steps))
     if found.loops and found.backlog.get("limit"):
-        looping_prs = frozenset(int(str(row["number"])) for row in found.loops)
+        looping_prs = frozenset(
+            int(str(row["number"])) for row in found.loops if not row.get("incident")
+        )
         try:
             found.backlog = backlog_state(github, now, looping_prs)
         except READ_ERRORS:

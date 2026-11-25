@@ -137,7 +137,7 @@ function renderTurning(d){const e=d.evidence||{},p=e.dispatcher_passes||[],f=e.c
  +recapRow("🍽️ Last outcome served: "+fmtDate(e.last_outcome_recorded))
  +p.map(x=>recapRow("🎛️ Dispatcher pass: "+x.eligible+" eligible, "+x.assigned+" assigned, "+x.none+" none",[fmtDate(x.at),reasonWords(x.none_reasons)].filter(Boolean).join(" · "),x.url)).join("")
  +recapRow("💥 Control failures in the last "+e.failure_window_minutes+"m: "+f.length,"Slowing at "+e.failure_threshold)+f.slice(0,5).map(x=>recapRow(x.workflow+(x.step?" at "+x.step:""),fmtDate(x.at),x.url)).join("")
- +recapRow("🔁 Looping items: "+lp.length)+lp.slice(0,5).map(x=>recapRow((x.title||x.target)+" (#"+x.number+"): "+x.text,x.next,x.url)).join("")
+ +recapRow("🔁 Looping items: "+lp.length)+lp.slice(0,5).map(x=>recapRow((x.title||x.target)+" (#"+x.number+")"+(x.incident?" [incident]":"")+": "+x.text,x.next,x.url)).join("")
  +(pr.read?recapRow("🧊 Providers cooling: "+(pr.cooling||[]).length+" of "+pr.sources,(pr.cooling||[]).join(", ")):"")
  +(b.open_prs!=null?recapRow("📦 Backlog: "+b.eligible_issues+" eligible issues, "+b.open_prs+" open factory PRs",b.limit_text||""):"")
  +(e.holds?recapRow("⏰ Expired holds: "+(e.holds.expired==null?"not readable here":e.holds.expired),e.holds.note||""):"")

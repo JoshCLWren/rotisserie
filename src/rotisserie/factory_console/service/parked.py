@@ -23,6 +23,7 @@ def stamp(
     review_backlog_limit: int,
     now: int,
     looping: frozenset[int] = frozenset(),
+    incident_issues: frozenset[int] = frozenset(),
 ) -> list[Obj]:
     policy = runtime.module("factory_work_policy")
     rows = [dict(row) for row in prs]
@@ -33,17 +34,25 @@ def stamp(
             "number": row.get("number"),
             "title": string(row, "title"),
             "html_url": string(row, "url"),
-            "head": {"sha": string(row, "headRefOid")},
+            "head": {"sha": string(row, "headRefOid"), "ref": string(row, "headRefName")},
+            "body": string(row, "body"),
         }
         for row in prs
     ]
     limit = policy.parked_pr_limit(review_backlog_limit) + review_backlog_limit
     try:
-        found = loops.parked(github, now=datetime.fromtimestamp(now, UTC), pulls=pulls, limit=limit)
+        found = loops.parked(
+            github,
+            now=datetime.fromtimestamp(now, UTC),
+            pulls=pulls,
+            limit=limit,
+            incident_issues=incident_issues,
+        )
     except GitHubError, RuntimeError, ValueError, KeyError, TypeError:
         return prs
-    held = {row["number"]: PARKED for row in found}
-    held |= {number: LOOPING for number in looping if number not in held}
+    exempt = {row["number"] for row in prs if loops.is_incident(row, incident_issues)}
+    held = {row["number"]: PARKED for row in found if row["number"] not in exempt}
+    held |= {number: LOOPING for number in looping if number not in held.keys() | exempt}
     key = policy.LOOP_HOLD_KEY
     return [{**row, key: held[row["number"]]} if row.get("number") in held else row for row in prs]
 
