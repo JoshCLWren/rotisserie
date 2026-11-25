@@ -318,6 +318,17 @@ def test_render_shows_sections_in_order_with_local_times(chicago: None) -> None:
     assert "Database" not in text
 
 
+def test_recap_names_models_kept_hot_by_their_track_record(chicago: None) -> None:
+    sources = full()
+    models = cast(list[dict[str, Any]], cast(dict[str, Any], sources.stats)["models"])
+    models.append(
+        {"source": "opencode-free", "model": "hungerg-free", "kept_hot": {"successes": 15}}
+    )
+    found = build.providers(sources)
+    assert [row["models"] for row in found["kept_hot"]] == [["hungerg-free"]]
+    assert "kept hot: hungerg-free" in rendered(recap.assemble(sources).to_dict())
+
+
 def test_render_omits_empty_sections(chicago: None) -> None:
     text = rendered(recap.assemble(build.Sources(since=SINCE, now=NOW)).to_dict())
     assert "Quiet night: nothing merged, main state unknown" in text

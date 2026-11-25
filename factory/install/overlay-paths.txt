@@ -70,6 +70,7 @@
 .github/scripts/factory_model_attempt_events.py
 .github/scripts/factory_model_failover.py
 .github/scripts/factory_model_track_record.py
+.github/scripts/factory_track_record_cooldown.py
 .github/scripts/factory_manual_model.py
 .github/scripts/factory_forced_model.py
 .github/scripts/factory_no_progress_retirement.py

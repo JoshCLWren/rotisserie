@@ -250,6 +250,15 @@ jobs:
             '.worker = $worker | .action_kind = $kind | .selection_reason = $why' \
             "$RUNNER_TEMP/worker-outcome.json" \
             > "$RUNNER_TEMP/worker-outcome-attested.json"
+          # Advisory: a model with a good track record gets short work-failure
+          # cooldowns. Without fresh stats every model keeps the normal curve.
+          track_record="$RUNNER_TEMP/factory-track-record.json"
+          if gh api -H 'Accept: application/vnd.github.raw+json' \
+              "repos/${GITHUB_REPOSITORY}/contents/factory-stats.json?ref=factory-status-live" \
+              > "$track_record" 2>/dev/null && jq -e '.models | type == "array"' "$track_record" >/dev/null 2>&1; then
+            export FACTORY_TRACK_RECORD_FILE="$track_record"
+            echo "FACTORY_TRACK_RECORD_FILE=$track_record" >> "$GITHUB_ENV"
+          fi
           # This write is idempotent by (repo, run_id) in the store. A temporary
           # connection failure must not silently drop the terminal outcome.
           for attempt in 1 2 3 4; do

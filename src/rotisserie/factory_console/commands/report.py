@@ -247,7 +247,8 @@ def cmd_stats(context: Context, arguments: argparse.Namespace) -> Outcome:
                 str(_count(counts, "failed")),
                 OUTCOME_WORDS.get(top, top.replace("_", " ")),
                 ", ".join(f"{kind} {done}/{runs}" for kind, done, runs in by_action),
-                _health_word(health, context.clock.now()),
+                _health_word(health, context.clock.now())
+                + (", kept hot" if entry.get("kept_hot") else ""),
             ]
         )
         models.append(
@@ -259,6 +260,7 @@ def cmd_stats(context: Context, arguments: argparse.Namespace) -> Outcome:
                 "failed": _count(counts, "failed"),
                 "top_failure": top or None,
                 "health": status or None,
+                "kept_hot": bool(entry.get("kept_hot")),
                 "by_action": [
                     {"action": kind, "succeeded": done, "runs": runs}
                     for kind, done, runs in by_action

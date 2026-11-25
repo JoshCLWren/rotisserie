@@ -84,13 +84,16 @@ def legacy_capacity_backoff(state: Any) -> bool:
 
 
 def effective_retry_at(state: dict[str, Any], updated_at: Any = None) -> datetime | None:
-    """Stored not-before time, clamped to the one-day cap for rows written uncapped."""
+    """Stored not-before time, clamped to its outcome's cap for rows written under older curves."""
     try:
         retry_at = datetime.fromisoformat(str(state.get("next_retry_at")))
     except (TypeError, ValueError):
         return None
     if isinstance(updated_at, datetime):
-        retry_at = min(retry_at, updated_at + timedelta(seconds=MAX_FIBONACCI_DELAY_SECONDS))
+        from factory_track_record_cooldown import outcome_cap
+
+        cap = min(MAX_FIBONACCI_DELAY_SECONDS, outcome_cap(str(state.get("outcome") or "")))
+        retry_at = min(retry_at, updated_at + timedelta(seconds=cap))
     return retry_at
 
 

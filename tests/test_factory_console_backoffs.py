@@ -10,8 +10,10 @@ import pytest
 
 from rotisserie import cli
 from rotisserie.factory_console import commands
+from rotisserie.factory_console.commands.backoffs import _show
 from rotisserie.factory_console.github import GitHub
 from rotisserie.factory_console.service import backoffs, bridge
+from rotisserie.factory_console.ui import Console
 
 LISTING: dict[str, object] = {
     "schema_version": 1,
@@ -98,3 +100,46 @@ def test_full_reset_is_not_offered_and_direct_read_needs_neon(
     assert calls == []
     with pytest.raises(backoffs.BackoffsUnavailableError, match="--via github"):
         backoffs.read_direct("acme/widgets")
+
+
+def test_backoffs_show_the_run_and_error_behind_each_wait() -> None:
+    data = {
+        "providers": {
+            "opencode-free": {
+                "health": [
+                    {
+                        "model": "hungerg-free",
+                        "status": "unavailable",
+                        "outcome": "model_unavailable",
+                        "until": "2026-11-25T10:25:44+00:00",
+                        "run_id": 45588137241,
+                        "evidence": "Error: Model unavailable: opencode-go/hungerg-free",
+                        "kept_hot": True,
+                    },
+                    {"model": "old", "status": "unavailable", "outcome": "model_unavailable"},
+                ],
+                "kept_hot": [
+                    {
+                        "model": "hungerg-free",
+                        "outcome": "work_failure",
+                        "streak": 2,
+                        "until": None,
+                        "normal_until": "2026-11-25T10:00:00+00:00",
+                        "track_record": "15 of 39 runs succeeded in 7d",
+                    }
+                ],
+            }
+        }
+    }
+    stream = io.StringIO()
+
+    class Context:
+        console = Console(stream, env={"NO_COLOR": "1", "COLUMNS": "400"})
+
+    _show(Context(), data)  # type: ignore[arg-type]
+    text = stream.getvalue()
+    assert "health unavailable (kept hot)" in text
+    assert "Model unavailable: opencode-go/hungerg-free" in text
+    assert "run 45588137241" in text
+    assert "no run recorded" in text
+    assert "15 of 39 runs succeeded in 7d" in text

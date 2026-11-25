@@ -201,7 +201,9 @@ def test_legacy_quota_fibonacci_rows_no_longer_gate_and_old_rows_are_capped():
     }
     assert worker_backoff_reason(quota, "nvidia", "m", OBSERVED) is None
     real = {"source": "nvidia", "model": "m", "outcome": "agent_timeout", "next_retry_at": far}
-    assert effective_retry_at(real, OBSERVED) == OBSERVED + timedelta(days=1)
+    assert effective_retry_at(real, OBSERVED) == OBSERVED + timedelta(minutes=30)
+    fault = {**real, "outcome": "environment_failure"}
+    assert effective_retry_at(fault, OBSERVED) == OBSERVED + timedelta(hours=2)
 
 
 def test_fleet_failover_and_exclusions_honor_capacity_cooldowns(store, monkeypatch):

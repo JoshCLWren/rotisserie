@@ -18,13 +18,16 @@ from factory_state_operations_backoff import (
     TRANSIENT,
     WORKER_RETRY_CLASSES,
     attributable_model_failure,
-    fibonacci_worker_delay,
     historical_failure_streak,
     model_scoped_transient,
     validate_intermediate_model_failures,
 )
 from factory_turso_core import REPO_RE
 from factory_state_operations_quota import capacity_hints
+from factory_track_record_cooldown import STRIKE_WINDOW_SECONDS, WORK_OUTCOMES, Heat, delays_for
+from factory_track_record_cooldown import heat, strike_delay
+from factory_track_record_cooldown import UNAVAILABLE_WINDOW_SECONDS, recent_success_seconds
+from factory_track_record_cooldown import unavailable_delay
 from factory_turso_backoff import capacity_statements, clear_statement, streak_upsert
 from factory_turso_operations import roster
 
@@ -43,6 +46,9 @@ HEALTH_UPSERT = (
 )
 
 
+FRESH_STRIKE = f"factory_backoff.updated_at > unixepoch() - {STRIKE_WINDOW_SECONDS}"
+
+
 def _epoch(value: datetime | None) -> int | None:
     return None if value is None else int(value.timestamp())
 
@@ -58,8 +64,8 @@ def _history(
 ) -> int:
     """Consecutive failures before this run, after the last manual health reset."""
     reset = (
-        "max(unixepoch() - 604800, coalesce((SELECT health_reset_at FROM factory_repo_state"
-        " WHERE repo = :repo), 0))"
+        f"max(unixepoch() - {STRIKE_WINDOW_SECONDS}, coalesce((SELECT health_reset_at"
+        " FROM factory_repo_state WHERE repo = :repo), 0))"
     )
     if worker is None:
         where, params = "source = :source AND model = :model", {"source": source, "model": model}
@@ -75,6 +81,50 @@ def _history(
     return historical_failure_streak(
         rows, run_id, source, model, model_only=worker is None, model_independent=model_independent
     )
+
+
+def _kept(db: Any, repo: str, source: str, model: str, outcome: str) -> Heat | None:
+    """Heat from the published record, or a recent completed run for an unavailable signal."""
+    found = heat(source, model, outcome)
+    if found is not None or outcome != "model_unavailable":
+        return found
+    window = recent_success_seconds()
+    rows = db.read(
+        "SELECT 1 AS x FROM factory_state_events WHERE repo = :repo AND source = :s"
+        " AND model = :m AND subject_type = 'worker' AND event_type = 'worker_completed'"
+        " AND created_at > unixepoch() - :window LIMIT 1",
+        {"repo": repo, "s": source, "m": model, "window": window},
+    )
+    return Heat(1, 1, f"completed a run in the last {window // 3600}h") if rows else None
+
+
+def _unavailable_wait(
+    db: Any, repo: str, source: str, model: str, outcome: str, run_id: int, kept: Heat | None
+) -> int:
+    """Seconds an unavailable signal benches a model; long only for repeated strikes."""
+    if outcome != "model_unavailable":
+        return MODEL_COOLDOWNS[outcome]
+    rows = db.read(
+        "SELECT streak FROM factory_backoff WHERE backoff_key = :k AND outcome = :o"
+        " AND run_id < :run AND updated_at > unixepoch() - :window",
+        {
+            "k": f"factory-model-backoff-v1:{repo}:source:{source}:model:{model}",
+            "o": outcome,
+            "run": run_id,
+            "window": UNAVAILABLE_WINDOW_SECONDS,
+        },
+    )
+    return unavailable_delay(int(rows[0]["streak"] or 0) + 1 if rows else 1, kept is not None)
+
+
+def _evidence(raw: Any) -> dict[tuple[str, str], str]:
+    found: dict[tuple[str, str], str] = {}
+    for entry in raw if isinstance(raw, list) else []:
+        if isinstance(entry, dict) and isinstance(entry.get("evidence"), str):
+            found[(str(entry.get("source") or ""), str(entry.get("model") or ""))] = entry[
+                "evidence"
+            ][:240]
+    return found
 
 
 def project_runtime(db: Any, repo: str, run_id: int, outcome: dict[str, Any]) -> bool:
@@ -116,6 +166,7 @@ def project_runtime(db: Any, repo: str, run_id: int, outcome: dict[str, Any]) ->
     observed = datetime.now(UTC)
     now = int(observed.timestamp())
     failures = validate_intermediate_model_failures(outcome.get("model_failures"), source)
+    evidence = _evidence(outcome.get("model_failures"))
     hints = capacity_hints(outcome.get("quota_hints"))
     if db.read(
         "SELECT 1 AS x FROM factory_runtime_event_keys WHERE repo = :repo AND run_id = :run",
@@ -181,12 +232,16 @@ def project_runtime(db: Any, repo: str, run_id: int, outcome: dict[str, Any]) ->
             )
         )
 
+    kept = _kept(db, repo, source, model, classification) if attributed and not delivered else None
+    told = {"evidence": str(outcome.get("detail") or classification)[:240]}
     if classification == "model_retired_410":
         status, until = "retired", None
     elif classification in MODEL_COOLDOWNS:
-        status, until = "unavailable", observed + timedelta(seconds=MODEL_COOLDOWNS[classification])
+        wait = _unavailable_wait(db, repo, source, model, classification, run_id, kept)
+        status, until = "unavailable", observed + timedelta(seconds=wait)
     elif model_scoped_transient(source, classification):
-        status, until = "cooling", observed + timedelta(seconds=fibonacci_worker_delay(1))
+        wait = strike_delay(classification, 1, kept is not None)
+        status, until = "cooling", observed + timedelta(seconds=wait)
     elif proven:
         status, until = "healthy", None
     else:
@@ -223,6 +278,8 @@ def project_runtime(db: Any, repo: str, run_id: int, outcome: dict[str, Any]) ->
                 guard,
             )
             continue
+        f_heat = _kept(db, repo, f_source, f_model, f_outcome)
+        f_told = evidence.get((f_source, f_model)) or evidence.get((source, f_model)) or f_outcome
         f_status = (
             "retired"
             if f_outcome == "model_retired_410"
@@ -233,9 +290,12 @@ def project_runtime(db: Any, repo: str, run_id: int, outcome: dict[str, Any]) ->
         f_until = (
             None
             if f_status == "retired"
-            else observed + timedelta(seconds=MODEL_COOLDOWNS[f_outcome])
+            else observed
+            + timedelta(
+                seconds=_unavailable_wait(db, repo, f_source, f_model, f_outcome, run_id, f_heat)
+            )
             if f_outcome in MODEL_COOLDOWNS
-            else observed + timedelta(seconds=fibonacci_worker_delay(1))
+            else observed + timedelta(seconds=strike_delay(f_outcome, 1, f_heat is not None))
         )
         health(f_source, f_model, f_status, f_outcome, f_until, False, retire=True)
         statements.append(
@@ -250,14 +310,26 @@ def project_runtime(db: Any, repo: str, run_id: int, outcome: dict[str, Any]) ->
                 run_id=run_id,
                 observed=now,
                 fallback=_history(db, repo, run_id, f_source, f_model, None),
-                keep_streak_sql="1",
+                keep_streak_sql=FRESH_STRIKE,
                 guard=guard,
-                detail={"scope": f_scope},
+                detail={
+                    "scope": f_scope,
+                    "evidence": f_told,
+                    **(f_heat.detail() if f_heat else {}),
+                },
+                delays=delays_for(f_outcome, f_heat is not None),
             )
         )
-    if attributed and proven and classification not in TRANSIENT and classification not in {
-        "no_work", "no_capacity",
-    }:
+    if (
+        attributed
+        and proven
+        and classification not in TRANSIENT
+        and classification
+        not in {
+            "no_work",
+            "no_capacity",
+        }
+    ):
         statements.append(
             clear_statement(
                 f"factory-provider-backoff-v1:{repo}:source:{source}",
@@ -268,6 +340,7 @@ def project_runtime(db: Any, repo: str, run_id: int, outcome: dict[str, Any]) ->
     worker_key = f"factory-worker-backoff-v1:{repo}:worker:{worker}"
     if classification in WORKER_RETRY_CLASSES and not delivered:
         catalog_slot = names[worker][1] in ("", "@catalog")
+        worker_heat = kept if classification in WORK_OUTCOMES else None
         statements.append(
             streak_upsert(
                 key=worker_key,
@@ -281,10 +354,12 @@ def project_runtime(db: Any, repo: str, run_id: int, outcome: dict[str, Any]) ->
                 observed=now,
                 fallback=_history(db, repo, run_id, source, model, worker, catalog_slot),
                 keep_streak_sql=(
-                    "factory_backoff.source = excluded.source AND (:catalog = 1"
-                    " OR factory_backoff.model = excluded.model)"
+                    f"{FRESH_STRIKE} AND factory_backoff.source = excluded.source"
+                    " AND (:catalog = 1 OR factory_backoff.model = excluded.model)"
                 ),
                 guard=(fresh, {**guard[1], "catalog": int(catalog_slot)}),
+                detail=worker_heat.detail() if worker_heat else None,
+                delays=delays_for(classification, worker_heat is not None),
             )
         )
     elif delivered or (proven and classification in {"success", "no_work"}):
@@ -303,8 +378,10 @@ def project_runtime(db: Any, repo: str, run_id: int, outcome: dict[str, Any]) ->
                 run_id=run_id,
                 observed=now,
                 fallback=_history(db, repo, run_id, source, model, None),
-                keep_streak_sql="1",
+                keep_streak_sql=FRESH_STRIKE,
                 guard=guard,
+                detail={**told, **(kept.detail() if kept else {})},
+                delays=delays_for(classification, kept is not None),
             )
         )
     elif attributed and (delivered or (proven and classification in {"success", "no_work"})):

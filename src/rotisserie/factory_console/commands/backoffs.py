@@ -17,9 +17,12 @@ What keeps each provider's models from running, and when they retry.
   baste backoffs reset --quota-only --via github
 
 The list shows three kinds of wait per provider: model health cooldowns,
-Fibonacci backoffs of real failures (capped at one day), and quota, throttle
+backoffs of a model's own failures (task failures capped at 30 minutes,
+faults at 2 hours, unavailable models at 6 hours), and quota, throttle
 or credit cooldowns with where their reset time came from (header, key
-endpoint, refusal text, or the provider's policy default).
+endpoint, refusal text, or the provider's policy default). Each health and
+Fibonacci row names the run that wrote it and the error it saw. "Kept hot"
+rows are models whose good track record shortened a work-failure cooldown.
 
 reset --quota-only clears the backoffs that quota and throttle refusals wrote
 before they stopped growing streaks, and caps the other streaks at one day. It
@@ -58,6 +61,16 @@ def _when(value: object) -> str:
         return "unknown"
 
 
+def _evidence(why: str, item: dict[str, object]) -> str:
+    run = item.get("run_id")
+    seen = item.get("evidence")
+    parts = [why]
+    if seen and seen != why:
+        parts.append(f'"{seen}"')
+    parts.append(f"run {run}" if run else "no run recorded")
+    return "; ".join(parts)
+
+
 def _show(context: Context, data: dict[str, object]) -> None:
     console = context.console
     providers = data.get("providers")
@@ -85,16 +98,29 @@ def _show(context: Context, data: dict[str, object]) -> None:
                 [
                     label,
                     str(item.get("model") or item.get("key")),
-                    f"streak {item.get('streak')}",
+                    _evidence(f"streak {item.get('streak')}", item),
                     _when(item.get("until")),
+                ]
+            )
+        for item in kinds.get("kept_hot") or []:
+            until = item.get("until")
+            rows.append(
+                [
+                    "kept hot",
+                    str(item.get("model")),
+                    f"{item.get('outcome')} streak {item.get('streak')}; "
+                    f"{item.get('track_record') or 'good track record'}; "
+                    f"would wait until {_when(item.get('normal_until'))}",
+                    _when(until) if until else "now",
                 ]
             )
         for item in kinds.get("health") or []:
             rows.append(
                 [
-                    f"health {item.get('status')}",
+                    f"health {item.get('status')}"
+                    + (" (kept hot)" if item.get("kept_hot") else ""),
                     str(item.get("model")),
-                    str(item.get("outcome")),
+                    _evidence(str(item.get("outcome")), item),
                     _when(item.get("until")),
                 ]
             )

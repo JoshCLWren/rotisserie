@@ -26,7 +26,13 @@ Rule, per provider, over the models that are already eligible:
   around the fleet-wide success rate (every provider, same action), with
   evidence capped at ``EVIDENCE_CAP`` trials. The win probabilities are capped
   at ``MAX_SHARE`` so concurrent workers spread; each worker samples with its
-  own hash.
+  own hash. A hot model (``hot``) may take up to ``HOT_MAX_SHARE``: about
+  68% of all picks while untried models exist (0.8 x 0.85), 85% when none do,
+  and the other tried models keep at least 15%.
+* Hot: ``HOT_MIN_TRIALS`` or more trials, and the Wilson lower bound of the
+  success rate (90% one sided) at least ``HOT_LIFT`` times the fleet rate and
+  at least ``HOT_FLOOR``. The cooldown policy (factory_track_record_cooldown)
+  uses the same test. Each value reads ``FACTORY_HOT_*`` from the environment.
 * With no tried model, the pick is the previous uniform hash pick exactly.
 """
 
@@ -36,6 +42,7 @@ import argparse
 import functools
 import hashlib
 import json
+import math
 import os
 import random
 import re
@@ -50,6 +57,11 @@ WINDOW = "7d"
 MIN_TRIALS = 3
 EXPLORE_SHARE = 0.2
 MAX_SHARE = 0.7
+HOT_MAX_SHARE = 0.85
+HOT_MIN_TRIALS = 10
+HOT_LIFT = 1.5
+HOT_FLOOR = 0.15
+HOT_Z = 1.2816
 PRIOR_TRIALS = 2.0
 EVIDENCE_CAP = 50
 PROVEN_BAD_TRIALS = 10
@@ -81,6 +93,33 @@ class Record:
     @property
     def proven_bad(self) -> bool:
         return self.trials >= PROVEN_BAD_TRIALS and self.successes < PROVEN_BAD_RATE * self.trials
+
+
+def setting(name: str, default: float) -> float:
+    """``FACTORY_<name>`` from the environment when it is a non-negative number."""
+    try:
+        value = float(os.environ.get(f"FACTORY_{name}", ""))
+    except ValueError:
+        return default
+    return value if math.isfinite(value) and value >= 0 else default
+
+
+def wilson_floor(record: Record) -> float:
+    if record.trials <= 0:
+        return 0.0
+    z, n = HOT_Z, record.trials
+    p = record.successes / n
+    middle = p + z * z / (2 * n)
+    spread = z * math.sqrt(p * (1 - p) / n + z * z / (4 * n * n))
+    return max(0.0, (middle - spread) / (1 + z * z / n))
+
+
+def hot(record: Record | None, fleet_rate: float) -> bool:
+    """Enough trials and a success rate clearly above the fleet's."""
+    if record is None or record.trials < setting("HOT_MIN_TRIALS", HOT_MIN_TRIALS):
+        return False
+    bar = max(setting("HOT_FLOOR", HOT_FLOOR), setting("HOT_LIFT", HOT_LIFT) * fleet_rate)
+    return wilson_floor(record) >= bar
 
 
 def action_kind(assignment: Mapping[str, Any], labels: Collection[str] = ()) -> str:
@@ -168,7 +207,8 @@ def _load(path: str, mtime: int, kind: str) -> dict[tuple[str, str], Record]:
     return parse(stats, kind, datetime.now(UTC))
 
 
-def records() -> dict[tuple[str, str], Record]:
+def records(kind: str | None = None) -> dict[tuple[str, str], Record]:
+    """Records for ``kind``; by default the action kind this job runs."""
     path = os.environ.get(FILE_ENV, "")
     if not path:
         return {}
@@ -176,7 +216,7 @@ def records() -> dict[tuple[str, str], Record]:
         mtime = Path(path).stat().st_mtime_ns
     except OSError:
         return {}
-    return _load(path, mtime, os.environ.get(KIND_ENV, ""))
+    return _load(path, mtime, os.environ.get(KIND_ENV, "") if kind is None else kind)
 
 
 def has_history(source: str, models: Sequence[str]) -> bool:
@@ -223,7 +263,7 @@ def _score(record: Record, prior: float) -> tuple[float, float]:
 
 
 def shares(source: str, tried: dict[str, Record], prior: float | None = None) -> dict[str, float]:
-    """Thompson win probabilities, capped at MAX_SHARE; the same for every worker."""
+    """Thompson win probabilities, capped per model; the same for every worker."""
     names = sorted(tried)
     if prior is None:
         prior = fleet_prior({(source, name): record for name, record in tried.items()})
@@ -237,15 +277,17 @@ def shares(source: str, tried: dict[str, Record], prior: float | None = None) ->
     result = {name: wins[name] / DRAWS for name in names}
     if len(names) < 2:
         return result
+    top = setting("HOT_MAX_SHARE", HOT_MAX_SHARE)
+    cap = {n: max(MAX_SHARE, min(top, 1.0)) if hot(tried[n], prior) else MAX_SHARE for n in names}
     capped: set[str] = set()
     while True:
-        over = [n for n in names if n not in capped and result[n] > MAX_SHARE + 1e-12]
+        over = [n for n in names if n not in capped and result[n] > cap[n] + 1e-12]
         if not over:
             return result
         for name in over:
             capped.add(name)
-            excess = result[name] - MAX_SHARE
-            result[name] = MAX_SHARE
+            excess = result[name] - cap[name]
+            result[name] = cap[name]
             rest = [n for n in names if n not in capped]
             if not rest:
                 return result
@@ -292,7 +334,8 @@ def pick(source: str, models: Sequence[str], seed: str) -> tuple[str, str]:
             f"{skipped}explore: {history} in {WINDOW}; "
             f"{EXPLORE_SHARE:.0%} of picks try models with little history"
         )
-    weights = shares(source, tried, fleet_prior(found))
+    prior = fleet_prior(found)
+    weights = shares(source, tried, prior)
     point = _unit(digest[16:24])
     chosen = sorted(tried)[-1]
     for name in sorted(tried):
@@ -304,7 +347,7 @@ def pick(source: str, models: Sequence[str], seed: str) -> tuple[str, str]:
     return chosen, (
         f"{skipped}track record: {record.successes} of {record.trials} {record.basis} runs "
         f"succeeded in {WINDOW}; score {record.successes / record.trials:.2f}; "
-        f"pick share {weights[chosen]:.2f}"
+        f"pick share {weights[chosen]:.2f}{'; hot' if hot(record, prior) else ''}"
     )
 
 

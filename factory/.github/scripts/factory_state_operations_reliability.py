@@ -69,10 +69,15 @@ def summarize_reliability(rows: list[dict[str, Any]], health: list[dict[str, Any
         for name, window in entry["windows"].items():
             for field in ("runs", "delivered", "completed", "idle", "failed"):
                 provider["windows"][name][field] += window[field]
-    return {
+    found = {
         "schema_version": 1,
         "generated_at": generated_at.isoformat(),
         "windows": RELIABILITY_WINDOWS,
         "providers": sorted(providers.values(), key=lambda item: item["source"]),
         "models": sorted(models.values(), key=lambda item: (item["source"], item["model"])),
     }
+    from factory_track_record_cooldown import hot_models
+
+    for key, heat in hot_models(found, generated_at).items():
+        models[key]["kept_hot"] = {"successes": heat.successes, "trials": heat.trials}
+    return found

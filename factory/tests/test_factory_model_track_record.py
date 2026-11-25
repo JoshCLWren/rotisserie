@@ -136,12 +136,25 @@ def test_concurrent_workers_in_one_pass_spread(history) -> None:
 
 def test_no_model_takes_more_than_the_share_cap() -> None:
     tried = {
+        PROVEN: track.Record(8, 9, "all"),
+        WEAK[0]: track.Record(1, 50, "all"),
+        WEAK[1]: track.Record(0, 50, "all"),
+    }
+    shares = track.shares(SOURCE, tried)
+    assert not track.hot(tried[PROVEN], track.fleet_prior({(SOURCE, k): v for k, v in tried.items()}))
+    assert shares[PROVEN] == pytest.approx(track.MAX_SHARE)
+    assert sum(shares.values()) == pytest.approx(1.0)
+
+
+def test_a_hot_model_takes_up_to_the_hot_share_cap() -> None:
+    tried = {
         PROVEN: track.Record(49, 50, "all"),
         WEAK[0]: track.Record(1, 50, "all"),
         WEAK[1]: track.Record(0, 50, "all"),
     }
     shares = track.shares(SOURCE, tried)
-    assert shares[PROVEN] == pytest.approx(track.MAX_SHARE)
+    assert shares[PROVEN] == pytest.approx(track.HOT_MAX_SHARE)
+    assert track.HOT_MAX_SHARE > track.MAX_SHARE
     assert sum(shares.values()) == pytest.approx(1.0)
 
 
