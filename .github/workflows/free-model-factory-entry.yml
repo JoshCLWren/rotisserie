@@ -246,11 +246,13 @@ jobs:
             action_kind="$(FACTORY_ASSIGNMENT="${INPUT_ASSIGNMENT:-}" \
               python3 .github/scripts/factory_model_track_record.py kind 2>/dev/null || true)"
           fi
-          # The assigned PR head dates a "no reviewer model" wait (factory_self_heal_self_review).
+          # The assigned PR and head date a "no reviewer model" wait (factory_self_heal_self_review);
+          # a run that ends before any model starts names no target in its log.
           assigned_head="$(jq -r 'objects | select(.kind == "pr") | .head // ""' <<< "${INPUT_ASSIGNMENT:-}" 2>/dev/null || true)"
+          assigned_number="$(jq -r 'objects | select(.kind == "pr") | .number // "" | tostring' <<< "${INPUT_ASSIGNMENT:-}" 2>/dev/null || true)"
           jq --arg worker "$INPUT_WORKER" --arg kind "$action_kind" --arg why "$selection_reason" \
-            --arg head "$assigned_head" \
-            '.worker = $worker | .action_kind = $kind | .selection_reason = $why | .assigned_head = $head' \
+            --arg head "$assigned_head" --arg number "$assigned_number" \
+            '.worker = $worker | .action_kind = $kind | .selection_reason = $why | .assigned_head = $head | .assigned_number = $number' \
             "$RUNNER_TEMP/worker-outcome.json" \
             > "$RUNNER_TEMP/worker-outcome-attested.json"
           # Advisory: a model with a good track record gets short work-failure

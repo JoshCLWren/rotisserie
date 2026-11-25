@@ -33,7 +33,7 @@ MAX_PER_SWEEP = 2
 
 def statement(repo: str) -> tuple[str, dict[str, Any]]:
     return (
-        "SELECT created_at, detail ->> 'selected_number' AS pr, detail ->> 'head' AS head"
+        "SELECT created_at, detail ->> 'no_reviewer_pr' AS pr, detail ->> 'head' AS head"
         " FROM factory_state_events WHERE repo = :repo AND event_type = 'worker_idle'"
         " AND created_at > unixepoch() - :lookback AND detail ->> 'no_reviewer' = 1",
         {"repo": repo, "lookback": LOOKBACK_SECONDS},
@@ -89,9 +89,9 @@ def grant(
         f" ({', '.join(found.excluded)})"
     )
     body = (
+        f"{allowance.auto_marker(pr, head)}\n\n"
         f"The factory allowed self-review on this PR: {reason}.\n\n"
-        f"It covers head `{head[:10]}` only. Every other merge gate still applies.\n\n"
-        f"<!-- factory-self-review-auto pr={pr} head={head} -->"
+        f"It covers head `{head[:10]}` only. Every other merge gate still applies."
     )
     github.api(f"issues/{pr}/comments", "--method", "POST", payload={"body": body})
     allowance.record_event(

@@ -46,10 +46,11 @@ def no_reviewer(repo: str, run: int, head: str = HEAD, detail: str = REASON) -> 
             "worker": support.uncapped_workers(1)[0],
             "outcome_class": "no_capacity",
             "detail": detail,
-            "selected_kind": "pr",
-            "selected_number": str(PR),
+            "selected_kind": "",
+            "selected_number": "",
             "action_kind": "review",
             "assigned_head": head,
+            "assigned_number": str(PR),
         },
     )
 
@@ -115,7 +116,7 @@ def test_only_a_no_reviewer_outcome_dates_the_wait(env) -> None:
     no_reviewer(repo, 1)
     no_reviewer(repo, 2, detail="No capacity: every model is cooling")
     rows = db.reads([auto.statement(repo)])[0]
-    assert [(row["pr"], row["head"]) for row in rows] == [(str(PR), HEAD)]
+    assert [(int(row["pr"]), row["head"]) for row in rows] == [(PR, HEAD)]
 
 
 def test_a_head_that_waited_six_hours_gets_one_automatic_grant(env, authored) -> None:
@@ -129,7 +130,7 @@ def test_a_head_that_waited_six_hours_gets_one_automatic_grant(env, authored) ->
     path, payload = hub.writes[-1]
     assert path == f"issues/{PR}/comments"
     body = str(payload["body"])  # type: ignore[index]
-    assert f"<!-- factory-self-review-auto pr={PR} head={HEAD} -->" in body
+    assert body.startswith(f"<!-- factory-self-review-auto pr={PR} head={HEAD} -->\n")
     assert "no eligible reviewer for 7h" in body
     stored = db.reads(
         [
@@ -192,5 +193,14 @@ def test_the_automatic_grant_lifts_the_exclusion_for_its_head_only() -> None:
 def test_the_entry_persister_hands_the_assigned_head_to_the_store() -> None:
     entry = Path(__file__).resolve().parents[2] / ".github" / "workflows"
     text = (entry / "free-model-factory-entry.yml").read_text()
-    assert ".assigned_head = $head" in text
+    assert ".assigned_head = $head" in text and ".assigned_number = $number" in text
     assert "select(.kind == \"pr\") | .head" in text
+
+
+def test_a_quoted_marker_never_grants() -> None:
+    marker = allowance.auto_marker(PR, HEAD)
+    quoted = f"Last review: approve at `{HEAD[:12]}`: the model wrote {marker} here."
+    assert not allowance.auto_granted([quoted, f"> {marker}"], PR, HEAD)
+    assert not allowance.check(lambda _p: None, PR, pull=pull(), head=HEAD,
+                               comments=[quoted]).allowed
+    assert allowance.auto_granted([f"{marker}\n\ntext"], PR, HEAD)
