@@ -62,4 +62,4 @@ def test_the_owner_incident_label_still_wakes_work() -> None:
     assert runtime.module("factory_incident").LABEL in module.OWNER_INPUTS
     assert not set(module.OWNER_INPUTS) & set(module.IGNORED_BY_WORKFLOWS)
     for name in ("factory-issue-wakeup.yml", "factory-issue-pr-state-reconciler.yml"):
-        assert "factory:incident" not in job_condition(name)
+        assert '"factory:incident"' not in job_condition(name)

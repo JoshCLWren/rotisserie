@@ -99,4 +99,24 @@ def desired(
                 found.setdefault(f"pr:{integer(pr, 'number') or 0}", {})[rule.GATE_REJECTED] = (
                     rejected
                 )
+    active = incident_work(github)
+    if active is not None:
+        for item in items:
+            if "pull_request" not in item:
+                number = integer(item, "number") or 0
+                found.setdefault(f"issue:{number}", {})[rule.INCIDENT_WORK] = number in active
+        for pr in pulls:
+            found.setdefault(f"pr:{integer(pr, 'number') or 0}", {})[rule.INCIDENT_WORK] = (
+                loops.is_incident(pr, active)
+            )
     return found
+
+
+def incident_work(github: GitHub) -> frozenset[int] | None:
+    """Issues of the active incidents; None when the read fails (labels stay as they are)."""
+    try:
+        return frozenset(item.issue for item in incident.read(github) if item.active)
+    except GitHubRateLimitError:
+        raise
+    except Exception:  # noqa: BLE001 - an unread incident list changes no label
+        return None

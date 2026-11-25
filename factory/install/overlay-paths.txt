@@ -113,6 +113,7 @@
 .github/scripts/factory_self_heal_loops.py
 .github/scripts/factory_state_labels.py
 .github/scripts/factory_self_heal_state.py
+.github/scripts/factory_self_heal_incident.py
 .github/scripts/factory_self_heal_rules.py
 .github/scripts/factory_settings.py
 .github/scripts/factory_snapshot_age.py

@@ -826,9 +826,11 @@ workflow token. The label doctor (`baste labels`) fixes the ones it can read.
 | `factory:gate-rejected` | The acceptance gate rejected an approval at the PR's head | New head, or the gate passes at the head | Review controller, self-heal sweep, doctor |
 | `factory:duplicate` | An older open PR delivers the same issue (put on the newer PRs) | One PR is left | Self-heal sweep, doctor |
 | `factory:cooling` | The store holds the PR with retry cooling or review churn (not a park) | The hold expires | Self-heal sweep only |
+| `factory:incident-work` | The item is an active incident's issue or one of its open PRs | The incident ends | Self-heal sweep, doctor |
 
-`factory:incident` is not in this table. It is the owner's input that declares
-an incident, so its events still wake work.
+A closed or merged item loses every state label: the sweep finds them with one
+search per pass. `factory:incident` is not in this table. It is the owner's
+input that declares an incident, so its events still wake work.
 
 ### Issue intake holds
 
@@ -872,7 +874,9 @@ claim or active incident work. The label doctor (`baste labels`) fixes it to mat
 the park at the PR's current head. The label never holds or releases anything;
 the store does. A targeted or forced run (`baste run --target pr:N`), an owner
 `factory:override` label and a `factory:claimed` claim are never held. A
-targeted run that pushes nothing leaves the park, and the label, in place.
+targeted or forced run on a parked PR ends the park, even if it pushes nothing:
+the dispatcher records a `loop-released` store event and removes the label.
+Only runs after the release count toward a new park.
 
 A run that delivered work (pushed repairs or opened its PR) counts as progress
 even when its agent then hit the deadline. Runs that failed for a provider or

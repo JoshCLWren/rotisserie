@@ -45,6 +45,7 @@ PRODUCTIVE = frozenset({"success"})
 READY = "factory:ready"
 BYPASS_LABELS = frozenset({"factory:override", "factory:claimed"})
 PARK_KIND = "loop-parked"
+RELEASE_KIND = "loop-released"
 
 
 @dataclass(frozen=True)

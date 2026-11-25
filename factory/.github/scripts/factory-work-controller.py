@@ -1528,9 +1528,9 @@ def assign_from_pool(worker: str, kinds: tuple[str, ...] | None = None,
                 if ci_override:
                     if assign_candidate(
                         candidate, worker, action='ci-repair', expected_head=head, source='manual'
-                    ):
+                    ) and factory_dispatch_holds.released(REPO, candidate, prs):
                         return candidate
-                elif assign_candidate(candidate, worker, expected_head=head, source='manual'):
+                elif assign_candidate(candidate, worker, expected_head=head, source='manual') and factory_dispatch_holds.released(REPO, candidate, prs):
                     return candidate
                 continue
             if assign_candidate(candidate, worker, source='manual'):
@@ -1556,7 +1556,7 @@ def assign_from_pool(worker: str, kinds: tuple[str, ...] | None = None,
             assigned = assign_candidate(candidate, worker, source=jev_source)
         else:
             assigned = assign_candidate(candidate, worker)
-        if assigned:
+        if assigned and (not operator_force or factory_dispatch_holds.released(REPO, candidate, prs)):
             reason = ' conflict-repair' if candidate.conflicted else ''
             print(f'[factory-controller] assigned {candidate.kind} #{candidate.number} lane={candidate.lane} priority={candidate.priority}{reason} to Factory {worker}', file=sys.stderr)
             if action is not None:
