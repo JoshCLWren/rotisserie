@@ -2,17 +2,19 @@
 
 Context headings: a bug report's observed behavior, repro steps, related work
 and verbatim reporter evidence describe the problem. No changed file can prove
-them, so they are never criteria. A heading is context when one of its
-segments (split on ``/``, ``:``, ``(`` and ``)``) starts with a context word,
-unless a segment names a criteria section such as "requirements".
+them, so they are never criteria. A heading is context when it starts with a
+context word, or when a later segment (after ``/`` or ``(``) starts with one
+and the heading names no criteria section such as "requirements".
 
-Verify after merge: a criterion that asks for verification in a deployed
-environment (``in a deployed browser``, ``in production``, ``after deploy``,
-``post-merge``) cannot be proven by a pre-merge diff. It stays numbered and
-visible, never blocks approval, and post-merge closure keeps the issue open
-until its checkbox is checked. Both a verification verb and a deployed
-environment phrase are required, so a criterion that only mentions
-production code stays strict.
+Verify after merge: a criterion that instructs verification in a deployed
+environment cannot be proven by a pre-merge diff. Two conditions are both
+required. The criterion text starts with "Verify", "Re-verify", "Confirm",
+"Observe", "Record", "Smoke test" or "After deploy". It also names a deployed
+environment: "in a deployed ...", "in production", "on prod", "after deploy"
+or "post-deploy". Descriptive text such as "Verified on production" or a
+criterion about production code stays strict. A deferred criterion keeps its
+number, never blocks approval, and post-merge closure keeps the issue open
+until its checkbox is checked.
 """
 
 import re
@@ -41,21 +43,19 @@ CONTEXT_HEADINGS = (
     "background",
     "context",
     "original report",
-    "original reporter",
     "reporter evidence",
     "verbatim",
 )
-_SEGMENT_SPLIT = re.compile(r"[/:()]")
-_CONTEXT_START = re.compile(r"^(?:" + "|".join(map(re.escape, CONTEXT_HEADINGS)) + r")\b")
+_SEGMENT_SPLIT = re.compile(r"[/()]")
 _CRITERIA_WORD = re.compile(r"\b(?:" + "|".join(map(re.escape, HEADINGS)) + r")\b")
-_VERIFY = re.compile(
-    r"(?i)\b(?:verify|verified|verification|confirm|confirmed|record|observe|smoke[- ]test)\b"
+_VERIFY_FIRST = re.compile(
+    r"(?i)^(?:(?:re-?)?verify|confirm|observe|record|smoke[- ]test|"
+    r"after\s+(?:merge\s+and\s+)?deploy(?:ment)?)\b"
 )
 _DEPLOYED = re.compile(
     r"(?i)\b(?:in|on|against)\s+(?:an?\s+|the\s+)?(?:[\w-]+\s+){0,2}deployed\b"
-    r"|\b(?:in|on|against)\s+(?:the\s+)?production\b(?!\s+code)"
-    r"|\bafter\s+(?:the\s+)?(?:deploy|deployment|release|merge)\b"
-    r"|\bpost-(?:deploy|deployment|merge)\b"
+    r"|\b(?:in|on|against)\s+(?:the\s+)?(?:production|prod)\b(?!\s+code)"
+    r"|\bafter\s+(?:merge\s+and\s+)?deploy(?:ment)?\b|\bpost-deploy(?:ment)?\b"
 )
 VERIFY_AFTER_MERGE = "verify_after_merge"
 _PART_OF = re.compile(r"Part of #\d+(?:\s+and\s+governed by #\d+)?\.")
@@ -76,37 +76,34 @@ class Criterion:
 
 def is_context_heading(heading: str) -> bool:
     """Return whether a heading introduces context rather than criteria."""
-    segments = [part.strip() for part in _SEGMENT_SPLIT.split(heading.lower()) if part.strip()]
-    if any(_CRITERIA_WORD.search(part) for part in segments):
-        return False
-    return any(_CONTEXT_START.match(part) for part in segments)
+    lowered = heading.lower()
+    if lowered.startswith(CONTEXT_HEADINGS):
+        return True
+    segments = [part.strip() for part in _SEGMENT_SPLIT.split(lowered)[1:]]
+    return any(part.startswith(CONTEXT_HEADINGS) for part in segments) and not (
+        _CRITERIA_WORD.search(lowered)
+    )
 
 
 def is_verify_after_merge(text: str) -> bool:
-    """Return whether a criterion can only be verified in a deployed environment."""
-    return bool(_VERIFY.search(text) and _DEPLOYED.search(text))
-
-
-def requirements(body: str) -> list[str]:
-    """Preserve every issue requirement, including unrecognized headings and prose.
+    """Return whether a criterion is an instruction to verify in a deployed environment.
 
     Args:
-        body: Complete authoritative issue body.
-
-    Returns:
-        Ordered paragraphs and bullets with their heading context.
-
-    Raises:
-        ValueError: If the issue provides no reviewable requirement text.
+        text: The criterion text without its heading.
     """
+    return bool(_VERIFY_FIRST.match(text) and _DEPLOYED.search(text))
+
+
+def _entries(body: str) -> list[tuple[str, str]]:
+    """Return ``(heading, text)`` for each criterion; raise ValueError when there is none."""
     section = "Issue"
-    entries: list[tuple[bool, str]] = []
+    entries: list[tuple[bool, str, str]] = []
     current: list[str] = []
 
     def flush() -> None:
         """Finish an entry without losing continuation lines."""
         if current:
-            entries.append((is_context_heading(section), f"{section}: {' '.join(current)}"))
+            entries.append((is_context_heading(section), section, " ".join(current)))
             current.clear()
 
     for source in body.splitlines():
@@ -126,22 +123,38 @@ def requirements(body: str) -> list[str]:
             flush()
             line = re.sub(r"^\[[ xX]\]\s*", "", item.group(1)).strip()
         # Dependency links are verified by the separate factory dependency gate.
-        if re.fullmatch(r"#\d+", line) or re.fullmatch(
-            r"Part of #\d+(?:\s+and\s+governed by #\d+)?\.", line
-        ):
+        if re.fullmatch(r"#\d+", line) or _PART_OF.fullmatch(line):
             continue
         if line:
             current.append(line)
     flush()
     if not entries:
         raise ValueError("Issue has no reviewable criteria, clarification required")
-    criteria = [text for context, text in entries if not context]
-    return criteria or [text for _, text in entries]
+    kept = [(section, text) for context, section, text in entries if not context]
+    return kept or [(section, text) for _, section, text in entries]
+
+
+def requirements(body: str) -> list[str]:
+    """Preserve every issue requirement, including unrecognized headings and prose.
+
+    Args:
+        body: Complete authoritative issue body.
+
+    Returns:
+        Ordered paragraphs and bullets with their heading context.
+
+    Raises:
+        ValueError: If the issue provides no reviewable requirement text.
+    """
+    return [f"{section}: {text}" for section, text in _entries(body)]
 
 
 def criteria(body: str) -> list[Criterion]:
     """Number-aligned criteria with their verify-after-merge classification."""
-    return [Criterion(text, is_verify_after_merge(text)) for text in requirements(body)]
+    return [
+        Criterion(f"{section}: {text}", is_verify_after_merge(text))
+        for section, text in _entries(body)
+    ]
 
 
 def deferred(body: str) -> list[tuple[str, str]]:

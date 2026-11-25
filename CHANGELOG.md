@@ -250,7 +250,7 @@ such change must be called out here and in its release notes.
   sections such as "Existing implementation / related work" and "Original
   reporter evidence" are no longer criteria. A citation that joins files with a
   comma, a semicolon or "and" is split, and each file must be changed by the PR.
-  A criterion that asks for verification in a deployed environment is marked
+  A criterion that instructs verification in a deployed environment is marked
   `verify_after_merge`: it does not block approval, the approval comment lists
   it, and merge closure keeps the issue open with a checklist until its box is
   checked. The rejection note now gives the count and up to 20 reasons.

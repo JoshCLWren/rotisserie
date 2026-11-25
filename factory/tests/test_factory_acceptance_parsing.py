@@ -54,12 +54,15 @@ def test_heading_suffixes_still_mark_context_but_criteria_words_win():
         "## Scope\n- Render the cover.\n\n"
         "## Existing implementation / related work\n- PR #5476 added the projection.\n\n"
         "## Original reporter evidence (verbatim)\n- Cover for FF\n\n"
-        "## Notes: background\n- Context only.\n\n"
-        "## Background job requirements\n- The job retries twice.\n"
+        "## Original report / diagnostics\n- Console errors: none\n\n"
+        "## Reproduction steps\n- Sign in.\n\n"
+        "## Bug: Background sync drops covers\n- Sync keeps every cover.\n\n"
+        "## Acceptance criteria / notes\n- The job retries twice.\n"
     )
     assert acceptance.requirements(body) == [
         "Scope: Render the cover.",
-        "Background job requirements: The job retries twice.",
+        "Bug: Background sync drops covers: Sync keeps every cover.",
+        "Acceptance criteria / notes: The job retries twice.",
     ]
 
 
@@ -108,9 +111,11 @@ def test_real_unmet_criterion_still_blocks():
     body = (
         "## Scope\n- Fix the production crash and verify it with a regression test.\n"
         "- Verify production code handles a null cover URL.\n"
+        "- Verified on production: the queue shows no cover.\n"
+        "- Post-deploy QA of PR #4521 found the regression.\n"
     )
     assert acceptance.deferred(body) == []
-    errors = check(body, [item(1, file="native/src/threads.rs"), item(2)])
+    errors = check(body, [item(1, file="native/src/threads.rs"), item(2), item(3), item(4)])
     assert errors == ["A1: cite a file changed by this PR (not changed: native/src/threads.rs)"]
 
 

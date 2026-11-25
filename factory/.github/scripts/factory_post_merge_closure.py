@@ -142,9 +142,9 @@ def _hold_for_verification(
     if not posted:
         checklist = "\n".join(f"- [ ] {name}: {text}" for name, text in pending)
         github._comment_issue(issue_number, (
-            f"{marker}\nPR #{pr_number} merged. These criteria need verification after merge,"
-            " so this issue stays open. Check each box in the issue body once it is"
-            f" confirmed, then close the issue.\n\n{checklist}"
+            f"{marker}\nPR #{pr_number} merged. These criteria need verification after"
+            " deploy, so this issue stays open. Once each one is confirmed, check its box"
+            f" in the issue body if it has one, then close the issue.\n\n{checklist}"
         ))
     return "verify-after-merge"
 

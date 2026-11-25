@@ -100,6 +100,13 @@ class VerifyAfterMergeClosureTests(testing.NoPersonReopenMixin, unittest.TestCas
         self.assertEqual(result, "verify-after-merge")
         self.assertIn(("issue", "reopen", "4017", "--repo", "owner/repo"), calls["gh"])
 
+    def test_person_close_wins_over_unchecked_box(self):
+        _, first = self.run_closure(BODY)
+        result, calls = self.run_closure(BODY, state="CLOSED", comments=first["comments"])
+        self.assertEqual(result, "already-closed")
+        self.assertEqual(calls["gh"], [])
+        self.assertEqual(calls["comments"], [])
+
     def test_issue_without_deploy_criterion_still_closes(self):
         result, calls = self.run_closure("## Scope\n- [ ] The cover renders.\n")
         self.assertEqual(result, "closed")
