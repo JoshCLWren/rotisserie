@@ -244,7 +244,7 @@ def replace_factory_labels(number: int, owner: str, stage: str) -> None:
             target = target_json(number)
             # Shared write choke point: never add or rewrite factory labels on
             # a manual-only hold. Leftover factory* labels stay for humans.
-            if eligibility.is_manual_only(str(target.get("body") or "")):
+            if eligibility.is_manual_only(str(target.get("body") or "")) or any(l.startswith("agent:") for l in labels_of(target)):
                 return
             current = labels_of(target)
             labels = {
@@ -1045,7 +1045,7 @@ def set_review_approval_visibility(pr_number: int, head: str) -> None:
     if live.get("state") != "OPEN" or live.get("headRefOid") != head:
         return
     target = target_json(pr_number)
-    if eligibility.is_manual_only(str(target.get("body") or "")):
+    if eligibility.is_manual_only(str(target.get("body") or "")) or any(l.startswith("agent:") for l in labels_of(target)):
         return
     labels = labels_of(target)
     if ("factory:building" in labels or

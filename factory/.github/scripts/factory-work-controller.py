@@ -21,7 +21,7 @@ from factory_capacity_policy import (
     omniroute_enabled,
     remaining_omniroute_free_entry_slots,
 )
-from factory_work_policy import (BLOCKED_LABELS, FACTORY_NO_DIFF_RETRY_LIMIT, FACTORY_NO_DIFF_RETRY_RESET_SECONDS, FACTORY_PR_WIP_LIMIT, FACTORY_REVIEW_BACKLOG_LIMIT, FIXED_LEASE_TTL_SECONDS, LOCAL_LEASE_TTL_SECONDS, FIXED_OWNER_RE, NoDiffAttempt, NON_EXECUTABLE_ISSUES, OWNER_RE, REQUIRED_CHECK_FAILURE_STATES, STAGE_LABELS, STAGE_PRECEDENCE, Candidate, build_candidates, comment_is_trusted, completion_action_for, eligibility, explain_issue_report, provenance_lane, env_positive_int, factory_pr_wip_count, factory_review_backlog_count, is_manual_only, item_is_unowned, issue_bypasses_wip_limit, issue_explicitly_closed_by_pr, labels_of, lease_is_stale, linked_issue_from_branch, linked_issue_from_pr, order_candidates_for_worker, owner_of, parse_no_diff_attempts_from_comments, plan_distinct_assignments, pr_suppresses_issue_candidate, stage_of)
+from factory_work_policy import (BLOCKED_LABELS, agent_hold, FACTORY_NO_DIFF_RETRY_LIMIT, FACTORY_NO_DIFF_RETRY_RESET_SECONDS, FACTORY_PR_WIP_LIMIT, FACTORY_REVIEW_BACKLOG_LIMIT, FIXED_LEASE_TTL_SECONDS, LOCAL_LEASE_TTL_SECONDS, FIXED_OWNER_RE, NoDiffAttempt, NON_EXECUTABLE_ISSUES, OWNER_RE, REQUIRED_CHECK_FAILURE_STATES, STAGE_LABELS, STAGE_PRECEDENCE, Candidate, build_candidates, comment_is_trusted, completion_action_for, eligibility, explain_issue_report, provenance_lane, env_positive_int, factory_pr_wip_count, factory_review_backlog_count, is_manual_only, item_is_unowned, issue_bypasses_wip_limit, issue_explicitly_closed_by_pr, labels_of, lease_is_stale, linked_issue_from_branch, linked_issue_from_pr, order_candidates_for_worker, owner_of, parse_no_diff_attempts_from_comments, plan_distinct_assignments, pr_suppresses_issue_candidate, stage_of)
 from factory_jev_shadow import apply_completion_ranking, apply_jev_ranking
 from factory_explain_report import render_explain_report
 from stale_pr_decay import StalePRGuard, list_factory_prs
@@ -239,9 +239,9 @@ def replace_factory_labels(
                     return False
     # Shared write choke point: never add, repair, or re-apply factory labels
     # on a manual-only hold. Leftover factory* labels stay for humans.
-    if is_manual_only(target.get("body")):
+    if is_manual_only(target.get("body")) or agent_hold(labels_of(target)):
         print(
-            f"[factory-controller] skip factory label write on #{number}: manual-only",
+            f"[factory-controller] skip factory label write on #{number}: manual-only or outside agent hold",
             file=sys.stderr,
         )
         return False
@@ -847,7 +847,7 @@ def reconcile_contradictory_labels(
     for item in [*issue_items, *pr_items]:
         # Manual-only PRs are operator-managed. Do not manufacture
         # factory / factory:unowned / factory:blocked from a hold label.
-        if is_manual_only(item.get("body")):
+        if is_manual_only(item.get("body")) or agent_hold(labels_of(item)):
             continue
         current_labels = labels_of(item)
         owner = owner_of(current_labels)
@@ -986,7 +986,7 @@ def reconcile_stale_leases(now_epoch: int | None = None) -> list[int]:
     for number, owner in owned_targets(issue_items, pr_items):
         # Manual-only holds cannot be changed by replace_factory_labels.
         # Avoid paginating their comment histories on every dispatch pass.
-        if is_manual_only(targets[number].get('body')):
+        if is_manual_only(targets[number].get('body')) or agent_hold(labels_of(targets[number])):
             continue
         fixed_owner = FIXED_OWNER_RE.fullmatch(owner)
         if fixed_owner and (unresolved_runs or int(fixed_owner.group("worker")) in active):
@@ -2226,10 +2226,10 @@ def forced_target_candidate(kind: str, number: int, requested_action: str = 'adv
         if linked:
             # Continue the existing pull request instead of starting a duplicate.
             return forced_target_candidate('pr', int(linked[0]['number']), requested_action)
-    if is_manual_only(target.get('body')):
+    if is_manual_only(target.get('body')) or agent_hold(labels_of(target)):
         raise RuntimeError(
-            f'#{number} is marked manual-only in its description. '
-            'Remove that marker to let a model work on it.'
+            f'#{number} is marked manual-only or held by {agent_hold(labels_of(target)) or "its description"}. '
+            'Remove that marker or label to let a model work on it.'
         )
     labels = labels_of(target)
     owners = _owners(labels)

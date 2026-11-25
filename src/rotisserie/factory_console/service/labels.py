@@ -23,7 +23,7 @@ from rotisserie.factory_console.github import (
     obj,
     string,
 )
-from rotisserie.factory_console.service import external, frontier
+from rotisserie.factory_console.service import agent_holds, external, frontier
 
 LIST_CAP = 3000
 
@@ -44,6 +44,7 @@ class Report:
     skipped: list[dict[str, object]] = field(default_factory=list)
     legacy_definitions: list[str] = field(default_factory=list)
     deleted_definitions: list[str] = field(default_factory=list)
+    released_agents: list[dict[str, object]] = field(default_factory=list)
 
     def to_dict(self) -> dict[str, object]:
         return {
@@ -58,6 +59,7 @@ class Report:
             "skipped": self.skipped,
             "legacy_definitions": self.legacy_definitions,
             "deleted_definitions": self.deleted_definitions,
+            "released_agents": self.released_agents,
         }
 
 
@@ -163,6 +165,10 @@ def audit(
             # The controllers never write labels on a manual-only hold.
             report.holds.append({"target": f"{kind}:{number}", "holds": ["manual-only"]})
             continue
+        agent = core.agent_hold(labels)
+        if agent:
+            report.holds.append({"target": f"{kind}:{number}", "holds": [f"outside agent {agent}"]})
+            continue
         if not neon_known:
             holder = lp.UNKNOWN_HOLDER
         elif offer is not None and offer.lease is not None:
@@ -267,8 +273,13 @@ def repair(
     items: list[dict[str, Any]] | None = None,
 ) -> Report:
     """Apply each planned change that still matches the item's live labels."""
-    report, plans = audit(github, now=now, snapshot=snapshot, items=items)
+    rows = items if items is not None else open_items(github)
+    report, plans = audit(github, now=now, snapshot=snapshot, items=rows)
     report.mode = "repair"
+    if items is None:
+        report.released_agents = agent_holds.release(
+            github, rows, now or datetime.fromisoformat(report.generated_at)
+        )
     for row, result in plans:
         number = result.number
         before = {

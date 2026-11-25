@@ -157,6 +157,9 @@ def label_holder(names: set[str]) -> str | None:
     owners = sorted(name for name in names if OWNER_LABEL_RE.fullmatch(name))
     if owners:
         return f"owner label {owners[0]}"
+    agents = sorted(name for name in names if name.startswith("agent:"))
+    if agents:
+        return f"outside agent label {agents[0]}"
     return "a person's claim (factory:claimed)" if CLAIMED in names else None
 
 

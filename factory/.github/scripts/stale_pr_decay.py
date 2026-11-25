@@ -559,8 +559,8 @@ def process_stale_prs(
 
         # Human/interactive holds stay open. Reopen is not enough: created_at
         # still exceeds the cold-start 24h threshold, so skip before close.
-        if is_manual_only(str(pr.get("body") or "")):
-            results.append({"pr": pr_number, "status": "manual-only", "age_seconds": age})
+        if is_manual_only(str(pr.get("body") or "")) or any(str(l.get("name", "") if isinstance(l, dict) else l).startswith("agent:") for l in pr.get("labels") or []):
+            results.append({"pr": pr_number, "status": "manual-only" if is_manual_only(str(pr.get("body") or "")) else "agent-held", "age_seconds": age})
             continue
 
         if has_stale_expiration_marker(get_pr_comments(pr_number), pr_number):

@@ -1,5 +1,49 @@
 # External next-work claims (issue #177)
 
+## For an outside agent with only GitHub access
+
+No CLI, store access or answer from the factory is needed. The label is the hold.
+
+1. Pick an open issue or PR labelled `factory`. Skip it if it has a
+   `factory:<digits>` label (a factory worker is on it) or any `agent:*` label.
+2. Add the label `agent:<your name>`, for example `agent:chatgpt`. From then on
+   the factory leaves the item alone.
+3. Do the work. For a PR, push to its branch. For an issue, open a PR whose body
+   says `Closes #N`. End every commit message with `Model: <your exact model id>`.
+4. When you are done, comment `DONE` on the item and remove `agent:<your name>`.
+
+An `agent:*` label with no commits, comments or other activity for 24 hours is
+removed by the hourly label doctor, with one comment saying why. The owner can
+also hand an item over with `baste assign`, which adds the same label and posts
+the task on the item.
+
+### What to do
+
+Pick in this order: a `P1` or incident item first, then merge conflicts,
+changes requested, failing CI, review, parked PRs, then new issues. Take the
+oldest item first within each step.
+
+| What you see on the item | What to do |
+| --- | --- |
+| `factory:merge-conflict` | Merge `main` into the PR branch, resolve the conflicts, push. |
+| `factory:changes-requested` | Fix the review findings, push. |
+| `factory:ci` with failing checks | Fix the failing checks, push. |
+| `factory:review` | Review the PR (see below). Never review a head you wrote. |
+| A "Factory self-heal: Parked" comment | Fix the cause it names and push. If the issue is too big for one PR, comment a split proposal (child issues, each with 1 to 3 acceptance criteria) and stop. The owner approves splits. |
+| An issue labelled `factory` with no PR | Implement it. Open a PR whose body says `Closes #N`. |
+
+A review is a GitHub review with one line comment per problem, then one
+summary comment that ends with exactly one line:
+
+```text
+FACTORY_REVIEW_FINDINGS_V1={"head":"<40-character head SHA>","findings":[{"path":"src/app.py","line":42,"severity":"blocking","body":"Guard the empty list."}]}
+```
+
+`severity` is `blocking` or `non-blocking`; add `start_line` for a range. No
+blocking finding means approve. The factory does not yet count this comment
+as a review verdict: today it reads the record only from its own reviewers'
+logs, so the owner decides what the outside review means.
+
 Rotisserie owns ranking, GitHub owns PR/review/CI/merge facts, and the existing
 The factory store (libSQL) ledger owns work leases. **A frontier candidate is not a
 reservation.** No external coding agent needs to join the provider/model roster.
@@ -202,6 +246,11 @@ needed. The installed `rotisserie-label-claim.yml` workflow answers.
    remove `factory:claimed`. The controller hands off on evidence or releases
    the claim without evidence, and dispatches the factory's next step.
 
+An `agent:*` label (see the top of this page) needs no answer. The factory
+skips the item everywhere: dispatch, work and review selection, self-heal,
+loop parking, the stale-PR sweep and the label doctor. None of them change an
+`agent:*` label or a `factory:claimed` label next to it.
+
 Limits:
 
 - A label claim records only the GitHub login that added the label, with
@@ -219,6 +268,9 @@ the exact label changes, with reasons, without writing anything.
 `--repair` applies them; `--repair --delete-legacy` also deletes the obsolete
 label definitions it lists. The label claim workflow runs the repair every hour
 and after each claim event. The doctor:
+
+- leaves every item with an `agent:*` label alone, and removes that label after
+  24 hours with no activity on the item;
 
 - adds or removes `factory:available` from the frontier and the factory store;
 - removes `factory:claimed` that no store claim backs, after a 10-minute grace

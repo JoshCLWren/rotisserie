@@ -278,9 +278,17 @@ def normalize_target_state(labels: set[str], current_owner: str | None) -> tuple
     return owner, stage_of(labels)
 
 
+AGENT_PREFIX = 'agent:'
+
+
+def agent_hold(labels: Iterable[str]) -> str | None:
+    """The `agent:NAME` label of an outside agent working the item, which the factory leaves alone."""
+    return next((label for label in sorted(labels) if label.startswith(AGENT_PREFIX) and label != AGENT_PREFIX), None)
+
+
 def item_is_unowned(labels: set[str]) -> bool:
-    """Return whether a label set has no active factory owner."""
-    return owner_of(labels) in (None, 'factory:unowned')
+    """Return whether a label set has no active factory owner and no outside agent."""
+    return owner_of(labels) in (None, 'factory:unowned') and agent_hold(labels) is None
 
 
 def pr_is_conflicted(pr: dict[str, Any]) -> bool:
