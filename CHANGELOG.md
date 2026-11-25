@@ -11,6 +11,12 @@ such change must be called out here and in its release notes.
 
 ### Added
 
+- Owner self-review exception: a person adds `factory:allow-self-review` to one
+  pull request, and the model that authored its current head may review and
+  approve that head. A label added by a bot or GitHub Actions does not count.
+  The label is removed when the head changes or the PR closes. `baste
+  allow-self-review pr:N` adds it, and `baste review pr:N` shows it.
+
 - Factory code review is line-anchored. The reviewer prints one
   `FACTORY_REVIEW_FINDINGS_V1=` record: each finding names a path, a line or
   range on the head side of the PR diff, a severity (blocking or non-blocking)

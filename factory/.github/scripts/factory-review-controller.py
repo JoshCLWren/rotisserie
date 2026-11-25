@@ -917,22 +917,21 @@ def review_eligibility(
     approvers: set[str] | list[str] | tuple[str, ...],
     model_comments: list[str] | None = None,
 ) -> Any:
-    """The owner's review rule for one exact head, from trusted controller records.
+    """The owner's review rule for one exact head; every promoter calls this one function.
 
-    Every promoter (review callback, CI reconciliation, merge authorization)
-    calls this one function, so they cannot disagree about self-review. The
-    excluded models come from the shared resolver, so a sync head carries its
-    author here exactly as at reviewer selection.
+    The shared resolver supplies the excluded models (a sync head carries its
+    author; the owner's allow-self-review label lifts the exclusion).
     """
     comments = model_comments if model_comments is not None else model_comment_bodies(pr_number)
     pull = json_object(_safe_fetch(f"pulls/{pr_number}")) or {}
     base = str((json_object(pull.get("base")) or {}).get("ref") or "")
-    excluded = _review_exclusion.resolve(
-        repo_fetch, pr=pr_number, head=head, base_branch=base, comments=comments
-    ).excluded
-    return evaluate_review_eligibility(
-        comments, pr=pr_number, head=head, approvers=approvers, excluded=excluded
+    found = _review_exclusion.resolve(
+        repo_fetch, pr=pr_number, head=head, base_branch=base, comments=comments, pull=pull
     )
+    verdict = evaluate_review_eligibility(
+        comments, pr=pr_number, head=head, approvers=approvers, excluded=found.excluded
+    )
+    return _review_exclusion.allowance.noted(verdict, found.allowed_by)
 
 
 def redact_review_text(text: str) -> str:

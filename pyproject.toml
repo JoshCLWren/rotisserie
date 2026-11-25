@@ -57,6 +57,7 @@ include = [
   "/factory/.github/scripts/factory_review_policy.py",
   "/factory/.github/scripts/factory_self_heal_rules.py",
   "/factory/.github/scripts/factory_review_exclusion.py",
+  "/factory/.github/scripts/factory_self_review_allowance.py",
   "/factory/.github/scripts/factory_label_policy.py",
   "/factory/.github/scripts/factory_adopter.py",
   "/factory/.github/scripts/factory_branch_sync.py",
@@ -99,6 +100,7 @@ packages = ["src/rotisserie"]
 "factory/.github/scripts/factory_review_policy.py" = "rotisserie/factory_console/factory_runtime/factory_review_policy.py"
 "factory/.github/scripts/factory_self_heal_rules.py" = "rotisserie/factory_console/factory_runtime/factory_self_heal_rules.py"
 "factory/.github/scripts/factory_review_exclusion.py" = "rotisserie/factory_console/factory_runtime/factory_review_exclusion.py"
+"factory/.github/scripts/factory_self_review_allowance.py" = "rotisserie/factory_console/factory_runtime/factory_self_review_allowance.py"
 "factory/.github/scripts/factory_label_policy.py" = "rotisserie/factory_console/factory_runtime/factory_label_policy.py"
 "factory/.github/scripts/factory_adopter.py" = "rotisserie/factory_console/factory_runtime/factory_adopter.py"
 "factory/.github/scripts/factory_branch_sync.py" = "rotisserie/factory_console/factory_runtime/factory_branch_sync.py"

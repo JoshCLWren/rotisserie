@@ -182,6 +182,7 @@ baste outcomes    # did the requested work actually happen
 baste close pr:N --reason TEXT  # close work that should not be done
 baste checks pr:N # why its checks fail, in one line each
 baste review pr:N # whose approval counts: known self-review vs missing metadata
+baste allow-self-review pr:N  # owner exception: the head author may review this head
 baste groom inventory  # the whole open backlog, with evidence per item
 baste doctor      # is the factory itself healthy
 baste limits      # GitHub API requests remaining and reset times
@@ -521,6 +522,35 @@ verdict. `--blocked` checks every open factory PR parked in
 review gate parked there back to review, together with their linked issue. It
 refuses a PR blocked for any other reason, one a worker holds, or one whose
 head moved since it was inspected, and it never writes authorship markers.
+
+### The owner's self-review exception
+
+When no other reviewer is available (for example during a production
+incident), a person may add `factory:allow-self-review` to one pull request.
+While the label stays on, the model that authored the current head may review
+and approve it. Every other gate still applies: the exact head, green CI,
+acceptance and main health.
+
+- Only a person can grant it. The most recent `labeled` event for the label
+  must come from a human GitHub account: not a bot, not a GitHub App and not
+  GitHub Actions. If the events cannot be read, the exception does not apply.
+- It covers one head. A head committed after the label was added, a
+  force-push after it, or a head other than the one the factory announced the
+  grant on is not covered.
+- The ready-merge drain announces a new grant once on the PR ("Owner allowed
+  self-review on this PR (label added by LOGIN)") with a marker that binds the
+  head, and records a store event. The PR reconciler and the drain remove the
+  label when the head changes or the PR closes.
+- Reviewer selection, the outside-review bridge and the merge gate all read it
+  through `factory_review_exclusion.resolve`. An approval it admits carries
+  "Self-review allowed by owner (label by LOGIN)" in its reason.
+
+`baste allow-self-review pr:N` (confirm, or `--yes`) adds the label as the
+signed-in person and checks that the factory accepts it. `baste review pr:N`
+shows "self-review allowed by owner (label by LOGIN)". The control rooms run
+the same command. The hosted control room runs it with the workflow's token,
+which cannot grant the exception, so add the label in GitHub or use the local
+console.
 
 ## Why are its checks failing?
 

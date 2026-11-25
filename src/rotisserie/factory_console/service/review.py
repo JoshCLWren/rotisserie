@@ -60,6 +60,7 @@ class ReviewReport:
     block_note: str  # the controller note that parked it, if blocked
     block_head: str  # the head that note was written against ("" if unknown)
     actions: tuple[str, ...] = field(default=())
+    self_review_allowed_by: str = ""  # person whose allow-self-review label lifts the rule
 
     def to_dict(self) -> dict[str, object]:
         return asdict(self)
@@ -176,10 +177,13 @@ def inspect(
     approvers = sorted(policy.current_head_approvers(trusted_bodies, pr=number, head=head))
     base = string(obj(raw.get("base")), "ref")
     exclusion = _exclusion().resolve(
-        github.repo_api, pr=number, head=head, base_branch=base, comments=model_bodies
+        github.repo_api, pr=number, head=head, base_branch=base, comments=model_bodies, pull=raw
     )
-    verdict = policy.evaluate_review_eligibility(
-        model_bodies, pr=number, head=head, approvers=approvers, excluded=exclusion.excluded
+    verdict = _exclusion().allowance.noted(
+        policy.evaluate_review_eligibility(
+            model_bodies, pr=number, head=head, approvers=approvers, excluded=exclusion.excluded
+        ),
+        exclusion.allowed_by,
     )
     reviewer_models = tuple(
         model for model, _agent in policy.head_reviewer_models(model_bodies, pr=number, head=head)
@@ -201,7 +205,7 @@ def inspect(
         owner=owner,
         author_models=tuple(exclusion.earlier_authors),
         head_attributed=attributed,
-        head_authors=tuple(exclusion.excluded),
+        head_authors=tuple(exclusion.excluded or exclusion.lifted),
         head_author_commit=exclusion.author_commit,
         head_author_source=exclusion.source,
         approvers=tuple(approvers),
@@ -213,6 +217,7 @@ def inspect(
         block_note=note,
         block_head=note_head,
         actions=tuple(actions),
+        self_review_allowed_by=str(exclusion.allowed_by),
     )
 
 
@@ -231,7 +236,9 @@ def authorship_lines(report: ReviewReport) -> list[str]:
     else:
         how = "Model: trailer" if report.head_author_source == "trailer" else "controller record"
         lines = [f"Head author: {names} (its {how})"]
-    if report.head_authors:
+    if report.self_review_allowed_by:
+        lines.append(f"self-review allowed by owner (label by {report.self_review_allowed_by})")
+    elif report.head_authors:
         lines.append(f"Excluded from reviewing this head: {names}")
     same = _policy().same_actual_model
     earlier = [

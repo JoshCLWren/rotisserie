@@ -133,6 +133,15 @@ jobs:
             echo 'Stranded-closure sweep failed; retrying on the next drain' >&2
           }
 
+      - name: Settle owner self-review exceptions
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          python3 .github/scripts/factory_self_review_allowance.py --repo "$GITHUB_REPOSITORY" || {
+            echo 'Self-review exception sweep failed; retrying on the next drain' >&2
+          }
+
       - name: Reconcile serialized migration finalization lane
         shell: bash
         env:

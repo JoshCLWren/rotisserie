@@ -13,11 +13,12 @@ the operator console resolve a pull request the same way.
 from __future__ import annotations
 
 import re
-from collections.abc import Callable, Iterable, Sequence
-from dataclasses import asdict, dataclass
+from collections.abc import Callable, Iterable, Mapping, Sequence
+from dataclasses import asdict, dataclass, replace
 from typing import Any
 
 import factory_review_policy as policy
+import factory_self_review_allowance as allowance
 
 Fetch = Callable[[str], object]
 HEAD_RE = re.compile(r"^[0-9a-f]{40}$")
@@ -127,6 +128,8 @@ class Exclusion:
     carried: tuple[str, ...]  # clean default-branch merges walked to reach author_commit
     earlier_authors: tuple[str, ...]  # every recorded author on the PR (informational)
     source: str = ""  # marker, trailer, a FAIL_CLOSED key, or "" (no evidence)
+    allowed_by: str = ""  # the person whose allow-self-review label lifted the exclusion
+    lifted: tuple[str, ...] = ()  # head authors the owner's exception lets review
 
     @property
     def via_sync(self) -> bool:
@@ -137,6 +140,11 @@ class Exclusion:
         return [author for author in self.excluded if policy.same_actual_model(model, author)]
 
     def describe(self) -> str:
+        if self.allowed_by:
+            return (
+                f"{allowance.NOTE} (label by {self.allowed_by}); the head's author"
+                f" ({', '.join(self.lifted) or 'none recorded'}) may review this head."
+            )
         if not self.author_commit:
             return "The current head has no author record (a human or outside push); none excluded."
         if not self.excluded:
@@ -156,6 +164,29 @@ class Exclusion:
 
 
 def resolve(
+    fetch: Fetch,
+    *,
+    pr: int,
+    head: str,
+    base_branch: str,
+    comments: Iterable[str],
+    pull: Mapping[str, Any] | None = None,
+) -> Exclusion:
+    """The current head's excluded authors, lifted by the owner's allow-self-review label.
+
+    ``pull`` carries the labels; without it no exception applies.
+    """
+    rows = [str(body or "") for body in comments]
+    found = _resolve(fetch, pr=pr, head=head, base_branch=base_branch, comments=rows)
+    if pull is None:
+        return found
+    grant = allowance.check(_safe(fetch), pr, pull=pull, head=head, comments=rows)
+    if not grant.allowed:
+        return found
+    return replace(found, excluded=(), allowed_by=grant.actor, lifted=found.excluded)
+
+
+def _resolve(
     fetch: Fetch,
     *,
     pr: int,
@@ -225,4 +256,4 @@ def for_pull(
     base = str(_obj(raw.get("base")).get("ref") or raw.get("baseRefName") or "")
     rows = list(records) if records is not None else comment_records(fetch, pr)
     bodies = policy.controller_comment_bodies([_obj(row) for row in rows])
-    return resolve(fetch, pr=pr, head=head, base_branch=base, comments=bodies)
+    return resolve(fetch, pr=pr, head=head, base_branch=base, comments=bodies, pull=raw)
