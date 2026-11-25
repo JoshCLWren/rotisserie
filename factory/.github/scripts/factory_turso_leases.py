@@ -176,7 +176,7 @@ def acquire_lease(
     from factory_turso_operations import eligible_source
 
     db = core.store()
-    source = eligible_source(db, repo, worker)
+    source = eligible_source(db, repo, worker, explicit=explicit)
     if source is None:
         return None
     token = str(uuid.uuid4())
@@ -436,3 +436,30 @@ def release_expired_leases(repo: str) -> int:
         ]
     )
     return len(rows)
+
+
+def forced_refusal(repo: str, worker: str, numbers: list[int]) -> None:
+    """Explain why an operator's explicit claim was refused; raises RuntimeError."""
+    from factory_turso_operations import eligibility
+
+    db = core.store()
+    keys = [_target_key(repo, n) for n in sorted(set(numbers))]
+    held = db.read(
+        "SELECT l.number, l.worker, l.claim_id, e.detail ->> 'run_id' AS run_id"
+        " FROM factory_lease l LEFT JOIN factory_state_events e"
+        " ON e.event_id = 'assigned:' || l.claim_id"
+        f" WHERE l.lease_key IN ({', '.join(f':k{i}' for i in range(len(keys)))})"
+        " AND l.expires_at > unixepoch() AND l.worker != :worker",
+        {**{f"k{i}": key for i, key in enumerate(keys)}, "worker": worker},
+    )
+    if held:
+        row = held[0]
+        run = f", run {row['run_id']}" if row["run_id"] else ""
+        raise RuntimeError(
+            f"busy: #{row['number']} is held by worker {row['worker']}"
+            f" (claim {str(row['claim_id'])[:8]}{run})"
+        )
+    _, rejected = eligibility(db, repo, [worker])
+    if rejected:
+        raise RuntimeError(f"Refused by provider capacity: {rejected[0]}")
+    raise RuntimeError("Refused by provider capacity: the daily cap or concurrency budget is full")

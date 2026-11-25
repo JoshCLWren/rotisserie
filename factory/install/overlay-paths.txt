@@ -71,6 +71,7 @@
 .github/scripts/factory_model_failover.py
 .github/scripts/factory_model_track_record.py
 .github/scripts/factory_manual_model.py
+.github/scripts/factory_forced_model.py
 .github/scripts/factory_no_progress_retirement.py
 .github/scripts/factory_opencode_go.py
 .github/scripts/factory_opencode_go_oidc.sh
