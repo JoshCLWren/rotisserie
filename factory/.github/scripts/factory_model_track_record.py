@@ -13,12 +13,20 @@ Rule, per provider, over the models that are already eligible:
 * Success is a delivered PR for ``implement`` and a completed run for every
   other action. Each model is judged on its runs of the same action kind
   when it has ``MIN_TRIALS`` of them there, else on all its runs.
-* Models with fewer than ``MIN_TRIALS`` trials are untried. ``EXPLORE_SHARE``
-  of picks go to them uniformly, so new catalog models get tried.
+* Models with fewer than ``MIN_TRIALS`` trials, or with no success yet, are
+  untried. ``EXPLORE_SHARE`` of picks go to them uniformly, so new catalog
+  models get tried.
+* A model with ``PROVEN_BAD_TRIALS`` or more trials and a success rate under
+  ``PROVEN_BAD_RATE`` is proven bad and is skipped for that action. The rule
+  is absolute: a provider with few models does not lift a bad one. When every
+  eligible model is proven bad, the pick fails so the caller moves on to
+  another provider. An owner-pinned provider (``REQUESTED_PROVIDER``) keeps
+  every model, because the owner asked for that provider.
 * The other picks are Thompson sampling over the tried models: Beta posteriors
-  around the provider's pooled success rate, with evidence capped at
-  ``EVIDENCE_CAP`` trials. The win probabilities are capped at ``MAX_SHARE``
-  so concurrent workers spread; each worker samples with its own hash.
+  around the fleet-wide success rate (every provider, same action), with
+  evidence capped at ``EVIDENCE_CAP`` trials. The win probabilities are capped
+  at ``MAX_SHARE`` so concurrent workers spread; each worker samples with its
+  own hash.
 * With no tried model, the pick is the previous uniform hash pick exactly.
 """
 
@@ -44,6 +52,8 @@ EXPLORE_SHARE = 0.2
 MAX_SHARE = 0.7
 PRIOR_TRIALS = 2.0
 EVIDENCE_CAP = 50
+PROVEN_BAD_TRIALS = 10
+PROVEN_BAD_RATE = 0.05
 DRAWS = 400
 MAX_AGE_SECONDS = 2 * 24 * 3600
 NON_MODEL_FAILURES = frozenset(
@@ -52,9 +62,14 @@ NON_MODEL_FAILURES = frozenset(
 DELIVERY_KINDS = frozenset({"implement"})
 FILE_ENV = "FACTORY_TRACK_RECORD_FILE"
 KIND_ENV = "FACTORY_ACTION_KIND"
+PINNED_ENV = "REQUESTED_PROVIDER"
 MERGE_CONFLICT = "factory:merge-conflict"
 KIND_RE = re.compile(r"[a-z-]{0,40}")
 SELECTION_LINE = re.compile(r"\[factory-model-selection\] (\{.*\})\s*$", re.M)
+
+
+class NoUsableModelError(ValueError):
+    """Every eligible model of the provider is proven bad for this action."""
 
 
 @dataclass(frozen=True)
@@ -62,6 +77,10 @@ class Record:
     successes: int
     trials: int
     basis: str
+
+    @property
+    def proven_bad(self) -> bool:
+        return self.trials >= PROVEN_BAD_TRIALS and self.successes < PROVEN_BAD_RATE * self.trials
 
 
 def action_kind(assignment: Mapping[str, Any], labels: Collection[str] = ()) -> str:
@@ -168,6 +187,18 @@ def has_history(source: str, models: Sequence[str]) -> bool:
     )
 
 
+def proven_bad(source: str, models: Sequence[str]) -> set[str]:
+    found = records()
+    return {
+        model for model in models if (r := found.get((source, model))) is not None and r.proven_bad
+    }
+
+
+def fleet_prior(found: Mapping[tuple[str, str], Record]) -> float:
+    tried = [r for r in found.values() if r.trials >= MIN_TRIALS]
+    return (sum(r.successes for r in tried) + 1) / (sum(r.trials for r in tried) + 2)
+
+
 def proven(source: str, models: Sequence[str]) -> set[str]:
     """Models with enough trials and at least one success."""
     found = records()
@@ -191,12 +222,11 @@ def _score(record: Record, prior: float) -> tuple[float, float]:
     return alpha, beta
 
 
-def shares(source: str, tried: dict[str, Record]) -> dict[str, float]:
+def shares(source: str, tried: dict[str, Record], prior: float | None = None) -> dict[str, float]:
     """Thompson win probabilities, capped at MAX_SHARE; the same for every worker."""
     names = sorted(tried)
-    prior = (sum(r.successes for r in tried.values()) + 1) / (
-        sum(r.trials for r in tried.values()) + 2
-    )
+    if prior is None:
+        prior = fleet_prior({(source, name): record for name, record in tried.items()})
     params = [_score(tried[name], prior) for name in names]
     seed = hashlib.sha256(f"{source}:{','.join(names)}".encode()).digest()
     rng = random.Random(int.from_bytes(seed[:8], "big"))
@@ -229,22 +259,40 @@ def pick(source: str, models: Sequence[str], seed: str) -> tuple[str, str]:
     if not models:
         raise ValueError("no eligible models")
     digest = hashlib.sha256(seed.encode()).digest()
-    legacy = models[int.from_bytes(digest[:8], "big") % len(models)]
     found = records()
-    tried = {
+    bad = [m for m in models if (r := found.get((source, m))) is not None and r.proven_bad]
+    if bad and os.environ.get(PINNED_ENV, "auto") == source:
+        bad = []
+    if bad:
+        models = [m for m in models if m not in bad]
+        if not models:
+            raise NoUsableModelError(
+                f"every eligible {source} model is proven bad: {PROVEN_BAD_TRIALS}+ trials and "
+                f"under {PROVEN_BAD_RATE:.0%} success in {WINDOW}"
+            )
+    skipped = f"skipped {len(bad)} proven-bad; " if bad else ""
+    legacy = models[int.from_bytes(digest[:8], "big") % len(models)]
+    sampled = {
         m: r for m in models if (r := found.get((source, m))) is not None and r.trials >= MIN_TRIALS
     }
+    tried = {m: r for m, r in sampled.items() if r.successes > 0}
     if not tried:
-        return legacy, f"uniform: no eligible {source} model has {MIN_TRIALS}+ trials in {WINDOW}"
+        need = "a success" if sampled else f"{MIN_TRIALS}+ trials"
+        return legacy, f"{skipped}uniform: no eligible {source} model has {need} in {WINDOW}"
     untried = [m for m in models if m not in tried]
     if untried and _unit(digest[8:16]) < EXPLORE_SHARE:
         model = untried[int.from_bytes(digest[24:32], "big") % len(untried)]
-        trials = found[(source, model)].trials if (source, model) in found else 0
+        record = found.get((source, model))
+        history = (
+            f"{record.trials} trials and no success"
+            if record and record.trials >= MIN_TRIALS
+            else f"{record.trials if record else 0} trials (under {MIN_TRIALS})"
+        )
         return model, (
-            f"explore: {trials} trials in {WINDOW} (under {MIN_TRIALS}); "
+            f"{skipped}explore: {history} in {WINDOW}; "
             f"{EXPLORE_SHARE:.0%} of picks try models with little history"
         )
-    weights = shares(source, tried)
+    weights = shares(source, tried, fleet_prior(found))
     point = _unit(digest[16:24])
     chosen = sorted(tried)[-1]
     for name in sorted(tried):
@@ -254,8 +302,9 @@ def pick(source: str, models: Sequence[str], seed: str) -> tuple[str, str]:
             break
     record = tried[chosen]
     return chosen, (
-        f"track record: {record.successes} of {record.trials} {record.basis} runs succeeded in "
-        f"{WINDOW}; score {record.successes / record.trials:.2f}; pick share {weights[chosen]:.2f}"
+        f"{skipped}track record: {record.successes} of {record.trials} {record.basis} runs "
+        f"succeeded in {WINDOW}; score {record.successes / record.trials:.2f}; "
+        f"pick share {weights[chosen]:.2f}"
     )
 
 

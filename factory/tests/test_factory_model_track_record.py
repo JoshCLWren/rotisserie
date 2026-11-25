@@ -80,6 +80,7 @@ def history(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
 
     monkeypatch.delenv(track.FILE_ENV, raising=False)
     monkeypatch.delenv(track.KIND_ENV, raising=False)
+    monkeypatch.delenv(track.PINNED_ENV, raising=False)
     return install
 
 
@@ -340,3 +341,54 @@ def test_reliability_export_counts_each_action_kind() -> None:
     assert counts["kinds"]["review"]["completed"] == 2
     assert counts["kinds"]["implement"]["failures"] == {"work_failure": 1}
     assert "kinds" not in report["models"][0]["windows"]["24h"]
+
+
+KILO = {
+    "lab/free": window(0, 14),
+    "lab/small": window(0, 5),
+}
+KILO_UNTRIED = ("lab/balanced", "lab/efficient", "lab/frontier")
+
+
+def test_proven_bad_model_gets_no_share_in_a_small_provider(history) -> None:
+    history(KILO)
+    found = picks((*KILO, *KILO_UNTRIED))
+    assert found["lab/free"] == 0
+    assert 0 < found["lab/small"] / 2000 < 0.35
+    reason = select(SOURCE, "7", catalog(*KILO, *KILO_UNTRIED), rotation=5)["selection_reason"]
+    assert reason.startswith("skipped 1 proven-bad; ")
+
+
+def test_proven_bad_is_absolute_not_relative_to_the_provider() -> None:
+    assert track.Record(0, 14, "all").proven_bad
+    assert track.Record(0, 16, "review").proven_bad
+    assert not track.Record(0, 5, "all").proven_bad
+    assert not track.Record(1, 14, "all").proven_bad
+
+
+def test_a_provider_with_only_proven_bad_models_has_no_pick(history) -> None:
+    history({"lab/free": window(0, 14), "lab/other": window(0, 20)})
+    with pytest.raises(track.NoUsableModelError):
+        select(SOURCE, "7", catalog("lab/free", "lab/other"), rotation=1)
+
+
+def test_failover_skips_proven_bad_models(history) -> None:
+    history({"lab/free": window(0, 14)})
+    found = {
+        failover.select_next(
+            SOURCE, "7", set(), {}, catalog_json=catalog("lab/free", NEW), rotation=rotation
+        )["model"]
+        for rotation in range(200)
+    }
+    assert found == {NEW}
+    with pytest.raises(failover.ExhaustedCandidatesError):
+        failover.select_next(SOURCE, "7", set(), {}, catalog_json=catalog("lab/free"))
+
+
+def test_an_owner_pinned_provider_keeps_its_proven_bad_models(
+    history, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    history({"lab/free": window(0, 14), "lab/other": window(0, 20)})
+    monkeypatch.setenv(track.PINNED_ENV, SOURCE)
+    chosen = select(SOURCE, "7", catalog("lab/free", "lab/other"), rotation=1)
+    assert chosen["model"] in {"lab/free", "lab/other"}
