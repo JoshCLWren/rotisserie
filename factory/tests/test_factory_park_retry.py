@@ -212,7 +212,7 @@ def test_a_successful_forced_run_ends_the_park(env) -> None:
     assert found[0]["kind"] == rules.LOOP_RELEASED
     assert (
         "factory_turso_loops"
-        and retry.evidence(repo, datetime.now(UTC))["parks"][f"pr:{PR}"]["at_heads"] == set()
+        and retry.evidence(repo)["parks"][f"pr:{PR}"]["at_heads"] == set()
     )
     assert f"pulls/{PR}" not in hub.paths()
 
@@ -241,20 +241,36 @@ def test_a_forced_run_that_changed_nothing_closes_the_pr_and_requeues_the_issue(
     assert found == [{"pr": PR, "status": "reopened after closure"}]
 
 
-def test_a_quota_failure_waits_and_a_lapse_dispatches_once_more_then_closes(env) -> None:
+def test_a_quota_failure_waits_and_each_lapse_dispatches_again_without_closing(env) -> None:
     db, repo = env
     park(db, repo, 13)
     sweep(repo)
     run(repo, "provider_quota", 1)
     hub, found = sweep(repo)
     assert found == [] and hub.writes == []
-    age(db, repo, rules.PARK_RETRY, 7)
-    hub, found = sweep(repo)
-    assert dispatched(hub) and found[0]["attempt"] == 2
-    age(db, repo, rules.PARK_RETRY, 7)
-    hub, found = sweep(repo)
-    assert found[0]["kind"] == rules.PARK_CLOSED
-    assert "never ran to an outcome" in found[0]["text"]
+    for attempt in (2, 3):
+        age(db, repo, rules.PARK_RETRY, 7)
+        hub, found = sweep(repo)
+        assert dispatched(hub) and found[0]["attempt"] == attempt
+        assert f"pulls/{PR}" not in hub.paths()
+
+
+def test_one_sweep_acts_on_at_most_three_parks(env) -> None:
+    db, repo = env
+    numbers = (12, 13, 14, 15)
+    heal.LedgerStore(repo).record(
+        [
+            heal.event(kind=rules.LOOP_PARKED, pr=n, head=HEAD, ref="review-x", text="t",
+                       stage="factory:review")
+            for n in numbers
+        ]
+    )
+    age(db, repo, rules.LOOP_PARKED, 13)
+    hub = Hub(repo)
+    pulls = [{**pull(), "number": n} for n in numbers]
+    found = retry.resolve_long_parks(hub, heal.LedgerStore(repo), pulls, heal_budget())
+    assert len(dispatched(hub)) == 3
+    assert {"pr": 15, "status": "would-due"} in found
 
 
 def test_the_judge_counts_only_runs_after_the_attempt() -> None:
