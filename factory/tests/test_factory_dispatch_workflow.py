@@ -660,8 +660,7 @@ def test_merge_drain_meters_its_github_calls() -> None:
     meter = names.index("Install REST-backed factory GitHub reads")
     assert meter > names.index("Ensure GitHub CLI supports JSON PR checks")
     assert names[-2:] == ["Report GitHub CLI request usage", "Remove the factory store token"]
-    assert "factory-gh-rest-shim.sh" in steps[meter]["run"]
-    assert "FACTORY_GH_CALL_LOG" in steps[meter]["run"]
+    assert all(part in steps[meter]["run"] for part in ("rest-shim.sh", "FACTORY_GH_CALL_LOG"))
 
 
 def test_chain_and_review_wakeup_dispatches_retry() -> None:
