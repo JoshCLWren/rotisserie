@@ -148,9 +148,11 @@ async function checkModel(body) {
     throw Error("Model " + body.model + " is not in the live model list for " + body.provider +
       ". Choose a listed model or Automatic selection.");
   }
-  if (model.offered === false || model.disabled) {
-    throw Error("Model " + body.model + " is " + (model.disabled ? "turned off" : "unavailable") +
-      " for " + body.provider + ". Choose another model or Automatic selection.");
+  const why = model.excluded ? "excluded by the worker right now (" + model.excluded + ")"
+    : model.disabled ? "turned off" : model.offered === false ? "unavailable" : "";
+  if (why) {
+    throw Error("Model " + body.model + " is " + why + " for " + body.provider +
+      ". Choose another model or Automatic selection.");
   }
 }
 
@@ -166,6 +168,16 @@ async function liveWrite(body) {
     return {exit_code: 0, result: "accepted by GitHub. This sign-in service does not report " +
       "the operator run's outcome yet, so check the repository's Actions page"};
   }
+  rememberWrite({run_id: accepted.run_id, run_url: accepted.run_url,
+    request_id: requestId, operation: body.operation});
+  try {
+    return await finishWrite(accepted, requestId);
+  } finally {
+    rememberWrite(null);
+  }
+}
+
+async function finishWrite(accepted, requestId) {
   const label = "Operator run";
   const run = await waitForRun(accepted, label, WRITE_WAIT_MS);
   const envelope = trustedEnvelope(run, requestId, label);
@@ -177,4 +189,50 @@ async function liveWrite(body) {
       ". GitHub operator run " + run.run_url + " " + (run.conclusion || "failed") + ".");
   }
   return {...result, exit_code: 0, operator: {run_url: run.run_url, conclusion: run.conclusion}};
+}
+
+/* A reload must not lose an operator run: the page keeps the pending run for this
+ * tab and, after the session is verified, reports how that run ended. */
+const PENDING_KEY = "rotisserie-operator-pending";
+function rememberWrite(entry) {
+  try {
+    if (entry) sessionStorage.setItem(PENDING_KEY, JSON.stringify(entry));
+    else sessionStorage.removeItem(PENDING_KEY);
+  } catch (_) { /* optional */ }
+}
+function pendingWrite() {
+  try {
+    const entry = JSON.parse(sessionStorage.getItem(PENDING_KEY) || "null");
+    return entry && /^[0-9]{1,20}$/.test(String(entry.run_id)) ? entry : null;
+  } catch (_) {
+    return null;
+  }
+}
+function showOutcome(text, failed) {
+  const box = document.getElementById("message");
+  if (!box) return;
+  box.className = "message visible" + (failed ? " error" : "");
+  box.textContent = text;
+}
+function outcomeText(operation, result) {
+  const run = result.operator || {};
+  const parts = ["Operator run for " + operation + " ended: " + (run.conclusion || "completed") + "."];
+  if (result.scheduler_url) parts.push("Scheduler run: " + result.scheduler_url + ".");
+  else parts.push("Rotisserie reports: " + (result.result || "completed") + ".");
+  if (run.run_url) parts.push(run.run_url);
+  return parts.join(" ");
+}
+async function resumeWrite() {
+  const entry = pendingWrite();
+  if (!entry || !signedIn()) return;
+  try {
+    const result = await finishWrite(entry, entry.request_id);
+    showOutcome(outcomeText(entry.operation, result), false);
+  } catch (error) {
+    showOutcome(error.message, true);
+  } finally {
+    rememberWrite(null);
+    const status = document.getElementById("operation-status");
+    if (status) status.textContent = "";
+  }
 }

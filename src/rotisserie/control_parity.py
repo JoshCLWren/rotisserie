@@ -10,6 +10,7 @@ from __future__ import annotations
 
 CONTROLS: dict[str, tuple[str, ...]] = {
     "run": ("write:run",),
+    "watch": ("read:watch",),
     "status": ("read:status",),
     "cancel": ("write:cancel",),
     "report": ("read:report",),
@@ -68,10 +69,6 @@ CLI_ONLY: dict[str, str] = {
     "estimate-history": (
         "publishes store history inside the label claim workflow; only trusted Actions "
         "may run it, and Exact estimate (store) starts that workflow"
-    ),
-    "watch": (
-        "follows one run in a terminal until it ends; both control rooms already "
-        "show each request's run and its result"
     ),
     "use": "saves this machine's default repository; each control room serves one repository",
     "next": _AGENT,

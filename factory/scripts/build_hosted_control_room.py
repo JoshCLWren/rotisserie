@@ -26,6 +26,7 @@ PARTS = tuple(
     Path(__file__).parent / "hosted" / name for name in ("public_reads.js", "session.js", "live.js")
 )
 REQUEST = re.compile(r"(?m)^async function request\(path,body\)\{[^\n]*\}$")
+SHELL_RELOAD_TRAP = "<!-- legacy shell reload target: </head> -->"
 AUTH_URL = re.compile(r"https://[A-Za-z0-9.-]+(?::[0-9]+)?(?:/[A-Za-z0-9._~/-]*)?")
 
 
@@ -117,7 +118,9 @@ def render(repo: str, auth_url: str = "") -> str:
         "</head>",
         1,
     )
-    return page
+    # Older Pages shells insert a 60 second reload before the first "</head>". That
+    # reload drops live reads and operator runs, so it must land inside this comment.
+    return page.replace("<head>", "<head>\n" + SHELL_RELOAD_TRAP, 1)
 
 
 def main() -> None:

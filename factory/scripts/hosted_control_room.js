@@ -48,5 +48,12 @@ onSignedOut(() => {
 // The page keys stored reads by this viewer. While a session is still being checked the
 // viewer is unknown (""), and the page stores nothing, so live results never land as public.
 window.hostedViewer = () => (signedIn() ? identity || "" : "public");
+onSignedIn(() => void resumeWrite());
+// Signed-out visitors see the published snapshot. Refresh it in place, never by
+// reloading the page: a reload drops a signed-in tab's live reads and operator runs.
+setInterval(() => {
+  const button = document.getElementById("refresh");
+  if (!signedIn() && !document.hidden && button && !button.disabled) button.click();
+}, SNAPSHOT_MS);
 document.getElementById("github-connect").addEventListener("click", connect);
 bootstrapSession();

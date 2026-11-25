@@ -9,8 +9,9 @@ const adapterSource = fs.readFileSync(process.argv[2], "utf8");
 
 function element() {
   return {
-    textContent: "", listeners: {},
-    addEventListener(type, fn) { this.listeners[type] = fn; }
+    textContent: "", className: "", listeners: {}, clicks: 0, disabled: false,
+    addEventListener(type, fn) { this.listeners[type] = fn; },
+    click() { this.clicks += 1; }
   };
 }
 
@@ -19,10 +20,12 @@ function environment(service) {
   const polls = () => [...service.runs.values()].slice(-1).reduce((sum, run) => sum + run.polls, 0);
   const storage = new Map();
   if (service.session) storage.set("rotisserie-github-admin-session", service.session);
+  if (service.pending) storage.set("rotisserie-operator-pending", JSON.stringify(service.pending));
+  const intervals = [];
   const body = {classes: new Set()};
   body.classList = {add: c => body.classes.add(c), remove: c => body.classes.delete(c)};
   const document = {
-    body,
+    body, hidden: false,
     getElementById: id => (elements[id] = elements[id] || element()),
     createElement: tag => ({tag, href: "", textContent: ""}),
     addEventListener() {}
@@ -60,6 +63,7 @@ function environment(service) {
     REPO: "acme/widgets", document, fetch, URL, URLSearchParams, console,
     crypto: require("crypto").webcrypto,
     setTimeout: fn => { setImmediate(fn); return 1; }, clearTimeout() {},
+    setInterval: fn => { intervals.push(fn); return 1; },
     location: {
       origin: "https://acme.github.io", hash: "", pathname: "/widgets/", search: "",
       assign(url) { service.assigned = url; }
@@ -81,7 +85,7 @@ function environment(service) {
   };
   vm.createContext(context);
   vm.runInContext(adapterSource, context);
-  return {context, elements, body};
+  return {context, elements, body, intervals, storage};
 }
 
 function fakeService(options = {}) {
@@ -136,7 +140,8 @@ function answer(read) {
   }
   if (read.name === "models") {
     return {exit_code: 0, models: [{model: "good-model", offered: true},
-      {model: "off-model", offered: true, disabled: true}, {model: "gone", offered: false}]};
+      {model: "off-model", offered: true, disabled: true}, {model: "gone", offered: false},
+      {model: "cold-model", offered: true, excluded: "the worker excludes it right now (cooldown or backoff)"}]};
   }
   if (read.name === "leases") return {exit_code: 0, source: "neon", rows: [{target: "pr:4"}]};
   return {exit_code: 0, ready: [], issues: [{issue: 7}]};
@@ -175,6 +180,7 @@ async function main() {
 
   out.badModel = await settle(hosted("/api/command", {operation: "run", provider: "p", model: "nope"}));
   out.offModel = await settle(hosted("/api/command", {operation: "run", provider: "p", model: "off-model"}));
+  out.coldModel = await settle(hosted("/api/command", {operation: "run", provider: "p", model: "cold-model"}));
   out.dispatchesAfterRejectedModels = service.dispatched.map(d => d.operation);
   env.elements["operation-status"].links.length = 0;
   out.goodRun = await settle(hosted("/api/command", {operation: "run", provider: "p", model: "good-model"}));
@@ -230,6 +236,28 @@ async function main() {
   out.expiredIdentity = env.elements["github-identity"].textContent;
   out.expiredSignedInClass = env.body.classes.has("hosted-signed-in");
   out.afterExpiry = await settle(env.context.window.hostedRequest("/api/why"));
+
+  service = fakeService({signedIn: false});
+  env = environment(service);
+  env.intervals.forEach(fn => fn());
+  out.signedOutSoftRefreshClicks = env.elements.refresh.clicks;
+  service = fakeService();
+  env = environment(service);
+  await tick();
+  env.intervals.forEach(fn => fn());
+  out.signedInSoftRefreshClicks = env.elements.refresh.clicks;
+
+  service = fakeService();
+  service.pending = {run_id: 500, run_url: "https://github.com/acme/widgets/actions/runs/500",
+    request_id: "pending-request-1", operation: "run"};
+  service.runs.set(500, {request: {operation: "run", request_id: "pending-request-1", model: "good"}, polls: 0});
+  env = environment(service);
+  for (let i = 0; i < 12; i++) await tick();
+  out.resumedMessage = env.elements.message.textContent;
+  out.resumedClass = env.elements.message.className;
+  out.resumedPolls = service.runs.get(500).polls;
+  out.resumedDispatches = service.dispatched.length;
+  out.pendingCleared = !env.storage.has("rotisserie-operator-pending");
 
   process.stdout.write(JSON.stringify(out));
 }

@@ -350,7 +350,15 @@ def cmd_watch(context: Context, arguments: argparse.Namespace) -> Outcome:
         data["scheduler_url"] = context.url(f"/actions/runs/{run_id}")
         context.console.heading("Factory request")
         context.console.ok("Request sent", local_time(created))
-        return _watch_scheduler(context, tracker, run_id, created, data, follow=arguments.follow)
+        return _watch_scheduler(
+            context,
+            tracker,
+            run_id,
+            created,
+            data,
+            follow=arguments.follow,
+            decision_only=arguments.decision,
+        )
     if path.endswith(WORKER_WORKFLOW):
         title = re.match(r"^Factory (\d+) ", string(run, "display_title"))
         worker = title.group(1) if title else ""

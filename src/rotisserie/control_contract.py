@@ -61,6 +61,7 @@ READ_ONLY = frozenset(
         "schema",
         "assigned",
         "outcome",
+        "watch",
     )
 )
 # Served on GitHub Pages from the published snapshot without sign-in.
@@ -115,6 +116,7 @@ _READ_PARAMETERS = {
     "stats": {"window"},
     "store": {"mode", "run"},
     "outcome": {"run"},
+    "watch": {"run"},
 }
 
 
@@ -193,11 +195,13 @@ def read_command(name: str, query: Mapping[str, str], *, trusted: bool = False) 
         if window not in ("24h", "7d"):
             raise InvalidRequest("Invalid window")
         args.extend(("--window", window))
+    elif name == "watch":
+        args.extend((_match(_string(query, "run", required=True), RUN_ID, "run"), "--decision"))
     elif name == "unstick":
         args.append("--dry-run")
     elif name == "outcome":
         args.append(_match(_string(query, "run", required=True), RUN_ID, "run"))
-    elif name in ("backoffs", "schema") and not trusted:
+    elif name in ("backoffs", "leases", "schema") and not trusted:
         args.extend(("--via", "github"))
     return args
 

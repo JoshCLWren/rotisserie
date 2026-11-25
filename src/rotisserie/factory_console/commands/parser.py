@@ -107,6 +107,7 @@ def add_parser(
     watch = commands.add_parser("watch", help="resume watching a request (run ID or URL)")
     watch.add_argument("run", help="scheduler or worker run ID or URL")
     watch.add_argument("--follow", action="store_true", help="watch until the worker finishes")
+    watch.add_argument("--decision", action="store_true", help="stop at the scheduler's decision")
     _common(watch)
 
     status = commands.add_parser("status", aliases=["who"], help="who is working on what right now")
