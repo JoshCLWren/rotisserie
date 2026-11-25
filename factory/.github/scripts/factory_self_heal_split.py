@@ -2,7 +2,8 @@
 """Oversized issues split themselves: dispatch, create the children, track the parent.
 
 An issue the intake guard labeled ``factory:needs-split`` (over the body limit,
-or labeled epic, umbrella or tracking) gets one ``split`` run on the model with
+or labeled umbrella or tracking), or a ``factory`` issue labeled ``umbrella``
+even after a merged slice made it ``factory:ready``, gets one ``split`` run on the model with
 the best track record for splits, through the dispatcher's targeted path
 (``target=split:N``). The trusted Entry persister records the validated plan in
 the store once per parent (``factory_split_plan``). This sweep step then:
@@ -35,6 +36,7 @@ RETRY_SECONDS = 6 * 3600
 MAX_DISPATCHES = 3
 TRACKING = "tracking"
 EVENT = "factory_split"
+LISTINGS = ("factory%3Aneeds-split", "factory%2Cumbrella")
 
 
 def statement(repo: str) -> tuple[str, dict[str, Any]]:
@@ -116,6 +118,30 @@ def dispatch_inputs(parent: int) -> tuple[dict[str, str], str] | None:
     return inputs, f"{name} ({why})"
 
 
+def splittable(issue: Mapping[str, Any]) -> bool:
+    """Held for its size or label, and no one else's: a merged slice (``factory:ready``) is fine.
+
+    A child, an epic or PRD, an acceptance parent and an issue that already
+    lists its children (``- [ ] #N``) are never split.
+    """
+    from factory_issue_intake_guard import split_reason
+    from factory_work_policy_base import eligibility, item_is_unowned
+
+    import factory_state_labels as labels
+
+    names = heal.labels(issue)
+    body = str(issue.get("body") or "")
+    if "pull_request" in issue or "factory" not in names or labels.BYPASS & names:
+        return False
+    if plans.is_child(body) or names & {"epic", "prd"} or split_reason(issue) is None:
+        return False
+    if eligibility.is_manual_only(body) or eligibility.is_acceptance_parent(body):
+        return False
+    if eligibility.ACCEPTANCE_PARENT_CHILD_RE.search(body):
+        return False
+    return item_is_unowned(names)
+
+
 def dispatch_splits(
     github: heal.GitHub,
     store: heal.Store,
@@ -124,15 +150,13 @@ def dispatch_splits(
     now: datetime,
 ) -> list[dict[str, Any]]:
     """One split run per pass, for the oldest held issue with no plan."""
-    import factory_state_labels as labels
-
-    rows = github.api("issues?labels=factory%3Aneeds-split&state=open&per_page=50")
-    for issue in sorted(rows if isinstance(rows, list) else [], key=lambda row: row["number"]):
-        number = int(issue["number"])
+    listed: dict[int, Mapping[str, Any]] = {}
+    for query in LISTINGS:
+        rows = github.api(f"issues?labels={query}&state=open&per_page=50")
+        listed |= {int(row["number"]): row for row in (rows if isinstance(rows, list) else [])}
+    for number, issue in sorted(listed.items()):
         entry = found.get(number, {})
-        if "pull_request" in issue or entry.get("plan") or plans.is_child(issue.get("body")):
-            continue
-        if not labels.needs_split(issue):
+        if entry.get("plan") or not splittable(issue):
             continue
         tries = entry.get("dispatches", [])
         if len(tries) >= MAX_DISPATCHES or (
