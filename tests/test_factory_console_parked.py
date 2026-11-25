@@ -85,3 +85,13 @@ def test_turning_sees_no_limit_when_six_parked_prs_meet_a_limit_of_six(fake: Fak
     assert found["limit"] == ""
     assert found["open_prs"] == 0
     assert found["eligible_issues"] == 1
+
+
+def test_turning_counts_looping_prs_outside_the_backlog(fake: FakeGitHub) -> None:
+    numbers = [5700 + n for n in range(6)]
+    prs = [factory_pr(n, 900 + n, "factory:review") for n in numbers]
+    why_routes(fake, [open_issue(41, "factory:unowned")], prs)
+    github = GitHub(REPO, executable="sh")
+    assert turning.backlog_state(github, NOW)["limit"] == "review-limit"
+    found = turning.backlog_state(github, NOW, frozenset(numbers))
+    assert (found["limit"], found["eligible_issues"]) == ("", 1)

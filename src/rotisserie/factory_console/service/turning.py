@@ -228,8 +228,11 @@ def provider_state(stats: Obj | None, now: datetime) -> dict[str, Any]:
     }
 
 
-def backlog_state(github: GitHub, now: datetime) -> dict[str, Any]:
-    board = queue.read_board(github, providers.repository_variables(github), int(now.timestamp()))
+def backlog_state(
+    github: GitHub, now: datetime, looping: frozenset[int] = frozenset()
+) -> dict[str, Any]:
+    variables = providers.repository_variables(github)
+    board = queue.read_board(github, variables, int(now.timestamp()), looping)
     explained = [queue.explain(board, row, blocker=None) for row in board.issues]
     backlog = runtime.completion_backlog(list(board.prs))
     found: dict[str, Any] = {
@@ -331,6 +334,12 @@ def gather(
 
     with ThreadPoolExecutor(max_workers=len(steps)) as pool:
         list(pool.map(attempt, steps))
+    if found.loops and found.backlog.get("limit"):
+        looping_prs = frozenset(int(str(row["number"])) for row in found.loops)
+        try:
+            found.backlog = backlog_state(github, now, looping_prs)
+        except READ_ERRORS:
+            pass
     if found.passes:
         found.store["dispatcher_store_step"] = found.passes[0].store or None
     return found

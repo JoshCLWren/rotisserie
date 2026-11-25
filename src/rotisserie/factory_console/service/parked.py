@@ -14,9 +14,16 @@ from rotisserie.factory_console.github import GitHub, GitHubError, Obj, string
 from rotisserie.factory_console.service import loops
 
 PARKED = "held: loop-parked"
+LOOPING = "held: looping"
 
 
-def stamp(github: GitHub, prs: list[Obj], review_backlog_limit: int, now: int) -> list[Obj]:
+def stamp(
+    github: GitHub,
+    prs: list[Obj],
+    review_backlog_limit: int,
+    now: int,
+    looping: frozenset[int] = frozenset(),
+) -> list[Obj]:
     policy = runtime.module("factory_work_policy")
     rows = [dict(row) for row in prs]
     if policy.factory_review_backlog_count(rows) < review_backlog_limit:
@@ -35,9 +42,10 @@ def stamp(github: GitHub, prs: list[Obj], review_backlog_limit: int, now: int) -
         found = loops.parked(github, now=datetime.fromtimestamp(now, UTC), pulls=pulls, limit=limit)
     except GitHubError, RuntimeError, ValueError, KeyError, TypeError:
         return prs
-    held = {row["number"] for row in found}
+    held = {row["number"]: PARKED for row in found}
+    held |= {number: LOOPING for number in looping if number not in held}
     key = policy.LOOP_HOLD_KEY
-    return [{**row, key: PARKED} if row.get("number") in held else row for row in prs]
+    return [{**row, key: held[row["number"]]} if row.get("number") in held else row for row in prs]
 
 
 def full(explanation: runtime.Explanation) -> bool:

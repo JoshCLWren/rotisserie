@@ -225,6 +225,12 @@ def test_the_sweep_runs_the_park_step(monkeypatch: pytest.MonkeyPatch) -> None:
             page = {"pageInfo": {"hasNextPage": False}, "nodes": []}
             return {"data": {"repository": {"pullRequests": page}}}
 
+    park = loops.park_loops
+    monkeypatch.setattr(
+        loops,
+        "park_loops",
+        lambda *a, **k: park(*a, **{**k, "now": moment("2026-11-25T01:30:00Z")}),
+    )
     result = heal.sweep(Lister(), store, dry_run=True)
     assert result["loops"][0]["status"] == "would-park"
 
