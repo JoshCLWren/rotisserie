@@ -81,7 +81,7 @@ STORE_COMMANDS = frozenset({"bootstrap", "reset-model-health", "export-backoffs"
 
 
 def prune(repo: str) -> dict[str, int]:
-    """Bounded retention: aged lifecycle events, expired raw model attempts, old crashes."""
+    """Bounded retention: aged events, raw model attempts, old crashes; memories go to one line."""
     import factory_crash_store
     from factory_turso_core import store
     from factory_turso_events import BATCH, prune_lifecycle, rollup_model_attempts
@@ -98,10 +98,13 @@ def prune(repo: str) -> dict[str, int]:
         if count < BATCH:
             break
     crashes = factory_crash_store.prune(store(), repo)
+    from factory_memory import compact
+
     return {
         "lifecycle_events_pruned": pruned,
         "model_attempts_rolled_up": rolled,
         "crashes_pruned": crashes,
+        "memories_compacted": compact(repo),
     }
 
 

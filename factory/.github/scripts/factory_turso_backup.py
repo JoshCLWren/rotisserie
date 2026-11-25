@@ -32,6 +32,7 @@ TABLES = {
     "factory_cursor": ("repo", "name"),
     "factory_crash": ("id",),
     "factory_dep": ("repo", "src", "dst", "kind"),
+    "factory_memory": ("repo", "issue"),
 }
 
 

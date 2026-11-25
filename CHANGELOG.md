@@ -11,6 +11,16 @@ such change must be called out here and in its release notes.
 
 ### Added
 
+- Memories of closed issues, after Beads' compaction. When the merge drain
+  closes an issue, it stores one capped summary in `factory_memory` (schema
+  version 6): the merged PR's title and body, its last review and its changed
+  files. It uses one GitHub read and one store write, once per issue and PR.
+  A worker that starts on an issue gets the memories of related closed issues
+  in its prompt: issues joined by a dependency link, issues with the same
+  parent, or issues whose PR changed a file the new issue names. The block is
+  at most 3,000 characters and is labelled as background. The prune step
+  compacts memories older than 30 days to one line.
+
 - Dependency links between factory items, after Beads' `bd dep`. A new store
   table, `factory_dep` (schema version 5), holds `blocks`, `parent-child`,
   `related`, `duplicates` and `supersedes` links. Each dispatcher pass copies

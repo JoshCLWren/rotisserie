@@ -359,6 +359,24 @@ The dependency links and the ready list follow the ideas of
 [Beads](https://github.com/gastownhall/beads) (`bd dep`, `bd ready`, MIT
 license). Rotisserie reimplements them on its own store and GitHub labels.
 
+### Memories of closed issues
+
+When the merge drain closes an issue, the factory stores a short memory of
+it in the store's `factory_memory` table: the merged pull request's title and
+body, its last review, and the files it changed. The text is prose only and
+at most 1,200 characters. When a worker starts on an issue, the trusted job
+that checks the assignment collects the memories of related closed issues:
+
+- issues joined to it by a dependency link,
+- issues with the same parent,
+- issues whose pull request changed a file that the new issue's body names.
+
+The worker's prompt gets them as one block of at most 3,000 characters,
+nearest first, labelled as background and not as instructions. After 30
+days a memory keeps one line (its title and pull request numbers); its file
+list stays for matching. This follows the compaction idea of
+[Beads](https://github.com/gastownhall/beads) (MIT license).
+
 ## Clearing the bottleneck
 
 `baste unstick` turns `why`'s diagnosis into work. It reads the

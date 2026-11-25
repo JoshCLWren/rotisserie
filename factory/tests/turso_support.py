@@ -42,6 +42,7 @@ TABLES = (
     "factory_cursor",
     "factory_crash",
     "factory_dep",
+    "factory_memory",
 )
 
 

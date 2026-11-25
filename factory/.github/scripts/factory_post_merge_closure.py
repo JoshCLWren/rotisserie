@@ -45,6 +45,11 @@ import factory_acceptance_criteria as acceptance_criteria
 import factory_implementation_delivery as implementation_delivery
 import factory_post_merge_closure_github as github
 from factory_merge_linkage import explain, linkage
+
+try:
+    import factory_memory as memory
+except ImportError:  # a worker's staged copy has no store and no memory module
+    memory = None
 from factory_post_merge_closure_policy import (
     ACTIVE_OWNER_RE,
     CLOSED_STATE,
@@ -403,6 +408,8 @@ def decide(
     outcome = close_merged_pr_issue(
         pr_number, dry_run=dry_run, require_quiescent=require_quiescent, info=info
     )
+    if memory and outcome == "closed" and (number := linked_issue(info["branch"], info["body"])):
+        memory.remember_closure(github._repo_slug(), number, pr_number, info)
     link = linkage(info["branch"], info["body"], info.get("title", ""))
     return outcome, explain(pr_number, outcome, link)
 

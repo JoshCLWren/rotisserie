@@ -119,6 +119,7 @@ jobs:
       candidate_health: ${{ steps.prepare.outputs.candidate_health }}
       fleet_sources: ${{ steps.prepare.outputs.fleet_sources }}
       review_authors: ${{ steps.prepare.outputs.review_authors }}
+      memory: ${{ steps.memory.outputs.memory }}
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -208,6 +209,21 @@ jobs:
           fi
           jq -e 'type == "array" and all(.[]; type == "string")' <<< "$review_authors" >/dev/null || review_authors='[]'
           echo "review_authors=$(jq -c . <<< "$review_authors")" >> "$GITHUB_OUTPUT"
+      # Summaries of related closed issues for an issue worker's prompt. The
+      # model job never holds the store token, so this trusted job reads them.
+      - name: Gather related closed-issue memories
+        id: memory
+        env:
+          GH_TOKEN: ${{ github.token }}
+          FACTORY_ASSIGNMENT: ${{ inputs.assignment }}
+        run: |
+          set -Eeuo pipefail
+          memory='""'
+          if issue="$(jq -er 'select(.kind == "issue") | .number' <<< "$FACTORY_ASSIGNMENT" 2>/dev/null)"; then
+            memory="$(python3 .github/scripts/factory_memory.py context --repo "$GITHUB_REPOSITORY" --issue "$issue")" || memory='""'
+          fi
+          jq -e 'type == "string"' <<< "$memory" >/dev/null 2>&1 || memory='""'
+          echo "memory=$(jq -c . <<< "$memory")" >> "$GITHUB_OUTPUT"
       # Trusted lifecycle evidence lives in the factory store, keyed by this Entry run.
       # It replaces the retired issue #1093 heartbeat comments; the model job
       # never receives the DSN and no GitHub comment is read or written.
@@ -246,6 +262,7 @@ jobs:
       FACTORY_CANDIDATE_HEALTH: ${{ needs.validate_assignment.outputs.candidate_health }}
       FACTORY_FLEET_SOURCES: ${{ needs.validate_assignment.outputs.fleet_sources }}
       FACTORY_REVIEW_AUTHORS: ${{ needs.validate_assignment.outputs.review_authors || '[]' }}
+      FACTORY_MEMORY_CONTEXT: ${{ needs.validate_assignment.outputs.memory || '' }}
       # Workflow token handles GitHub API, labels, comments, and backlog-zero
       # workflow dispatch. Git fetch/push and PR creation use the dedicated
       # PAT so pull_request workflows and initial review use a trusted actor.

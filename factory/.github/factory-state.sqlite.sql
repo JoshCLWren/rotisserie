@@ -251,8 +251,25 @@ CREATE TABLE IF NOT EXISTS factory_dep (
 ) STRICT;
 CREATE INDEX IF NOT EXISTS idx_factory_dep_dst ON factory_dep (repo, dst);
 
+-- One short memory per closed issue (factory_memory.py): the merged PR's title,
+-- body and last review, capped, and the files it changed. Rows older than 30
+-- days keep one line (compacted = 1); the files stay for matching.
+CREATE TABLE IF NOT EXISTS factory_memory (
+    repo TEXT NOT NULL,
+    issue INTEGER NOT NULL CHECK (issue > 0),
+    title TEXT NOT NULL,
+    summary TEXT NOT NULL CHECK (length(summary) <= 1200),
+    files TEXT NOT NULL DEFAULT '[]' CHECK (json_valid(files)),
+    prs TEXT NOT NULL DEFAULT '[]' CHECK (json_valid(prs)),
+    closed_at INTEGER NOT NULL,
+    compacted INTEGER NOT NULL DEFAULT 0 CHECK (compacted IN (0, 1)),
+    PRIMARY KEY (repo, issue)
+) STRICT;
+CREATE INDEX IF NOT EXISTS idx_factory_memory_closed ON factory_memory (repo, closed_at);
+
 INSERT OR IGNORE INTO _schema_version (version, applied_at) VALUES (1, unixepoch());
 INSERT OR IGNORE INTO _schema_version (version, applied_at) VALUES (2, unixepoch());
 INSERT OR IGNORE INTO _schema_version (version, applied_at) VALUES (3, unixepoch());
 INSERT OR IGNORE INTO _schema_version (version, applied_at) VALUES (4, unixepoch());
 INSERT OR IGNORE INTO _schema_version (version, applied_at) VALUES (5, unixepoch());
+INSERT OR IGNORE INTO _schema_version (version, applied_at) VALUES (6, unixepoch());

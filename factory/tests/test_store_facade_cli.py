@@ -83,4 +83,5 @@ def test_prune_prints_both_retention_counts(cli) -> None:
         "lifecycle_events_pruned": 0,
         "model_attempts_rolled_up": 0,
         "crashes_pruned": 0,
+        "memories_compacted": 0,
     }
