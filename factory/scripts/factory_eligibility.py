@@ -132,7 +132,7 @@ TERMINAL_LABELS = frozenset({"ralph-status:done", "factory:ready"})
 
 FACTORY_OWNER_RE = re.compile(r"^factory:(?:unowned|local|[1-9][0-9]*)$")
 
-_DEP_ON_RE = re.compile(r"(?:[Dd]epends?\s+on)\s+([^\n]+)")
+_DEP_ON_RE = re.compile(r"(?:[Dd]epends?\s+on|[Bb]locked\s+by)\s+([^\n]+)")
 _NUMBER_REF_RE = re.compile(r"#(\d+)")
 _DEPENDENCY_SEPARATORS = frozenset({"and", "&", "+", ","})
 _DEPENDENCY_HEADING_RE = re.compile(
@@ -215,7 +215,7 @@ def _leading_reference_numbers(text: str) -> set[int]:
 
 
 def parse_inline_depends_on_numbers(body: str) -> set[int]:
-    """Return issue numbers from inline ``Depends on #N`` declarations."""
+    """Return issue numbers from inline ``Depends on #N`` or ``Blocked by #N`` declarations."""
     numbers: set[int] = set()
     for match in _DEP_ON_RE.finditer(body or ""):
         numbers.update(_leading_reference_numbers(match.group(1)))

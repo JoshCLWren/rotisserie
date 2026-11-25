@@ -42,6 +42,7 @@
 .github/scripts/factory_completion_controller.py
 .github/scripts/factory_delivery_funnel.py
 .github/scripts/factory_deploy_recovery.py
+.github/scripts/factory_deps.py
 .github/scripts/factory_discovery.py
 .github/scripts/factory_drain_run_presence.py
 .github/scripts/factory_dispatch_credential_filter.py
@@ -79,6 +80,7 @@
 .github/scripts/factory_model_attempt_events.py
 .github/scripts/factory_model_failover.py
 .github/scripts/factory_model_track_record.py
+.github/scripts/factory_ready.py
 .github/scripts/factory_track_record_cooldown.py
 .github/scripts/factory_manual_model.py
 .github/scripts/factory_forced_model.py

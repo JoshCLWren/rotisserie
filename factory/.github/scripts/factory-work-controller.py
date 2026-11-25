@@ -40,7 +40,9 @@ from factory_lease_owners import ActiveWorkerResult, github_timestamp_epoch
 from factory_state_ledger import enabled as ledger_enabled
 from factory_adopter import MARKER_PREFIX, repository
 import factory_assign_trace as trace
+import factory_deps
 import factory_dispatch_holds
+import factory_ready
 import factory_issue_intake_guard
 from factory_pr_merge_state import fill_merge_state
 REPO = repository()
@@ -1317,6 +1319,32 @@ def assign(worker: str, kinds: tuple[str, ...] | None = None,
                             batch_reconciled=batch_reconciled, operator_force=operator_force)
 
 
+def ready_pool(issues: list[dict[str, Any]], prs: list[dict[str, Any]], attempt_records: list[NoDiffAttempt] | None, *, kinds: tuple[str, ...] | None = None, target: tuple[str, int] | None = None, operator_force: bool = False) -> factory_ready.Ready:
+    """The ranked pool this pass walks; the ready command prints the same list."""
+    global EXTERNAL_WIP_SEEN
+    try:
+        external_wip = external_wip_count(REPO) if ledger_enabled() else 0
+    except Exception as exc:
+        print(f'[factory-controller] external lease capacity unknown ({type(exc).__name__}); holding new intake', file=sys.stderr)
+        external_wip = FACTORY_PR_WIP_LIMIT
+    EXTERNAL_WIP_SEEN = external_wip
+    # A PR-only target never leases new issue work, so it skips the intake decision.
+    intake = (rotisserie_issue_intake(issues, prs, operator_force=True) if operator_force else rotisserie_issue_intake(issues, prs)) if target is None or target[0] == 'issue' else None
+    # Retry cooldown and the loop breaker never hold a manual target or a forced run.
+    holds = factory_dispatch_holds.reader(REPO, prs) if target is None and not operator_force else None
+    return factory_ready.pool(issues, prs, attempt_records=attempt_records, external_wip=external_wip, intake=intake, links=factory_deps.stored(REPO), holds=holds, kinds=kinds, operator_force=operator_force, intake_holds=target is None, rank=build_candidates)
+
+
+def ready_inputs() -> tuple[list[dict[str, Any]], list[dict[str, Any]], factory_ready.Ready]:
+    issues = list_issues()
+    prs = factory_dispatch_holds.stamp(REPO, list_prs(), issues)
+    try:
+        records: list[NoDiffAttempt] | None = load_no_diff_attempt_records()
+    except RuntimeError:
+        records = None
+    return issues, prs, ready_pool(issues, prs, records)
+
+
 def assign_from_pool(worker: str, kinds: tuple[str, ...] | None = None,
     *,
     target: tuple[str, int] | None = None,
@@ -1358,47 +1386,9 @@ def assign_from_pool(worker: str, kinds: tuple[str, ...] | None = None,
     except RuntimeError as exc:
         attempt_records = None
         print(f'[factory-controller] no-diff retry history unavailable; holding fresh issue intake: {exc}', file=sys.stderr)
-    issue_retry_counts: dict[int, int] = {}
-    if attempt_records is not None:
-        for attempt in attempt_records:
-            if attempt.kind != 'issue':
-                continue
-            issue_retry_counts[attempt.number] = issue_retry_counts.get(attempt.number, 0) + 1
-    global EXTERNAL_WIP_SEEN
-    try:
-        external_wip = external_wip_count(REPO) if ledger_enabled() else 0
-    except Exception as exc:
-        print(f'[factory-controller] external lease capacity unknown ({type(exc).__name__}); holding new intake', file=sys.stderr)
-        external_wip = FACTORY_PR_WIP_LIMIT
-    EXTERNAL_WIP_SEEN = external_wip
-    candidates = build_candidates(
-        issues,
-        prs,
-        no_diff_attempts_by_issue=issue_retry_counts,
-        no_diff_attempt_records=attempt_records,
-        include_backpressured_issues=operator_force,
-        external_wip=external_wip,
-        intake_holds=target is None,
-    )
+    candidates = list(ready_pool(issues, prs, attempt_records, kinds=kinds, target=target, operator_force=operator_force).candidates)
     if target is None:
         factory_issue_intake_guard.request_splits_gh(issues, REPO)
-    # A PR-only target never leases new issue work; issue-intake authorization is unnecessary
-    # and can fail closed or consume remote calls on every targeted repair/review wakeup.
-    if target is None or target[0] == 'issue':
-        authorized_issues = (
-            rotisserie_issue_intake(issues, prs, operator_force=True)
-            if operator_force else rotisserie_issue_intake(issues, prs)
-        )
-        if authorized_issues is not None:
-            candidates = [
-                candidate
-                for candidate in candidates
-                if candidate.kind != "issue" or candidate.incident or candidate.number in authorized_issues
-            ]
-    if kinds is not None:
-        candidates = [candidate for candidate in candidates if candidate.kind in kinds]
-    elif attempt_records is None:
-        candidates = [candidate for candidate in candidates if candidate.kind == 'pr']
     if target is not None:
         kind, number = target
         candidates = [
@@ -1427,9 +1417,6 @@ def assign_from_pool(worker: str, kinds: tuple[str, ...] | None = None,
     # Hard candidate, dependency, ownership and live-claim checks remain active.
     if operator_force and target is None:
         print('[factory-controller] operator force: bypassing advisory retry cooldown and soft backlog pressure', file=sys.stderr)
-    # Retry cooldown and the loop breaker never hold a manual target or a forced run.
-    if target is None and not operator_force:
-        candidates = factory_dispatch_holds.apply(REPO, candidates, prs)
     candidates = order_candidates_for_worker(
         resolve_review_head_contributors(candidates, prs), worker
     )
@@ -2651,6 +2638,9 @@ def main() -> int:
     explain_parser.add_argument('--issue', required=True, type=int)
     explain_parser.add_argument('--json', action='store_true', help='Emit JSON instead of text')
     subparsers.add_parser('snapshot')
+    ready_parser = subparsers.add_parser('ready', help='the ranked pool the next pass walks')
+    ready_parser.add_argument('--limit', type=int, default=factory_ready.PUBLISHED_LIMIT)
+    ready_parser.add_argument('--publish', action='store_true', help='store the top items for the status page')
     subparsers.add_parser('signal-completion')
     subparsers.add_parser('signal-roster')
     args = parser.parse_args()
@@ -2660,7 +2650,14 @@ def main() -> int:
     if args.command == 'reconcile':
         released = reconcile_stale_leases()
         repaired = reconcile_contradictory_labels()
-        print(json.dumps({'released': released, 'contradictions_repaired': repaired}))
+        try:
+            links = factory_deps.reconcile(REPO, list_issues()) if ledger_enabled() else {}
+        except Exception as exc:
+            links = {'error': type(exc).__name__}
+        print(json.dumps({'released': released, 'contradictions_repaired': repaired, 'dependencies': links}))
+        return 0
+    if args.command == 'ready':
+        print(json.dumps(factory_ready.report(REPO, ready_inputs, args.limit, args.publish and ledger_enabled())))
         return 0
     if args.command == 'capacity':
         print(json.dumps(omniroute_free_entry_capacity()))

@@ -7,6 +7,7 @@ from rotisserie.factory_console.commands._shared import EXIT_OK, Outcome, _rows,
 from rotisserie.factory_console.commands.settings import _variables
 from rotisserie.factory_console.context import Context, UsageError
 from rotisserie.factory_console.service import bridge, claimops, frontier, queue
+from rotisserie.factory_console.service import ready as ready_service
 from rotisserie.factory_console.tracker import EXIT_CODES, Result
 from rotisserie.factory_console.ui import Console
 
@@ -25,12 +26,22 @@ def cmd_why(context: Context, arguments: argparse.Namespace) -> Outcome:
     if number is None:
         summary = queue.summarize_queue(context.github, now=now, variables=variables)
         _show_queue(context.console, summary)
-        return Outcome(Result.COMPLETED, EXIT_OK, summary.to_dict())
-    answer = queue.answer_issue(context.github, number, now=now, variables=variables)
+        found = ready_service.dependencies(context.github.repo, summary.board.issues)
+        _show_cycles(context.console, found)
+        return Outcome(Result.COMPLETED, EXIT_OK, {**summary.to_dict(), "dependencies": found})
+    board = queue.read_board(context.github, dict(variables), now)
+    answer = queue.answer_issue(context.github, number, now=now, variables=variables, board=board)
+    links = ready_service.dependencies(context.github.repo, board.issues, number)
     _show_answer(context, answer)
+    _show_links(context.console, number, links)
     data = answer.to_dict()
     data["ref"] = f"issue:{number}"
-    data["reasons"] = [reason.text for reason in answer.verdict.reasons]
+    reasons = [reason.text for reason in answer.verdict.reasons]
+    if links["reason"] and answer.verdict.status == "ready":
+        data["status"] = "held"
+        reasons.append(str(links["reason"]))
+    data["reasons"] = reasons
+    data["dependencies"] = links
     if arguments.via == "github":
         context.console.waiting("Reading who holds it through the label claim workflow")
         try:
@@ -49,6 +60,35 @@ def cmd_why(context: Context, arguments: argparse.Namespace) -> Outcome:
             if not rows:
                 context.console.line("  No store lease holds it.")
     return Outcome(Result.COMPLETED, EXIT_OK, data)
+
+
+def _show_links(console: Console, number: int, found: dict[str, object]) -> None:
+    links = found.get("links")
+    for link in links if isinstance(links, list) else []:
+        src, dst, kind = link["src"], link["dst"], link["kind"]
+        origin = "issue body" if link["origin"] == "body" else "factory"
+        other = src if dst == number else dst
+        if kind == "blocks":
+            words = f"Blocked by #{other}" if dst == number else f"Blocks #{other}"
+        elif kind == "parent-child":
+            words = f"Child of #{other}" if dst == number else f"Parent of #{other}"
+        else:
+            words = f"{kind} #{other}"
+        console.line(f"  {words} ({kind}, from the {origin})")
+    if found.get("reason"):
+        console.fail(f"Dependencies hold it: {found['reason']}")
+    _show_cycles(console, found)
+
+
+def _show_cycles(console: Console, found: dict[str, object]) -> None:
+    cycles = found.get("cycles")
+    for cycle in cycles if isinstance(cycles, list) else []:
+        loop = " -> ".join(f"#{n}" for n in [*cycle, cycle[0]])
+        console.warn(f"Dependency cycle: {loop}. Remove one link to release it.")
+    notes = found.get("notes")
+    if console.verbose:
+        for note in notes if isinstance(notes, list) else []:
+            console.line(f"  {note}")
 
 
 def _show_answer(context: Context, answer: queue.IssueAnswer) -> None:

@@ -12,13 +12,10 @@ from factory_work_policy_backlog import (
 )
 from factory_work_policy_base import (
     BLOCKED_LABELS,
-    DEP_ON_RE,
-    DEPENDENCY_SEPARATORS,
     FACTORY_NO_DIFF_RETRY_LIMIT,
     FACTORY_PR_WIP_LIMIT,
     FACTORY_REVIEW_BACKLOG_LIMIT,
     NON_EXECUTABLE_ISSUES,
-    NUMBER_REF_RE,
     NoDiffAttempt,
     eligibility,
     head_contributors_from_pr,
@@ -167,36 +164,13 @@ def pr_suppresses_issue_candidate(pr: dict[str, Any], issue_map: dict[int, dict[
     )
 
 
-def _leading_reference_numbers(text: str) -> set[int]:
-    """Return the '#N' references at the head of a dependency declaration.
-
-    Only the leading reference cluster counts: consecutive ``#N`` tokens
-    joined by separators such as ``and``, ``,``, or ``+``.  Prose or casual
-    ``#N`` mentions later on the line end the cluster so they never become
-    blocking prerequisites.
-    """
-    result: set[int] = set()
-    for token in text.split():
-        clean = token.rstrip(',.;:')
-        ref = NUMBER_REF_RE.fullmatch(clean)
-        if ref:
-            result.add(int(ref.group(1)))
-        elif clean.lower() not in DEPENDENCY_SEPARATORS:
-            break
-    return result
-
-
 def parse_depends_on_numbers(body: str) -> set[int]:
     """Return issue numbers declared as explicit prerequisites in the body.
 
-    Only matches the canonical ``Depends on #NNN`` / ``Depends on #N, #M``
-    format used by structured issue declarations.  Casual ``#N`` mentions
-    elsewhere in the body are not treated as blocking prerequisites.
+    One parser for every selector: inline ``Depends on #N`` / ``Blocked by #N``
+    clusters and dependency-heading lists. Casual ``#N`` mentions never count.
     """
-    numbers: set[int] = set()
-    for match in DEP_ON_RE.finditer(body):
-        numbers.update(_leading_reference_numbers(match.group(1)))
-    return numbers
+    return eligibility.parse_declared_dependencies(body)
 
 
 def body_depends_on_unresolved(body: str, open_numbers: set[int]) -> bool:

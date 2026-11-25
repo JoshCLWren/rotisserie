@@ -11,6 +11,24 @@ such change must be called out here and in its release notes.
 
 ### Added
 
+- Dependency links between factory items, after Beads' `bd dep`. A new store
+  table, `factory_dep` (schema version 5), holds `blocks`, `parent-child`,
+  `related`, `duplicates` and `supersedes` links. Each dispatcher pass copies
+  `Blocked by #N` and `Depends on #N` lines from open issue bodies into it,
+  and writes only a change. Factory code adds its own links with
+  `factory_deps.add(repo, src, dst, kind)`, which refuses a link that would
+  close a cycle. The dispatcher never takes an issue that waits on an open
+  issue, including through a parent. A cycle declared in issue bodies is
+  reported in `baste why`, `baste ready` and the status page, and its issues
+  stay held. `baste why issue:N` lists each link and its source.
+- `baste ready [--json] [--via github]` lists claimable work in the
+  dispatcher's own order, with each item's stage and next action. The
+  dispatcher, `baste next` and `baste ready` now call one function,
+  `factory_ready.pool`, so `next` also applies intake, retry cooling and loop
+  parks. Each dispatcher pass stores its top ten ready items and the status
+  page publishes them as `ready` in `factory-stats.json`. Both control rooms
+  show the list.
+
 - Factory crash capture. Every Python entry point a factory workflow or worker
   script runs installs `factory_crash`: an uncaught exception still prints its
   traceback and fails the run, and also prints a GitHub `::error` annotation

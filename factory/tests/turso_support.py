@@ -41,6 +41,7 @@ TABLES = (
     "factory_model_attempt_daily",
     "factory_cursor",
     "factory_crash",
+    "factory_dep",
 )
 
 

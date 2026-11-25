@@ -16,6 +16,7 @@ from typing import Any
 from rotisserie.factory_console import runtime
 from rotisserie.factory_console.github import GitHub, GitHubError, Obj, string
 from rotisserie.factory_console.service import providers, queue
+from rotisserie.factory_console.service import ready as ready_service
 from rotisserie.factory_console.service import sync as branch_sync
 
 SCHEMA_VERSION = 1
@@ -44,6 +45,8 @@ class Offer:
     parallel_group: str
     parallel_confidence: str
     provenance: dict[str, object]
+    stage: str = ""
+    ready: bool = False
 
 
 @dataclass(frozen=True)
@@ -56,6 +59,9 @@ class Frontier:
     authority_note: str
     offers: tuple[Offer, ...]
     holds: tuple[dict[str, object], ...]
+    cycles: tuple[tuple[int, ...], ...] = ()
+    store_checked: bool = False
+    notes: tuple[str, ...] = ()
 
     def to_dict(self) -> dict[str, object]:
         return {
@@ -162,6 +168,10 @@ def from_snapshot(
     review_backlog: int,
     pr_wip: int,
     issue_hold: str = "",
+    pool_held: Mapping[str, str] | None = None,
+    cycles: tuple[tuple[int, ...], ...] = (),
+    store_checked: bool = False,
+    notes: tuple[str, ...] = (),
 ) -> Frontier:
     """Pure projection of the same already-ranked controller candidates.
 
@@ -187,13 +197,15 @@ def from_snapshot(
             else core.completion_action_for(candidate.stage, bool(candidate.conflicted))
         )
         blockers: list[str] = []
+        held_by_pool = (pool_held or {}).get(f"{kind}:{number}")
+        if held_by_pool:
+            blockers.append(held_by_pool)
         if action is None:
             blockers.append("No executable controller action for the current PR stage")
             action = "inspect"
         if owner not in (None, "", "factory:unowned"):
             blockers.append(f"GitHub still identifies an owner: {owner}")
-        if lease_problem:
-            blockers.append(lease_problem)
+        unknown = [lease_problem] if lease_problem else []
         touched = [number]
         if kind == "pr" and candidate.linked_issue is not None:
             touched.append(int(candidate.linked_issue))
@@ -204,7 +216,7 @@ def from_snapshot(
             )
         dependencies: set[int] = set()
         if kind == "issue" and issue_hold:
-            blockers.append(issue_hold)
+            unknown.append(issue_hold)
         if kind == "issue":
             verdict = issue_verdicts.get(number)
             if verdict is None:
@@ -261,8 +273,8 @@ def from_snapshot(
                 action=action,
                 instruction=goal,
                 reason=reason,
-                status="held" if blockers else "candidate",
-                hold_reasons=tuple(dict.fromkeys(blockers)),
+                status="held" if blockers or unknown else "candidate",
+                hold_reasons=tuple(dict.fromkeys([*blockers, *unknown])),
                 lane=int(candidate.lane),
                 priority=int(candidate.priority),
                 prerequisites=tuple(f"issue:{n}" for n in sorted(dependencies)),
@@ -288,6 +300,8 @@ def from_snapshot(
                     "head_contributors": sorted(candidate.head_contributors),
                     "review_independence": independence,
                 },
+                stage=str(candidate.stage or ("new" if kind == "issue" else "")),
+                ready=not blockers,
             )
         )
     represented = {offer.target for offer in offers}
@@ -297,14 +311,16 @@ def from_snapshot(
         if f"issue:{number}" in represented:
             continue
         verdict = issue_verdicts.get(number)
+        reasons = [reason.text for reason in verdict.reasons] if verdict else []
+        pooled = (pool_held or {}).get(f"issue:{number}")
+        if pooled and pooled not in reasons:
+            reasons.insert(0, pooled)
         holds.append(
             {
                 "target": f"issue:{number}",
                 "url": f"https://github.com/{repository}/issues/{number}",
-                "status": verdict.status if verdict else "unknown",
-                "reasons": [reason.text for reason in verdict.reasons]
-                if verdict
-                else ["Not admitted by the controller's current policy"],
+                "status": verdict.status if verdict and not pooled else "held",
+                "reasons": reasons or ["Not admitted by the controller's current policy"],
             }
         )
     for row in prs:
@@ -328,6 +344,9 @@ def from_snapshot(
         lease_problem or "store leases inspected, but no work has been reserved",
         tuple(offers),
         tuple(holds),
+        cycles,
+        store_checked,
+        notes,
     )
 
 
@@ -357,20 +376,20 @@ def capture(github: GitHub, *, now: datetime) -> Frontier:
     )
     core = runtime.module("factory_work_policy")
     attempts = _retry_history(github, core, now)
-    issue_retries: dict[int, int] = {}
-    for attempt in attempts or []:
-        if attempt.kind == "issue":
-            issue_retries[attempt.number] = issue_retries.get(attempt.number, 0) + 1
-    candidates = core.build_candidates(
-        board.issues,
-        board.prs,
-        no_diff_attempts_by_issue=issue_retries,
-        no_diff_attempt_records=attempts,
-        pr_wip_limit=board.pr_wip_limit,
-        review_backlog_limit=board.review_backlog_limit,
-        external_wip=external_wip,
-        incidents=core.declared_incidents(variables),
-    )
+    with ready_service.store_inputs(github.repo, board.issues, board.prs) as store:
+        found = runtime.module("factory_ready").pool(
+            board.issues,
+            store.prs,
+            attempt_records=attempts,
+            external_wip=external_wip,
+            intake=board.admitted(),
+            links=store.links,
+            holds=store.holds,
+            rank=core.build_candidates,
+            pr_wip_limit=board.pr_wip_limit,
+            review_backlog_limit=board.review_backlog_limit,
+            incidents=core.declared_incidents(variables),
+        )
     by_issue = {entry.issue: entry.verdict for entry in summary.entries}
     rows_for_counts: list[Mapping[str, object]] = list(board.prs)
     return from_snapshot(
@@ -378,7 +397,7 @@ def capture(github: GitHub, *, now: datetime) -> Frontier:
         now=now,
         issues=board.issues,
         prs=board.prs,
-        candidates=candidates,
+        candidates=list(found.ranked),
         issue_verdicts=by_issue,
         leases=leases,
         lease_problem=problem,
@@ -387,4 +406,8 @@ def capture(github: GitHub, *, now: datetime) -> Frontier:
         wip_limit=board.pr_wip_limit,
         review_backlog=len(runtime.completion_backlog(rows_for_counts)),
         pr_wip=runtime.pr_wip_count(rows_for_counts),
+        pool_held=found.held,
+        cycles=tuple(found.cycles),
+        store_checked=store.checked,
+        notes=(store.note,) if store.note else (),
     )

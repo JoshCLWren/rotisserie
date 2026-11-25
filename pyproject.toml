@@ -72,6 +72,8 @@ include = [
   "/factory/.github/scripts/factory_state_labels.py",
   "/factory/.github/scripts/factory_merge_linkage.py",
   "/factory/.github/scripts/factory_review_findings.py",
+  "/factory/.github/scripts/factory_deps.py",
+  "/factory/.github/scripts/factory_ready.py",
   "/factory/scripts/factory_eligibility.py",
   "/CHANGELOG.md",
   "/docs",
@@ -119,6 +121,8 @@ packages = ["src/rotisserie"]
 "factory/.github/scripts/factory_state_labels.py" = "rotisserie/factory_console/factory_runtime/factory_state_labels.py"
 "factory/.github/scripts/factory_merge_linkage.py" = "rotisserie/factory_console/factory_runtime/factory_merge_linkage.py"
 "factory/.github/scripts/factory_review_findings.py" = "rotisserie/factory_console/factory_runtime/factory_review_findings.py"
+"factory/.github/scripts/factory_deps.py" = "rotisserie/factory_console/factory_runtime/factory_deps.py"
+"factory/.github/scripts/factory_ready.py" = "rotisserie/factory_console/factory_runtime/factory_ready.py"
 "factory/scripts/factory_eligibility.py" = "rotisserie/factory_console/factory_runtime/factory_eligibility.py"
 
 [tool.pytest.ini_options]

@@ -236,7 +236,23 @@ CREATE INDEX IF NOT EXISTS idx_factory_crash_recent ON factory_crash (repo, crea
 CREATE INDEX IF NOT EXISTS idx_factory_crash_group
     ON factory_crash (repo, fingerprint, created_at);
 
+-- Dependency links between items (factory_deps.py). src blocks dst, or src is
+-- the parent of dst; related, duplicates and supersedes never hold work.
+-- origin body rows mirror issue bodies each dispatcher pass; factory rows stay.
+CREATE TABLE IF NOT EXISTS factory_dep (
+    repo TEXT NOT NULL,
+    src INTEGER NOT NULL CHECK (src > 0),
+    dst INTEGER NOT NULL CHECK (dst > 0 AND dst <> src),
+    kind TEXT NOT NULL
+        CHECK (kind IN ('blocks', 'parent-child', 'related', 'duplicates', 'supersedes')),
+    origin TEXT NOT NULL CHECK (origin IN ('body', 'factory')),
+    created_at INTEGER NOT NULL,
+    PRIMARY KEY (repo, src, dst, kind)
+) STRICT;
+CREATE INDEX IF NOT EXISTS idx_factory_dep_dst ON factory_dep (repo, dst);
+
 INSERT OR IGNORE INTO _schema_version (version, applied_at) VALUES (1, unixepoch());
 INSERT OR IGNORE INTO _schema_version (version, applied_at) VALUES (2, unixepoch());
 INSERT OR IGNORE INTO _schema_version (version, applied_at) VALUES (3, unixepoch());
 INSERT OR IGNORE INTO _schema_version (version, applied_at) VALUES (4, unixepoch());
+INSERT OR IGNORE INTO _schema_version (version, applied_at) VALUES (5, unixepoch());

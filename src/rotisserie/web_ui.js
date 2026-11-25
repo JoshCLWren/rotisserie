@@ -472,6 +472,8 @@ el("labels-repair").onclick=()=>{if(window.confirm("Start a label repair run? It
 el("unstick").onclick=()=>act({operation:"unstick"},el("unstick"));
 el("doctor-fix").onclick=()=>act({operation:"doctor_fix"},el("doctor-fix"));
 el("release-expired").onclick=()=>act({operation:"release_expired"},el("release-expired"));
+const renderReady=d=>sourceNote(d)+(d.notes||[]).map(n=>'<div class="hint">'+h(n)+'</div>').join("")+(d.cycles||[]).map(c=>'<div class="item"><div class="item-title">Dependency cycle: '+h(c.concat(c.slice(0,1)).map(n=>"#"+n).join(" → "))+'</div><div class="meta">Remove one link to release it.</div></div>').join("")+((d.ready||[]).map(x=>'<div class="item"><div class="item-title">'+h(x.rank)+". "+h(x.target)+" · "+h(x.stage||"")+" → "+h(x.action)+'</div><div class="meta">'+h(x.title||"")+'</div></div>').join("")||empty("Nothing is claimable right now."));
+el("queue-ready").onclick=async()=>{el("queue-content").innerHTML=empty("Reading the ready list…");try{el("queue-content").innerHTML=renderReady(ok(await get("ready")))}catch(err){el("queue-content").innerHTML=empty(err.message)}};
 el("queue-explain").onclick=()=>{const number=el("queue-explain-number").value;if(/^[1-9][0-9]*$/.test(number))explain(number);else notice("Enter an issue number to explain.",true)};
 setInterval(()=>{if(!document.hidden&&!state.mutating&&(state.page==="overview"||state.page==="workers"))loadStatus()},30000);
 setInterval(()=>{for(const x of document.querySelectorAll(".asof"))x.textContent=ago(Number(x.dataset.at))},15000);

@@ -857,6 +857,8 @@ jobs:
           echo "budget_deferred=${budget_deferred}" >> "$GITHUB_OUTPUT"
           echo "budget_unreadable=${budget_unreadable}" >> "$GITHUB_OUTPUT"
           echo "Dispatched ${dispatched_count} worker entry workflow(s)"
+          # The status page shows the top of this pass's pool; reads come from this job's caches.
+          python3 "$controller" ready --publish > /dev/null || echo '::warning::Ready list not published'
           echo "dispatched_count=${dispatched_count}" >> "$GITHUB_OUTPUT"
           echo "unavailable_count=${unavailable_count}" >> "$GITHUB_OUTPUT"
           if (( dispatch_failures > 0 )); then

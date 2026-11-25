@@ -305,6 +305,60 @@ than the one the factory workflow uses. A specific worker may still skip an
 eligible issue it failed on before (strike retry); that is decided at
 assignment.
 
+### Dependency links
+
+An issue waits on another issue when its body has a `Blocked by #N` or
+`Depends on #N` line, or a `Dependencies` heading with a list of `#N` items.
+A casual `#N` mention elsewhere in the body does not count. Each dispatcher
+pass copies these lines into the store's `factory_dep` table. The factory
+also writes its own links there, for example when it splits a large issue
+into child issues. A link has one of five kinds:
+
+- `blocks`: the second issue waits until the first one closes.
+- `parent-child`: the child waits on every open issue that blocks its
+  parent. An open parent does not block its own children.
+- `related`, `duplicates` and `supersedes` are notes and never hold work.
+
+`baste why issue:N` lists each link of the issue and where it came from (the
+issue body or the factory). When links form a loop, every issue in the loop
+waits on itself. The dispatcher does not take any of them, and `why`,
+`ready` and the status page show the loop. Remove one link to release it. The
+factory refuses to write a link that would close a loop.
+
+## What will it take next?
+
+`baste ready` lists the work the factory can take now, in the order the
+dispatcher takes it, with the stage of each item and the next action:
+
+```
+Ready work (9)
+
+#  Item     Stage                      Next action      Title
+1  pr:5770  factory:review             review           Post-Rust: support story-arc/overall issue-number aliases an
+2  pr:5781  factory:review             review           Post-Rust: bulk read/complete actions must be reviewable and
+5  pr:5774  factory:changes-requested  review-findings  ComicPile Rust API migration: resource-oriented v2, remove B
+```
+
+An item is ready when it is open, has no factory owner and no `agent:NAME`
+label, is not parked, cooling or waiting for a split, is admitted by intake,
+and no open issue blocks it. The list comes from the same function the
+dispatcher walks (`factory_ready.pool`), so `ready`, `next` and the dispatcher
+cannot disagree about the order. After the list, a worker still checks its
+role, review independence, checks that are still running, GitHub's own
+dependency list and the lease.
+
+Cooling, parks and the links the factory wrote live in the store. Without a
+store connection, `ready` says so and its answer is not authoritative; use
+`baste ready --via github` for the store's view. Each dispatcher pass also
+stores its top ten ready items, and the status page publishes them as the
+`ready` block of `factory-stats.json`, so an agent with only GitHub access
+can read what comes next. The hosted control room shows that list. `--json`
+prints one document.
+
+The dependency links and the ready list follow the ideas of
+[Beads](https://github.com/gastownhall/beads) (`bd dep`, `bd ready`, MIT
+license). Rotisserie reimplements them on its own store and GitHub labels.
+
 ## Clearing the bottleneck
 
 `baste unstick` turns `why`'s diagnosis into work. It reads the
