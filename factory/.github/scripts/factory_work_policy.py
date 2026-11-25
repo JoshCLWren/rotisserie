@@ -44,6 +44,7 @@ from factory_work_policy_base import (
     FACTORY_REVIEW_FAILURE_COOLDOWN_SECONDS,
     FIXED_LEASE_TTL_SECONDS,
     FIXED_OWNER_RE,
+    agent_hold,
     head_contributors_from_pr,
     is_acceptance_parent,
     is_factory_managed_pr,

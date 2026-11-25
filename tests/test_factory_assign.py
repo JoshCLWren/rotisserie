@@ -144,6 +144,7 @@ def test_assign_claims_labels_and_posts_the_stage_task() -> None:
     assert "Read issue #5" in body and "Faces stay visible" in body
     assert "`Model: <your exact model id>`" in body
     assert "baste finish pr:7" in body and "agent:claude" in body
+    assert "comment `DONE` here and remove the `agent:claude` label" in body
     text = stream.getvalue()
     assert "pr:7 assigned to agent:claude" in text and "Removed agent:freebuff" in text
     assert outcome.data["kind"] == "review"

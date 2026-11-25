@@ -162,16 +162,19 @@ def build(github: GitHub, target: str, kind: str = "") -> tuple[str, str]:
 
 
 def comment(target: str, agent: str, task: str, marker: str) -> str:
+    """The posted task, consistent with the outside agent steps in external-agent-claims.md."""
     return "\n".join(
         [
             marker,
-            f"**Assigned to: agent:{agent}.** This item is claimed for you with "
-            "`factory:claimed`, so factory workers stay off it until you finish.",
+            f"**Assigned to `agent:{agent}`.** That label holds this item: factory workers "
+            "stay off it while it is there.",
             "",
             task.strip(),
             "",
-            f"When you are done, run `baste finish {target}` (or remove the "
-            f"`factory:claimed` and `agent:{agent}` labels). The factory then continues.",
+            "Push to this item's branch (for an issue, open a PR that says `Closes #N`). "
+            "End every commit message with `Model: <your exact model id>`.",
+            f"When you are done, comment `DONE` here and remove the `agent:{agent}` label. "
+            f"The owner can also end it with `baste finish {target}`.",
             "",
             "Do not merge, push to main, or change other factory labels.",
         ]

@@ -91,6 +91,9 @@ def park_loops(
         if loop.bypassed(names):
             done.append({"pr": item.number, "status": "owner", "text": item.text()})
             continue
+        if any(name.startswith("agent:") for name in names):
+            done.append({"pr": item.number, "status": "outside agent", "text": item.text()})
+            continue
         head = _head(pull)
         stage = stage_of(names) or "factory:review"
         park = parks.get(item.target)

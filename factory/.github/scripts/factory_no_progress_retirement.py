@@ -113,6 +113,7 @@ def candidate_reason(
         or base.get("ref") != "main"
         or is_manual_only(pr.get("body"))
         or is_manual_only(issue.get("body"))
+        or any(label.startswith("agent:") for label in labels_of(pr) | labels_of(issue))
     ):
         return None
 

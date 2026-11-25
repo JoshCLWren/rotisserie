@@ -186,6 +186,9 @@ def available_wanted(facts: Facts, labels: set[str]) -> tuple[bool, str]:
 def plan(facts: Facts) -> Plan:
     """Exact label changes that bring one item to its trustworthy projection."""
     draft = _Draft(set(facts.labels))
+    agent = work.agent_hold(facts.labels)
+    if agent:
+        return Plan(facts.number, facts.kind, (), (), (), (f"outside agent hold {agent}",))
 
     for label in sorted(facts.labels):
         if not is_legacy(label):
