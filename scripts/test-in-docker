@@ -1,0 +1,35 @@
+#!/bin/sh
+# Run the CI checks, or one command, in the Linux test image (scripts/test.Dockerfile).
+#   scripts/test-in-docker                      every CI check
+#   scripts/test-in-docker factory uv run --locked pytest tests/test_x.py
+#   scripts/test-in-docker root uv run --locked pytest tests/test_y.py
+set -eu
+
+root="$(cd "$(dirname "$0")/.." && pwd -P)"
+image="rotisserie-test"
+
+docker build --quiet --tag "$image" - < "$root/scripts/test.Dockerfile" >/dev/null
+
+if ! docker run --rm --volume "$root:/work" "$image" test -f /work/scripts/ci-in-container.sh; then
+  echo "Docker cannot see $root. Use a checkout in a folder Docker shares, such as one under \$HOME." >&2
+  exit 2
+fi
+
+# A linked worktree's .git file points at the main repository's git directory,
+# so that directory must be visible at the same path inside the container.
+common="$(git -C "$root" rev-parse --path-format=absolute --git-common-dir)"
+git_dir=""
+case "$common" in
+  "$root"/*) ;;
+  *) git_dir="$common" ;;
+esac
+
+tty=""
+[ -t 1 ] && tty="--tty"
+
+exec docker run --rm ${tty:+"$tty"} \
+  --volume "$root:/work" \
+  ${git_dir:+--volume "$git_dir:$git_dir"} \
+  --volume rotisserie-test-cache:/home/runner/.cache \
+  --volume rotisserie-test-venvs:/home/runner/venvs \
+  "$image" bash /work/scripts/ci-in-container.sh "$@"

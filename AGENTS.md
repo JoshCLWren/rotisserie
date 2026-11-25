@@ -47,7 +47,7 @@ triggers, permissions, concurrency and secrets, and calls the reusable workflow
 at a Rotisserie ref. Adopter-specific values belong in the adopter's
 `.rotisserie/config.toml`, repository variables, or caller inputs, never in a
 reusable workflow or in `factory/`.
-Run the factory suite from `factory/` (`uv run --locked pytest -n auto`).
+Run the factory suite in Docker (`scripts/test-in-docker`; see Tests).
 
 Factory coordination state lives in a libSQL (Turso) store on the free plan
 (`factory/docs/FACTORY_STATE_STORE.md`). Only trusted controller jobs get the
@@ -131,15 +131,25 @@ When editing:
 
 ## Tests
 
-Run the checks proportionate to the files changed. The canonical local check is:
+Run tests in Docker. The scripts need Linux tools that macOS lacks (`flock`,
+`setsid`, GNU `stat` and `date`), so a run on a Mac fails tests that pass in
+CI. `scripts/test-in-docker` runs every CI check in a Linux image that matches
+the CI runners:
 
 ```bash
-uv sync --locked
-./scripts/verify
+scripts/test-in-docker
 ```
 
-Focused tests may be run with `uv run pytest <paths>`, but the canonical check
-must pass before a change is considered complete.
+Run focused tests in the same image:
+
+```bash
+scripts/test-in-docker factory uv run --locked pytest tests/test_x.py
+scripts/test-in-docker root uv run --locked pytest tests/test_y.py
+```
+
+Docker must be able to see the checkout. On a Mac, keep worktrees under
+`$HOME`, not `/tmp`. The full check must pass before a change is considered
+complete.
 
 For every change:
 

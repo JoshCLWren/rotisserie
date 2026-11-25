@@ -31,7 +31,9 @@ uv sync --locked
 ```
 
 The verification command checks formatting, lint, strict typechecking, and the
-test suite. Use `uv build` to verify package distributions.
+test suite. To run every CI check, the factory suite included, in a Linux
+image that matches CI, run `scripts/test-in-docker`. Use it on macOS: some
+factory scripts need Linux tools. Use `uv build` to verify package distributions.
 
 ## Making a change
 
