@@ -21,7 +21,7 @@ jobs:
       contains(github.event.issue.labels.*.name, 'factory:unowned') &&
       !contains(github.event.issue.labels.*.name, 'factory:claimed') &&
       !contains(fromJSON('["factory:available","factory:claimed","factory:claim-rejected"]'), github.event.label.name) &&
-      !contains(fromJSON('["factory:parked","factory:needs-owner","factory:needs-split","factory:gate-rejected","factory:duplicate","factory:cooling"]'), github.event.label.name)
+      !contains(fromJSON('["factory:parked","factory:needs-split","factory:gate-rejected","factory:duplicate","factory:cooling","factory:incident-work"]'), github.event.label.name)
     runs-on: ubuntu-latest
     steps:
       - name: Offer changed issue to trusted dispatcher

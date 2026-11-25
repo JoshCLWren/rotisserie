@@ -79,3 +79,11 @@ def test_the_doctor_keeps_gate_rejected_at_the_rejected_head() -> None:
     github.comments[12] = [{"user": BOT, "body": rejected_marker(12, HEAD)}]
     repair(github)
     assert ("remove", 12, GATE_REJECTED) not in github.writes
+
+
+def test_the_doctor_drops_incident_work_when_no_incident_runs() -> None:
+    github = github_with({41: {"factory:incident-work"}}, [pull(41, "Closes #40.", HEAD)])
+    github.items[40] = {"factory", "factory:incident-work"}
+    repair(github)
+    assert ("remove", 41, "factory:incident-work") in github.writes
+    assert ("remove", 40, "factory:incident-work") in github.writes

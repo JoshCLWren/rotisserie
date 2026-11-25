@@ -21,6 +21,8 @@ from factory_work_policy_candidates import issue_is_static_candidate
 PARKED = "factory:parked"
 DUPLICATE = "factory:duplicate"
 COOLING = "factory:cooling"
+INCIDENT_WORK = "factory:incident-work"
+INCIDENT_WORK_LISTING = f"issues?state=open&labels={INCIDENT_WORK}&per_page=100"
 OVERRIDE = "factory:override"
 CLAIMED = "factory:claimed"
 BYPASS = frozenset({OVERRIDE, CLAIMED})
@@ -31,16 +33,17 @@ DEFINITIONS: dict[str, tuple[str, str]] = {
     GATE_REJECTED: GATE_REJECTED_DEFINITION,
     DUPLICATE: ("cfd3d7", "Another open PR delivers the same issue; this one is newer"),
     COOLING: ("c5def5", "Dispatch backoff: no worker until the retry cooling ends"),
+    INCIDENT_WORK: ("e99695", "Work for an active incident; factory:incident on the issue declares it"),
 }
 # Every state label name the workflows must ignore, including ones a later
 # change starts writing.
 IGNORED_BY_WORKFLOWS = (
     PARKED,
-    "factory:needs-owner",
     NEEDS_SPLIT,
     GATE_REJECTED,
     DUPLICATE,
     COOLING,
+    INCIDENT_WORK,
 )
 # The owner's incident label (factory_incident.LABEL) starts work; it is an input, not a mirror.
 OWNER_INPUTS = ("factory:incident",)

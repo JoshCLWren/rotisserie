@@ -66,6 +66,8 @@ class Hub:
             return {}
         if path.startswith("pulls?state=open"):
             return [self.pull_rows]
+        if path.startswith("issues?state=open&labels="):
+            return []
         if path.startswith("issues/"):
             number = int(path.split("/")[1])
             labels = [{"name": name} for name in self.issue_labels.get(number, [])]

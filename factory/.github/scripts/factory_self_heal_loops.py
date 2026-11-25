@@ -24,7 +24,7 @@ import factory_item_loop as loop
 import factory_self_heal as heal
 import factory_self_heal_rules as rules
 import factory_state_labels as state
-from factory_turso_loops import parked_heads
+from factory_turso_loops import park_ref, parked_heads
 from factory_work_policy_base import stage_of
 
 
@@ -105,7 +105,7 @@ def park_loops(
         if budget.dry_run or not budget.take():
             done.append({"pr": item.number, "status": "would-park", "text": text})
             continue
-        ref = f"{stage.removeprefix('factory:')}-{head[:12] or 'none'}"
+        ref = park_ref(stage, head, park)
         entry = heal.event(
             kind=rules.LOOP_PARKED,
             pr=item.number,

@@ -58,24 +58,66 @@ def runs_by_item(rows: list[dict[str, Any]]) -> dict[str, list[loop.Run]]:
 def parks_statement(repo: str) -> tuple[str, dict[str, Any]]:
     return (
         "SELECT created_at, detail ->> 'pr' AS pr, detail ->> 'head' AS head,"
-        " detail ->> 'stage' AS stage FROM factory_state_events"
+        " detail ->> 'stage' AS stage, detail ->> 'kind' AS kind FROM factory_state_events"
         " WHERE repo = :repo AND event_type = 'factory_self_heal'"
-        " AND detail ->> 'kind' = :kind AND created_at > unixepoch() - :lookback",
-        {"repo": repo, "kind": loop.PARK_KIND, "lookback": PARK_LOOKBACK_SECONDS},
+        " AND detail ->> 'kind' IN (:kind, :release) AND created_at > unixepoch() - :lookback",
+        {
+            "repo": repo,
+            "kind": loop.PARK_KIND,
+            "release": loop.RELEASE_KIND,
+            "lookback": PARK_LOOKBACK_SECONDS,
+        },
     )
 
 
 def parks(rows: list[dict[str, Any]]) -> dict[str, dict[str, Any]]:
-    """Per PR target: the newest park time and every (head, stage) it was parked at."""
+    """Per PR target: the newest park time and every (head, stage) it was parked at.
+
+    A release (a forced or targeted run) newer than every park ends them all:
+    the target keeps no parked head, and its runs count from the release.
+    """
     found: dict[str, dict[str, Any]] = {}
-    for row in rows:
+    ordered = sorted(
+        rows, key=lambda row: (int(row["created_at"]), row.get("kind") == loop.RELEASE_KIND)
+    )
+    for row in ordered:
         if not str(row["pr"] or "").isdecimal():
             continue
-        entry = found.setdefault(f"pr:{int(row['pr'])}", {"at": None, "at_heads": set()})
+        entry = found.setdefault(
+            f"pr:{int(row['pr'])}", {"at": None, "at_heads": set(), "released": None}
+        )
         at = _moment(row["created_at"])
         entry["at"] = at if entry["at"] is None or entry["at"] < at else entry["at"]
-        entry["at_heads"].add((str(row["head"] or ""), str(row["stage"] or "")))
+        if row.get("kind") == loop.RELEASE_KIND:
+            entry["at_heads"] = set()
+            entry["released"] = at
+        else:
+            entry["at_heads"].add((str(row["head"] or ""), str(row["stage"] or "")))
     return found
+
+
+def park_ref(stage: str, head: str, park: Mapping[str, Any] | None) -> str:
+    """The park event's ref; a park after a release gets a new one, so it can be recorded."""
+    ref = f"{stage.removeprefix('factory:')}-{head[:12] or 'none'}"
+    released = (park or {}).get("released")
+    return f"{ref}-r{int(released.timestamp())}" if released else ref
+
+
+def release(repo: str, number: int, head: str, run: str) -> bool:
+    """Record that an owner-directed run ended this PR's park; True when a park was on."""
+    import factory_turso_core as core
+
+    if not core.enabled():
+        return False
+    parked = parks(core.store().reads([parks_statement(repo)])[0]).get(f"pr:{number}")
+    if not parked or not parked["at_heads"]:
+        return False
+    import factory_self_heal as heal
+
+    entry = heal.event(
+        kind=loop.RELEASE_KIND, pr=number, head=head, ref=f"run-{run}", text="forced run"
+    )
+    return bool(heal.LedgerStore(repo).record([entry]))
 
 
 def held(
