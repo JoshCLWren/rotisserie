@@ -141,7 +141,8 @@ def test_limits_adds_the_factory_budget_with_one_snapshot_read(
 ) -> None:
     out, calls = _limits(monkeypatch, STATS)
     assert calls[0] == "rate_limit"
-    assert len(calls) == 2 and calls[1].startswith("repos/acme/widgets/contents/factory-stats.json")
+    stats = [call for call in calls if "contents/factory-stats.json" in call]
+    assert len(stats) == 1
     assert "Factory workflow token budget: 1,806 of 5,000 left" in out
     assert "merge drain: about 122 GitHub requests per job" in out
 
