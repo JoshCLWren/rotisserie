@@ -20,7 +20,8 @@ Rule, per provider, over the models that are already eligible:
   ``PROVEN_BAD_RATE`` is proven bad and is skipped for that action. The rule
   is absolute: a provider with few models does not lift a bad one. When every
   eligible model is proven bad, the pick fails so the caller moves on to
-  another provider.
+  another provider. An owner-pinned provider (``REQUESTED_PROVIDER``) keeps
+  every model, because the owner asked for that provider.
 * The other picks are Thompson sampling over the tried models: Beta posteriors
   around the fleet-wide success rate (every provider, same action), with
   evidence capped at ``EVIDENCE_CAP`` trials. The win probabilities are capped
@@ -61,6 +62,7 @@ NON_MODEL_FAILURES = frozenset(
 DELIVERY_KINDS = frozenset({"implement"})
 FILE_ENV = "FACTORY_TRACK_RECORD_FILE"
 KIND_ENV = "FACTORY_ACTION_KIND"
+PINNED_ENV = "REQUESTED_PROVIDER"
 MERGE_CONFLICT = "factory:merge-conflict"
 KIND_RE = re.compile(r"[a-z-]{0,40}")
 SELECTION_LINE = re.compile(r"\[factory-model-selection\] (\{.*\})\s*$", re.M)
@@ -259,6 +261,8 @@ def pick(source: str, models: Sequence[str], seed: str) -> tuple[str, str]:
     digest = hashlib.sha256(seed.encode()).digest()
     found = records()
     bad = [m for m in models if (r := found.get((source, m))) is not None and r.proven_bad]
+    if bad and os.environ.get(PINNED_ENV, "auto") == source:
+        bad = []
     if bad:
         models = [m for m in models if m not in bad]
         if not models:

@@ -80,6 +80,7 @@ def history(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
 
     monkeypatch.delenv(track.FILE_ENV, raising=False)
     monkeypatch.delenv(track.KIND_ENV, raising=False)
+    monkeypatch.delenv(track.PINNED_ENV, raising=False)
     return install
 
 
@@ -382,3 +383,12 @@ def test_failover_skips_proven_bad_models(history) -> None:
     assert found == {NEW}
     with pytest.raises(failover.ExhaustedCandidatesError):
         failover.select_next(SOURCE, "7", set(), {}, catalog_json=catalog("lab/free"))
+
+
+def test_an_owner_pinned_provider_keeps_its_proven_bad_models(
+    history, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    history({"lab/free": window(0, 14), "lab/other": window(0, 20)})
+    monkeypatch.setenv(track.PINNED_ENV, SOURCE)
+    chosen = select(SOURCE, "7", catalog("lab/free", "lab/other"), rotation=1)
+    assert chosen["model"] in {"lab/free", "lab/other"}
