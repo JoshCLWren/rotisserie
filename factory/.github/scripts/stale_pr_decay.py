@@ -29,6 +29,7 @@ from factory_work_policy import is_manual_only
 from factory_jev_shadow import MODEL as JEV_MODEL, call_jev
 from factory_review_policy import performed_via_untrusted_app
 from factory_adopter import MARKER_PREFIX, repository
+import factory_crash
 
 REPO = repository()
 STALE_PR_GUARD_MARKER_RE = re.compile(
@@ -319,10 +320,9 @@ def gh_json(args: list[str], *, input_json: object | None = None) -> object | No
 
 def run_gh(args: list[str], *, input_json: object | None = None) -> str:
     """Run a bounded GitHub CLI command and return stdout."""
-    command = ["gh", *args]
+    command, stdin = ["gh", *args], None if input_json is None else json.dumps(input_json)
     try:
-        proc = subprocess.run(command, input=None if input_json is None else json.dumps(input_json),
-                              text=True, capture_output=True, check=False, timeout=120)
+        proc = factory_crash.gh_with_retry(command, lambda: subprocess.run(command, input=stdin, text=True, capture_output=True, check=False, timeout=120), stdin=stdin)
     except subprocess.TimeoutExpired as exc:
         raise RuntimeError(f"{' '.join(command)} timed out") from exc
     if proc.returncode:

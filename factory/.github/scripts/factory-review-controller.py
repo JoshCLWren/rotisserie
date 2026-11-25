@@ -18,6 +18,7 @@ from typing import Any, Literal, TypedDict, cast
 
 sys.path.insert(0, os.path.dirname(__file__))
 from factory_adopter import MARKER_PREFIX, repository  # noqa: E402
+import factory_crash  # noqa: E402
 
 issue_acceptance = importlib.import_module("factory_issue_acceptance")
 acceptance_escalation = importlib.import_module("factory_acceptance_escalation")
@@ -146,16 +147,12 @@ def run_gh(
     if _mutates(args):
         # Anything this process writes may change the comment stream it reads.
         _COMMENT_RECORDS.clear()
-    command = ["gh", *args]
+    command, stdin = ["gh", *args], None if input_json is None else json.dumps(input_json)
     try:
-        proc = subprocess.run(
-            command,
-            input=None if input_json is None else json.dumps(input_json),
-            text=True,
-            capture_output=True,
-            check=False,
+        proc = factory_crash.gh_with_retry(command, lambda: subprocess.run(
+            command, input=stdin, text=True, capture_output=True, check=False,
             timeout=GH_TIMEOUT_SECONDS,
-        )
+        ), stdin=stdin)
     except subprocess.TimeoutExpired as exc:
         raise RuntimeError(f"{' '.join(command)} timed out") from exc
     if check and proc.returncode:

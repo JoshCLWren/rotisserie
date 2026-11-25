@@ -89,6 +89,7 @@ def test_closure_sibling_modules_are_staged_by_every_worker() -> None:
             "factory_post_merge_closure_policy.py",
             "factory_post_merge_closure_github.py",
             "factory_merge_linkage.py",
+            "factory_crash.py",
         ):
             assert f".github/scripts/{sibling} " in staging, (name, sibling)
 
@@ -140,6 +141,7 @@ def test_staged_review_controller_starts_without_source_checkout(tmp_path: Path)
         ".github/scripts/factory_work_policy.py",
         *(f".github/scripts/{sibling}" for sibling in WORK_POLICY_SIBLINGS),
         ".github/scripts/factory_fork_control.py",
+        ".github/scripts/factory_crash.py",
         "scripts/factory_eligibility.py",
     )
     for relative in bundle:

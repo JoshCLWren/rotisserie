@@ -27,6 +27,9 @@ os.environ["FACTORY_MARKER_PREFIX"] = factory_adopter.marker_prefix()
 os.environ["GH_TOKEN"] = "invalid-test-token"
 os.environ["GITHUB_TOKEN"] = "invalid-test-token"
 os.environ["GH_CONFIG_DIR"] = tempfile.mkdtemp(prefix="factory-tests-gh-")
+# Transient gh failures still retry, without the production backoff.
+os.environ["FACTORY_GH_RETRY_DELAYS"] = "0"
+os.environ["FACTORY_GH_RATE_LIMIT_DELAY"] = "0"
 
 # The suite has no outside-agent claim store. Say so explicitly: inside
 # Actions, an unset setting makes claim-gated controller steps hold closed.

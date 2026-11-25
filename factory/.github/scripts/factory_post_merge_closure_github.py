@@ -15,6 +15,7 @@ from factory_post_merge_closure_policy import (
     linked_issue,
 )
 from factory_adopter import MARKER_PREFIX
+import factory_crash
 
 
 def _run_gh(*args: str) -> str:
@@ -29,10 +30,8 @@ def _run_gh(*args: str) -> str:
     Raises:
         RuntimeError: If gh exits nonzero.
     """
-    completed = subprocess.run(
-        ["gh", *args],
-        capture_output=True,
-        text=True,
+    completed = factory_crash.gh_with_retry(
+        ["gh", *args], lambda: subprocess.run(["gh", *args], capture_output=True, text=True)
     )
     if completed.returncode != 0:
         raise RuntimeError(f"gh {' '.join(args)} failed: {completed.stderr.strip()}")

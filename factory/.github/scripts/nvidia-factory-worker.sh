@@ -386,7 +386,7 @@ stage_trusted_review_controller() {
     trusted_dir="$(mktemp -d "${RUNNER_TEMP:-/tmp}/factory-review-controller.XXXXXX")"
     cp .github/scripts/factory-review-controller.py "$trusted_dir/factory-review-controller.py"
     cp .github/scripts/factory_adopter.py "$trusted_dir/factory_adopter.py"
-    cp .github/scripts/factory_acceptance_criteria.py .github/scripts/factory_acceptance_escalation.py .github/scripts/factory_post_merge_closure.py .github/scripts/factory_post_merge_closure_policy.py .github/scripts/factory_post_merge_closure_github.py .github/scripts/factory_merge_linkage.py .github/scripts/factory_review_exclusion.py .github/scripts/factory_review_findings.py .github/scripts/factory_review_line_gate.py .github/scripts/factory_self_review_allowance.py "$trusted_dir/"
+    cp .github/scripts/factory_acceptance_criteria.py .github/scripts/factory_acceptance_escalation.py .github/scripts/factory_post_merge_closure.py .github/scripts/factory_post_merge_closure_policy.py .github/scripts/factory_post_merge_closure_github.py .github/scripts/factory_merge_linkage.py .github/scripts/factory_review_exclusion.py .github/scripts/factory_review_findings.py .github/scripts/factory_review_line_gate.py .github/scripts/factory_self_review_allowance.py .github/scripts/factory_crash.py "$trusted_dir/"
     cp .github/scripts/factory_main_health.py "$trusted_dir/factory_main_health.py"
     cp .github/scripts/factory_review_policy.py "$trusted_dir/factory_review_policy.py"
     # Pin model identity to trusted main, never to the adopted PR checkout.

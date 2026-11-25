@@ -68,13 +68,13 @@ class GhCli:
         self.repo = repo
 
     def _run(self, args: list[str], payload: object | None = None) -> str:
-        proc = subprocess.run(
-            ["gh", *args],
-            input=None if payload is None else json.dumps(payload),
-            capture_output=True,
-            text=True,
-            check=False,
-            timeout=60,
+        command, stdin = ["gh", *args], None if payload is None else json.dumps(payload)
+        proc = factory_crash.gh_with_retry(
+            command,
+            lambda: subprocess.run(
+                command, input=stdin, capture_output=True, text=True, check=False, timeout=60
+            ),
+            stdin=stdin,
         )
         if proc.returncode:
             message = (proc.stderr or proc.stdout).strip() or f"gh {args[0]} failed"

@@ -14,6 +14,7 @@ import sys
 from pathlib import Path
 from urllib.parse import quote
 from factory_adopter import MARKER_PREFIX
+import factory_crash
 
 PREFIX = "factory/work-checkpoints/"
 SHA = re.compile(r"[a-f0-9]{40}")
@@ -26,12 +27,10 @@ WORKFLOW = ".github/workflows/free-model-factory-entry.yml"
 
 def api(endpoint: str, method: str = "GET", **fields: object) -> object:
     """Make a bounded API request, preserving boolean JSON request values."""
-    cmd = ["gh", "api", "--method", method, endpoint]
-    payload = None
-    if fields:
-        cmd.extend(["--input", "-"])
-        payload = json.dumps(fields)
-    result = subprocess.run(cmd, input=payload, capture_output=True, text=True, timeout=45)
+    cmd = ["gh", "api", "--method", method, endpoint, *(["--input", "-"] if fields else [])]
+    payload = json.dumps(fields) if fields else None
+    result = factory_crash.gh_with_retry(cmd, lambda: subprocess.run(
+        cmd, input=payload, capture_output=True, text=True, timeout=45), stdin=payload)
     if result.returncode:
         raise RuntimeError(f"GitHub {method} {endpoint}: {result.stderr[:300]}")
     return json.loads(result.stdout) if result.stdout.strip() else None
