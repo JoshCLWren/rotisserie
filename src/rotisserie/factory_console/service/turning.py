@@ -27,13 +27,11 @@ from rotisserie.factory_console.github import (
 )
 from rotisserie.factory_console.service import (
     db_usage,
-    incident,
     loops,
     parked,
     providers,
     queue,
     reliability,
-    review,
     sync,
 )
 from rotisserie.factory_console.service import turning_reads as reads
@@ -315,10 +313,7 @@ def gather(
         found.holds = hold_state(github)
 
     def looping() -> None:
-        pulls = review.open_pulls(github)
-        found.loops = loops.scan(github, now=now, tracker=tracker, pulls=pulls)
-        if found.loops:
-            loops.mark_incidents(found.loops, pulls, incident.active_issues(github))
+        found.loops = loops.live(github, now=now, tracker=tracker)
 
     steps: dict[str, Callable[[], None]] = {
         "worker runs": workers,

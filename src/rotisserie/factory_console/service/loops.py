@@ -28,7 +28,7 @@ from rotisserie.factory_console.github import (
     string,
     timestamp,
 )
-from rotisserie.factory_console.service import failures, review
+from rotisserie.factory_console.service import failures, incident, review
 from rotisserie.factory_console.service.report import search
 from rotisserie.factory_console.tracker import WORKER_WORKFLOW, Tracker, completed, run_version
 from rotisserie.factory_console.verdicts import outcome_class
@@ -152,6 +152,17 @@ def scan(
     return rows
 
 
+def live(
+    github: GitHub, *, now: datetime, tracker: Tracker | None = None
+) -> list[dict[str, object]]:
+    """``scan`` over the open PRs, each row marked when it is an active incident's work."""
+    pulls = review.open_pulls(github)
+    rows = scan(github, now=now, tracker=tracker, pulls=pulls)
+    if rows:
+        mark_incidents(rows, pulls, incident.active_issues(github))
+    return rows
+
+
 def parked(
     github: GitHub,
     *,
@@ -196,5 +207,5 @@ def summary(rows: Sequence[dict[str, object]]) -> str:
         return ""
     first = sorted(rows, key=lambda row: bool(row.get("incident")))[0]
     more = f" and {len(rows) - 1} more" if len(rows) > 1 else ""
-    state = "is incident work, not held," if first.get("incident") else "is looping"
+    state = "is incident work, not held" if first.get("incident") else "is looping"
     return f"{first['title'] or first['target']} {state}{more}: {first['text']}"
