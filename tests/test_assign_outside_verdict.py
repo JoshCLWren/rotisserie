@@ -1,14 +1,21 @@
-"""The assigned review task: how to end, when to skip, and what approval does."""
+"""The assigned task follows the owner's adopted outside-worker prompt."""
 
 from __future__ import annotations
 
 from rotisserie.factory_console.service import assign_task
 
 
-def test_review_task_asks_for_one_verdict_line_and_warns_that_approval_merges() -> None:
+def test_review_task_matches_the_verdict_and_independence_rules() -> None:
     text = " ".join(assign_task.STEPS["review"])
-    assert "`Verdict: changes-requested`" in text
-    assert "`Verdict: approve`" in text
-    assert "**Comment**" in text
+    assert "`Model: <your exact model id>` and then exactly one last line" in text
+    assert "`Verdict: changes-requested` or `Verdict: approve`" in text
+    assert "names the reviewed head commit SHA" in text
     assert "An approval merges this pull request." in text
-    assert "on this pull request's current head commit" in text
+    assert "required CI is green at the current head" in text
+    assert "another session of the same model is not independent" in text
+    assert "`factory:parked`" in text
+    assert "**Comment**" in text
+
+
+def test_incident_implementation_refers_instead_of_closing() -> None:
+    assert "`Refs {ref}`" in " ".join(assign_task.STEPS["implement"])

@@ -32,6 +32,16 @@ ORIGIN = "outside-approval"
 MODEL_VALUE = re.compile(r"(?m)^Model:[ \t]*(?P<value>\S.*?)[ \t]*$")
 LEGACY_REPAIR = re.compile(r"-factory-review-v\d+:(?P<head>[0-9a-f]{40}):changes-required -->")
 UNTRUSTED_REVIEWERS = frozenset({"coderabbitai", "coderabbitai[bot]"})
+HELD = frozenset(
+    {
+        "factory:building",
+        "factory:ready",
+        "factory:blocked",
+        "factory:parked",
+        "ralph-status:blocked",
+    }
+)
+MANUAL_ONLY = re.compile(r"(?m)^[ \t]*(<!-- factory-execution:manual-only -->|manual-only)[ \t]*$")
 
 
 @dataclass(frozen=True)
@@ -233,8 +243,12 @@ def authorization(
         return None
     if not approval.approved or approval.head != head:
         return None
-    if store:
-        record(repo, pr, approval)
+    if (
+        store
+        and not record(repo, pr, approval)
+        and os.environ.get("FACTORY_STATE_REQUIRED") == "true"
+    ):
+        return None
     return approval.to_dict()
 
 
@@ -256,12 +270,15 @@ def promote(repo: str, pr: int, fetch: Fetch | None = None) -> dict[str, object]
         str(label.get("name"))
         for label in _rows((pull or {}).get("labels") if isinstance(pull, dict) else [])
     }
-    if "factory" not in labels or "factory:building" in labels or "factory:ready" in labels:
+    if "factory" not in labels or labels & HELD:
         return {"pr": pr, "promoted": False, "reason": "not a factory PR waiting for review"}
+    body = str(pull.get("body") or "") if isinstance(pull, dict) else ""
+    if MANUAL_ONLY.search(re.sub(r"```.*?```|`[^`\n]*`", "", body, flags=re.S)):
+        return {"pr": pr, "promoted": False, "reason": "the PR is manual-only"}
     approval = evaluate(read, pr, owner=repo.split("/", 1)[0])
     if not approval.approved:
         return {"pr": pr, "promoted": False, **approval.to_dict()}
-    stages = {"factory:review", "factory:changes-requested", "factory:ci", "factory:blocked"}
+    stages = {"factory:review", "factory:changes-requested", "factory:ci"}
     owners = {label for label in labels if re.fullmatch(r"factory:(\d+|local|unowned)", label)}
     keep = sorted(labels - stages - owners - {"factory:available", "factory:approved"})
     next_labels = [*keep, *(sorted(owners) or ["factory:unowned"])[:1], "factory:ready"]

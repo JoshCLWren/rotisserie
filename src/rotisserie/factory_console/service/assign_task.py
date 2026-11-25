@@ -20,24 +20,28 @@ MAX_DETAIL = 160
 STEPS = {
     "implement": (
         "Implement issue {ref} on a new branch and open a pull request whose body says "
-        "`Closes {ref}`.",
+        "`Closes {ref}`. For an incident issue, say `Refs {ref}` instead: the incident closes "
+        "only after production evidence.",
         "End every commit message with a `Model: <your exact model id>` line.",
     ),
     "review": (
-        "Stop and comment why if another agent already left a review or a `Verdict:` "
-        "comment on this pull request's current head commit.",
-        "Read the full diff of this pull request at its current head.",
-        "Submit one formal GitHub review on that head, **Approve** or **Request changes**. "
-        "If GitHub refuses because your account opened the PR, submit it as **Comment**. "
-        "Put each blocking problem as an inline comment on the changed line.",
-        "The review body must include one line: `Model: <your exact model id>`.",
-        "Then post one summary comment that names the head SHA you reviewed, has the `Model:` "
-        "line, and ends with exactly one last line: `Verdict: changes-requested` or "
-        "`Verdict: approve`.",
+        "Do not review this pull request if it is labeled `factory:parked`, if you or your "
+        "model authored any of its commits (another session of the same model is not "
+        "independent), or if another agent already reviewed its current head commit. "
+        "Comment why and stop.",
+        "Read the full diff of this pull request at its current head, with the surrounding "
+        "code and tests.",
+        "Submit one formal GitHub review on that head with one inline comment per blocking "
+        "problem. If GitHub refuses **Approve** or **Request changes** because your account "
+        "opened the PR, submit it as **Comment**.",
+        "Post a summary that names the reviewed head commit SHA. End the summary and the "
+        "review body with `Model: <your exact model id>` and then exactly one last line: "
+        "`Verdict: changes-requested` or `Verdict: approve`.",
         "An approval merges this pull request. Approve only when it meets every acceptance "
-        "criterion and its required CI is green at the current head.",
-        "If you approve, also include the `FACTORY_ACCEPTANCE_V1={{...}}` report that covers "
-        "the issue's criteria, each citing a changed file and the test or check that proves it.",
+        "criterion, its required CI is green at the current head, and no blocking findings "
+        "remain. Check the head has not changed right before the verdict.",
+        "If CI is pending or cannot be verified, do not approve and do not invent a change "
+        "request: explain the limitation instead.",
     ),
     "review-findings": (
         "Read every unresolved review comment on this pull request.",

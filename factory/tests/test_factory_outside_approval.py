@@ -234,3 +234,59 @@ def test_promote_moves_an_approved_review_pr_to_ready(monkeypatch: MonkeyPatch) 
     assert result["promoted"] is True
     assert writes and '"factory:ready"' in writes[0] and '"factory:review"' not in writes[0]
     assert '"bug"' in writes[0] and '"factory:unowned"' in writes[0]
+
+
+@pytest.mark.parametrize(
+    ("extra", "body"),
+    [
+        ("factory:blocked", ""),
+        ("factory:parked", ""),
+        ("bug", "Owner holds this.\n\n<!-- factory-execution:manual-only -->"),
+    ],
+)
+def test_promote_leaves_held_and_manual_only_prs_alone(
+    monkeypatch: MonkeyPatch, extra: str, body: str
+) -> None:
+    base = fetcher(comments=[verdict("approve")])
+    labels = [{"name": name} for name in ("factory", "factory:review", "factory:unowned", extra)]
+
+    def read(path: str) -> object:
+        return {"labels": labels, "body": body} if path == f"issues/{PR}" else base(path)
+
+    writes: list[object] = []
+    monkeypatch.setattr(outside.subprocess, "run", lambda *_a, **_k: writes.append(_k))
+    assert outside.promote("acme/widgets", PR, fetch=read)["promoted"] is False
+    assert writes == []
+
+
+def test_the_store_event_names_the_approver_model_and_url(monkeypatch: MonkeyPatch) -> None:
+    import sys
+    import types
+
+    import factory_turso_core as real
+
+    batches: list[list[tuple[str, dict[str, Any]]]] = []
+    fake = types.SimpleNamespace(
+        enabled=lambda: True,
+        event_insert=real.event_insert,
+        store=lambda: types.SimpleNamespace(batch=batches.append),
+    )
+    monkeypatch.setitem(sys.modules, "factory_turso_core", fake)
+    approval = check(comments=[verdict("approve")])
+    assert outside.record("acme/widgets", PR, approval) is True
+    sql, params = batches[0][0]
+    assert "factory_state_events" in sql
+    assert params["e_origin"] == "outside-approval"
+    assert params["e_type"] == "merge_authorized"
+    assert params["e_model"] == "Sonnet 5.5 (claude-sonnet-5-5)"
+    assert params["e_event_id"] == f"outside-approval:{PR}:{HEAD}"
+    assert "#issuecomment-9" in params["e_detail"]
+
+
+def test_a_required_store_that_cannot_record_holds_the_merge(monkeypatch: MonkeyPatch) -> None:
+    read = fetcher(comments=[verdict("approve")])
+    monkeypatch.setattr(outside, "record", lambda *_a: False)
+    monkeypatch.setenv("FACTORY_STATE_REQUIRED", "true")
+    assert outside.authorization("acme/widgets", PR, head=HEAD, fetch=read) is None
+    monkeypatch.setenv("FACTORY_STATE_REQUIRED", "false")
+    assert outside.authorization("acme/widgets", PR, head=HEAD, fetch=read) is not None

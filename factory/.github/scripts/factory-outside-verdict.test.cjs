@@ -127,7 +127,7 @@ test('a verdict on an older head is ignored', async () => {
   assert.deepEqual(await run(commentEvent(body), { comments: [{ body }] }), []);
 });
 
-test('an outside approve is advisory: no stage move and no approval label', async () => {
+test('an outside approve moves no label in the reconciler script; the approval step decides', async () => {
   const review = ownerReview(summary('approve'));
   const writes = await run(reviewEvent(review), { reviews: [review] });
   assert.deepEqual(writes, []);

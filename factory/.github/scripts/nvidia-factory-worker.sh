@@ -392,7 +392,7 @@ stage_trusted_review_controller() {
     # Pin model identity to trusted main, never to the adopted PR checkout.
     cp .github/scripts/factory_worker_slots.py "$trusted_dir/factory_worker_slots.py"
     cp .github/scripts/factory_provider_registry.py "$trusted_dir/factory_provider_registry.py"
-    cp .github/scripts/factory_work_policy.py .github/scripts/factory_work_policy_assignment.py .github/scripts/factory_work_policy_backlog.py .github/scripts/factory_work_policy_base.py .github/scripts/factory_work_policy_candidates.py .github/scripts/factory_issue_intake_guard.py .github/scripts/factory_work_policy_priority.py .github/scripts/factory_incident.py .github/scripts/factory_crash.py .github/scripts/factory_outside_approval.py .github/scripts/factory_outside_verdict.py "$trusted_dir/"
+    cp .github/scripts/factory_work_policy.py .github/scripts/factory_work_policy_assignment.py .github/scripts/factory_work_policy_backlog.py .github/scripts/factory_work_policy_base.py .github/scripts/factory_work_policy_candidates.py .github/scripts/factory_issue_intake_guard.py .github/scripts/factory_work_policy_priority.py .github/scripts/factory_incident.py .github/scripts/factory_crash.py "$trusted_dir/"
     cp .github/scripts/factory_settings.py "$trusted_dir/factory_settings.py"
     chmod +x "$trusted_dir/factory-review-controller.py"
     TRUSTED_REVIEW_CONTROLLER="$trusted_dir/factory-review-controller.py"
