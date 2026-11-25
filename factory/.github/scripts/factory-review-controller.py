@@ -20,6 +20,7 @@ sys.path.insert(0, os.path.dirname(__file__))
 from factory_adopter import MARKER_PREFIX, repository  # noqa: E402
 
 issue_acceptance = importlib.import_module("factory_issue_acceptance")
+acceptance_escalation = importlib.import_module("factory_acceptance_escalation")
 implementation_delivery = importlib.import_module("factory_implementation_delivery")
 # Reuse the post-merge closure selector so the merge-side dependency check
 # always inspects the exact issue the merge will deliver and close.
@@ -1929,8 +1930,7 @@ def return_to_review(
             note=note,
         )
     except Exception:
-        # Best-effort diagnostic: a failed comment write must not prevent the
-        # blocked transition below.
+        # Best-effort diagnostic: a failed comment write must not prevent the blocked transition.
         pass
     transition_pr_and_linked_issue(
         pr_number=pr_number,
@@ -2109,13 +2109,13 @@ def handle_review(
             non_closing=non_closing,
         )
         if failures:
+            escalate = acceptance_escalation.escalate(model_comment_bodies(pr_number), pr=pr_number, head=reviewed_head)
             return return_to_review(
-                pr_number=pr_number, branch=branch, worker=worker,
-                reviewer=worker, verdict="not-ready", excerpt=excerpt,
+                pr_number=pr_number, branch=branch, worker=worker, reviewer=worker, verdict="repair" if escalate else "not-ready",
+                excerpt=acceptance_escalation.findings(failures, body) if escalate else excerpt,
                 note="Approval rejected: issue acceptance evidence incomplete: " + issue_acceptance.failure_summary(failures),
-                status="acceptance-evidence-required", head=reviewed_head,
-                producer=producer,
-            )
+                marker=acceptance_escalation.marker(pr=pr_number, head=reviewed_head), stage="factory:changes-requested" if escalate else "factory:review",
+                status="acceptance-evidence-required", head=reviewed_head, producer=producer)
         accepted_contract_marker = issue_acceptance.marker(
             issue_number, reviewed_head, body
         )
