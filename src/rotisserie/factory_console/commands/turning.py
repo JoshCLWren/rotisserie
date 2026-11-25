@@ -7,6 +7,7 @@ import subprocess
 from datetime import datetime, timedelta
 
 from rotisserie.factory_console.commands._shared import EXIT_OK, Outcome
+from rotisserie.factory_console.commands.crashes import crash_line
 from rotisserie.factory_console.commands.parser_insight import _common
 from rotisserie.factory_console.commands.pause import show_pause
 from rotisserie.factory_console.commands.status import parse_since
@@ -31,8 +32,9 @@ Is the factory actually moving work right now? 🍗🔄 Turning, 🐢 Slowing or
   baste turning --follow           check every 5 minutes; exit on Burning or Slowing
   baste turning --follow --notify  also show a macOS notification
 
-Burning: no worker started for longer than --idle (45m) while eligible work or
-workers exist. Slowing: --failures (3) or more control workflow runs failed in
+Burning: a factory script crashed in the dispatcher or merge drain inside
+--window (1h), or no worker started for longer than --idle (45m) while eligible
+work or workers exist. Slowing: --failures (3) or more control workflow runs failed in
 --window (1h), or an item loops: 4 or more worker runs on it in 6h, at least
 half of them wasted, and it is still short of factory:ready. Unknown: the
 worker runs could not be read. Each verdict names its most likely reason and
@@ -134,6 +136,8 @@ def render(console: Console, data: dict[str, object], now: datetime) -> None:
     for row in failures[:6] if isinstance(failures, list) else []:
         step = f" at '{row['step']}'" if row.get("step") else ""
         console.line(f"    {row['workflow']}{step}  {_when(row.get('at'))}  {row.get('url')}")
+    for group in (ev.get("crashes") or [])[:5]:
+        console.line(crash_line(group))
     _render_loops(console, ev.get("item_loops"))
     _render_capacity(console, ev)
 

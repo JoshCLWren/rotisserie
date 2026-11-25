@@ -40,6 +40,7 @@ READ_SAMPLES: dict[str, dict[str, str]] = {
     "store": {"mode": "selftest", "run": "123"},
     "outcome": {"run": "123"},
     "watch": {"run": "123"},
+    "crash-trace": {"fingerprint": "a1b2c3d4e5f6"},
 }
 WRITE_SAMPLES: dict[str, dict[str, Any]] = {
     "run": {"provider": "opencode-go"},

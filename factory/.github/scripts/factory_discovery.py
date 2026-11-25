@@ -109,4 +109,6 @@ def discovered_pull_requests(repo: str, fetch: Callable[[], list[dict[str, Any]]
 
 
 if __name__ == '__main__':
+    with __import__("contextlib").suppress(ImportError):
+        __import__("factory_crash").install()
     raise SystemExit(main())

@@ -162,8 +162,8 @@ def test_signed_out_reads_published_db_usage(results: dict[str, Any]) -> None:
     assert found["status"] == "warn" and found["label"] == "not in use yet"
     assert found["source"] == "published"
     findings = results["signedOutDoctor"]["value"]["findings"]
-    assert findings[-1]["check"] == "Database usage (published)"
-    assert findings[-1]["status"] == "warn"
+    usage = next(row for row in findings if row["check"] == "Database usage (published)")
+    assert usage["status"] == "warn"
 
 
 def test_the_operator_run_link_shows_before_the_first_poll(results: dict[str, Any]) -> None:

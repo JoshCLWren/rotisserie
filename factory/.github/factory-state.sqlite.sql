@@ -212,6 +212,31 @@ CREATE TABLE IF NOT EXISTS factory_cursor (
     PRIMARY KEY (repo, name)
 ) STRICT;
 
+-- One row per uncaught factory exception (fatal = 1) or isolated item failure
+-- (fatal = 0). The fingerprint groups occurrences; tracebacks are scrubbed and capped.
+CREATE TABLE IF NOT EXISTS factory_crash (
+    id INTEGER PRIMARY KEY,
+    repo TEXT NOT NULL,
+    fingerprint TEXT NOT NULL,
+    kind TEXT NOT NULL CHECK (kind IN ('python', 'shell', 'item')),
+    fatal INTEGER NOT NULL DEFAULT 1,
+    script TEXT NOT NULL,
+    function TEXT NOT NULL,
+    line INTEGER NOT NULL,
+    exception_type TEXT NOT NULL,
+    message TEXT NOT NULL,
+    traceback TEXT NOT NULL,
+    workflow TEXT NOT NULL DEFAULT '',
+    job TEXT NOT NULL DEFAULT '',
+    run_id TEXT NOT NULL DEFAULT '',
+    run_url TEXT NOT NULL DEFAULT '',
+    created_at INTEGER NOT NULL
+) STRICT;
+CREATE INDEX IF NOT EXISTS idx_factory_crash_recent ON factory_crash (repo, created_at);
+CREATE INDEX IF NOT EXISTS idx_factory_crash_group
+    ON factory_crash (repo, fingerprint, created_at);
+
 INSERT OR IGNORE INTO _schema_version (version, applied_at) VALUES (1, unixepoch());
 INSERT OR IGNORE INTO _schema_version (version, applied_at) VALUES (2, unixepoch());
 INSERT OR IGNORE INTO _schema_version (version, applied_at) VALUES (3, unixepoch());
+INSERT OR IGNORE INTO _schema_version (version, applied_at) VALUES (4, unixepoch());

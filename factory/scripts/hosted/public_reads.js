@@ -50,6 +50,29 @@ async function dbUsage() {
   }
   return {...usage, exit_code: 0, source: "published"};
 }
+async function crashGroups(hours) {
+  const stats = await cached("stats", "factory-stats.json").catch(() => null);
+  const block = stats && stats.crashes;
+  if (!block || !Array.isArray(block.groups)) {
+    return {exit_code: 0, source: "published", published: false, groups: []};
+  }
+  const since = Date.now() - hours * 3600000;
+  const groups = block.groups.map(g => {
+    const times = (g.times || []).filter(at => Date.parse(at) >= since).sort();
+    return times.length ? {...g, count: times.length, first_at: times[0]} : null;
+  }).filter(Boolean);
+  return {exit_code: 0, source: "published", published: true,
+    generated_at: block.generated_at, groups};
+}
+function crashFinding(found) {
+  const fatal = found.groups.filter(g => g.fatal);
+  return {
+    check: "Factory crashes (published)",
+    status: fatal.length ? "fail" : "ok",
+    text: fatal.length ? fatal.slice(0, 3).map(g => g.exception_type + " in " + g.script + ":" +
+      g.line + " " + g.function + " (" + g.count + "x)").join("; ") : "No crash in the last hour."
+  };
+}
 function usageFinding(usage) {
   const status = {ok: "ok", critical: "fail", not_configured: "ok", unpublished: "info"}[usage.status];
   return {
@@ -147,6 +170,10 @@ async function publicRead(name, params) {
   if (name === "providers") return historicalProviders(await statistics());
   if (name === "models") return historicalModels(await statistics(), params.get("provider"));
   if (name === "db-usage") return dbUsage();
+  if (name === "crashes") {
+    const hours = Number((params.get("since") || "6h").replace(/h$/, "")) || 6;
+    return crashGroups(Math.min(hours, 24));
+  }
   const s = await snapshot();
   if (name === "status") return {exit_code: 0, working: asWork(s), generated_at: s.generated_at};
   if (name === "report") {
@@ -155,7 +182,8 @@ async function publicRead(name, params) {
     return {exit_code: 0, merged, published_at: s.generated_at};
   }
   if (name === "doctor") {
-    return {exit_code: 0, findings: [...asFindings(s), usageFinding(await dbUsage())]};
+    return {exit_code: 0, findings: [...asFindings(s), usageFinding(await dbUsage()),
+      crashFinding(await crashGroups(1))]};
   }
   if (name === "outcomes") {
     return {exit_code: 0, requests: (s.workers || [])

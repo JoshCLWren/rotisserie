@@ -5,6 +5,7 @@ import argparse
 from rotisserie.factory_console.commands import (
     _shared,
     backoffs,
+    crashes,
     db_usage,
     heal,
     incident,
@@ -489,6 +490,7 @@ def add_parser(
     incident.add_parser(commands)
     backoffs.add_parser(commands)
     db_usage.add_parser(commands)
+    crashes.add_parser(commands)
     recap.add_parser(commands)
     self_review.add_parser(commands)
     heal.add_parser(commands)

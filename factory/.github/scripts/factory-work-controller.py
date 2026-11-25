@@ -32,6 +32,7 @@ from factory_attempt_history import read_comment_history
 from factory_discovery import canonical_target, discover, update_labels
 from factory_state_ledger import acquire_lease, forced_refusal, release_lease, worker_claim, external_wip_count
 import factory_active_workers
+import factory_crash
 import factory_attempt_history_store
 import factory_lease_owners
 import factory_state_ledger
@@ -75,9 +76,9 @@ def run_gh(args: list[str], *, input_json: object | None = None, check: bool = T
     try:
         proc = subprocess.run(command, input=None if input_json is None else json.dumps(input_json), text=True, capture_output=True, check=False, timeout=GH_TIMEOUT_SECONDS)
     except subprocess.TimeoutExpired as exc:
-        raise RuntimeError(f"{' '.join(command)} timed out") from exc
+        raise factory_crash.GitHubCallError(f"{' '.join(command)} timed out") from exc
     if check and proc.returncode:
-        raise RuntimeError(f"{' '.join(command)} failed ({proc.returncode}): {proc.stderr.strip()}")
+        raise factory_crash.GitHubCallError(f"{' '.join(command)} failed ({proc.returncode}): {proc.stderr.strip()}")
     return proc.stdout
 
 
@@ -248,11 +249,9 @@ def replace_factory_labels(
         )
         return False
     current = [label['name'] for label in target.get('labels', [])]
-    
     # Normalize state based on global policy
     from factory_work_policy import normalize_target_state
     norm_owner, norm_stage = normalize_target_state(set(current), owner)
-    
     # Use requested stage if provided, otherwise use normalized stage.
     # Normalized owner/stage enforce invariants (e.g. done removes transient
     # labels; unowned removes building; blocked unowned gets factory:blocked).
@@ -269,7 +268,6 @@ def replace_factory_labels(
     if 'ralph-status:in-progress' in current and final_owner == 'factory:unowned':
         labels = [label for label in labels if label != 'ralph-status:in-progress']
         labels.append('ralph-status:pending')
-    
     run_gh(['api', '--method', 'PUT', f'repos/{REPO}/issues/{number}/labels', '--input', '-'], input_json={'labels': sorted(set(labels))})
     target['labels'] = [{'name': name} for name in sorted(set(labels))]
     refresh_discovery_after_label_change(number, target)
@@ -993,9 +991,8 @@ def reconcile_stale_leases(now_epoch: int | None = None) -> list[int]:
         if fixed_owner and _label_outlived_claim(fixed_owner.group('worker'), number):
             # Assignment claims the factory store before labelling and every release clears
             # labels first, so a label with no claim is a failed release.
-            if replace_factory_labels(
-                number,
-                'factory:unowned',
+            if factory_crash.item(
+                f'stale lease #{number}', replace_factory_labels, number, 'factory:unowned',
                 expected_owner=owner,
                 observed_at_epoch=now_epoch,
                 related_owner_target=paired_number,
@@ -1048,9 +1045,8 @@ def reconcile_stale_leases(now_epoch: int | None = None) -> list[int]:
                 except Exception as exc:
                     prior_claims[worker_id] = None
                     print(f'[factory-controller] claim snapshot unavailable ({type(exc).__name__})', file=sys.stderr)
-        if not replace_factory_labels(
-            number,
-            'factory:unowned',
+        if not factory_crash.item(
+            f'stale lease #{number}', replace_factory_labels, number, 'factory:unowned',
             expected_owner=owner,
             inactive_before_epoch=now_epoch - ttl,
             observed_at_epoch=now_epoch,
@@ -2726,4 +2722,4 @@ def main() -> int:
     return 1 if outcome.get('status') in ('failed', 'deferred', 'missing_claim', 'labels_pending') else 0
 
 if __name__ == "__main__":
-    raise SystemExit(main())
+    raise SystemExit(factory_crash.run(main))

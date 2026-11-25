@@ -107,7 +107,7 @@ def test_doctor_rate_limit_stops_probing_and_reports_when_it_can_retry(
     assert calls[0].startswith("repos/acme/widgets/contents/factory-stats.json")
     assert calls[1] == "rate_limit"
     assert "GitHub API: GitHub's API rate limit is exhausted" in out
-    assert "11 checks not run because GitHub is rate limited" in out
+    assert "12 checks not run because GitHub is rate limited" in out
     assert "Earliest known retry:" in out
     assert "in 25m 00s" in out
     assert "Repairs deferred" in out

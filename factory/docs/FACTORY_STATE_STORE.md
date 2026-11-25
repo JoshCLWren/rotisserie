@@ -73,6 +73,7 @@ API calls and all individual targets/checks/reviews/mutations remain live.
 | Lifecycle, assignment and attempt history | `factory_state_events` | `event_id` is UNIQUE; lifecycle events expire after 30 days, raw model attempts after 120 days into daily counts |
 | Model attempt retention | `factory_model_attempt_daily` | |
 | Resumable read cursors | `factory_cursor` | One row per name, added in schema version 3. `attempt-history` keeps the last retry-history read time and only its trusted markers, so the next dispatch job reads one delta page (a full read every 6 hours). `outcome-reconcile` lets one dispatcher job per 15 minutes backfill Entry outcomes. `gh-usage:dispatch` and `gh-usage:merge` keep the last 12 jobs' GitHub request counts and the workflow token budget for `baste recap` and `baste limits`. |
+| Factory crashes | `factory_crash` | One row per uncaught exception in a factory entry point (`fatal = 1`) or per item a pass isolated after a GitHub failure (`fatal = 0`), added in schema version 4. `factory_crash.py` writes it with a fingerprint (exception type, script, function, line), a short scrubbed message, the scrubbed traceback (at most 16 KB, innermost frames kept) and the run. `prune` deletes rows older than 14 days. The status page publishes the last day's groups without tracebacks; `baste crashes --show` reads one traceback in a trusted job. |
 
 Not carried from Neon: the discovery and projection key families
 (`factory-github-get-v1`, `factory-projection-v1`, open issue and PR lists),

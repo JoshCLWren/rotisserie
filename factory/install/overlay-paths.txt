@@ -62,6 +62,9 @@
 .github/scripts/factory_implementation_delivery.py
 .github/scripts/factory_acceptance_criteria.py
 .github/scripts/factory_acceptance_escalation.py
+.github/scripts/factory_crash.py
+.github/scripts/factory_crash_store.py
+.github/scripts/factory_crash_trap.sh
 .github/scripts/factory_issue_acceptance.py
 .github/scripts/factory_issue_pr_state_policy.py
 .github/scripts/factory_item_loop.py

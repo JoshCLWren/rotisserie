@@ -78,7 +78,7 @@ unclean_git_state_json() {
 source <(sed '/^ensure_owner_label$/,$d' .github/scripts/free-model-factory-worker-primitives.sh)
 source .github/scripts/factory-semantic-verdict.sh
 source .github/scripts/factory-fork-worker.sh
-source .github/scripts/factory-worker-outcome.sh
+source .github/scripts/factory-worker-outcome.sh && source .github/scripts/factory_crash_trap.sh
 
 TERMINAL_OUTCOME_FILE="${RUNNER_TEMP:-/tmp}/factory-discovery-outcome"
 

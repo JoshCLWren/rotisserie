@@ -23,6 +23,7 @@ from rotisserie.factory_console.commands.claims import (
     cmd_labels,
     cmd_runs,
 )
+from rotisserie.factory_console.commands.crashes import cmd_crashes
 from rotisserie.factory_console.commands.db_usage import cmd_db_usage
 from rotisserie.factory_console.commands.estimate import cmd_estimate, cmd_estimate_history
 from rotisserie.factory_console.commands.failures import cmd_failures
@@ -282,6 +283,7 @@ HANDLERS = {
     "incident": cmd_incident,
     "backoffs": cmd_backoffs,
     "db-usage": cmd_db_usage,
+    "crashes": cmd_crashes,
     "schema": cmd_schema,
     "recap": cmd_recap,
     "heal": cmd_heal,

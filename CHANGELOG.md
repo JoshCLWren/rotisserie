@@ -11,6 +11,20 @@ such change must be called out here and in its release notes.
 
 ### Added
 
+- Factory crash capture. Every Python entry point a factory workflow or worker
+  script runs installs `factory_crash`: an uncaught exception still prints its
+  traceback and fails the run, and also prints a GitHub `::error` annotation
+  and stores one `factory_crash` row (schema version 4) with a stable
+  fingerprint, a scrubbed message and the scrubbed traceback. The worker and
+  checkpoint shell scripts get an `ERR` trap that does the same for a failing
+  command. `baste crashes [--since 6h] [--show FINGERPRINT]` lists the groups
+  and shows the newest traceback; `baste turning` and `baste doctor` show them,
+  and a crash in the dispatcher or merge drain in the last hour is Burning.
+  The status page publishes the groups in `factory-stats.json`. One item's
+  GitHub failure in the stale-lease reconcile or the self-heal sweep is
+  recorded and skipped instead of stopping the pass; programming errors still
+  fail it.
+
 - `baste assign pr:N|issue:N --agent NAME` hands an item to an outside agent.
   It claims the item as the owner (`factory:claimed`), adds `agent:NAME`, and
   posts one task comment that follows the item's stage, with conflicting files,

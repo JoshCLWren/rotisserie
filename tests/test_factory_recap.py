@@ -25,7 +25,7 @@ from rotisserie.factory_console.service import (
     stalls,
 )
 from rotisserie.factory_console.service import recap_build as build
-from rotisserie.factory_console.service.doctor import Finding
+from rotisserie.factory_console.service.doctor_published import Finding
 from rotisserie.factory_console.service.failures import WorkerFailure
 from rotisserie.factory_console.service.fleet import FleetState, Off
 from rotisserie.factory_console.service.stalls import Stall

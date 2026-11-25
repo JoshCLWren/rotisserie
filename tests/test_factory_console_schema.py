@@ -176,7 +176,7 @@ def test_doctor_warns_on_missing_objects_a_version_behind_and_a_stale_status() -
 
 
 def test_doctor_runs_the_schema_check() -> None:
-    source = (ROOT / "src/rotisserie/factory_console/service/doctor.py").read_text()
+    source = (ROOT / "src/rotisserie/factory_console/service/doctor_published.py").read_text()
     assert 'Finding("store schema", *schema.health(stats(), now))' in source
 
 

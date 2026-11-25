@@ -30,6 +30,7 @@ from collections.abc import Mapping, Sequence
 from datetime import UTC, datetime
 from typing import Any, Protocol
 
+import factory_crash
 import factory_self_heal_rules as rules
 
 OWNER_LABEL_RE = re.compile(r"^factory:(?:[0-9]+|local)$")
@@ -74,7 +75,8 @@ class GhCli:
             timeout=60,
         )
         if proc.returncode:
-            raise RuntimeError((proc.stderr or proc.stdout).strip() or f"gh {args[0]} failed")
+            message = (proc.stderr or proc.stdout).strip() or f"gh {args[0]} failed"
+            raise factory_crash.GitHubCallError(message)
         return proc.stdout
 
     def api(self, path: str, *args: str, payload: object | None = None) -> Any:
@@ -290,4 +292,5 @@ def main(argv: Sequence[str] | None = None) -> int:
 
 
 if __name__ == "__main__":
-    raise SystemExit(main())
+    import factory_crash
+    raise SystemExit(factory_crash.run(main))

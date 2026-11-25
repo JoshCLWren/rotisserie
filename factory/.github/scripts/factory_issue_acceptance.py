@@ -406,6 +406,8 @@ def report_matches_mission(report: Mapping[str, Any] | None, mission_text: str) 
     )
 
 if __name__ == "__main__":
+    with __import__("contextlib").suppress(ImportError):
+        __import__("factory_crash").install()
     try:
         if sys.argv[1:] == ["rubric"]:
             print(rubric(sys.stdin.read()))
