@@ -43,7 +43,7 @@ def test_schema_is_idempotent_strict_and_versioned() -> None:
     found = {name: strict for name, strict in rows if not name.startswith("sqlite_")}
     assert set(found) == TABLES
     assert all(found.values())
-    assert conn.execute("SELECT version FROM _schema_version").fetchall() == [(1,), (2,)]
+    assert conn.execute("SELECT version FROM _schema_version").fetchall() == [(1,), (2,), (3,)]
 
 
 def test_every_table_carries_a_repository_column() -> None:

@@ -214,3 +214,4 @@ CREATE TABLE IF NOT EXISTS factory_cursor (
 
 INSERT OR IGNORE INTO _schema_version (version, applied_at) VALUES (1, unixepoch());
 INSERT OR IGNORE INTO _schema_version (version, applied_at) VALUES (2, unixepoch());
+INSERT OR IGNORE INTO _schema_version (version, applied_at) VALUES (3, unixepoch());
