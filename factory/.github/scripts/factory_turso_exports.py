@@ -141,8 +141,8 @@ def export_candidate_health(repo: str) -> dict[str, Any]:
     models, providers = core.store().reads(
         [
             (
-                "SELECT source, model, status, last_outcome, cooldown_until, updated_at"
-                " FROM factory_model_health WHERE repo = :repo",
+                f"SELECT source, model, status, last_outcome, {end_sql()} AS cooldown_until,"
+                " updated_at FROM factory_model_health WHERE repo = :repo",
                 {"repo": repo},
             ),
             (
@@ -471,7 +471,7 @@ def export_reliability(repo: str) -> dict[str, Any]:
     ]
     statements.append(
         (
-            "SELECT source, model, status, last_outcome, cooldown_until"
+            f"SELECT source, model, status, last_outcome, {end_sql()} AS cooldown_until"
             " FROM factory_model_health WHERE repo = :repo",
             {"repo": repo},
         )
