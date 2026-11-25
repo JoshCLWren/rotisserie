@@ -7,6 +7,7 @@ no prior read: concurrent or repeated collectors insert each event once.
 from __future__ import annotations
 
 import json
+import re
 from collections.abc import Sequence
 from datetime import UTC, datetime
 from typing import Any
@@ -18,6 +19,8 @@ from factory_turso_leases import bind_run_statements, renewal_statements
 from factory_work_policy import FIXED_LEASE_TTL_SECONDS
 
 ORIGIN = "github-actions"
+NO_REVIEWER = ("No reviewer model:", "Every available model authored this PR")
+HEAD_RE = re.compile(r"[0-9a-f]{40}")
 LIFECYCLE_STATUSES = {
     "started": "worker_started",
     "finished": "worker_outcome_signal",
@@ -139,6 +142,9 @@ def record_runtime_outcome(
             "observed_at": datetime.now(UTC).isoformat(),
         }
     ]
+    if status == "no_capacity" and str(outcome.get("detail") or "").startswith(NO_REVIEWER):
+        head = str(outcome.get("assigned_head") or "")
+        entries[0] |= {"no_reviewer": True, "head": head if HEAD_RE.fullmatch(head) else ""}
     if job_log is not None:
         from factory_model_attempt_events import model_attempt_events
 

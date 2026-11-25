@@ -11,6 +11,12 @@ head. A trusted controller marker names the head it was granted on; before the
 marker exists, a head committed after the label was added, or a force-push after
 it, is not covered. The drain sweep and the PR reconciler remove the label once
 the PR closes or its head changes.
+
+The factory grants the same exception itself (``factory_self_heal_self_review``)
+when a PR waited ``factory_self_heal_self_review.WAIT_SECONDS`` in review because
+every eligible reviewer authored its head: a trusted controller comment with
+``AUTO_RE`` names that one head, and the store records the automatic grant and
+its reason. No label is involved; a new head is not covered.
 """
 
 from __future__ import annotations
@@ -34,6 +40,9 @@ MARKER_RE = re.compile(
     r"<!-- factory-self-review-allowed pr=(?P<pr>\d+) event=(?P<event>\d+)"
     r" head=(?P<head>[0-9a-f]{40}) actor=(?P<actor>[A-Za-z0-9-]+) -->"
 )
+AUTO_RE = re.compile(r"<!-- factory-self-review-auto pr=(?P<pr>\d+) head=(?P<head>[0-9a-f]{40}) -->")
+AUTO_ACTOR = "the factory"
+AUTO_NOTE = "self-review allowed by the factory: no eligible reviewer for 6 hours"
 ORIGIN = "self-review-allowance"
 MOVED_AFTER = "the head changed after the label was added"
 EARLIER_HEAD = "the label was granted on an earlier head"
@@ -113,7 +122,12 @@ def check(
     head: str,
     comments: Iterable[str] = (),
 ) -> Allowance:
-    """Whether the owner's exception covers ``head`` now. Unlabelled PRs cost no reads."""
+    """Whether the owner's or the factory's exception covers ``head`` now.
+
+    Unlabelled PRs cost no reads.
+    """
+    if auto_granted(comments, pr, head) and str(pull.get("state") or "").lower() == "open":
+        return Allowance(True, AUTO_NOTE, AUTO_ACTOR)
     if LABEL not in label_names(pull):
         return NONE
     if str(pull.get("state") or "").lower() != "open":
@@ -157,13 +171,25 @@ def check(
     return Allowance(True, NOTE, actor, event_id, labeled_at)
 
 
+def auto_granted(comments: Iterable[str], pr: int, head: str) -> bool:
+    """A trusted automatic grant names this exact head."""
+    return any(
+        int(match["pr"]) == pr and match["head"] == head
+        for body in comments
+        for match in AUTO_RE.finditer(str(body or ""))
+    )
+
+
+def grant_text(allowed_by: str) -> str:
+    return AUTO_NOTE if allowed_by == AUTO_ACTOR else f"{NOTE} (label by {allowed_by})"
+
+
 def noted(verdict: Any, allowed_by: str) -> Any:
-    """Add the owner's exception to an eligible verdict's reason."""
+    """Add the owner's or the factory's exception to an eligible verdict's reason."""
     if not allowed_by or not getattr(verdict, "eligible", False):
         return verdict
-    return replace(
-        verdict, reason=f"{verdict.reason} Self-review allowed by owner (label by {allowed_by})."
-    )
+    text = grant_text(allowed_by)
+    return replace(verdict, reason=f"{verdict.reason} {text[0].upper()}{text[1:]}.")
 
 
 def announcement(pr: int, head: str, allowance: Allowance) -> str:

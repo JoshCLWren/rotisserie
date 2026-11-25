@@ -142,7 +142,7 @@ class Exclusion:
     def describe(self) -> str:
         if self.allowed_by:
             return (
-                f"{allowance.NOTE} (label by {self.allowed_by}); the head's author"
+                f"{allowance.grant_text(self.allowed_by)}; the head's author"
                 f" ({', '.join(self.lifted) or 'none recorded'}) may review this head."
             )
         if not self.author_commit:
