@@ -138,3 +138,52 @@ def test_the_run_workflow_passes_the_verified_flag_and_records_the_bypass():
     assert '--operator-forced "$operator_forced"' in text
     assert "if .operator_forced == true" in text
     assert "Operator-forced model" in text
+
+
+@pytest.fixture
+def pair(tmp_path, monkeypatch):
+    with support.bound("file", tmp_path / "leases.sqlite", monkeypatch) as (db, repo):
+        support.use_roster(monkeypatch, {"7": ("nvidia", ""), "8": ("nvidia", "")})
+        yield db, repo
+
+
+def test_an_explicit_claim_skips_the_workers_own_backoff(pair):
+    import factory_turso_leases as leases
+
+    db, repo = pair
+    support.backoff(
+        db,
+        repo,
+        "worker",
+        source="nvidia",
+        worker="7",
+        outcome="work_failure",
+        streak=5,
+        retry_in=3600,
+    )
+    assert leases.acquire_lease(repo, "7", [5772]) is None
+    assert leases.acquire_lease(repo, "7", [5772], explicit=True)
+
+
+def test_an_explicit_claim_still_respects_a_provider_account_cooldown(pair):
+    import factory_turso_leases as leases
+
+    db, repo = pair
+    support.backoff(db, repo, "provider", source="nvidia", outcome="provider_quota")
+    assert leases.acquire_lease(repo, "7", [5772], explicit=True) is None
+    with pytest.raises(RuntimeError, match="provider account nvidia cooling"):
+        leases.forced_refusal(repo, "7", [5772])
+
+
+def test_a_forced_claim_on_a_held_target_names_the_holder_and_run(pair, monkeypatch):
+    import factory_turso_leases as leases
+
+    _, repo = pair
+    monkeypatch.setenv("GITHUB_RUN_ID", "45616357959")
+    assert leases.acquire_lease(repo, "8", [5746])
+    monkeypatch.setenv("GITHUB_RUN_ID", "1")
+    assert leases.acquire_lease(repo, "7", [5746], explicit=True) is None
+    with pytest.raises(
+        RuntimeError, match=r"busy: #5746 is held by worker 8 \(claim \w{8}, run 45616357959\)"
+    ):
+        leases.forced_refusal(repo, "7", [5746])

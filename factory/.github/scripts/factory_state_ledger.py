@@ -36,7 +36,8 @@ from factory_turso_external import (  # noqa: F401
     reserve_external, revoke_external,
 )
 from factory_turso_leases import (  # noqa: F401
-    acquire_lease, acquire_operation_lease, list_leases, release_expired_leases, release_lease,
+    acquire_lease, acquire_operation_lease, forced_refusal, list_leases, release_expired_leases,
+    release_lease,
     release_operation_lease, release_worker, renew_owned_claims, renew_verified_workers, target_lease,
     worker_claim,
 )

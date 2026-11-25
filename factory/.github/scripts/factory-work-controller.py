@@ -30,7 +30,7 @@ from factory_quota_pause import describe as describe_quota_pause, is_paused as q
 from factory_source_budget import budget_block_reason, worker_sources
 from factory_attempt_history import read_comment_history
 from factory_discovery import canonical_target, discover, update_labels
-from factory_state_ledger import acquire_lease, release_lease, worker_claim, external_wip_count
+from factory_state_ledger import acquire_lease, forced_refusal, release_lease, worker_claim, external_wip_count
 import factory_lease_owners
 import factory_state_ledger
 from factory_lease_owners import ActiveWorkerResult, github_timestamp_epoch
@@ -2370,7 +2370,7 @@ def assign_forced_target(worker: str, target: tuple[str, int], requested_action:
     except Exception as exc:
         raise RuntimeError(f'Claim database unavailable ({type(exc).__name__}); nothing was started.') from None
     if token is None:
-        return None
+        return forced_refusal(REPO, worker, numbers)
     claimed: list[int] = []
     try:
         for number in numbers:

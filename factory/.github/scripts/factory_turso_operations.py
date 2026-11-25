@@ -139,13 +139,24 @@ def budget_usage(db: core.Store, repo: str) -> dict[str, dict[str, Any]]:
     }
 
 
-def eligible_source(db: core.Store, repo: str, worker: str) -> str | None:
-    """The worker's provider when it may run now; the batch then enforces capacity."""
+CAPACITY_REFUSALS = ("provider account", "full", "daily budget exhausted")
+
+
+def eligible_source(
+    db: core.Store, repo: str, worker: str, *, explicit: bool = False
+) -> str | None:
+    """The worker's provider when it may run now; the batch then enforces capacity.
+
+    An operator's explicit claim skips the factory's own worker and model
+    backoffs and health history; provider capacity still refuses it.
+    """
     source = roster().get(worker)
     if source is None:
         return None
-    kept, _ = eligibility(db, repo, [worker])
-    return source[0] if kept else None
+    kept, rejected = eligibility(db, repo, [worker])
+    if kept or (explicit and not any(word in r for r in rejected for word in CAPACITY_REFUSALS)):
+        return source[0]
+    return None
 
 
 def filter_workers(repo: str, workers: list[str]) -> tuple[list[str], list[str]]:
