@@ -128,6 +128,14 @@ def test_children_are_created_in_blocker_order_and_the_parent_tracks_them(env) -
     assert (f"issues/{PARENT}/labels", {"labels": ["tracking"]}) in hub.writes
     checklist = str(hub.posted[PARENT][0]["body"])
     assert split.done_marker(PARENT) in checklist and f"- [ ] #{writer} Writer" in checklist
+    import factory_deps as deps
+
+    links = {(link.src, link.dst, link.kind) for link in deps.read_links(repo)}
+    assert links == {
+        (PARENT, reader, "parent-child"), (PARENT, schema, "parent-child"),
+        (PARENT, writer, "parent-child"), (reader, schema, "blocks"), (reader, writer, "blocks"),
+        (schema, writer, "blocks"),
+    }
     again = Hub(repo)
     assert sweep(repo, again) == [] and again.created == []
 

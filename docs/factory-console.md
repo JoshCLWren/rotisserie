@@ -917,6 +917,8 @@ The dispatcher's pool pass sends no implement run to an issue in two cases
     `factory:unowned`, records each in the store, and resumes the same plan on
     the next pass after a failure. It adopts a child it created but did not
     record (by the child marker in its body) before it creates another.
+  - The sweep writes a `parent-child` link per child and a `blocks` link per
+    sibling blocker to the dependency store (`factory_deps`).
   - The parent gets the `tracking` label and one comment with the checklist
     and a split-done marker. A parent is never split twice and a child is never
     split. The sweep closes the parent once every child is closed as completed.

@@ -12,7 +12,8 @@ the store once per parent (``factory_split_plan``). This sweep step then:
   its siblings. GitHub has no transactions, so every created child is a store
   event, and a later pass resumes the same plan: it adopts a child it created
   but did not record (by the body marker) before it creates a new one;
-* labels the parent ``tracking`` and posts the checklist with the split-done
+* writes ``parent-child`` and sibling ``blocks`` links to ``factory_deps``,
+  labels the parent ``tracking`` and posts the checklist with the split-done
   marker. The store plan keeps the parent from being split again, and a child
   is never split (depth 1);
 * closes the parent once every child closed as completed. A child closed as not
@@ -205,6 +206,16 @@ def create_children(
     return finish_parent(github, store, parent, plan, numbers)
 
 
+def write_links(repo: str, parent: int, plan: Mapping[str, Any], numbers: Mapping[int, int]) -> None:
+    """Parent-child and sibling ``blocks`` links in the dependency store; safe to repeat."""
+    import factory_deps as deps
+
+    for index, child in enumerate(plan["children"], start=1):
+        deps.add(repo, parent, numbers[index], "parent-child")
+        for blocker in child["blocked_by"]:
+            deps.add(repo, numbers[blocker], numbers[index], "blocks")
+
+
 def done_marker(parent: int) -> str:
     return f"<!-- {MARKER_PREFIX}-{plans.DONE_MARKER}:issue-{parent} -->"
 
@@ -216,6 +227,7 @@ def finish_parent(
     plan: Mapping[str, Any],
     numbers: Mapping[int, int],
 ) -> dict[str, Any]:
+    write_links(github.repo, parent, plan, numbers)
     marker = done_marker(parent)
     if not any(marker in str(c.get("body") or "") for c in github.comments(parent)):
         items = "\n".join(
