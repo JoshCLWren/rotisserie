@@ -107,6 +107,26 @@ test('PR takeover retains the adapter staged from trusted main', () => {
   } finally { rmSync(dir, { recursive: true, force: true }); }
 });
 
+test('a run that starts on another provider can fail over into Kilo', () => {
+  const worker = readFileSync('.github/scripts/free-model-factory-worker.sh', 'utf8');
+  const stage = worker.match(/^stage_trusted_kilo_helper\(\) \{\n.*?^\}/ms)[0];
+  const dir = mkdtempSync(join(tmpdir(), 'factory-kilo-failover-'));
+  try {
+    mkdirSync(join(dir, '.github/scripts'), { recursive: true });
+    writeFileSync(join(dir, '.github/scripts/kilo-auto-factory-run.sh'), 'printf trusted-adapter');
+    const result = spawnSync('bash', ['-c', `set -Eeuo pipefail
+      ${stage}
+      SOURCE=opencode-free
+      TRUSTED_KILO_HELPER="$1"
+      stage_trusted_kilo_helper
+      SOURCE=kilo-auto
+      bash "$TRUSTED_KILO_HELPER"
+    `, 'test', join(dir, 'trusted-adapter.sh')], { cwd: dir, encoding: 'utf8', env: { ...process.env, RUNNER_TEMP: dir } });
+    assert.equal(result.status, 0, result.stderr);
+    assert.equal(result.stdout, 'trusted-adapter');
+  } finally { rmSync(dir, { recursive: true, force: true }); }
+});
+
 test('a fenced approval example does not conflict with a real repair verdict', () => {
   run([text('```text\nFACTORY_GATE_READY\n```\nFACTORY_GATE_NOT_READY'), step], ({ verdict, conflict }) => {
     assert.equal(verdict.status, 0);

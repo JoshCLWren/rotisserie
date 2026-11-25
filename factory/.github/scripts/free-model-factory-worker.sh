@@ -108,8 +108,8 @@ fi
 # A PR branch may predate the Kilo integration entirely. Stage the backend
 # runner from trusted main before any checkout so cross-worker takeover never
 # executes a missing or stale branch copy, mirroring the trusted guard model.
+# Stage on every lane: same-run failover can move another provider's run into Kilo.
 stage_trusted_kilo_helper() {
-  [[ "$SOURCE" == 'kilo-auto' ]] || return 0
   TRUSTED_KILO_HELPER="${TRUSTED_KILO_HELPER:-}"
   if [[ -z "$TRUSTED_KILO_HELPER" ]]; then
     TRUSTED_KILO_HELPER="$(mktemp /tmp/factory-kilo-auto-run.XXXXXX.sh)"
