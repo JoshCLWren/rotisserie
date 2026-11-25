@@ -25,28 +25,100 @@ fi
 # job's scheduling memory). One dispatcher pass re-ran the same reads from
 # many controller processes: 66x `gh pr checks` and 26+26 paginated Entry/
 # fork run listings in a single push-triggered pass (run 44097292205). Only
-# these repetitive status reads are cached, for a short TTL, and ANY write
-# made through this shim (labels, comments, merges, workflow dispatches)
-# drops the whole cache so later reads in the job are live again.
+# these repetitive status reads are cached, for a short TTL, filed under the
+# resource they describe (pr-N, wf-NAME, run-N). A write drops only the
+# resources it can change; a write whose target is unknown drops them all.
 eval "$(declare -f factory_gh_real | sed '1s/factory_gh_real/factory_gh_live/')"
 FACTORY_GH_READ_CACHE="${FACTORY_DISCOVERY_DIR:+$FACTORY_DISCOVERY_DIR/gh-read-cache}"
-factory_gh_cacheable() {
-  [[ -n "$FACTORY_GH_READ_CACHE" ]] || return 1
+factory_gh_api_path() {
+  shift
+  while (( $# )); do
+    case "$1" in
+      -X|--method|-H|--header|--jq|-q|--template|-t|--cache|--hostname|--preview|-p|-f|-F|--field|--raw-field|--input)
+        shift 2; continue ;;
+      -*) ;;
+      *) printf '%s\n' "${1%%\?*}"; return 0 ;;
+    esac
+    shift
+  done
+  return 1
+}
+factory_gh_number_arg() {
+  local arg
+  for arg in "$@"; do
+    [[ "$arg" =~ ^#?([0-9]+)$ ]] && { printf '%s\n' "${BASH_REMATCH[1]}"; return 0; }
+  done
+  return 1
+}
+factory_gh_cache_tag() {
+  local path
   factory_gh_is_read "$@" || return 1
-  [[ "${1:-} ${2:-}" == "pr checks" ]] && return 0
-  [[ "${1:-}" == api && "$*" =~ actions/(workflows/[^/?\ ]+/runs|runs/[0-9]+/jobs) ]]
+  if [[ "${1:-} ${2:-}" == "pr checks" ]]; then
+    path="$(factory_gh_number_arg "${@:3}")" || return 1
+    printf 'pr-%s\n' "$path"
+    return 0
+  fi
+  [[ "${1:-}" == api ]] || return 1
+  path="$(factory_gh_api_path "$@")" || return 1
+  if [[ "$path" =~ actions/workflows/([^/?\ ]+)/runs$ ]]; then
+    printf 'wf-%s\n' "${BASH_REMATCH[1]}"
+  elif [[ "$path" =~ actions/runs/([0-9]+)/jobs$ ]]; then
+    printf 'run-%s\n' "${BASH_REMATCH[1]}"
+  else
+    return 1
+  fi
+}
+# Resources a write can change, or "*" when the target is not known.
+factory_gh_write_tags() {
+  local path number
+  case "${1:-} ${2:-}" in
+    "workflow run") printf 'wf-%s\n' "${3:-*}"; return ;;
+    "label "*) return ;;
+    "api graphql")
+      local arg
+      for arg in "${@:3}"; do
+        [[ "$arg" == query=* && "$arg" != *mutation* && "$arg" != query=@* ]] && return
+      done
+      printf '*\n'; return ;;
+    "pr merge") printf '*\n'; return ;;
+    "pr "*|"issue "*)
+      number="$(factory_gh_number_arg "${@:3}")" || { printf '*\n'; return; }
+      printf 'pr-%s\n' "$number"; return ;;
+  esac
+  if [[ "${1:-}" == api ]] && path="$(factory_gh_api_path "$@")"; then
+    if [[ "$path" =~ actions/workflows/([^/]+)/dispatches$ ]]; then
+      printf 'wf-%s\n' "${BASH_REMATCH[1]}"; return
+    fi
+    if [[ "$path" =~ /(issues|pulls)/([0-9]+)(/(labels|comments|assignees|reviews|requested_reviewers)(/.*)?)?$ ]]; then
+      printf 'pr-%s\n' "${BASH_REMATCH[2]}"; return
+    fi
+    if [[ "$path" =~ /labels(/[^/]+)?$ ]]; then
+      return
+    fi
+  fi
+  printf '*\n'
+}
+factory_gh_invalidate() {
+  local tag
+  while IFS= read -r tag; do
+    if [[ "$tag" == '*' || "$tag" == *'*'* || "$tag" == */* ]]; then
+      rm -rf "$FACTORY_GH_READ_CACHE"
+      return
+    fi
+    rm -rf "${FACTORY_GH_READ_CACHE:?}/$tag"
+  done < <(factory_gh_write_tags "$@")
 }
 factory_gh_real() {
-  local key file now age status=0
-  if ! factory_gh_cacheable "$@"; then
+  local key file tag now age status=0
+  if [[ -z "$FACTORY_GH_READ_CACHE" ]] || ! tag="$(factory_gh_cache_tag "$@")"; then
     if [[ -n "$FACTORY_GH_READ_CACHE" ]] && ! factory_gh_is_read "$@"; then
-      rm -rf "$FACTORY_GH_READ_CACHE"
+      factory_gh_invalidate "$@"
     fi
     factory_gh_live "$@"
     return
   fi
   key="$(printf '%s\0' "$@" | sha256sum | cut -c1-40)"
-  file="$FACTORY_GH_READ_CACHE/$key"
+  file="$FACTORY_GH_READ_CACHE/$tag/$key"
   now="$(date +%s)"
   if [[ -f "$file" ]]; then
     age=$(( now - $(stat -c %Y "$file") ))
@@ -57,7 +129,7 @@ factory_gh_real() {
       return 0
     fi
   fi
-  mkdir -p "$FACTORY_GH_READ_CACHE"
+  mkdir -p "$FACTORY_GH_READ_CACHE/$tag"
   factory_gh_live "$@" > "$file.$$" || status=$?
   cat "$file.$$"
   if (( status == 0 )); then

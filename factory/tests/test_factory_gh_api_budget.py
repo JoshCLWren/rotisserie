@@ -227,13 +227,50 @@ def test_dispatcher_reuses_repeated_status_reads_within_one_job(tmp_path: Path) 
     assert _live(tmp_path) == 2
 
 
-def test_any_write_drops_the_read_cache(tmp_path: Path) -> None:
-    checks = ("pr", "checks", "5", "--repo", "o/r", "--required", "--json", "state")
-    _shim(tmp_path, *checks)
+CHECKS_5 = ("pr", "checks", "5", "--repo", "o/r", "--required", "--json", "state")
+CHECKS_6 = ("pr", "checks", "6", "--repo", "o/r", "--required", "--json", "state")
+ENTRY_RUNS = ("api", "--paginate", "--slurp",
+              "repos/o/r/actions/workflows/free-model-factory-entry.yml/runs?status=queued&per_page=100")
+
+
+def _warm(tmp_path: Path) -> int:
+    for read in (CHECKS_5, CHECKS_6, ENTRY_RUNS):
+        _shim(tmp_path, *read)
+    return _live(tmp_path)
+
+
+def _refetched(tmp_path: Path, *reads: tuple[str, ...]) -> list[bool]:
+    flags = []
+    for read in reads:
+        before = _live(tmp_path)
+        _shim(tmp_path, *read)
+        flags.append(_live(tmp_path) > before)
+    return flags
+
+
+def test_a_write_drops_only_the_resources_it_touches(tmp_path: Path) -> None:
+    _warm(tmp_path)
     _shim(tmp_path, "api", "-X", "PUT", "repos/o/r/issues/5/labels")
-    assert _shim(tmp_path, *checks) == "live:3"
-    _shim(tmp_path, "workflow", "run", "free-model-factory-entry.yml")
-    assert _shim(tmp_path, *checks) == "live:5"
+    assert _refetched(tmp_path, CHECKS_5, CHECKS_6, ENTRY_RUNS) == [True, False, False]
+    _shim(tmp_path, "workflow", "run", "free-model-factory-entry.yml", "-f", "worker=7")
+    assert _refetched(tmp_path, CHECKS_5, CHECKS_6, ENTRY_RUNS) == [False, False, True]
+    _shim(tmp_path, "issue", "comment", "6", "--body", "x")
+    assert _refetched(tmp_path, CHECKS_5, CHECKS_6, ENTRY_RUNS) == [False, True, False]
+    _shim(tmp_path, "label", "create", "factory:7")
+    _shim(tmp_path, "api", "graphql", "-f", "query=query { viewer { login } }")
+    assert _refetched(tmp_path, CHECKS_5, CHECKS_6, ENTRY_RUNS) == [False, False, False]
+
+
+def test_a_write_with_an_unknown_target_drops_every_resource(tmp_path: Path) -> None:
+    for write in (
+        ("pr", "merge", "6", "--squash"),
+        ("api", "-X", "POST", "repos/o/r/git/refs"),
+        ("api", "graphql", "-f", "query=mutation { resolveReviewThread(input: {}) { thread { id } } }"),
+        ("issue", "edit", "--add-label", "x"),
+    ):
+        _warm(tmp_path)
+        _shim(tmp_path, *write)
+        assert _refetched(tmp_path, CHECKS_5, CHECKS_6, ENTRY_RUNS) == [True, True, True], write
 
 
 def test_ownership_reads_and_expired_entries_stay_live(tmp_path: Path) -> None:

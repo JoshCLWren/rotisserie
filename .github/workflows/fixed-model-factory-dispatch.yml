@@ -340,9 +340,18 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -Eeuo pipefail
+          # Every later reader in this job (the stale-snapshot check) reuses
+          # this one copy instead of reading the published file again.
+          stats="$RUNNER_TEMP/factory-stats.json"
           usage="$RUNNER_TEMP/factory-db-usage.json"
-          if gh api "repos/${GITHUB_REPOSITORY}/contents/factory-stats.json?ref=factory-status-live" \
-              --jq '.content' 2>/dev/null | base64 -d 2>/dev/null | jq -e '.db_usage | objects' > "$usage"; then
+          if gh api -H 'Accept: application/vnd.github.raw+json' \
+              "repos/${GITHUB_REPOSITORY}/contents/factory-stats.json?ref=factory-status-live" \
+              > "$stats" 2>/dev/null && jq -e 'objects' "$stats" >/dev/null 2>&1; then
+            echo "FACTORY_STATS_FILE=$stats" >> "$GITHUB_ENV"
+          else
+            rm -f "$stats"
+          fi
+          if [[ -s "$stats" ]] && jq -e '.db_usage | objects' "$stats" > "$usage"; then
             echo "FACTORY_DB_USAGE_FILE=$usage" >> "$GITHUB_ENV"
             jq -r '"Factory store usage: \(.status)"' "$usage"
           else
@@ -688,8 +697,10 @@ jobs:
               echo "Starting Factory ${worker} (dispatch attempt ${attempt}/3)"
               if gh workflow run free-model-factory-entry.yml --ref main -f worker="$worker" -f assignment="$assignment"; then
                 dispatched_count=$((dispatched_count + 1))
+                python3 .github/scripts/factory_active_workers.py note-dispatched --worker "$worker" || true
                 return 0
               fi
+              python3 .github/scripts/factory_active_workers.py forget || true
               if (( attempt < 3 )); then
                 sleep $((attempt * 3))
               fi
@@ -959,9 +970,13 @@ jobs:
         run: |
           set -Eeuo pipefail
           gh_real="${FACTORY_REAL_GH:-gh}"
-          generated="$("$gh_real" api -H 'Accept: application/vnd.github.raw+json' \
-            "repos/${GITHUB_REPOSITORY}/contents/factory-stats.json?ref=factory-status-live" 2>/dev/null \
-            | jq -r '.generated_at // empty' 2>/dev/null || true)"
+          if [[ -s "${FACTORY_STATS_FILE:-}" ]]; then
+            generated="$(jq -r '.generated_at // empty' "$FACTORY_STATS_FILE" 2>/dev/null || true)"
+          else
+            generated="$("$gh_real" api -H 'Accept: application/vnd.github.raw+json' \
+              "repos/${GITHUB_REPOSITORY}/contents/factory-stats.json?ref=factory-status-live" 2>/dev/null \
+              | jq -r '.generated_at // empty' 2>/dev/null || true)"
+          fi
           age="$(python3 .github/scripts/factory_snapshot_age.py "$generated")"
           echo "reliability snapshot age: ${age}s"
           (( age > STALE_AFTER_SECONDS )) || exit 0
