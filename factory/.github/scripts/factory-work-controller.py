@@ -837,7 +837,6 @@ def reconcile_contradictory_labels(
     issue_items = list_issues() if issues is None else issues
     pr_items = list_prs() if prs is None else prs
     repaired: list[int] = []
-    
     from factory_work_policy import normalize_target_state
     
     for item in [*issue_items, *pr_items]:
@@ -895,7 +894,8 @@ def reconcile_contradictory_labels(
             
         number = int(item['number'])
         # This will apply the normalized owner and stage
-        replace_factory_labels(number, norm_owner, norm_stage)
+        if factory_crash.item(f'contradictory labels #{number}', replace_factory_labels, number, norm_owner, norm_stage) is factory_crash.SKIPPED:
+            continue
         repaired.append(number)
         print(
             f'[factory-controller] repaired contradictory state on #{number}: {owner}/{current_stage} -> {norm_owner}/{norm_stage}',
@@ -1914,7 +1914,7 @@ def release_worker(worker: str, reason: str = 'controller-release', *, details=N
         if owner_of(labels_of(item)) == owner:
             targets.append((int(item['number']), 'pr'))
     for number, kind in targets:
-        if replace_factory_labels(number, 'factory:unowned') is False:
+        if factory_crash.item(f'release #{number}', replace_factory_labels, number, 'factory:unowned') in (False, factory_crash.SKIPPED):
             continue
         try:
             record_claim_released(number, worker, kind, reason)

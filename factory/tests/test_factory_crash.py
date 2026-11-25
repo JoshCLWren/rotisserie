@@ -196,7 +196,8 @@ def test_an_item_github_failure_is_recorded_and_skipped_but_code_errors_raise(
     (found,) = _rows(tmp_path / "store.db")
     assert found["kind"] == "item" and found["fatal"] == 0
     assert found["exception_type"] == "GitHubCallError"
-    assert crash.item("#3", lambda: (_ for _ in ()).throw(crash.GitHubCallError("x"))) is None
+    skipped = crash.item("#3", lambda: (_ for _ in ()).throw(crash.GitHubCallError("x")))
+    assert skipped is crash.SKIPPED and not skipped
     assert crash.item("#4", lambda value: value * 2, 21) == 42
     with pytest.raises(UnboundLocalError), crash.item_failure("#5"):
         raise UnboundLocalError("cannot access local variable 'checked_at'")

@@ -296,11 +296,22 @@ def item_failure(
         report(error, kind="item", fatal=False)
 
 
+class _Skipped:
+    def __bool__(self) -> bool:
+        return False
+
+    def __repr__(self) -> str:
+        return "SKIPPED"
+
+
+SKIPPED = _Skipped()
+
+
 def item(label: str, call: Callable[..., Any], *args: Any, **kwargs: Any) -> Any:
-    """``call(*args, **kwargs)``, or None when ``item_failure`` isolated a GitHub failure."""
+    """``call(*args, **kwargs)``, or the falsy ``SKIPPED`` when a GitHub failure was isolated."""
     with item_failure(label):
         return call(*args, **kwargs)
-    return None
+    return SKIPPED
 
 
 def shell_crash(

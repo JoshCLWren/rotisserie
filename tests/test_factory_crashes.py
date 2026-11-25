@@ -206,3 +206,14 @@ def test_both_control_rooms_read_crashes_and_a_traceback() -> None:
     assert 'get("crashes")' in ui and 'get("crash-trace"' in ui
     hosted = (ROOT / "factory/scripts/hosted/public_reads.js").read_text()
     assert 'name === "crashes"' in hosted and "stats.crashes" in hosted
+
+
+def test_doctor_lists_the_crash_groups_with_their_last_run(
+    fake: FakeGitHub, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    published(fake, stats_with(group()))
+    monkeypatch.setattr(turning, "health", lambda *a, **k: ("ok", "Turning", ""))
+    code, out = invoke(["doctor"])
+    assert "factory crashes: UnboundLocalError in factory-work-controller.py:236" in out
+    assert "    💥 Crash: UnboundLocalError in factory-work-controller.py:236" in out
+    assert f"last run {RUN}" in out

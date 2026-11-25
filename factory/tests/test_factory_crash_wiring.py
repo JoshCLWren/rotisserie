@@ -118,3 +118,35 @@ def test_an_entry_point_staged_without_its_siblings_still_runs(tmp_path: Path) -
     )
     assert result.returncode == 0, result.stderr
     assert result.stdout.strip().isdigit()
+
+
+def _failing(tmp_path: Path, helper: Path) -> Path:
+    script = tmp_path / "step.sh"
+    script.write_text(f"set -Eeuo pipefail\nsource {helper}\nfalse\n")
+    return script
+
+
+@pytest.mark.skipif(shutil.which("bash") is None, reason="bash is required")
+def test_without_a_store_the_trap_only_annotates_and_runs_no_recorder(tmp_path: Path) -> None:
+    staged = tmp_path / "staged"
+    staged.mkdir()
+    shutil.copy2(SCRIPTS / "factory_crash_trap.sh", staged / "factory_crash_trap.sh")
+    marker = tmp_path / "recorder-ran"
+    (staged / "factory_crash.py").write_text(f"open({str(marker)!r}, 'w').close()\n")
+    env = {k: v for k, v in os.environ.items() if not k.startswith(("FACTORY_TURSO", "FACTORY_STATE"))}
+    script = _failing(tmp_path, staged / "factory_crash_trap.sh")
+    result = subprocess.run(["bash", str(script)], capture_output=True, text=True, env=env, check=False)
+    assert result.returncode == 1 and "title=Factory shell crash::false exited 1" in result.stderr
+    assert not marker.exists()
+    env["FACTORY_STATE_SQLITE"] = str(tmp_path / "store.db")
+    subprocess.run(["bash", str(script)], capture_output=True, text=True, env=env, check=False)
+    assert marker.exists()
+
+
+@pytest.mark.skipif(shutil.which("bash") is None, reason="bash is required")
+def test_the_checkpoint_writer_staged_alone_still_starts(tmp_path: Path) -> None:
+    staged = tmp_path / "factory-work-checkpoint.abc123"
+    shutil.copy2(SCRIPTS / "factory-work-checkpoint.sh", staged)
+    result = subprocess.run(["bash", str(staged)], capture_output=True, text=True, check=False)
+    assert result.returncode == 2 and "usage: factory-work-checkpoint.sh" in result.stderr
+    assert "No such file" not in result.stderr

@@ -3,17 +3,19 @@ from __future__ import annotations
 import argparse
 from collections import Counter
 from dataclasses import asdict
-from datetime import datetime
+from datetime import datetime, timedelta
 
 from rotisserie.factory_console import runtime
 from rotisserie.factory_console.commands import turning as turning_view
 from rotisserie.factory_console.commands._shared import EXIT_OK, TARGET, Outcome
 from rotisserie.factory_console.commands.app_budget import show_app_budget
+from rotisserie.factory_console.commands.crashes import crash_line
 from rotisserie.factory_console.commands.status import parse_since
 from rotisserie.factory_console.context import Context, UsageError
 from rotisserie.factory_console.github import GitHubError, GitHubRateLimitError
 from rotisserie.factory_console.service import (
     baseline,
+    crashes,
     doctor,
     gh_usage,
     limits,
@@ -370,6 +372,10 @@ def cmd_doctor(context: Context, arguments: argparse.Namespace) -> Outcome:
             console.fail(line)
         if item.hint and item.status != "ok":
             console.line(f"    {'👉 ' if item.check == turning.CHECK else ''}{item.hint}")
+        if item.check == crashes.CHECK and item.status != "ok":
+            since = context.clock.now() - timedelta(hours=1)
+            for group in crashes.within(crashes.published(context.github)["groups"], since)[:5]:
+                console.line(f"    {crash_line(group)}")
     data: dict[str, object] = {"findings": [i.to_dict() for i in findings]}
     blocker = next((i for i in findings if i.check == "GitHub API"), None)
     if blocker is not None:

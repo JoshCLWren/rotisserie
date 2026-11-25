@@ -139,7 +139,7 @@ stage_trusted_review_controller() {
   cp .github/scripts/factory-review-controller.py "$trusted_dir/factory-review-controller.py"
   cp .github/scripts/factory_adopter.py "$trusted_dir/factory_adopter.py"
   cp .github/scripts/factory_review_policy.py "$trusted_dir/factory_review_policy.py"
-  cp .github/scripts/factory_issue_acceptance.py .github/scripts/factory_acceptance_criteria.py .github/scripts/factory_acceptance_escalation.py "$trusted_dir/"
+  cp .github/scripts/factory_issue_acceptance.py .github/scripts/factory_acceptance_criteria.py .github/scripts/factory_acceptance_escalation.py .github/scripts/factory_crash.py "$trusted_dir/"
   cp .github/scripts/factory_implementation_delivery.py "$trusted_dir/factory_implementation_delivery.py"
   cp .github/scripts/factory_post_merge_closure.py .github/scripts/factory_post_merge_closure_policy.py .github/scripts/factory_post_merge_closure_github.py .github/scripts/factory_merge_linkage.py .github/scripts/factory_review_exclusion.py .github/scripts/factory_review_findings.py .github/scripts/factory_review_line_gate.py .github/scripts/factory_self_review_allowance.py "$trusted_dir/"
   cp .github/scripts/factory_main_health.py "$trusted_dir/factory_main_health.py"
@@ -163,10 +163,10 @@ stage_trusted_review_controller() {
 # The model may edit repository scripts but cannot replace this running helper.
 stage_trusted_checkpoint_helper() {
   TRUSTED_WORK_CHECKPOINT="$(mktemp "${RUNNER_TEMP:-/tmp}/factory-work-checkpoint.XXXXXXXX")"
-  cp .github/scripts/factory-work-checkpoint.sh "$TRUSTED_WORK_CHECKPOINT"
+  cp .github/scripts/factory-work-checkpoint.sh "$TRUSTED_WORK_CHECKPOINT" && cp .github/scripts/factory_crash_trap.sh "$(dirname "$TRUSTED_WORK_CHECKPOINT")/"
   chmod +x "$TRUSTED_WORK_CHECKPOINT"
   TRUSTED_CHECKPOINT_HANDOFF="$(mktemp -d "${RUNNER_TEMP:-/tmp}/factory-checkpoint-handoff.XXXXXXXX")/factory_checkpoint_handoff.py"
-  cp .github/scripts/factory_checkpoint_handoff.py .github/scripts/factory_adopter.py "$(dirname "$TRUSTED_CHECKPOINT_HANDOFF")/"
+  cp .github/scripts/factory_checkpoint_handoff.py .github/scripts/factory_adopter.py .github/scripts/factory_crash.py "$(dirname "$TRUSTED_CHECKPOINT_HANDOFF")/"
   export TRUSTED_CHECKPOINT_HANDOFF
 }
 

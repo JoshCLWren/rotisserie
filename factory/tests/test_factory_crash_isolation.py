@@ -192,3 +192,24 @@ def test_the_self_heal_gh_client_raises_the_isolated_error_type(
     monkeypatch.setattr(heal.subprocess, "run", failed)
     with pytest.raises(crash.GitHubCallError, match="HTTP 502"):
         heal.GhCli("acme/widgets").api("issues/1/labels")
+
+
+def test_one_failed_contradictory_label_repair_does_not_stop_the_others(
+    controller: types.ModuleType, monkeypatch: pytest.MonkeyPatch, store: Path
+) -> None:
+    names = ("factory", "factory:unowned", "factory:building")
+    rows = [{"number": n, "body": "", "labels": [{"name": x} for x in names]} for n in (31, 32)]
+
+    def replace(number: int, owner: str, stage: str | None = None) -> bool:
+        if number == 31:
+            raise crash.GitHubCallError("HTTP 502 on PUT labels")
+        return True
+
+    monkeypatch.setattr(controller, "replace_factory_labels", replace)
+    assert controller.reconcile_contradictory_labels(rows, []) == [32]
+    assert _stored(store) == [("item", 0, "GitHubCallError")]
+    monkeypatch.setattr(
+        controller, "replace_factory_labels", lambda *a, **k: (_ for _ in ()).throw(KeyError("x"))
+    )
+    with pytest.raises(KeyError):
+        controller.reconcile_contradictory_labels(rows, [])

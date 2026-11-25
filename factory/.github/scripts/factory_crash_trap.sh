@@ -1,6 +1,11 @@
+# shellcheck shell=bash
 # Source after `set -Eeuo pipefail`. A command that fails the script prints a
-# GitHub ::error annotation (command, line, script) and stores one shell crash
-# through factory_crash.py when this job holds the store. The exit status is kept.
+# GitHub ::error annotation (command, line, script); the exit status is kept.
+# Only a job that holds the factory store also stores the crash, through the
+# factory_crash.py beside this file. Model jobs never hold the store, so the
+# trap never runs a checkout copy that a model could have edited.
+FACTORY_CRASH_SCRIPTS="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
 factory_crash_trap() {
   local status=$?
   ((BASH_SUBSHELL == 0)) || return "$status"
@@ -13,9 +18,12 @@ factory_crash_trap() {
   escaped="${escaped//$'\n'/%0A}"
   printf '::error file=%s,line=%s,title=Factory shell crash::%s exited %s in %s:%s %s\n' \
     "$script" "$line" "$escaped" "$status" "${script##*/}" "$line" "$function" >&2
-  python3 "${FACTORY_CRASH_SCRIPTS:-$(dirname "${BASH_SOURCE[0]}")}/factory_crash.py" record-shell \
-    --script "$script" --line "$line" --function "$function" --command "$command" \
-    --status "$status" --trace "\`$command\` exited $status"$'\n'"$trace" >&2 || true
+  local recorder="$FACTORY_CRASH_SCRIPTS/factory_crash.py"
+  if [[ -n "${FACTORY_TURSO_URL:-}${FACTORY_STATE_SQLITE:-}" && -f "$recorder" ]]; then
+    python3 "$recorder" record-shell \
+      --script "$script" --line "$line" --function "$function" --command "$command" \
+      --status "$status" --trace "\`$command\` exited $status"$'\n'"$trace" >&2 || true
+  fi
   return "$status"
 }
 trap factory_crash_trap ERR
