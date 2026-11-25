@@ -13,6 +13,7 @@ from rotisserie.factory_console import ui
 from rotisserie.factory_console.commands.recap import render
 from rotisserie.factory_console.github import GitHubError
 from rotisserie.factory_console.service import (
+    code_review,
     doctor,
     failures,
     fleet,
@@ -354,12 +355,14 @@ def test_a_failed_read_is_named_and_the_rest_still_reads(monkeypatch: pytest.Mon
     monkeypatch.setattr(recap, "current_work", lambda *_a, **_k: [])
     monkeypatch.setattr(loops, "parked", lambda *_a, **_k: [])
     monkeypatch.setattr(loops, "scan", lambda *_a, **_k: [])
+    monkeypatch.setattr(code_review, "counts", lambda *_a, **_k: {"approve": 1})
 
     class Hub:
         repo = "acme/widgets"
 
     data = recap.recap(Hub(), since=SINCE, now=NOW).to_dict()  # type: ignore[arg-type]
     assert data["unread"] == ["doctor"]
+    assert data["reviews"] == {"approve": 1, "failed": 0}
     assert data["verdict"] == "Good night: 1 PR merged, main state unknown"
 
 

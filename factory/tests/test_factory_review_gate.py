@@ -17,6 +17,7 @@ from pytest import MonkeyPatch
 
 from tests.workflow_files import adopter_view
 
+pytestmark = pytest.mark.usefixtures("passthrough_line_review")
 SCRIPTS = Path(__file__).resolve().parents[1] / ".github" / "scripts"
 WORKFLOWS = Path(__file__).resolve().parents[2] / ".github" / "workflows"
 sys.path.insert(0, str(SCRIPTS))
@@ -3084,7 +3085,6 @@ def test_non_delivery_never_promotes_semantic_approval(
     assert result["status"] == "implementation-evidence-required"
     assert transitions[-1]["pr_stage"] == stage
     assert "no executable delivery verified" in str(posted[-1]["note"])
-
 
 
 # Declared-dependency merge gate (issue #4041): merges are refused while the

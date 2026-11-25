@@ -18,6 +18,7 @@ from typing import Any
 
 from rotisserie.factory_console.github import GitHub, GitHubError, string
 from rotisserie.factory_console.service import (
+    code_review,
     doctor,
     failures,
     fleet,
@@ -56,6 +57,7 @@ class Recap:
     database: dict[str, object] | None
     unread: list[str]
     burning: dict[str, object] | None = None
+    reviews: dict[str, int] | None = None
 
     def to_dict(self) -> dict[str, object]:
         return {
@@ -74,6 +76,7 @@ class Recap:
             "database": self.database,
             "unread": self.unread,
             "burning": self.burning,
+            "reviews": self.reviews,
         }
 
 
@@ -113,7 +116,16 @@ def assemble(sources: build.Sources) -> Recap:
         database=build.database(sources),
         unread=sorted(sources.unread),
         burning=burning_stretch(sources),
+        reviews=reviews_by_result(sources),
     )
+
+
+def reviews_by_result(sources: build.Sources) -> dict[str, int] | None:
+    """Line-anchored code reviews by result. Failed runs come from the sampled worker failures."""
+    if not sources.reviews:
+        return None
+    failed = sum(1 for row in sources.failures if row.kind == "review")
+    return {**sources.reviews, "failed": failed}
 
 
 def burning_stretch(sources: build.Sources) -> dict[str, object] | None:
@@ -175,6 +187,16 @@ def gather(
     def work() -> None:
         sources.work = current_work(github, with_session=False)
 
+    def code_reviews() -> None:
+        pulls = [
+            int(str(row["number"]))
+            for row in review.open_pulls(github)
+            if string(row, "updated_at") >= iso
+        ]
+        merged = search(github, f"repo:{github.repo} is:pr is:merged merged:>={iso}")
+        numbers = pulls + [int(str(row["number"])) for row in merged if row.get("number")]
+        sources.reviews = code_review.counts(github, numbers, since=since)
+
     def looping() -> None:
         pulls = review.open_pulls(github)
         sources.parked = loops.parked(github, now=now, pulls=pulls)
@@ -195,6 +217,7 @@ def gather(
         "provider switches": switches,
         "current work": work,
         "looping items": looping,
+        "code reviews": code_reviews,
     }
 
     def attempt(name: str) -> None:

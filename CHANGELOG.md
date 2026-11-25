@@ -11,6 +11,19 @@ such change must be called out here and in its release notes.
 
 ### Added
 
+- Factory code review is line-anchored. The reviewer prints one
+  `FACTORY_REVIEW_FINDINGS_V1=` record: each finding names a path, a line or
+  range on the head side of the PR diff, a severity (blocking or non-blocking)
+  and the fix. The trusted controller drops and counts findings that are not
+  inside a diff hunk of the exact head. Zero valid blocking findings approves;
+  any blocking finding requests changes; a run without a parseable record fails
+  and another model reviews. The reviewer's prose verdict no longer decides.
+  The controller posts the valid findings as one PR review with inline comments
+  anchored by path, line and side, checks each anchor, and resolves its own
+  older threads that the new review replaces. Repair runs get the findings as
+  their task, and the self-heal sweep resolves a factory finding thread once a
+  later commit changes the cited lines. `baste review pr:N` shows the findings
+  with file:line, and `baste recap` counts code reviews by result.
 - `baste recap` lists, under "Needs you", merged factory PRs whose issue is
   still open, with the reason merge closure kept it open: the PR said it is only
   part of the issue, or named it only in its title. Both control rooms show

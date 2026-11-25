@@ -12,6 +12,7 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from typing import Any
 
+import factory_review_findings as findings
 import factory_self_heal as heal
 import factory_self_heal_rules as rules
 from factory_work_policy_base import is_manual_only
@@ -156,6 +157,21 @@ def _contains(github: heal.GitHub, fix: str, head: str) -> bool:
     return isinstance(compared, Mapping) and compared.get("status") in ("ahead", "identical")
 
 
+def factory_thread_fix(github: heal.GitHub, thread: Mapping[str, Any], pr: int, head: str) -> str:
+    """Why the factory's own finding thread is fixed in the head, or "" when it is not."""
+    marker = findings.thread_finding(thread, pr=pr)
+    if marker is None or marker["head"] == head:
+        return ""
+    if thread.get("isOutdated"):
+        return "GitHub marks its lines outdated in the current head"
+    compared = github.api(f"compare/{marker['head']}...{head}")
+    files = compared.get("files") if isinstance(compared, Mapping) else None
+    touched = isinstance(files, list) and findings.fix_touched(
+        files, path=str(thread.get("path") or ""), first=int(marker["start"]), last=int(marker["end"])
+    )
+    return f"a commit after `{marker['head'][:12]}` changed those lines" if touched else ""
+
+
 def resolve_answered_threads(
     github: heal.GitHub, store: heal.Store, pulls: Sequence[Mapping[str, Any]], budget: Budget
 ) -> list[dict[str, Any]]:
@@ -176,6 +192,16 @@ def resolve_answered_threads(
         for thread in listing.get("nodes") or []:
             page = thread.get("comments") if isinstance(thread, Mapping) else None
             if not isinstance(page, Mapping) or (page.get("pageInfo") or {}).get("hasNextPage"):
+                continue
+            fix = factory_thread_fix(github, thread, number, head)
+            if fix and thread.get("id"):
+                text = f"Resolved the factory's finding on {thread.get('path')} in #{number}: {fix}."
+                if budget.dry_run or not budget.take():
+                    done.append({"pr": number, "status": "would-heal", "text": text})
+                    continue
+                github.graphql(RESOLVE, thread=str(thread["id"]))
+                done.append(heal.report(github, store, kind=rules.THREAD_RESOLVED, pr=number,
+                                        head=head, ref=str(thread["id"]), text=text))
                 continue
             answered = rules.answered_thread(thread, head)
             if answered is None or not answered.resolvable or not answered.thread_id:

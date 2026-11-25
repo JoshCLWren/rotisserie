@@ -73,6 +73,15 @@ def render(console: Console, data: dict[str, object]) -> None:
         console.line(console.bold(f"The factory clears these on its next pass ({len(clearing)})"))
         for row in clearing:
             console.line(f"  {console.warn_mark} {row['text']}")
+    reviews = data.get("reviews")
+    if isinstance(reviews, dict):
+        console.line()
+        console.line(console.bold("Code reviews by result"))
+        console.line(
+            f"  {reviews.get('approve', 0)} approved, {reviews.get('repair', 0)} changes "
+            f"requested, {reviews.get('reject', 0)} rejected, {reviews.get('failed', 0)} failed "
+            f"runs; {reviews.get('dropped findings', 0)} findings dropped as off the diff"
+        )
     _render_wrong(console, data["went_wrong"])
     _render_providers(console, data["providers"])
     stuck = _rows(data["stuck"])

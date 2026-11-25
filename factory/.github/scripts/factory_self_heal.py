@@ -9,7 +9,8 @@ Run by the trusted dispatcher once per tick (``sweep``):
 * merges main into a ``factory:merge-conflict`` PR that GitHub now reports as
   mergeable, once per head and only while nobody holds the PR;
 * resolves a bot reviewer's thread that a factory worker answered "Fixed" with
-  a commit that is in the current head;
+  a commit that is in the current head, and the factory's own line-anchored
+  finding thread once a later commit changed the lines it cites;
 * parks a PR that loops (``factory_item_loop``): no more workers go to it at
   its current head, in any stage, until its owner acts.
 

@@ -306,8 +306,8 @@ def test_pr_agent_check_output_is_lower_priority_advisory(tmp_path: Path) -> Non
 def test_empty_inputs_say_none(tmp_path: Path) -> None:
     out = format_findings(tmp_path, body="no greptile here")
     assert "No unresolved Greptile review threads." in out
-    # Greptile threads, top-level reviews, PR summary, PR-Agent.
-    assert out.count("None.") == 4
+    # Factory findings, Greptile threads, top-level reviews, PR summary, PR-Agent.
+    assert out.count("None.") == 5
 
 
 def test_long_bodies_are_clipped(tmp_path: Path) -> None:

@@ -141,7 +141,7 @@ stage_trusted_review_controller() {
   cp .github/scripts/factory_review_policy.py "$trusted_dir/factory_review_policy.py"
   cp .github/scripts/factory_issue_acceptance.py .github/scripts/factory_acceptance_criteria.py "$trusted_dir/"
   cp .github/scripts/factory_implementation_delivery.py "$trusted_dir/factory_implementation_delivery.py"
-  cp .github/scripts/factory_post_merge_closure.py .github/scripts/factory_post_merge_closure_policy.py .github/scripts/factory_post_merge_closure_github.py .github/scripts/factory_merge_linkage.py .github/scripts/factory_review_exclusion.py "$trusted_dir/"
+  cp .github/scripts/factory_post_merge_closure.py .github/scripts/factory_post_merge_closure_policy.py .github/scripts/factory_post_merge_closure_github.py .github/scripts/factory_merge_linkage.py .github/scripts/factory_review_exclusion.py .github/scripts/factory_review_findings.py .github/scripts/factory_review_line_gate.py "$trusted_dir/"
   cp .github/scripts/factory_main_health.py "$trusted_dir/factory_main_health.py"
   # Bind model provenance to a trusted main checkout snapshot, not PR data.
   cp .github/scripts/factory_worker_slots.py "$trusted_dir/factory_worker_slots.py"
@@ -952,15 +952,16 @@ if factory_review_has_conflicting_terminal_markers "$review_log"; then
   exit 0
 fi
 
-verdict="$(factory_extract_semantic_verdict "$review_log" || true)"
+# Line-anchored findings decide the verdict; no parseable record is a failed run.
+verdict="$(factory_line_review_verdict "$sanitized_review_log" "$NUMBER" "$EXPECTED_HEAD")" || verdict=''
+line_review_verdict="$verdict"
 acceptance_policy="$(dirname "$TRUSTED_REVIEW_CONTROLLER")/factory_issue_acceptance.py"
 # Obtain the trusted linked-issue rubric before checking primary evidence.
 # A parseable report with only A1 is not a complete acceptance report.
 acceptance_mission="$(factory_issue_acceptance_mission "$NUMBER" "$EXPECTED_HEAD")"
 if [[ "$verdict" == 'approve' ]] \
   && ! factory_has_acceptance_report "$sanitized_review_log" "$acceptance_policy" "$acceptance_mission"; then
-  log "review returned READY without a parseable acceptance report; requesting bounded evidence recovery"
-  # A bare READY cannot be submitted to the controller if recovery times out.
+  log "review findings approve without a parseable acceptance report; requesting bounded evidence recovery"
   verdict=''
 fi
 recovery_attempted=0
@@ -972,7 +973,7 @@ recovery_status=0
 # its own branch here. A missing fork verdict is released for re-dispatch.
 if [[ -z "$verdict" ]] && [[ "$SOURCE" != 'kilo-auto' ]] \
   && [[ "${FACTORY_FORK_STATIC_REVIEW:-0}" != 1 ]] \
-  && factory_review_is_substantive "$review_log"; then
+  && [[ -n "$line_review_verdict" ]]; then
   recovery_attempted=1
   recovery_log="/tmp/opencode-factory-${WORKER}-verdict-recovery.log"
   # Recovery writes a full acceptance report for an already-finished review.
@@ -1010,9 +1011,8 @@ if [[ -z "$verdict" ]] && [[ "$SOURCE" != 'kilo-auto' ]] \
         recovered_verdict="$(factory_extract_semantic_verdict "$sanitized_recovery_log" || true)"
       fi
       if [[ "$recovered_verdict" == 'repair' || "$recovered_verdict" == 'reject' ]]; then
-        verdict="$recovered_verdict"
-        log "${FACTORY_SEMANTIC_STATUS_RECOVERED}: recovered conservative verdict for PR #${NUMBER}"
-      elif [[ "$recovered_verdict" == 'approve' ]] && ! factory_primary_review_denies_ready_recovery "$review_log"; then
+        log "${FACTORY_SEMANTIC_STATUS_RECOVERY_FAILED}: recovery prose cannot request changes; only line findings decide"
+      elif [[ "$recovered_verdict" == 'approve' ]]; then
         if factory_append_recovered_acceptance_report \
           "$sanitized_review_log" "$sanitized_recovery_log" "$acceptance_policy" "$EXPECTED_HEAD" "$acceptance_mission"; then
           verdict='approve'

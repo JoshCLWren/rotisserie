@@ -174,3 +174,26 @@ factory_recover_semantic_verdict() {
   ) 2>&1 | tee "$recovery_log" || status=${PIPESTATUS[0]}
   return "$status"
 }
+
+# The review's verdict, decided by its line-anchored findings record against the
+# exact head diff (factory_review_findings.py). Prints approve, repair or reject.
+# Fails (prints nothing) when the record is missing or malformed, or the diff
+# cannot be read: a failed review run, never an approval.
+factory_line_review_verdict() {
+  local log_file="$1" pr="$2" head="$3" files result rejects=()
+  local policy
+  policy="$(dirname "${TRUSTED_REVIEW_CONTROLLER:?}")/factory_review_findings.py"
+  [[ -f "$policy" && -f "$log_file" ]] || return 1
+  [[ "$(factory_terminal_marker "$log_file" || true)" == FACTORY_GATE_REJECT ]] && rejects=(--rejects)
+  files="$(mktemp)"
+  if ! gh api --paginate --slurp "repos/${GITHUB_REPOSITORY:?}/pulls/${pr}/files?per_page=100" > "$files" 2>/dev/null; then
+    rm -f "$files"
+    return 1
+  fi
+  result="$(python3 "$policy" check --log "$log_file" --head "$head" --files "$files" "${rejects[@]}")" || {
+    rm -f "$files"
+    return 1
+  }
+  rm -f "$files"
+  jq -er '.verdict | select(. == "approve" or . == "repair" or . == "reject")' <<< "$result"
+}

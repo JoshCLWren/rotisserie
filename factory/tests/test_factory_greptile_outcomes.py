@@ -492,7 +492,7 @@ def test_worker_wires_the_gate_into_every_ready_or_review_handoff() -> None:
     assert "FACTORY_PUSH_BLOCKED_REASON" in repair
     # Review-stage approval: gate runs before the controller and can only
     # downgrade or re-dispatch, never approve.
-    review = main[main.index('verdict="$(factory_extract_semantic_verdict "$review_log"') :]
+    review = main[main.index('verdict="$(factory_line_review_verdict "$sanitized_review_log"') :]
     gate_at = review.index("! greptile_outcome_gate ''")
     assert gate_at < review.index('python3 "$TRUSTED_REVIEW_CONTROLLER" review')
     assert "'factory:changes-requested' 'new-greptile-findings-during-run'" in review
