@@ -5,9 +5,12 @@ Idea credit: Beads (MIT, github.com/gastownhall/beads); reimplemented here.
 A link is ``(src, dst, kind)`` on issue or PR numbers of one repository:
 
 - ``blocks``: ``dst`` waits until ``src`` closes.
-- ``parent-child``: ``src`` is the parent and ``dst`` the child. A child
-  inherits every open blocker of its parents; an open parent never blocks
-  its own children.
+- ``parent-child``: ``src`` is the parent and ``dst`` the child. The parent
+  is a tracking item: it waits until every child closes. A child inherits
+  each open blocker of its ancestors, except the ancestors' own descendants,
+  so a parent never blocks its own children or their siblings. Auto-split
+  writes one ``parent-child`` link per child and ``blocks`` links between
+  children that must run in order.
 - ``related``, ``duplicates`` (``src`` duplicates ``dst``) and ``supersedes``
   (``src`` replaces ``dst``) are annotations and never hold work.
 
@@ -15,9 +18,10 @@ Links come from two places. ``Blocked by #N`` and ``Depends on #N`` lines in
 open issue bodies are reconciled into the store once per dispatcher pass
 (origin ``body``). The factory writes its own links with ``add`` (origin
 ``factory``); a body reconcile never deletes those. A factory write that would
-close a cycle is refused. A cycle declared in issue bodies cannot be refused,
-so ``Graph.cycles`` reports it and its members stay held until a person
-removes one link.
+close a direct cycle is refused. A cycle declared in issue bodies, or one
+that only appears through a child inheriting its parent's blockers, cannot be
+refused at write time, so ``Graph.cycles`` reports it and its members stay
+held until a person removes one link.
 
 Public API, for other factory code::
 
@@ -103,28 +107,46 @@ class Graph:
         self.links = tuple(sorted(set(links)))
         self._blocked_by: dict[int, set[int]] = {}
         self._parents: dict[int, set[int]] = {}
+        self._children: dict[int, set[int]] = {}
         for found in self.links:
             if found.kind == "blocks":
                 self._blocked_by.setdefault(found.dst, set()).add(found.src)
             elif found.kind == "parent-child":
                 self._parents.setdefault(found.dst, set()).add(found.src)
+                self._children.setdefault(found.src, set()).add(found.dst)
+        self._memo: dict[int, tuple[int, ...]] = {}
         self._cycles = self._find_cycles()
         self._in_cycle = {number: cycle for cycle in self._cycles for number in cycle}
 
-    def blockers(self, item: int) -> tuple[int, ...]:
-        """Open items ``item`` waits on: its own blockers, then every ancestor's."""
+    def _descendants(self, item: int) -> set[int]:
         found: set[int] = set()
-        seen: set[int] = set()
-        pending = [item]
+        pending = list(self._children.get(item, ()))
         while pending:
-            current = pending.pop()
-            if current in seen:
+            child = pending.pop()
+            if child not in found:
+                found.add(child)
+                pending.extend(self._children.get(child, ()))
+        return found
+
+    def blockers(self, item: int) -> tuple[int, ...]:
+        """Open items ``item`` waits on: its blockers, its open children, its ancestors' blockers."""
+        if item in self._memo:
+            return self._memo[item]
+        found = {n for n in self._blocked_by.get(item, ()) if n in self.open}
+        found |= {n for n in self._children.get(item, ()) if n in self.open}
+        seen: set[int] = set()
+        pending = list(self._parents.get(item, ()))
+        while pending:
+            ancestor = pending.pop()
+            if ancestor in seen:
                 continue
-            seen.add(current)
-            found |= {n for n in self._blocked_by.get(current, ()) if n in self.open}
-            pending.extend(self._parents.get(current, ()))
+            seen.add(ancestor)
+            own = self._descendants(ancestor) | {ancestor}
+            found |= {n for n in self._blocked_by.get(ancestor, ()) if n in self.open} - own
+            pending.extend(self._parents.get(ancestor, ()))
         found.discard(item)
-        return tuple(sorted(found))
+        self._memo[item] = tuple(sorted(found))
+        return self._memo[item]
 
     def cycle_of(self, item: int) -> tuple[int, ...]:
         return self._in_cycle.get(item, ())
@@ -143,11 +165,8 @@ class Graph:
         return self._cycles
 
     def _waits_on(self) -> dict[int, set[int]]:
-        edges: dict[int, set[int]] = {}
-        for found in self.links:
-            if found.kind in GATING and found.src in self.open and found.dst in self.open:
-                edges.setdefault(found.dst, set()).add(found.src)
-        return edges
+        nodes = {n for found in self.links for n in (found.src, found.dst) if n in self.open}
+        return {node: set(self.blockers(node)) for node in nodes if self.blockers(node)}
 
     def _find_cycles(self) -> tuple[tuple[int, ...], ...]:
         """Strongly connected groups of the open wait graph, iterative Tarjan."""
@@ -217,9 +236,15 @@ def _store() -> Any:
     return core.store()
 
 
+_WAITS = (
+    "SELECT CASE kind WHEN 'blocks' THEN dst ELSE src END AS waiter,"
+    " CASE kind WHEN 'blocks' THEN src ELSE dst END AS waited"
+    " FROM factory_dep WHERE repo = :repo AND kind IN ('blocks', 'parent-child')"
+)
 _REACH = (
-    "WITH RECURSIVE reach(n) AS (SELECT :src UNION SELECT d.src FROM factory_dep d"
-    " JOIN reach r ON d.dst = r.n WHERE d.repo = :repo AND d.kind IN ('blocks', 'parent-child'))"
+    f"WITH RECURSIVE waits(waiter, waited) AS ({_WAITS}),"
+    " reach(n) AS (SELECT :waited UNION SELECT w.waited FROM waits w"
+    " JOIN reach r ON w.waiter = r.n)"
 )
 
 
@@ -227,16 +252,17 @@ def add(repo: str, src: int | str, dst: int | str, kind: str) -> str:
     """Store one factory link in one batch; the cycle check is part of the write."""
     found = link(src, dst, kind)
     params = {"repo": repo, "src": found.src, "dst": found.dst, "kind": found.kind}
+    waiter, waited = (found.dst, found.src) if kind == "blocks" else (found.src, found.dst)
     inserted, present = _store().batch(
         [
             (
                 f"{_REACH} INSERT INTO factory_dep (repo, src, dst, kind, origin, created_at)"
                 " SELECT :repo, :src, :dst, :kind, 'factory', unixepoch()"
                 " WHERE :kind NOT IN ('blocks', 'parent-child')"
-                " OR NOT EXISTS (SELECT 1 FROM reach WHERE n = :dst)"
+                " OR NOT EXISTS (SELECT 1 FROM reach WHERE n = :waiter)"
                 " ON CONFLICT (repo, src, dst, kind) DO UPDATE SET origin = 'factory'"
                 " WHERE factory_dep.origin = 'body' RETURNING src",
-                params,
+                {**params, "waiter": waiter, "waited": waited},
             ),
             (
                 "SELECT origin FROM factory_dep WHERE repo = :repo AND src = :src"
@@ -249,7 +275,7 @@ def add(repo: str, src: int | str, dst: int | str, kind: str) -> str:
         return "added"
     if present:
         return "exists"
-    raise DependencyCycle(f"#{found.dst} already waits on #{found.src}; {kind} would close a cycle")
+    raise DependencyCycle(f"#{waited} already waits on #{waiter}; {kind} would close a cycle")
 
 
 def remove(repo: str, src: int | str, dst: int | str, kind: str) -> bool:

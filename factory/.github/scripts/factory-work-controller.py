@@ -1335,6 +1335,16 @@ def ready_pool(issues: list[dict[str, Any]], prs: list[dict[str, Any]], attempt_
     return factory_ready.pool(issues, prs, attempt_records=attempt_records, external_wip=external_wip, intake=intake, links=factory_deps.stored(REPO), holds=holds, kinds=kinds, operator_force=operator_force, intake_holds=target is None, rank=build_candidates)
 
 
+def ready_inputs() -> tuple[list[dict[str, Any]], list[dict[str, Any]], factory_ready.Ready]:
+    issues = list_issues()
+    prs = factory_dispatch_holds.stamp(REPO, list_prs(), issues)
+    try:
+        records: list[NoDiffAttempt] | None = load_no_diff_attempt_records()
+    except RuntimeError:
+        records = None
+    return issues, prs, ready_pool(issues, prs, records)
+
+
 def assign_from_pool(worker: str, kinds: tuple[str, ...] | None = None,
     *,
     target: tuple[str, int] | None = None,
@@ -2647,17 +2657,7 @@ def main() -> int:
         print(json.dumps({'released': released, 'contradictions_repaired': repaired, 'dependencies': links}))
         return 0
     if args.command == 'ready':
-        issues = list_issues()
-        prs = factory_dispatch_holds.stamp(REPO, list_prs(), issues)
-        try:
-            records: list[NoDiffAttempt] | None = load_no_diff_attempt_records()
-        except RuntimeError:
-            records = None
-        found = ready_pool(issues, prs, records)
-        top = factory_ready.rows(found, issues, prs, args.limit)
-        if args.publish and ledger_enabled():
-            factory_ready.publish(REPO, top, found.cycles)
-        print(json.dumps({'items': top, 'held': found.held, 'cycles': [list(c) for c in found.cycles]}))
+        print(json.dumps(factory_ready.report(REPO, ready_inputs, args.limit, args.publish and ledger_enabled())))
         return 0
     if args.command == 'capacity':
         print(json.dumps(omniroute_free_entry_capacity()))

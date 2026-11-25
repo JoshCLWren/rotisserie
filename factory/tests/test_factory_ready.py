@@ -45,7 +45,7 @@ def test_the_pool_holds_blocked_issues_and_names_why() -> None:
     found = ready.pool(ISSUES, [], attempt_records=[], links=LINKS)
     assert 2 not in numbers(found) and 5 not in numbers(found) and 6 not in numbers(found)
     assert {1, 3, 4, 7} <= set(numbers(found))
-    assert found.held["issue:2"] == "blocked by open #1"
+    assert found.held["issue:2"] == "blocked by open #1, #6"
     assert found.held["issue:5"] == "blocked by open #1"
     assert found.held["issue:6"] == "blocked by open #1"
 
@@ -126,4 +126,12 @@ def test_ready_prints_the_exact_list_the_dispatcher_walks(
     assert walked and listed == walked
     assert 2 not in walked and 4 not in walked and 6 not in walked
     assert printed["held"]["issue:4"] == "held: cooling"
-    assert printed["held"]["issue:2"] == "blocked by open #1"
+    assert printed["held"]["issue:2"] == "blocked by open #1, #6"
+
+
+def test_a_failed_ready_read_is_a_warning_not_a_crash() -> None:
+    def broken() -> Any:
+        raise RuntimeError("discovery failed")
+
+    found = ready.report("o/r", broken, 10, True)
+    assert found["items"] == [] and found["error"] == "RuntimeError"

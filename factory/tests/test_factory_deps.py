@@ -40,15 +40,26 @@ def test_only_open_blockers_hold_and_children_inherit_their_parents_blockers() -
     graph = deps.Graph(links, {1, 2, 3, 7, 8, 10, 11})
     assert graph.blockers(2) == (1,)
     assert graph.blockers(11) == (3,)
-    assert graph.blockers(10) == (3,)
+    assert graph.blockers(10) == (3, 11)
     assert graph.blockers(8) == ()
     assert deps.Graph(links, {2, 10, 11}).blockers(11) == ()
 
 
-def test_an_open_parent_never_blocks_its_own_children() -> None:
-    graph = deps.Graph([deps.Link(10, 11, "parent-child")], {10, 11})
-    assert not graph.held(11)
+def test_a_tracking_parent_waits_for_its_children_and_never_blocks_them() -> None:
+    links = [
+        deps.Link(10, 11, "parent-child"),
+        deps.Link(10, 12, "parent-child"),
+        deps.Link(11, 10, "blocks"),
+        deps.Link(12, 10, "blocks"),
+        deps.Link(11, 12, "blocks"),
+        deps.Link(20, 10, "blocks"),
+    ]
+    graph = deps.Graph(links, {10, 11, 12, 20})
+    assert graph.blockers(11) == (20,)
+    assert graph.blockers(12) == (11, 20)
+    assert graph.blockers(10) == (11, 12, 20)
     assert graph.cycles() == ()
+    assert deps.Graph(links, {10, 11, 12}).blockers(11) == ()
 
 
 def test_a_cycle_declared_in_bodies_is_reported_and_its_members_are_held() -> None:
@@ -67,7 +78,7 @@ def test_a_long_chain_and_a_parent_loop_terminate() -> None:
     assert graph.blockers(3000) == (2999,)
     assert graph.cycles() == ()
     loop = deps.Graph([deps.Link(1, 2, "parent-child"), deps.Link(2, 1, "parent-child")], {1, 2})
-    assert loop.blockers(1) == () and loop.cycles() == ((1, 2),)
+    assert loop.blockers(1) == (2,) and loop.cycles() == ((1, 2),)
 
 
 def test_add_refuses_a_link_that_closes_a_cycle_and_reports_existing_links(store: Any) -> None:
@@ -75,14 +86,17 @@ def test_add_refuses_a_link_that_closes_a_cycle_and_reports_existing_links(store
     assert deps.add(repo, "issue:1", "issue:2", "blocks") == "added"
     assert deps.add(repo, 2, 3, "parent-child") == "added"
     assert deps.add(repo, 1, 2, "blocks") == "exists"
+    assert deps.add(repo, 3, 2, "blocks") == "added"
     with pytest.raises(deps.DependencyCycle):
-        deps.add(repo, 3, 1, "blocks")
-    assert deps.add(repo, 3, 1, "related") == "added"
+        deps.add(repo, 2, 1, "blocks")
+    with pytest.raises(deps.DependencyCycle):
+        deps.add(repo, 3, 2, "parent-child")
+    assert deps.add(repo, 2, 1, "related") == "added"
     with pytest.raises(deps.DependencyCycle):
         deps.add(repo, 4, 4, "blocks")
     with pytest.raises(ValueError):
         deps.add(repo, 1, 5, "waits-for")
-    assert deps.blockers(repo, "issue:2", open_numbers={1, 2, 3}) == [1]
+    assert deps.blockers(repo, "issue:2", open_numbers={1, 2, 3}) == [1, 3]
     assert deps.blockers(repo, 3, open_numbers={1, 2, 3}) == [1]
     assert deps.remove(repo, 1, 2, "blocks") is True
     assert deps.remove(repo, 1, 2, "blocks") is False

@@ -146,6 +146,24 @@ def publish(repo: str, items: list[dict[str, object]], cycles: Iterable[Iterable
     return cursors.advance(repo, PUBLISHED_CURSOR, int(time.time()), detail)
 
 
+def report(
+    repo: str,
+    read: Callable[[], tuple[list[dict[str, Any]], list[dict[str, Any]], Ready]],
+    limit: int,
+    store: bool,
+) -> dict[str, object]:
+    """The dispatcher's ready command; a failure is a warning, never a dispatcher crash."""
+    try:
+        issues, prs, found = read()
+        top = rows(found, issues, prs, limit)
+        if store:
+            publish(repo, top, found.cycles)
+    except Exception as exc:  # noqa: BLE001 - the status-page list must not fail the pass
+        print(f"[factory-ready] ready list unavailable ({type(exc).__name__})", file=sys.stderr)
+        return {"items": [], "held": {}, "cycles": [], "error": type(exc).__name__}
+    return {"items": top, "held": found.held, "cycles": [list(c) for c in found.cycles]}
+
+
 def published(repo: str) -> dict[str, object]:
     from datetime import UTC, datetime
 

@@ -331,11 +331,12 @@ factory refuses to write a link that would close a loop.
 dispatcher takes it, with the stage of each item and the next action:
 
 ```
-Ready work (3)
-#  Item      Stage           Next action      Title
-1  pr:5790   factory:review  review           Keep the cover cache warm
-2  issue:5612 new            implement        Closing a dirty draft does not ask to discard
-3  issue:5630 new            implement        Show the pull count on the series page
+Ready work (9)
+
+#  Item     Stage                      Next action      Title
+1  pr:5770  factory:review             review           Post-Rust: support story-arc/overall issue-number aliases an
+2  pr:5781  factory:review             review           Post-Rust: bulk read/complete actions must be reviewable and
+5  pr:5774  factory:changes-requested  review-findings  ComicPile Rust API migration: resource-oriented v2, remove B
 ```
 
 An item is ready when it is open, has no factory owner and no `agent:NAME`
@@ -344,8 +345,7 @@ and no open issue blocks it. The list comes from the same function the
 dispatcher walks (`factory_ready.pool`), so `ready`, `next` and the dispatcher
 cannot disagree about the order. After the list, a worker still checks its
 role, review independence, checks that are still running, GitHub's own
-dependency list and the lease. The factory does not require a `factory` label
-on an issue; it requires one on a pull request.
+dependency list and the lease.
 
 Cooling, parks and the links the factory wrote live in the store. Without a
 store connection, `ready` says so and its answer is not authoritative; use
