@@ -15,12 +15,12 @@ from factory_quota_reset import CAPACITY_OUTCOMES, policy
 from factory_state_operations_backoff import (
     MAX_FIBONACCI_DELAY_SECONDS,
     effective_retry_at,
-    fibonacci_worker_delay,
     legacy_capacity_backoff,
 )
 from factory_turso_core import REPO_RE
 from factory_state_operations_quota import CREDIT_POOL_KEY
 from factory_state_operations_reliability import RELIABILITY_WINDOWS, summarize_reliability
+from factory_track_record_cooldown import strike_delay
 from factory_turso_backoff import active_capacity_cooldowns, state
 from factory_turso_operations import roster
 
@@ -401,7 +401,7 @@ def export_backoffs(repo: str) -> dict[str, Any]:
         until = effective_retry_at(found, _when(row["updated_at"]))
         streak = int(found.get("streak") or 0)
         if found.get("kept_hot") is True and streak > 0:
-            normal = _when(row["updated_at"] + fibonacci_worker_delay(streak))
+            normal = _when(row["updated_at"] + strike_delay(str(found.get("outcome")), streak))
             if normal is not None and normal > now:
                 bucket(str(found.get("source") or ""))["kept_hot"].append(
                     {

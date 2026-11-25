@@ -1,23 +1,31 @@
-"""Short cooldowns for models whose track record is clearly good.
+"""Cooldown policy for a model's own failures, scaled by its track record.
 
-A hot model (``factory_model_track_record.hot`` on its all-action record over
-seven days) that fails its own work does not sit out the long Fibonacci curve:
+Each failure class has its own curve, by strikes in a row (``strike_delay``):
 
-* ``work_failure``, ``unknown_failure`` and ``agent_timeout``: no wait for the
-  first ``HOT_GRACE`` failures in a row, then the five-minute Fibonacci curve
-  restarted after the grace, capped at ``HOT_MAX_COOLDOWN`` seconds.
-* ``model_unavailable``: ``HOT_MAX_COOLDOWN`` seconds instead of six hours for
-  any model that succeeded in the published seven-day record, or (read from the
-  store by the runtime) completed a run in the last ``RECENT_SUCCESS_HOURS``.
-  One catalog miss does not bench such a model; the live catalog, read at
-  every selection, still drops a model the provider really removed.
+* Task outcomes (``work_failure``, which covers no-change and review verdict
+  failures, and ``agent_timeout``) say the task was hard, not that the model
+  is broken; item loops belong to the per-item loop breaker. No wait on the
+  first strike, then 5 minutes more per strike, capped at 30 minutes.
+* Model or infrastructure faults (``provider_failure``, ``environment_failure``,
+  ``unknown_failure``, ``control_plane_failure``): the five-minute Fibonacci
+  curve, capped at 2 hours.
+* ``model_unavailable``: 15 minutes, doubling per strike, capped at 6 hours.
+* ``model_policy_violation`` and ``model_retired_410`` keep 6 hours.
 
-Capacity signals never change: quota, credit pool, account limits, throttles,
-provider failures, policy violations and retirement keep their own cooldowns.
-An unproven or proven-bad model keeps the normal curve. Without fresh stats
-(``FACTORY_TRACK_RECORD_FILE``) every model keeps the normal curve.
+Strikes decay: only strikes from the last ``STRIKE_WINDOW_SECONDS`` count, and
+any success resets the streak. A proven model gets half or less: a hot model
+(``factory_model_track_record.hot`` on its seven-day all-action record) waits
+nothing for its first two task strikes and half of every other curve. For
+``model_unavailable`` a kept model (a success in the published record, or a
+completed run in the last ``RECENT_SUCCESS_HOURS``) waits nothing on the
+first strike and at most 15 minutes after.
 
-Each value reads ``FACTORY_<NAME>`` from the environment, as the hot test does.
+Readers clamp stored rows to these caps (``outcome_cap``), so rows written
+under the old 24-hour curve end promptly. Capacity signals (quota, credit
+pool, throttle, account limits) are not handled here and do not change.
+Without fresh stats (``FACTORY_TRACK_RECORD_FILE``) no model is proven.
+
+Each value reads ``FACTORY_<NAME>`` from the environment.
 """
 
 from __future__ import annotations
@@ -28,12 +36,21 @@ from typing import Any
 
 from factory_state_operations_backoff import fibonacci_worker_delay
 
+STRIKE_WINDOW_SECONDS = 6 * 3600
+TASK_STEP = 300
+TASK_CAP = 1800
+FAULT_CAP = 7200
+LONG_COOLDOWN = 21600
 HOT_GRACE = 2
+UNAVAILABLE_FIRST = 900
+UNAVAILABLE_CAP = 21600
+UNAVAILABLE_KEPT_MAX = 900
+UNAVAILABLE_WINDOW_SECONDS = STRIKE_WINDOW_SECONDS
 RECENT_SUCCESS_HOURS = 24
-HOT_MAX_COOLDOWN = 1800
 MAX_STREAK_ROW = 40
-WORK_OUTCOMES = frozenset({"work_failure", "unknown_failure", "agent_timeout"})
-HOT_OUTCOMES = WORK_OUTCOMES | {"model_unavailable"}
+TASK_OUTCOMES = frozenset({"work_failure", "agent_timeout"})
+LONG_OUTCOMES = frozenset({"model_policy_violation", "model_retired_410"})
+WORK_OUTCOMES = TASK_OUTCOMES
 ALL_ACTIONS = ""
 
 
@@ -48,29 +65,55 @@ class Heat:
         return {"kept_hot": True, "track_record": record}
 
 
-def _settings() -> tuple[int, int]:
+def _setting(name: str, default: float) -> int:
     from factory_model_track_record import setting
 
-    return int(setting("HOT_GRACE", HOT_GRACE)), int(setting("HOT_MAX_COOLDOWN", HOT_MAX_COOLDOWN))
+    return int(setting(name, default))
 
 
-def hot_delay(streak: int) -> int:
-    """Seconds a hot model waits after ``streak`` work failures in a row."""
-    if streak < 1:
+def unavailable_delay(strikes: int, kept: bool) -> int:
+    """Seconds benched after ``strikes`` unavailable signals in a row."""
+    if strikes < 1:
+        raise ValueError("strike count must be positive")
+    if kept:
+        return 0 if strikes == 1 else _setting("UNAVAILABLE_KEPT_MAX", UNAVAILABLE_KEPT_MAX)
+    first = _setting("UNAVAILABLE_FIRST", UNAVAILABLE_FIRST)
+    return min(first * 2 ** min(strikes - 1, 10), UNAVAILABLE_CAP)
+
+
+def strike_delay(outcome: str, strike: int, proven: bool = False) -> int:
+    """Seconds a model or worker waits after ``strike`` failures of ``outcome`` in a row."""
+    if strike < 1:
         raise ValueError("failure streak must be positive")
-    grace, cap = _settings()
-    if streak <= grace:
-        return 0
-    return min(fibonacci_worker_delay(streak - grace), cap)
+    if outcome == "model_unavailable":
+        return unavailable_delay(strike, proven)
+    if outcome in LONG_OUTCOMES:
+        return LONG_COOLDOWN
+    if outcome in TASK_OUTCOMES:
+        step, cap = _setting("TASK_STEP", TASK_STEP), _setting("TASK_CAP", TASK_CAP)
+        if proven:
+            grace = _setting("HOT_GRACE", HOT_GRACE)
+            return 0 if strike <= grace else min(step * (strike - grace) // 2, cap // 2)
+        return min(step * (strike - 1), cap)
+    cap = _setting("FAULT_CAP", FAULT_CAP)
+    delay = min(fibonacci_worker_delay(strike), cap)
+    return delay // 2 if proven else delay
 
 
-def hot_delays() -> str:
-    """The streak delay table ``streak_upsert`` reads for a hot model."""
-    return json.dumps([hot_delay(n) for n in range(1, MAX_STREAK_ROW + 1)])
+def outcome_cap(outcome: str) -> int:
+    """The longest wait ``outcome`` can earn; readers clamp older rows to it."""
+    if outcome == "model_unavailable":
+        return UNAVAILABLE_CAP
+    if outcome in LONG_OUTCOMES:
+        return LONG_COOLDOWN
+    if outcome in TASK_OUTCOMES:
+        return _setting("TASK_CAP", TASK_CAP)
+    return _setting("FAULT_CAP", FAULT_CAP)
 
 
-def unavailable_delay() -> int:
-    return _settings()[1]
+def delays_for(outcome: str, proven: bool = False) -> str:
+    """The JSON streak table ``streak_upsert`` reads for ``outcome``."""
+    return json.dumps([strike_delay(outcome, n, proven) for n in range(1, MAX_STREAK_ROW + 1)])
 
 
 def recent_success_seconds() -> int:
@@ -81,7 +124,7 @@ def recent_success_seconds() -> int:
 
 def heat(source: str, model: str, outcome: str) -> Heat | None:
     """The record that keeps this model hot after ``outcome``, or None."""
-    if outcome not in HOT_OUTCOMES or not source or not model:
+    if outcome in LONG_OUTCOMES or not source or not model:
         return None
     try:
         from factory_model_track_record import fleet_prior, hot, records

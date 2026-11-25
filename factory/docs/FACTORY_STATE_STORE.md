@@ -93,11 +93,25 @@ batches per run. It cannot delete lease, backoff or provider state.
 
 ## Backoffs: real failures, quota and throttle
 
-A real execution failure (agent timeout, provider failure, unavailable model,
-proven work failure) grows a Fibonacci streak per worker and per exact
-source/model pair: 5, 5, 10, 15, 25 ... minutes. The delay stops growing at
-24 hours (`MAX_FIBONACCI_DELAY_SECONDS`). Rows written before the cap are read
-as at most 24 hours after their last update.
+A model's own failure grows a streak per worker and per exact source/model
+pair (`factory_track_record_cooldown.py`). Each class has its own curve:
+
+| Class | Outcomes | Wait after 1 / 3 / 5 / 9 strikes | Cap |
+| --- | --- | --- | --- |
+| Task | `work_failure` (also no-change and review verdicts), `agent_timeout` | 0 / 10 / 20 / 30 min | 30 min |
+| Fault | `provider_failure`, `environment_failure`, `unknown_failure`, `control_plane_failure` | 5 / 10 / 25 / 120 min (Fibonacci) | 2 h |
+| Unavailable | `model_unavailable` | 15 / 60 / 240 / 360 min | 6 h |
+| Long | `model_policy_violation`, `model_retired_410` | 6 h | 6 h |
+
+Task outcomes say the task was hard, not that the model is broken; item loops
+belong to the per-item loop breaker. Only strikes from the last six hours
+count, and a success clears the streak. A proven model (clearly above the
+fleet rate over seven days) waits nothing for its first two task strikes and
+half of every other curve. For `model_unavailable`, a model with a recent
+success is not benched by its first strike and never for more than 15
+minutes. Readers clamp every stored row to its class cap, so rows written
+under the old 24-hour curve end without a reset. Each model streak row stores
+the run id and the error text that caused it.
 
 A quota, throttle or empty-balance refusal is provider capacity, not a model
 fault. It never grows a streak. `factory_quota_reset.py` decides one cooldown:
@@ -173,7 +187,8 @@ method (`key_endpoint`, `inference` or `none`).
 
 - `rotisserie factory backoffs --via github` lists per provider: capacity
   cooldowns with their reset source, Fibonacci backoffs (old quota-caused
-  streaks are marked), and model health cooldowns, with next retry in local
+  streaks are marked), model health cooldowns with the run and error behind
+  them, and models kept hot by their track record, with next retry in local
   time. It runs `export-backoffs` in the trusted label claim workflow.
 - `rotisserie factory backoffs reset --quota-only --via github` deletes the
   Fibonacci rows and cooling health rows that quota and throttle refusals wrote,

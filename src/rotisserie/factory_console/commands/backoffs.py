@@ -17,7 +17,8 @@ What keeps each provider's models from running, and when they retry.
   baste backoffs reset --quota-only --via github
 
 The list shows three kinds of wait per provider: model health cooldowns,
-Fibonacci backoffs of real failures (capped at one day), and quota, throttle
+backoffs of a model's own failures (task failures capped at 30 minutes,
+faults at 2 hours, unavailable models at 6 hours), and quota, throttle
 or credit cooldowns with where their reset time came from (header, key
 endpoint, refusal text, or the provider's policy default). Each health and
 Fibonacci row names the run that wrote it and the error it saw. "Kept hot"

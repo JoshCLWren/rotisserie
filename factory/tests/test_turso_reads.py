@@ -107,7 +107,7 @@ def test_operator_exports_and_resets(env) -> None:
         "worker": worker,
         "source": "nvidia",
         "model": "m",
-        "outcome_class": "work_failure",
+        "outcome_class": "unknown_failure",
         "exact_model_proven": True,
     }
     events.record_runtime_outcome(repo, "301", failure)

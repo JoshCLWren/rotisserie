@@ -18,16 +18,17 @@ from factory_state_operations_backoff import (
     TRANSIENT,
     WORKER_RETRY_CLASSES,
     attributable_model_failure,
-    fibonacci_worker_delay,
     historical_failure_streak,
     model_scoped_transient,
     validate_intermediate_model_failures,
 )
 from factory_turso_core import REPO_RE
 from factory_state_operations_quota import capacity_hints
-from factory_track_record_cooldown import WORK_OUTCOMES, Heat, heat, hot_delay, hot_delays
-from factory_track_record_cooldown import recent_success_seconds, unavailable_delay
-from factory_turso_backoff import DELAYS, capacity_statements, clear_statement, streak_upsert
+from factory_track_record_cooldown import STRIKE_WINDOW_SECONDS, WORK_OUTCOMES, Heat, delays_for
+from factory_track_record_cooldown import heat, strike_delay
+from factory_track_record_cooldown import UNAVAILABLE_WINDOW_SECONDS, recent_success_seconds
+from factory_track_record_cooldown import unavailable_delay
+from factory_turso_backoff import capacity_statements, clear_statement, streak_upsert
 from factory_turso_operations import roster
 
 HEALTH_UPSERT = (
@@ -45,6 +46,9 @@ HEALTH_UPSERT = (
 )
 
 
+FRESH_STRIKE = f"factory_backoff.updated_at > unixepoch() - {STRIKE_WINDOW_SECONDS}"
+
+
 def _epoch(value: datetime | None) -> int | None:
     return None if value is None else int(value.timestamp())
 
@@ -60,8 +64,8 @@ def _history(
 ) -> int:
     """Consecutive failures before this run, after the last manual health reset."""
     reset = (
-        "max(unixepoch() - 604800, coalesce((SELECT health_reset_at FROM factory_repo_state"
-        " WHERE repo = :repo), 0))"
+        f"max(unixepoch() - {STRIKE_WINDOW_SECONDS}, coalesce((SELECT health_reset_at"
+        " FROM factory_repo_state WHERE repo = :repo), 0))"
     )
     if worker is None:
         where, params = "source = :source AND model = :model", {"source": source, "model": model}
@@ -92,6 +96,25 @@ def _kept(db: Any, repo: str, source: str, model: str, outcome: str) -> Heat | N
         {"repo": repo, "s": source, "m": model, "window": window},
     )
     return Heat(1, 1, f"completed a run in the last {window // 3600}h") if rows else None
+
+
+def _unavailable_wait(
+    db: Any, repo: str, source: str, model: str, outcome: str, run_id: int, kept: Heat | None
+) -> int:
+    """Seconds an unavailable signal benches a model; long only for repeated strikes."""
+    if outcome != "model_unavailable":
+        return MODEL_COOLDOWNS[outcome]
+    rows = db.read(
+        "SELECT streak FROM factory_backoff WHERE backoff_key = :k AND outcome = :o"
+        " AND run_id < :run AND updated_at > unixepoch() - :window",
+        {
+            "k": f"factory-model-backoff-v1:{repo}:source:{source}:model:{model}",
+            "o": outcome,
+            "run": run_id,
+            "window": UNAVAILABLE_WINDOW_SECONDS,
+        },
+    )
+    return unavailable_delay(int(rows[0]["streak"] or 0) + 1 if rows else 1, kept is not None)
 
 
 def _evidence(raw: Any) -> dict[tuple[str, str], str]:
@@ -214,10 +237,10 @@ def project_runtime(db: Any, repo: str, run_id: int, outcome: dict[str, Any]) ->
     if classification == "model_retired_410":
         status, until = "retired", None
     elif classification in MODEL_COOLDOWNS:
-        wait = unavailable_delay() if kept else MODEL_COOLDOWNS[classification]
+        wait = _unavailable_wait(db, repo, source, model, classification, run_id, kept)
         status, until = "unavailable", observed + timedelta(seconds=wait)
     elif model_scoped_transient(source, classification):
-        wait = hot_delay(1) if kept else fibonacci_worker_delay(1)
+        wait = strike_delay(classification, 1, kept is not None)
         status, until = "cooling", observed + timedelta(seconds=wait)
     elif proven:
         status, until = "healthy", None
@@ -268,9 +291,11 @@ def project_runtime(db: Any, repo: str, run_id: int, outcome: dict[str, Any]) ->
             None
             if f_status == "retired"
             else observed
-            + timedelta(seconds=unavailable_delay() if f_heat else MODEL_COOLDOWNS[f_outcome])
+            + timedelta(
+                seconds=_unavailable_wait(db, repo, f_source, f_model, f_outcome, run_id, f_heat)
+            )
             if f_outcome in MODEL_COOLDOWNS
-            else observed + timedelta(seconds=hot_delay(1) if f_heat else fibonacci_worker_delay(1))
+            else observed + timedelta(seconds=strike_delay(f_outcome, 1, f_heat is not None))
         )
         health(f_source, f_model, f_status, f_outcome, f_until, False, retire=True)
         statements.append(
@@ -285,14 +310,14 @@ def project_runtime(db: Any, repo: str, run_id: int, outcome: dict[str, Any]) ->
                 run_id=run_id,
                 observed=now,
                 fallback=_history(db, repo, run_id, f_source, f_model, None),
-                keep_streak_sql="1",
+                keep_streak_sql=FRESH_STRIKE,
                 guard=guard,
                 detail={
                     "scope": f_scope,
                     "evidence": f_told,
                     **(f_heat.detail() if f_heat else {}),
                 },
-                delays=hot_delays() if f_heat else DELAYS,
+                delays=delays_for(f_outcome, f_heat is not None),
             )
         )
     if (
@@ -329,12 +354,12 @@ def project_runtime(db: Any, repo: str, run_id: int, outcome: dict[str, Any]) ->
                 observed=now,
                 fallback=_history(db, repo, run_id, source, model, worker, catalog_slot),
                 keep_streak_sql=(
-                    "factory_backoff.source = excluded.source AND (:catalog = 1"
-                    " OR factory_backoff.model = excluded.model)"
+                    f"{FRESH_STRIKE} AND factory_backoff.source = excluded.source"
+                    " AND (:catalog = 1 OR factory_backoff.model = excluded.model)"
                 ),
                 guard=(fresh, {**guard[1], "catalog": int(catalog_slot)}),
                 detail=worker_heat.detail() if worker_heat else None,
-                delays=hot_delays() if worker_heat else DELAYS,
+                delays=delays_for(classification, worker_heat is not None),
             )
         )
     elif delivered or (proven and classification in {"success", "no_work"}):
@@ -353,10 +378,10 @@ def project_runtime(db: Any, repo: str, run_id: int, outcome: dict[str, Any]) ->
                 run_id=run_id,
                 observed=now,
                 fallback=_history(db, repo, run_id, source, model, None),
-                keep_streak_sql="1",
+                keep_streak_sql=FRESH_STRIKE,
                 guard=guard,
                 detail={**told, **(kept.detail() if kept else {})},
-                delays=hot_delays() if kept else DELAYS,
+                delays=delays_for(classification, kept is not None),
             )
         )
     elif attributed and (delivered or (proven and classification in {"success", "no_work"})):
