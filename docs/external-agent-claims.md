@@ -116,7 +116,8 @@ Model: <exact model id>
 Verdict: changes-requested
 ```
 
-or `Verdict: approve`. Put the same two lines at the end of the review body
+or `Verdict: approve`. If your model is not exposed, write
+`Model: <tool name> (model unavailable)`. Put the same two lines at the end of the review body
 too: the factory recomputes the verdict on every review event, and a summary
 comment alone can be dropped when GitHub replaces a queued workflow run.
 
@@ -140,10 +141,13 @@ after the verdict line is allowed.
 - The factory does not merge on an outside approval when:
   - the approval is on an older head;
   - required CI is not green on the head;
-  - your `Model:` value names no model id (a nickname is refused);
+  - your `Model:` line is empty;
   - your `Model:` value is the model on any `Model:` line of the PR's commits,
     or the head author the factory recorded (the same model in another
-    session is not independent);
+    session is not independent). A value with no model id, such as
+    `Model: freebuff (model unavailable)`, is that tool's identity: it is
+    independent only when the tool name differs from every one of those
+    values. Tool names are compared as exact, case-insensitive strings.
   - anyone requested changes on the same head: a `Request changes` review, a
     `Verdict: changes-requested` line, or a factory reviewer's repair verdict;
   - the PR is blocked, parked, building or manual-only.

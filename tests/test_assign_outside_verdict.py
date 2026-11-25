@@ -7,7 +7,7 @@ from rotisserie.factory_console.service import assign_task
 
 def test_review_task_matches_the_verdict_and_independence_rules() -> None:
     text = " ".join(assign_task.STEPS["review"])
-    assert "`Model: <your exact model id>` and then exactly one last line" in text
+    assert "`Verdict: approve`" in text
     assert "`Verdict: changes-requested` or `Verdict: approve`" in text
     assert "names the reviewed head commit SHA" in text
     assert "An approval merges this pull request." in text
@@ -19,3 +19,8 @@ def test_review_task_matches_the_verdict_and_independence_rules() -> None:
 
 def test_incident_implementation_refers_instead_of_closing() -> None:
     assert "`Refs {ref}`" in " ".join(assign_task.STEPS["implement"])
+
+
+def test_every_model_line_step_explains_an_unexposed_model() -> None:
+    for kind in ("implement", "review", "review-findings", "ci-repair"):
+        assert "`Model: <tool name> (model unavailable)`" in " ".join(assign_task.STEPS[kind]), kind

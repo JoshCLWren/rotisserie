@@ -290,3 +290,29 @@ def test_a_required_store_that_cannot_record_holds_the_merge(monkeypatch: Monkey
     assert outside.authorization("acme/widgets", PR, head=HEAD, fetch=read) is None
     monkeypatch.setenv("FACTORY_STATE_REQUIRED", "false")
     assert outside.authorization("acme/widgets", PR, head=HEAD, fetch=read) is not None
+
+
+@pytest.mark.parametrize("model", ["Model: buffy", "Model: freebuff (model unavailable)"])
+def test_a_tool_name_counts_as_the_approver_identity(model: str) -> None:
+    found = check(comments=[verdict("approve", model=model)])
+    assert found.approved, found.reason
+
+
+@pytest.mark.parametrize(
+    ("model", "message"),
+    [
+        ("Model: buffy", "fix\n\nModel: buffy"),
+        ("Model: freebuff (model unavailable)", "fix\n\nModel: Freebuff"),
+        ("Model: freebuff", "fix\n\nModel: freebuff (model unavailable)"),
+    ],
+)
+def test_the_same_tool_on_a_pr_commit_cannot_approve(model: str, message: str) -> None:
+    found = check(comments=[verdict("approve", model=model)], commit_message=message)
+    assert not found.approved
+    assert "authored this PR" in found.reason
+
+
+def test_an_approval_with_no_name_is_refused() -> None:
+    found = check(comments=[verdict("approve", model="Model: ???")])
+    assert not found.approved
+    assert found.reason == "the approval names no model id"

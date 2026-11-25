@@ -19,6 +19,9 @@ permissions:
   id-token: write
 concurrency:
   group: factory-status-pages-${{ github.event_name == 'push' && 'push' || 'refresh' }}
+  # Retain queued runs: without this, a newer push replaces a queued push run
+  # and drops its Pages deployment.
+  queue: max
   cancel-in-progress: false
 jobs:
   rotisserie:
