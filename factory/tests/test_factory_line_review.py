@@ -466,7 +466,7 @@ def test_review_stage_mission_delivers_the_contract(tmp_path: Path, stage: str, 
         f'source "{script}"\n'
         "factory_collect_review_findings() { : > \"$3\"; }\n"
         "factory_prepare_greptile_outcomes_file() { :; }\n"
-        "factory_issue_acceptance_mission() { :; }\n"
+        "factory_linked_issue_context() { :; }\n"
         f'ASSIGNED_PR_STAGE={stage} TRUSTED_REVIEW_CONTROLLER="{controller}" '
         f'factory_review_findings_mission 7 {REVIEWED_HEAD} "{tmp_path / "f.md"}"\n'
     )
