@@ -30,7 +30,7 @@ from typing import Any
 from urllib.parse import urlsplit
 
 SCHEMA = Path(__file__).resolve().parents[1] / "factory-state.sqlite.sql"
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 URL_ENV = "FACTORY_TURSO_URL"
 TOKEN_FILE_ENV = "FACTORY_TURSO_TOKEN_FILE"
 FILE_ENV = "FACTORY_STATE_SQLITE"
@@ -309,17 +309,90 @@ def schema_statements(text: str | None = None) -> list[str]:
     return [part.strip() for part in "\n".join(lines).split(";") if part.strip()]
 
 
-def ensure_schema(store: Store) -> bool:
-    """Create the schema once; returns True when this call created it."""
+OBJECT = re.compile(r"CREATE\s+(TABLE|INDEX)\s+IF\s+NOT\s+EXISTS\s+(\w+)", re.I)
+UPGRADE = (
+    "INSERT INTO _schema_upgrade"
+    " (name, version, result, error, created, source, workflow, run_id, at)"
+    " VALUES ('last', :version, :result, :error, :created, :source, :workflow, :run_id,"
+    " unixepoch()) ON CONFLICT (name) DO UPDATE SET version = excluded.version,"
+    " result = excluded.result, error = excluded.error, created = excluded.created,"
+    " source = excluded.source, workflow = excluded.workflow, run_id = excluded.run_id,"
+    " at = excluded.at"
+)
+
+
+def expected_objects(text: str | None = None) -> list[tuple[str, str]]:
+    """(kind, name) of every table and index the schema file creates, in file order."""
+    found = []
+    for sql in schema_statements(text):
+        match = OBJECT.match(sql)
+        if match:
+            found.append((match.group(1).lower(), match.group(2)))
+    return found
+
+
+def present_objects(store: Store) -> set[str]:
+    rows = store.read("SELECT name FROM sqlite_master WHERE type IN ('table', 'index')")
+    return {str(row["name"]) for row in rows}
+
+
+def scrub(message: str) -> str:
+    """An error safe to store and publish: no store URL, bounded length."""
+    url = os.environ.get(URL_ENV, "")
+    return (message.replace(url, "<store>") if url else message)[:300]
+
+
+def _upgrade(result: str, error: str, created: list[str] | None, source: str) -> Params:
+    return {
+        "version": SCHEMA_VERSION,
+        "result": result,
+        "error": scrub(error) if error else None,
+        "created": None if created is None else json.dumps(created),
+        "source": source,
+        "workflow": os.environ.get("GITHUB_WORKFLOW") or None,
+        "run_id": os.environ.get("GITHUB_RUN_ID") or None,
+    }
+
+
+def _record_failure(store: Store, error: StoreError, source: str) -> None:
+    table = next(sql for sql in schema_statements() if "EXISTS _schema_upgrade" in sql)
     try:
-        found = store.read("SELECT max(version) AS v FROM _schema_version")
+        store.batch([(table, {}), (UPGRADE, _upgrade("failed", str(error), None, source))])
+    except StoreError:
+        pass  # A read-only token or the same fault; the caller still raises the first error.
+
+
+def ensure_schema(store: Store, *, force: bool = False, source: str = "runtime") -> bool:
+    """Create or upgrade the schema; returns True when this call ran the schema statements.
+
+    The cheap version check skips the upgrade unless ``force`` is set. Every attempt
+    stores its result in ``_schema_upgrade``; a failed attempt is stored in its own
+    write, then the error is raised.
+    """
+    if not force:
+        try:
+            found = store.read("SELECT max(version) AS v FROM _schema_version")
+        except StoreBlocked:
+            raise
+        except StoreError:
+            found = []
+        if found and found[0]["v"] is not None and int(found[0]["v"]) >= SCHEMA_VERSION:
+            return False
+    try:
+        before: set[str] | None = present_objects(store)
     except StoreBlocked:
         raise
     except StoreError:
-        found = []
-    if found and found[0]["v"] is not None and int(found[0]["v"]) >= SCHEMA_VERSION:
-        return False
-    store.batch([(sql, {}) for sql in schema_statements()])
+        before = None
+    created = None if before is None else [n for _, n in expected_objects() if n not in before]
+    statements = [(sql, {}) for sql in schema_statements()]
+    try:
+        store.batch([*statements, (UPGRADE, _upgrade("ok", "", created, source))])
+    except StoreBlocked:
+        raise
+    except StoreError as error:
+        _record_failure(store, error, source)
+        raise
     return True
 
 

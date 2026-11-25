@@ -48,6 +48,7 @@ from rotisserie.factory_console.commands.prs import (
 from rotisserie.factory_console.commands.recap import cmd_recap
 from rotisserie.factory_console.commands.report import cmd_report, cmd_stats
 from rotisserie.factory_console.commands.run import cmd_run
+from rotisserie.factory_console.commands.schema import cmd_schema
 from rotisserie.factory_console.commands.self_review import cmd_allow_self_review
 from rotisserie.factory_console.commands.settings import cmd_prioritize, cmd_settings
 from rotisserie.factory_console.commands.status import cmd_cancel, cmd_status
@@ -191,6 +192,7 @@ def _help_text() -> str:
             "  baste backoffs      what keeps each provider waiting, and until when",
             "  baste db-usage      Turso rows, storage and quota this month",
             "  baste store selftest  test the factory store; store export backs it up",
+            "  baste schema        store tables, indexes and the last schema upgrade",
             "  baste doctor        is the factory itself healthy",
             "  baste claim pr:N    request work by label; finish pr:N ends it",
             "  baste follow pr:N   each lifecycle change until done; runs pr:N",
@@ -272,6 +274,7 @@ HANDLERS = {
     "incident": cmd_incident,
     "backoffs": cmd_backoffs,
     "db-usage": cmd_db_usage,
+    "schema": cmd_schema,
     "recap": cmd_recap,
     "heal": cmd_heal,
     "store": cmd_store,

@@ -11,6 +11,15 @@ such change must be called out here and in its release notes.
 
 ### Added
 
+- `baste schema` shows each table and index of the factory store schema and
+  whether it exists, the stored schema version against the code's version,
+  and the last upgrade result and error (#265). `--apply` runs the idempotent
+  schema now through the label claim workflow. The upgrade result is stored in
+  the new `_schema_upgrade` table (schema version 2), the status page
+  publishes the status, and `baste doctor` warns when an object is missing or
+  the version is behind. Both control rooms have Store schema and Apply store
+  schema controls. Re-run the installer for the `schema-apply` caller option.
+
 - Owner self-review exception: a person adds `factory:allow-self-review` to one
   pull request, and the model that authored its current head may review and
   approve that head. A label added by a bot or GitHub Actions does not count.

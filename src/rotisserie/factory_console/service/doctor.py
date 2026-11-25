@@ -47,6 +47,7 @@ from rotisserie.factory_console.service import (
     queue,
     reliability,
     review,
+    schema,
     stalls,
     turning,
     unstick,
@@ -416,6 +417,7 @@ def run_checks(github: GitHub, *, now: datetime, clock: Clock | None = None) -> 
     checks: list[tuple[str, Callable[[], Finding]]] = [
         ("reliability snapshot", lambda: _stats(stats(), now)),
         ("database usage", lambda: Finding("database usage", *db_usage.health(stats(), now))),
+        ("store schema", lambda: Finding("store schema", *schema.health(stats(), now))),
         ("dashboard publisher", lambda: _dashboard(github, tracker)),
         ("scheduler", lambda: _scheduler(github, now)),
         (turning.CHECK, lambda: Finding(turning.CHECK, *turning.health(github, now, clock))),

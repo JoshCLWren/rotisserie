@@ -57,6 +57,7 @@ READ_ONLY = frozenset(
         "backoffs",
         "db-usage",
         "store",
+        "schema",
     )
 )
 # Served on GitHub Pages from the published snapshot without sign-in.
@@ -87,6 +88,7 @@ WRITE_OPERATIONS = frozenset(
         "store_selftest",
         "store_export",
         "store_migrate",
+        "schema_apply",
     )
 )
 MAX_BODY = 4096
@@ -187,7 +189,7 @@ def read_command(name: str, query: Mapping[str, str], *, trusted: bool = False) 
         args.extend(("--window", window))
     elif name == "unstick":
         args.append("--dry-run")
-    elif name == "backoffs" and not trusted:
+    elif name in ("backoffs", "schema") and not trusted:
         args.extend(("--via", "github"))
     return args
 
@@ -321,6 +323,8 @@ def write_command(data: Mapping[str, Any]) -> list[str]:
         return [name, _match(_string(data, "target", required=True), TARGET, "target"), "--no-wait"]
     if name == "close":
         return _close(data)
+    if name == "schema_apply":
+        return ["schema", "--apply", "--via", "github"]
     if name == "backoffs_reset":
         return ["backoffs", "reset", "--quota-only", "--yes", "--via", "github"]
     if name in ("store_selftest", "store_export"):

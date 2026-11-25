@@ -34,6 +34,7 @@ CONTROLS: dict[str, tuple[str, ...]] = {
     "failures": ("read:failures",),
     "backoffs": ("read:backoffs", "write:backoffs_reset"),
     "db-usage": ("read:db-usage",),
+    "schema": ("read:schema", "write:schema_apply"),
     "store": ("read:store", "write:store_selftest", "write:store_export", "write:store_migrate"),
     "labels": ("write:labels",),
     "conflicts": ("read:conflicts",),
