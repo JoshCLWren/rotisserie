@@ -132,6 +132,7 @@ def main() -> int:
     parser.add_argument("--scope")
     parser.add_argument("--worker", default="")
     parser.add_argument("--requested-model", default="auto")
+    parser.add_argument("--operator-forced", default="false")
     parser.add_argument("--include-retired", action="store_true")
     parser.add_argument(
         "--quota-only",
@@ -149,7 +150,15 @@ def main() -> int:
             json.dumps(export_fleet_failover_sources(args.repo, args.worker), separators=(",", ":"))
         )
     elif args.command == "export-model-exclusions":
-        print(_compact(export_model_exclusions(args.repo, args.worker, args.requested_model)))
+        if args.operator_forced == "true":
+            from factory_forced_model import forced_exclusions
+
+            found, note = forced_exclusions(args.repo, args.worker, args.requested_model)
+            if note:
+                print(note, file=sys.stderr)
+            print(_compact(found))
+        else:
+            print(_compact(export_model_exclusions(args.repo, args.worker, args.requested_model)))
     elif args.command == "export-reliability":
         print(_compact(export_reliability(args.repo)))
     elif args.command == "export-candidate-health":

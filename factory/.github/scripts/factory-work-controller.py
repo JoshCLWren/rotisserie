@@ -1781,7 +1781,7 @@ def validate_assignment(worker: str, raw: str) -> dict[str, object]:
         )
         if not candidate_is_live_executable(candidate) and not operator_forced_claim(number, worker):
             raise ValueError('Assignment PR is waiting or no longer executable')
-    return context
+    return context | ({'operator_forced': operator_forced_claim(number, worker)} if context.get('operator_forced') is True else {})
 
 
 def inspect_assignment(worker: str) -> dict[str, Any]:
@@ -2547,7 +2547,7 @@ def dispatch_next(
                 'workflow', 'run', 'free-model-factory-entry.yml', '--repo', REPO,
                 '--ref', 'main', '-f', f'worker={worker}',
                 '-f', 'assignment=' + json.dumps(
-                    assignment_context(candidate, worker) | ({'exact_model': True} if exact else {})),
+                    assignment_context(candidate, worker) | ({'exact_model': True} if exact else {}) | ({'operator_forced': True} if force_slot and target_spec else {})),
                 '-f', f'model={model}', '-f', f'provider={source}',
             ])
         except RuntimeError:

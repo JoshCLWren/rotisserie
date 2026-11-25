@@ -157,7 +157,9 @@ jobs:
           REQUESTED_PROVIDER: ${{ inputs.provider || 'auto' }}
         run: |
           set -Eeuo pipefail
-          printf '%s' "$FACTORY_ASSIGNMENT" | python3 .github/scripts/factory-work-controller.py validate-assignment --worker "$FACTORY_WORKER" >/dev/null
+          validated="$(printf '%s' "$FACTORY_ASSIGNMENT" | python3 .github/scripts/factory-work-controller.py validate-assignment --worker "$FACTORY_WORKER")"
+          # Only a verified operator claim (baste run --force, baste unstick) is forced.
+          operator_forced="$(jq -r 'if .operator_forced == true then "true" else "false" end' <<< "$validated" 2>/dev/null || echo false)"
           if [[ "$REQUESTED_MODEL" != auto || "$REQUESTED_PROVIDER" != auto ]]; then
             slot="$(python3 .github/scripts/factory_worker_slots.py resolve --worker "$FACTORY_WORKER")"
             worker_source="$(jq -er '.source' <<< "$slot")"
@@ -174,7 +176,15 @@ jobs:
           PY
             fi
           fi
-          snapshot="$(python3 .github/scripts/factory_state_operations.py export-model-exclusions --repo "$GITHUB_REPOSITORY" --worker "$FACTORY_WORKER" --requested-model "$REQUESTED_MODEL")"
+          forced_note="$RUNNER_TEMP/factory-forced-exclusion-note"
+          snapshot="$(python3 .github/scripts/factory_state_operations.py export-model-exclusions --repo "$GITHUB_REPOSITORY" --worker "$FACTORY_WORKER" --requested-model "$REQUESTED_MODEL" --operator-forced "$operator_forced" 2> "$forced_note")" || {
+            cat "$forced_note" >&2
+            exit 1
+          }
+          if [[ -s "$forced_note" ]]; then
+            echo "::notice::$(head -c 400 "$forced_note" | tr '\n' ' ')"
+            { echo "### Operator-forced model"; echo; head -c 400 "$forced_note"; echo; } >> "$GITHUB_STEP_SUMMARY"
+          fi
           jq -e 'type == "object"' <<< "$snapshot" >/dev/null
           echo "exclusions=$snapshot" >> "$GITHUB_OUTPUT"
           candidate_health="$(python3 .github/scripts/factory_state_operations.py export-candidate-health --repo "$GITHUB_REPOSITORY")"
