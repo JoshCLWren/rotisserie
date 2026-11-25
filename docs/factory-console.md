@@ -691,6 +691,8 @@ verdict comes first, then the evidence.
   `--window` (1 hour). An Entry run counts only when its persist job failed
   before it recorded an outcome; a run that is red for its recorded outcome
   (for example `work_failure`) is a worker result, not a control failure.
+  Slowing also names a looping item (reason `item-loops`, next `baste recap`),
+  when no control failure comes first.
 - 🔥🔥 **Burning**: no worker started for longer than `--idle` while eligible
   work or eligible workers exist. A stopped rotisserie burns the food.
 - ❔ **Unknown**: the worker runs could not be read. `--follow` does not alert
@@ -721,6 +723,12 @@ The evidence:
 - 💥 failed runs of the dispatcher, status pages, label claim, ready-merge drain
   and completion drain workflows in the window, and Entry runs whose persist job
   failed before recording an outcome, with links. Workflows are matched by file path, not run name.
+- 🔁 looping items: each open PR that had 4 or more finished worker runs in the
+  last 6 hours, at least half of them wasted (a failure, or a run that ended
+  with no work), while it stayed short of `factory:ready`. A run that never
+  reached a model (`no_capacity`) does not count. Each row names the item, its
+  runs (time, action, model, outcome class), the most common wasted outcome and
+  the next step.
 - 🧊 providers whose models are all cooling, 📦 eligible issues, open factory
   PRs and any backlog limit, ⏰ expired holds (store leases; readable only where
   the store is configured), 🗄️ the store step of the last pass and the age of
@@ -729,7 +737,9 @@ The evidence:
 It reads a bounded set: one page of worker runs, eight dispatcher runs (jobs
 and logs for at most `--passes` of them), one page of failed runs, the jobs of
 the five newest failed Entry runs, the reliability snapshot and the open
-issue and PR lists.
+issue and PR lists. Looping items add the worker runs of the last 6 hours (at
+most three pages) and the persist-job log of at most 60 of them; a finished
+job's log is cached for good once read.
 
 `baste turning --follow [--every 5m]` checks again on an interval and prints
 only changes. On Burning it prints a 🚨🔥 alert line and exits 10; on Slowing it
@@ -742,6 +752,28 @@ elsewhere. `--json` keeps plain values (`"verdict": "burning"`), no emoji.
 inside the recap window. It says 🔥🔥 Burning only when that stretch is still
 going and the doctor's `work turning` check fails; otherwise it states the gap. Both control rooms show the verdict at the top
 of the overview, above the morning recap.
+
+### Looping items and the breaker
+
+One rule, `factory/.github/scripts/factory_item_loop.py`, decides whether an
+item loops; `baste turning`, `baste doctor`, `baste recap`, both control rooms
+and the dispatcher all call it. The defaults are 4 runs and 6 hours
+(`FACTORY_LOOP_RUNS`, `FACTORY_LOOP_WINDOW_SECONDS` in the job environment).
+
+The factory acts on it in two places:
+
+- The dispatcher's exact-head retry cooling holds a looping PR, so no new
+  worker goes to it.
+- The dispatcher's self-heal sweep parks it once per head and stage: one
+  trusted comment that says why and what to do next, and a `loop-parked` store
+  event. The park holds while the PR's head and stage stay the same. A new head
+  or a stage change releases it, and only runs after the park count again.
+
+The park changes no label. A targeted or forced run (`baste run --target
+pr:N`), an owner `factory:override` label and a `factory:claimed` claim are
+never held. `baste recap` lists a looping or parked PR under "Needs you" with
+the reason and the next step: review it yourself, merge it, or force one more
+try with `baste run --target pr:N`.
 
 ## Is the factory itself healthy?
 

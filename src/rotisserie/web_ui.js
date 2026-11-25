@@ -131,12 +131,13 @@ async function loadRecap(){loading("overview-recap","Reading what the factory di
 const FACES={turning:"🍗🔄 Turning",slowing:"🐢 Slowing",burning:"🔥🔥 Burning",unknown:"❔ Unknown"};
 const decorate=t=>{const m=/^(\w+):([\s\S]*)$/.exec(String(t||""));const f=m&&FACES[m[1].toLowerCase()];return f?f+":"+m[2]:String(t||"")};
 const reasonWords=r=>Object.entries(r||{}).map(([k,v])=>(k==="not logged"?"reason not logged":k)+" "+v).join(", ");
-function renderTurning(d){const e=d.evidence||{},p=e.dispatcher_passes||[],f=e.control_failures||[],b=e.backlog||{},s=e.store||{},pr=e.providers||{};
+function renderTurning(d){const e=d.evidence||{},p=e.dispatcher_passes||[],f=e.control_failures||[],lp=e.item_loops||[],b=e.backlog||{},s=e.store||{},pr=e.providers||{};
  return sourceNote(d)+'<div class="item-head"><div class="item-title recap-verdict">'+h(FACES[d.verdict]||d.verdict)+'</div>'+badge(d.verdict,d.verdict==="turning"?"good":d.verdict==="burning"?"bad":"")+'</div><div class="meta">'+h(d.text||"")+'</div>'+(d.next?'<div class="hint">👉 '+h(d.next)+'</div>':"")
  +recapRow("🧑‍🍳 Last worker started: "+fmtDate(e.last_worker_started),e.workers_running?e.workers_running+" running now":"")
  +recapRow("🍽️ Last outcome served: "+fmtDate(e.last_outcome_recorded))
  +p.map(x=>recapRow("🎛️ Dispatcher pass: "+x.eligible+" eligible, "+x.assigned+" assigned, "+x.none+" none",[fmtDate(x.at),reasonWords(x.none_reasons)].filter(Boolean).join(" · "),x.url)).join("")
  +recapRow("💥 Control failures in the last "+e.failure_window_minutes+"m: "+f.length,"Slowing at "+e.failure_threshold)+f.slice(0,5).map(x=>recapRow(x.workflow+(x.step?" at "+x.step:""),fmtDate(x.at),x.url)).join("")
+ +recapRow("🔁 Looping items: "+lp.length)+lp.slice(0,5).map(x=>recapRow((x.title||x.target)+" (#"+x.number+"): "+x.text,x.next,x.url)).join("")
  +(pr.read?recapRow("🧊 Providers cooling: "+(pr.cooling||[]).length+" of "+pr.sources,(pr.cooling||[]).join(", ")):"")
  +(b.open_prs!=null?recapRow("📦 Backlog: "+b.eligible_issues+" eligible issues, "+b.open_prs+" open factory PRs",b.limit_text||""):"")
  +(e.holds?recapRow("⏰ Expired holds: "+(e.holds.expired==null?"not readable here":e.holds.expired),e.holds.note||""):"")

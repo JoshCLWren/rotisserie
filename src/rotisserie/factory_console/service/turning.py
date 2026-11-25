@@ -25,7 +25,7 @@ from rotisserie.factory_console.github import (
     obj,
     string,
 )
-from rotisserie.factory_console.service import db_usage, providers, queue, reliability, sync
+from rotisserie.factory_console.service import db_usage, loops, providers, queue, reliability, sync
 from rotisserie.factory_console.service import turning_reads as reads
 from rotisserie.factory_console.tracker import Clock, Tracker
 
@@ -47,6 +47,7 @@ NEXT = {
     "no-capacity": "baste backoffs --via github",
     "unknown": "baste why",
     "control-failures": "baste failures",
+    "item-loops": "baste recap",
 }
 
 
@@ -64,6 +65,7 @@ class Evidence:
     backlog: dict[str, Any] = field(default_factory=dict)
     holds: dict[str, Any] = field(default_factory=dict)
     store: dict[str, Any] = field(default_factory=dict)
+    loops: list[dict[str, object]] = field(default_factory=list)
     unread: list[str] = field(default_factory=list)
 
 
@@ -167,6 +169,10 @@ def assess(found: Evidence) -> Verdict:
         )
         command = "baste failures" if "Entry persist" in names else "baste doctor"
         return Verdict(SLOWING, "control-failures", text, command, evidence)
+    if found.loops:
+        return Verdict(
+            SLOWING, "item-loops", loops.summary(found.loops), NEXT["item-loops"], evidence
+        )
     if idle_for is not None and idle_for > found.idle:
         text = f"No worker for {_minutes(idle_for)}, and there is no work or worker to start."
         return Verdict(TURNING, "nothing-to-do", text, "", evidence)
@@ -191,6 +197,7 @@ def evidence_dict(found: Evidence) -> dict[str, object]:
         "backlog": found.backlog,
         "holds": found.holds,
         "store": found.store,
+        "item_loops": found.loops,
         "unread": sorted(found.unread),
     }
 
@@ -286,12 +293,16 @@ def gather(
     def holds() -> None:
         found.holds = hold_state(github)
 
+    def looping() -> None:
+        found.loops = loops.scan(github, now=now, tracker=tracker)
+
     steps: dict[str, Callable[[], None]] = {
         "worker runs": workers,
         "dispatcher passes": dispatcher,
         "reliability snapshot": stats,
         "backlog": backlog,
         "holds": holds,
+        "item loops": looping,
     }
 
     def attempt(name: str) -> None:

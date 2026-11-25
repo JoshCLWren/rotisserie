@@ -9,7 +9,9 @@ Run by the trusted dispatcher once per tick (``sweep``):
 * merges main into a ``factory:merge-conflict`` PR that GitHub now reports as
   mergeable, once per head and only while nobody holds the PR;
 * resolves a bot reviewer's thread that a factory worker answered "Fixed" with
-  a commit that is in the current head.
+  a commit that is in the current head;
+* parks a PR that loops (``factory_item_loop``): no more workers go to it at
+  its current head and stage until its owner acts.
 
 Every action leaves a trusted comment (see ``factory_self_heal_rules``), which
 ``baste heal`` and ``baste recap`` read, and an event in the factory store.
@@ -50,6 +52,9 @@ class Store(Protocol):
     def record(self, entries: list[dict[str, Any]]) -> int: ...
 
     def holder(self, number: int) -> str | None: ...
+
+    def loop_evidence(self, seconds: int) -> tuple[dict[str, list[Any]], dict[str, dict[str, Any]]]:
+        ...
 
 
 class GhCli:
@@ -131,6 +136,11 @@ class LedgerStore:
             return f"outside agent {outside.get('client') or 'unknown'}"
         return None
 
+    def loop_evidence(self, seconds: int) -> tuple[dict[str, list[Any]], dict[str, dict[str, Any]]]:
+        from factory_turso_loops import evidence
+
+        return evidence(self.repo, seconds)
+
 
 def labels(row: Mapping[str, Any]) -> set[str]:
     found: set[str] = set()
@@ -177,13 +187,16 @@ def report(
     ref: str,
     text: str,
     avoid: str = "",
+    detail: Mapping[str, object] | None = None,
 ) -> dict[str, Any]:
     """Make one self-heal visible: a trusted PR comment, then a store event."""
     body = rules.comment_body(kind=kind, pr=pr, head=head, ref=ref, text=text, avoid=avoid)
     github.api(f"issues/{pr}/comments", "--method", "POST", payload={"body": body})
     row: dict[str, Any] = {"kind": kind, "pr": pr, "head": head, "ref": ref, "text": text}
     try:
-        store.record([event(kind=kind, pr=pr, head=head, ref=ref, text=text, avoid=avoid)])
+        store.record(
+            [event(kind=kind, pr=pr, head=head, ref=ref, text=text, avoid=avoid, **(detail or {}))]
+        )
     except Exception as exc:  # noqa: BLE001 - the PR comment already makes it visible
         row["event_error"] = type(exc).__name__
     return row
@@ -209,8 +222,13 @@ def sweep(
 
     pulls = open_pulls(github)
     budget = actions.Budget(actions=max_actions, syncs=max_syncs, dry_run=dry_run)
-    out: dict[str, Any] = {"dry_run": dry_run, "verdicts": [], "threads": [], "conflicts": []}
+    from factory_self_heal_loops import park_loops
+
+    out: dict[str, Any] = {
+        "dry_run": dry_run, "verdicts": [], "threads": [], "conflicts": [], "loops": []
+    }
     for name, step in (
+        ("loops", park_loops),
         ("verdicts", actions.heal_empty_verdicts),
         ("threads", actions.resolve_answered_threads),
     ):
@@ -251,7 +269,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         max_actions=max(0, args.max_actions),
         dry_run=args.dry_run,
     )
-    for name in ("verdicts", "threads", "conflicts"):
+    for name in ("loops", "verdicts", "threads", "conflicts"):
         for row in result[name]:
             print(
                 f"self-heal {name}: {row.get('text') or row.get('error') or row}", file=sys.stderr

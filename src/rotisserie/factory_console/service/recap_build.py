@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import re
 from collections import Counter, defaultdict
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 
@@ -29,6 +30,7 @@ from rotisserie.factory_console.service.stalls import Stall
 from rotisserie.factory_console.work import Item
 
 CLAIMED = "factory:claimed"
+LOOP_PARKED = "loop-parked"
 CLAIM_REJECTED = "factory:claim-rejected"
 RUNNING_TOO_LONG = timedelta(hours=2)
 CLAIM_IDLE = timedelta(hours=1)
@@ -63,6 +65,7 @@ class Sources:
     stats: Obj | None = None
     fleet: FleetState | None = None
     work: list[Item] = field(default_factory=list)
+    loops: list[dict[str, object]] = field(default_factory=list)
     unread: list[str] = field(default_factory=list)
 
 
@@ -140,6 +143,7 @@ def needs_you(sources: Sources) -> list[dict[str, object]]:
                 f"`baste review pr:{number}` says why and can send it back.",
                 string(pr, "html_url"),
             )
+    _loop_rows(sources, pulls, add)
     for item in sources.claims:
         labels = label_names(item)
         number = integer(item, "number")
@@ -164,6 +168,34 @@ def needs_you(sources: Sources) -> list[dict[str, object]]:
     return rows
 
 
+def _loop_rows(sources: Sources, pulls: dict[int, Obj], add: Callable[..., None]) -> None:
+    parked = {heal.pr: heal for heal in sources.healed if heal.kind == LOOP_PARKED}
+    looping = set()
+    for row in sources.loops:
+        number = int(str(row.get("number") or 0))
+        looping.add(number)
+        if row.get("owner"):
+            continue
+        state = " The factory parked it." if number in parked else ""
+        name = named(str(row.get("title") or ""), number)
+        add(
+            "loop",
+            f"{name} is looping: {row.get('text')}{state}",
+            str(row.get("next")),
+            str(row.get("url") or ""),
+        )
+    for number, heal in parked.items():
+        if number in looping or number not in pulls:
+            continue
+        add(
+            "loop",
+            f"{named(string(pulls[number], 'title'), number)} is parked: it was looping.",
+            f"Review it yourself, merge it, or force one more try with "
+            f"`baste run --target pr:{number}`.",
+            heal.url,
+        )
+
+
 def clearing(sources: Sources) -> list[dict[str, object]]:
     """Stalls the factory's next dispatcher pass clears, kept out of "Needs you"."""
     pulls = _titles(sources.pulls)
@@ -182,6 +214,7 @@ def healed(sources: Sources) -> list[dict[str, object]]:
     return [
         {"kind": heal.kind, "text": heal.text, "at": heal.at, "url": heal.url or None}
         for heal in sources.healed
+        if heal.kind != LOOP_PARKED
     ]
 
 

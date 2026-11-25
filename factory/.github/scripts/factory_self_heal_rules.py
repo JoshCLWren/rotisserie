@@ -27,7 +27,8 @@ from factory_adopter import MARKER_PREFIX
 EMPTY_VERDICT = "empty-verdict"
 CONFLICT_SYNC = "conflict-sync"
 THREAD_RESOLVED = "thread-resolved"
-KINDS = (EMPTY_VERDICT, CONFLICT_SYNC, THREAD_RESOLVED)
+LOOP_PARKED = "loop-parked"
+KINDS = (EMPTY_VERDICT, CONFLICT_SYNC, THREAD_RESOLVED, LOOP_PARKED)
 CHANGES_REQUESTED = "factory:changes-requested"
 VERDICT_HEADER = "### Factory semantic review"
 HEADLINE = "**Factory self-heal:**"
