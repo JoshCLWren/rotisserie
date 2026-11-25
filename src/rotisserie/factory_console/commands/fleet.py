@@ -9,7 +9,7 @@ from rotisserie.factory_console.commands._shared import EXIT_OK, Outcome, discov
 from rotisserie.factory_console.commands.report import _count, _load_stats, _provider_rows, _window
 from rotisserie.factory_console.context import Context, UsageError
 from rotisserie.factory_console.github import items, string
-from rotisserie.factory_console.service import billing, fleet, providers
+from rotisserie.factory_console.service import billing, fleet, model_exclusions, providers
 from rotisserie.factory_console.tracker import Result
 from rotisserie.factory_console.work import current_work
 
@@ -193,6 +193,12 @@ def _list_models(context: Context, provider_name: str) -> Outcome:
     ]
     rows.sort(key=lambda row: (row[1] == "", row[0]))
     shown = [[*row, _reason(switched.model_off(provider.source, row[0])) or "on"] for row in rows]
+    excluded = model_exclusions.read(stats, context.clock.now()) if stats is not None else None
+
+    def refused(model: str) -> str | None:
+        recorded = model.removeprefix(provider.model_prefix)
+        return excluded.reason(provider, recorded, model) if excluded else None
+
     console.heading(f"{provider.name} models")
     off = switched.provider_off(provider.source)
     if off is not None:
@@ -213,6 +219,10 @@ def _list_models(context: Context, provider_name: str) -> Outcome:
         {
             "provider": provider.key,
             "provider_disabled": off is not None,
+            # None: the published exclusions are missing or stale, so nothing is known.
+            "exclusions": None
+            if excluded is None
+            else ("paid models cooling" if excluded.unverifiable(provider) else "published"),
             "models": [
                 {
                     "model": r[0],
@@ -221,6 +231,7 @@ def _list_models(context: Context, provider_name: str) -> Outcome:
                     "offered": (r[0] in known) if known else None,
                     "disabled": switched.model_off(provider.source, r[0]) is not None,
                     "disabled_reason": _off_reason(switched.model_off(provider.source, r[0])),
+                    "excluded": refused(r[0]),
                 }
                 for r in rows
             ],

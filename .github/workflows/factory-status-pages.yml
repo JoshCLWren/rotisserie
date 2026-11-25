@@ -338,12 +338,10 @@ jobs:
                       const html = await response.text();
                       const marker = 'Rotisserie · Control room';
                       if (!html.includes(marker)) throw new Error('live snapshot is not the factory dashboard');
-                      const refreshingHtml = html.replace(
-                        '</head>',
-                        '<meta http-equiv="refresh" content="60"></head>',
-                      );
+                      // No reload: it would drop a signed-in operator's live reads and runs.
+                      // The page refreshes its published data in place.
                       document.open();
-                      document.write(refreshingHtml);
+                      document.write(html);
                       document.close();
                     } catch (error) {
                       status.textContent = `Could not load the live dashboard: ${error}. Retrying…`;

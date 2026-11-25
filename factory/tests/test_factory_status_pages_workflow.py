@@ -32,7 +32,9 @@ def test_scheduled_refreshes_do_not_redeploy_pages_for_the_same_commit() -> None
     assert "repos/${GITHUB_REPOSITORY}/contents/index.html" in workflow
     assert "raw.githubusercontent.com/${{ github.repository }}/factory-status-live/index.html" in workflow
     assert "cache: 'no-store'" in workflow
-    assert 'http-equiv="refresh" content="60"' in workflow
+    # A page reload drops a signed-in operator's live reads and operator runs (#205, #207).
+    assert 'http-equiv="refresh"' not in workflow
+    assert "document.write(html)" in workflow
 
 
 def test_pages_workflow_proves_the_shell_and_live_snapshot_are_available() -> None:

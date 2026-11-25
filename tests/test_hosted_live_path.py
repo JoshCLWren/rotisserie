@@ -171,3 +171,34 @@ def test_the_operator_run_link_shows_before_the_first_poll(results: dict[str, An
     assert links, "no run link was shown while the write ran"
     assert links[0]["href"].startswith("https://github.com/acme/widgets/actions/runs/")
     assert links[0]["polls"] == 0
+
+
+def test_a_model_the_worker_excludes_is_refused_before_dispatch(results: dict[str, Any]) -> None:
+    error = results["coldModel"]["error"]
+    assert "excluded by the worker right now" in error
+    assert "cooldown or backoff" in error
+    assert results["dispatchesAfterRejectedModels"] == ["read", "read"]
+
+
+def test_a_reload_still_reports_the_pending_operator_run(results: dict[str, Any]) -> None:
+    assert results["resumedDispatches"] == 0
+    assert results["resumedPolls"] >= 2
+    message = results["resumedMessage"]
+    assert message.startswith("Operator run for run ended: success.")
+    assert "actions/runs/9" in message and "actions/runs/500" in message
+    assert "error" not in results["resumedClass"]
+    assert results["pendingCleared"]
+
+
+def test_only_a_signed_out_page_refreshes_itself(results: dict[str, Any]) -> None:
+    assert results["signedOutSoftRefreshClicks"] == 1
+    assert results["signedInSoftRefreshClicks"] == 0
+
+
+def test_a_legacy_shell_reload_lands_inside_a_comment() -> None:
+    page = builder().render("acme/widgets", AUTH)
+    shell = page.replace("</head>", '<meta http-equiv="refresh" content="60"></head>', 1)
+    meta = shell.index('http-equiv="refresh"')
+    assert shell.rindex("<!--", 0, meta) > shell.rfind("-->", 0, meta)
+    assert shell.index("-->", meta) < shell.index("<meta", shell.index("-->", meta))
+    assert page.count("</head>") == 2

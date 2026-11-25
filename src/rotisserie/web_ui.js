@@ -43,6 +43,8 @@ async function get(name,params={}){
  return {...d,_at:dataTime(d)};
 }
 const SWITCHED=["providers","models","why","doctor"],AFFECTS={settings:["settings","why"],prioritize:["why","settings"],provider_switch:SWITCHED,model_switch:SWITCHED,backoffs_reset:SWITCHED,incident_start:["incident","why","status"],incident_stop:["incident","why","status"],estimate_neon:[],store_selftest:[],store_export:[]};
+function decisionText(d){const s=d.scheduler||{},a=d.assignment||s.assignment;if(a)return "Scheduler decision: "+(a.kind==="pr"?"PR":"issue")+" #"+a.number+" assigned to worker "+a.worker+" ("+a.provider+", "+(a.model==="auto"?"model chosen at start":a.model)+").";return "Scheduler decision: "+({deferred:"no work assigned",busy:"#"+s.busy_number+" is already being worked on",failed:"the scheduler failed"}[s.status]||"unknown")+(s.reason?". "+s.reason:"")+(d.error?". "+d.error:"")+"."}
+async function followDecision(run){const box=document.createElement("div");box.className="hint";box.id="scheduler-decision";box.textContent="Waiting for the scheduler's decision…";el("message").append(box);try{box.textContent=decisionText(await get("watch",{run:String(run)}))}catch(err){box.textContent="Could not read the scheduler's decision: "+err.message}}
 async function act(body,source,resumed){
  if(state.mutating)return;
  state.mutating=true;state.lastJob=null;
@@ -62,6 +64,7 @@ async function act(body,source,resumed){
   else if(data.scheduler_url){
    message.className="message visible";
    message.innerHTML="Request submitted. Worker start is not yet confirmed. "+link(data.scheduler_url,"Track GitHub run");
+   if(data.scheduler_run_id)void followDecision(data.scheduler_run_id);
   }else if(data.bridge&&data.bridge.url){
    message.className="message visible";
    message.innerHTML="Label doctor "+h(body.mode||"dry-run")+" started. "+link(data.bridge.url,"Open the GitHub run");
@@ -190,6 +193,8 @@ async function fetchModels(provider){
  }).catch(err=>{modelCache.delete(provider);throw err}));
  return modelCache.get(provider);
 }
+const refusal=m=>!m?"":m.excluded?"is excluded by the worker right now ("+m.excluded+")":m.disabled?"is turned off"+(m.disabled_reason?" ("+m.disabled_reason+")":""):m.offered===false?"is not offered by the provider now":"";
+function refusedModel(data){const p=state.picker,m=data.model!=="auto"&&p&&p.provider===data.provider&&p.models.find(x=>x.model===data.model),why=m&&refusal(m);return why?"Model "+data.model+" "+why+". Choose another model or Automatic selection.":""}
 async function loadModelOptions(){
  const provider=el("provider").value;
  const seq=++modelRequestSeq;
@@ -200,8 +205,9 @@ async function loadModelOptions(){
  try{
   const models=await fetchModels(provider);
   if(seq!==modelRequestSeq||el("provider").value!==provider)return;
-  const selectable=models.filter(m=>m.offered!==false);
-  el("model").innerHTML='<option value="auto">Automatic selection (recommended)</option>'+models.map(m=>'<option value="'+h(m.model)+'"'+(m.offered===false?" disabled":"")+'>'+h(m.model)+(m.historical?" (history only)":m.offered===false?" (unavailable)":m.offered!==true?" (unverified)":"")+'</option>').join("");
+  state.picker={provider,models};
+  const selectable=models.filter(m=>!refusal(m));
+  el("model").innerHTML='<option value="auto">Automatic selection (recommended)</option>'+models.map(m=>'<option value="'+h(m.model)+'"'+(refusal(m)?" disabled":"")+'>'+h(m.model)+(m.historical?" (history only)":m.excluded?" (excluded now)":m.disabled?" (turned off)":m.offered===false?" (unavailable)":m.offered!==true?" (unverified)":"")+'</option>').join("");
   if(selectable.some(m=>m.model===old))el("model").value=old;
  }catch(err){
   if(seq!==modelRequestSeq)return;
@@ -217,7 +223,7 @@ function renderCatalog(){
  const filtered=list.filter(m=>m.model.toLowerCase().includes(q));
  const displayed=filtered.slice(0,40);
  el("catalog-summary").textContent=filtered.length+" model"+(filtered.length===1?"":"s")+" found · "+(displayed.length<filtered.length?"showing first 40 · ":"")+"Model listing does not guarantee quota.";
- el("model-catalog").innerHTML=displayed.map(m=>'<div class="mini"><div class="item-head"><div class="item-title">'+h(m.model)+'</div>'+badge(m.offered===false?"Unavailable":m.offered===true?"Listed":"Unverified",m.offered===true?"good":m.offered===false?"bad":"")+'</div><div class="meta">'+h(m.track_record||"No recorded deliveries")+'</div><div class="meta">Switch: '+h(switchText(m.disabled,m.disabled_reason))+'</div><div class="item-actions"><button class="button small" data-use-model="'+h(m.model)+'"'+(m.offered===false?" disabled":"")+'>Select model</button>'+switchButton(m.disabled,provider,m.model)+'</div></div>').join("")||empty("No models match this provider or search.");
+ el("model-catalog").innerHTML=displayed.map(m=>'<div class="mini"><div class="item-head"><div class="item-title">'+h(m.model)+'</div>'+badge(m.excluded?"Excluded now":m.offered===false?"Unavailable":m.offered===true?"Listed":"Unverified",m.offered===true&&!m.excluded?"good":m.offered===false||m.excluded?"bad":"")+'</div><div class="meta">'+h(m.track_record||"No recorded deliveries")+(m.excluded?" · The worker refuses it: "+h(m.excluded):"")+'</div><div class="meta">Switch: '+h(switchText(m.disabled,m.disabled_reason))+'</div><div class="item-actions"><button class="button small" data-use-model="'+h(m.model)+'"'+(refusal(m)?" disabled":"")+'>Select model</button>'+switchButton(m.disabled,provider,m.model)+'</div></div>').join("")||empty("No models match this provider or search.");
 }
 async function loadCatalog(){
  const provider=el("catalog-provider").value;
@@ -300,7 +306,7 @@ const switchAttrs=(provider,model)=>' data-provider="'+h(provider)+'"'+(model?' 
 const switchButton=(off,provider,model)=>off?'<button class="button small"'+switchAttrs(provider,model)+' data-switch-on="1">Turn on</button>':'<button class="button small danger"'+switchAttrs(provider,model)+' data-switch-off="1">Turn off</button>';
 function switchBody(b,enabled,reason){const body={operation:b.dataset.model?"model_switch":"provider_switch",provider:b.dataset.provider,enabled,reason};if(b.dataset.model)body.model=b.dataset.model;return body}
 function renderSwitches(){el("provider-switches").innerHTML=state.providers.length?'<div class="table-wrap"><table class="table"><thead><tr><th>Provider</th><th>Setup</th><th>Switch</th><th>Working</th><th>Action</th></tr></thead><tbody>'+state.providers.map(p=>'<tr><td>'+h(p.provider)+'<small>'+h(p.name)+'</small></td><td>'+h(p.setup)+'</td><td>'+badge(switchText(p.disabled,p.disabled_reason),p.disabled?"bad":"good")+'</td><td>'+h(p.working_now??"")+'</td><td>'+switchButton(p.disabled,p.provider)+'</td></tr>').join("")+'</tbody></table></div>':empty("No providers found.")}
-async function loadLeases(){try{const d=await get("leases");el("leases-content").innerHTML=sourceNote(d)+'<div class="hint" style="margin-bottom:12px">Source: '+h(d.source||"unavailable")+' · '+h(d.note||"")+'</div>'+(d.rows||[]).map(x=>'<div class="item"><div class="item-head"><div><div class="item-title">'+h(x.target)+' · '+h(x.holder)+'</div><div class="meta">Expires '+h(x.expires_at||"not recorded")+'</div></div>'+badge(x.active?"Active":"Expired",x.active?"good":"")+'</div></div>').join("")||empty("No lease rows found.")}catch(err){el("leases-content").innerHTML=empty(err.message)}}
+async function loadLeases(){try{const d=ok(await get("leases"));el("leases-content").innerHTML=sourceNote(d)+'<div class="hint" style="margin-bottom:12px">Source: '+h(d.source==="neon"?"factory store":d.source==="labels"?"owner labels (the factory store was not read)":"unavailable")+(d.note?' · '+h(d.note):"")+(d.bridge&&d.bridge.url?' · '+link(d.bridge.url,"store read run"):"")+'</div>'+(d.rows||[]).map(x=>'<div class="item"><div class="item-head"><div><div class="item-title">'+h(x.target)+' · '+h(x.holder)+'</div><div class="meta">Expires '+h(x.expires_at?fmtDate(x.expires_at):"not recorded")+(x.owner_run?' · '+h(x.owner_run):"")+'</div></div>'+badge(x.active?"Active":"Expired",x.active?"good":"")+'</div></div>').join("")||empty("No lease rows found.")}catch(err){el("leases-content").innerHTML=empty(err.message)}}
 const sleep=ms=>new Promise(r=>setTimeout(r,ms));
 const secs=v=>{const s=Math.round(Number(v)||0);return s<60?s+" s":Math.floor(s/60)+" min "+String(s%60).padStart(2,"0")+" s"};
 function remember(job,kind){try{sessionStorage.setItem(JOB_KEY,JSON.stringify({job,kind}))}catch{}}
@@ -423,7 +429,7 @@ document.body.addEventListener("click",e=>{const b=e.target.closest("button");if
  if(b.dataset.useModel){const selected=b.dataset.useModel;el("provider").value=el("catalog-provider").value;go("overview");loadModelOptions().then(()=>{if([...el("model").options].some(o=>o.value===selected&&!o.disabled))el("model").value=selected;preview()});}
  if(b.dataset.saveSetting){const x=document.querySelector('[data-setting-name="'+b.dataset.saveSetting+'"]');if(x)act({operation:"settings",name:b.dataset.saveSetting,value:x.value},b)}
 });
-el("launcher").addEventListener("submit",e=>{e.preventDefault();if(state.mutating||el("model").disabled)return;const kind=el("work-kind").value;const number=el("target-number").value;if(kind!=="next"&&(!/^[1-9][0-9]*$/.test(number))){notice("Enter a valid issue or PR number.",true);return}const data={operation:"run",provider:el("provider").value,model:el("model").value||"auto",target:kind==="next"?"":target(),action:kind==="pr"?el("action").value:"advance",force:el("force").checked,exact:el("exact").checked&&!!el("model").value&&el("model").value!=="auto",take_over:el("take-over").checked};if(el("slot").value)data.slot=Number(el("slot").value);act(data,el("launch"))});
+el("launcher").addEventListener("submit",e=>{e.preventDefault();if(state.mutating||el("model").disabled)return;const kind=el("work-kind").value;const number=el("target-number").value;if(kind!=="next"&&(!/^[1-9][0-9]*$/.test(number))){notice("Enter a valid issue or PR number.",true);return}const data={operation:"run",provider:el("provider").value,model:el("model").value||"auto",target:kind==="next"?"":target(),action:kind==="pr"?el("action").value:"advance",force:el("force").checked,exact:el("exact").checked&&!!el("model").value&&el("model").value!=="auto",take_over:el("take-over").checked};if(el("slot").value)data.slot=Number(el("slot").value);const refused=refusedModel(data);if(refused){notice(refused,true);return}act(data,el("launch"))});
 ["provider","model","work-kind","target-number","action","slot","force","exact","take-over"].forEach(id=>el(id).addEventListener("change",()=>{preview();if(id==="provider")loadModelOptions()}));
 el("model").addEventListener("input",preview);el("target-number").addEventListener("input",preview);
 const fresh=fn=>()=>{forceFresh=true;try{return fn()}finally{forceFresh=false}};

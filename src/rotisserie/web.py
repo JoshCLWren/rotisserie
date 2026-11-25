@@ -49,7 +49,8 @@ def invoke(repository: str, args: list[str], *, timeout: int | None = None) -> d
     """Call the shipped CLI, which enforces all dispatcher and lease checks."""
     if timeout is None:
         bridged = "github" in args and "--via" in args and "--no-wait" not in args
-        timeout = 900 if bridged else 90
+        # A scheduler decision can take a few minutes to land.
+        timeout = 900 if bridged or "--decision" in args else 90
     command = [
         sys.executable,
         "-m",

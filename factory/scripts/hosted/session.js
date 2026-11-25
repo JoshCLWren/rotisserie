@@ -9,12 +9,16 @@ const SIGNED_OUT_HINT = "Read-only visitor. Sign in to use live views and operat
 let session = null;
 let identity = null;
 const signedOutListeners = [];
+const signedInListeners = [];
 
 function signedIn() {
   return Boolean(session);
 }
 function onSignedOut(listener) {
   signedOutListeners.push(listener);
+}
+function onSignedIn(listener) {
+  signedInListeners.push(listener);
 }
 function setIdentity(text) {
   const status = document.getElementById("github-identity");
@@ -60,6 +64,7 @@ async function validateSession() {
     document.body.classList.add("hosted-signed-in");
     document.getElementById("github-connect").textContent = "Sign out";
     setIdentity("Signed in with GitHub as " + identity + ". Admin access verified.");
+    for (const listener of signedInListeners) listener();
   } catch (error) {
     disconnect();
     setIdentity(error.message || "GitHub sign-in expired.");
