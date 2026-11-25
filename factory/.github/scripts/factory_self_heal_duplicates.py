@@ -9,9 +9,12 @@ fewer open blocking findings (unresolved review threads); then the older one.
 Before it closes a duplicate, the sweep comments on it with a link to the kept
 PR and the files it changed that the kept PR does not, and leaves the same list
 on the kept PR as a trusted comment that the next repair run reads as context
-(``factory_duplicate_context``). The closed branch stays. A PR that a worker holds (a factory
-owner label) or an outside agent holds (``agent:*``) waits for its release, and
-so does its whole group.
+(``factory_duplicate_context``). The closed branch stays. Only PRs that claim
+the whole issue are closed: a ``Part of #N`` slice or a checkpoint branch never
+is. A PR that a worker holds (a factory owner label) or an outside agent holds
+(``agent:*``) waits for its release, and so does its whole group. The store
+event comes last, so a failed pass is finished by the next one, and a PR the
+factory closed once and someone reopened stays open.
 """
 
 from __future__ import annotations
@@ -22,7 +25,8 @@ from typing import Any
 import factory_duplicate_context as duplicate_context
 import factory_self_heal as heal
 import factory_self_heal_rules as rules
-from factory_work_policy_base import owner_of
+from factory_issue_intake_guard import CHECKPOINT_BRANCH_RE, PART_OF_RE
+from factory_work_policy_base import linked_issue_from_pr, owner_of
 
 MAX_GROUPS = 2
 MAX_FILES = 40
@@ -99,35 +103,66 @@ def files(github: heal.GitHub, number: int) -> list[str]:
     ) else []
 
 
+def closed_before(repo: str) -> set[int]:
+    """PRs the factory already closed as duplicates; a reopened one stays open."""
+    import factory_turso_core as core
+
+    rows = core.store().reads(
+        [(
+            "SELECT detail ->> 'pr' AS pr FROM factory_state_events WHERE repo = :repo"
+            " AND event_type = 'factory_self_heal' AND detail ->> 'kind' = :kind",
+            {"repo": repo, "kind": rules.DUPLICATE_CLOSED},
+        )]
+    )[0]
+    return {int(row["pr"]) for row in rows if str(row["pr"] or "").isdecimal()}
+
+
+def claims_whole(row: Mapping[str, Any], issue: int) -> bool:
+    """The PR claims the whole issue: never a ``Part of`` slice or a checkpoint branch."""
+    branch = str((row.get("head") or {}).get("ref") or "")
+    if PART_OF_RE.search(str(row.get("body") or "")) or CHECKPOINT_BRANCH_RE.match(branch):
+        return False
+    shaped = {"headRefName": branch, "body": row.get("body"), "title": row.get("title")}
+    return linked_issue_from_pr(shaped) == issue
+
+
 def close_duplicate(
     github: heal.GitHub, store: heal.Store, issue: int, kept: int, why: str,
     pull: Mapping[str, Any], kept_files: set[str],
 ) -> dict[str, Any]:
+    """Comment on both PRs and close; the store event comes last, and each step repeats safely."""
     number, head = int(pull["number"]), _head(pull)
+    branch = (pull.get("head") or {}).get("ref") or ""
     extra = [path for path in files(github, number) if path not in kept_files]
     listed = ", ".join(f"`{path}`" for path in extra[:MAX_FILES]) or "none"
     more = f" and {len(extra) - MAX_FILES} more" if len(extra) > MAX_FILES else ""
     text = (
         f"Closed #{number} as a duplicate: #{kept} delivers the same issue #{issue} and stays"
         f" ({why}). Files this PR changed that #{kept} does not: {listed}{more}. The branch"
-        f" `{(pull.get('head') or {}).get('ref') or ''}` stays. Reopen this PR to undo."
+        f" `{branch}` stays. Reopen this PR to undo."
     )
     ref = f"dup-{kept}-{number}"
-    if not store.record(
+    if not any(
+        row["kind"] == rules.DUPLICATE_CLOSED and row["ref"] == ref
+        for row in rules.heals(github.comments(number), pr=number)
+    ):
+        body = rules.comment_body(
+            kind=rules.DUPLICATE_CLOSED, pr=number, head=head, ref=ref, text=text
+        )
+        github.api(f"issues/{number}/comments", "--method", "POST", payload={"body": body})
+    marker = duplicate_context.marker(kept, number)
+    if not any(marker in str(row.get("body") or "") for row in github.comments(kept)):
+        context = (
+            f"{marker}\n\n{duplicate_context.HEADLINE} #{number} was closed as a duplicate of"
+            f" this PR (issue #{issue}). It changed files this PR does not: {listed}{more}. The"
+            f" next repair reads them from branch `{branch}` and ports what this PR needs."
+        )
+        github.api(f"issues/{kept}/comments", "--method", "POST", payload={"body": context})
+    github.api(f"pulls/{number}", "--method", "PATCH", payload={"state": "closed"})
+    store.record(
         [heal.event(kind=rules.DUPLICATE_CLOSED, pr=number, head=head, ref=ref, text=text,
                     kept=kept, issue=issue, files=extra[:MAX_FILES])]
-    ):
-        return {"pr": number, "status": "already closed once"}
-    body = rules.comment_body(kind=rules.DUPLICATE_CLOSED, pr=number, head=head, ref=ref, text=text)
-    github.api(f"issues/{number}/comments", "--method", "POST", payload={"body": body})
-    context = (
-        f"{duplicate_context.marker(kept, number)}\n\n"
-        f"{duplicate_context.HEADLINE} #{number} was closed as a duplicate of this PR (issue #{issue})."
-        f" It changed files this PR does not: {listed}{more}. The next repair reads them from"
-        f" branch `{(pull.get('head') or {}).get('ref') or ''}` and ports what this PR needs."
     )
-    github.api(f"issues/{kept}/comments", "--method", "POST", payload={"body": context})
-    github.api(f"pulls/{number}", "--method", "PATCH", payload={"state": "closed"})
     return {"kind": rules.DUPLICATE_CLOSED, "pr": number, "kept": kept, "files": extra,
             "text": text}
 
@@ -146,17 +181,27 @@ def resolve_duplicates(
     by_number = {int(row["number"]): row for row in pulls if row.get("number")}
     groups = state.duplicate_groups([{**row, "headRefName": (row.get("head") or {}).get("ref")}
                                      for row in pulls])
+    if not groups:
+        return []
+    skip = closed_before(github.repo)
     done: list[dict[str, Any]] = []
-    for issue, numbers in sorted(groups.items())[:MAX_GROUPS]:
-        rows = [by_number[number] for number in numbers]
+    resolved = 0
+    for issue, numbers in sorted(groups.items()):
+        rows = [
+            by_number[number] for number in numbers
+            if number not in skip and claims_whole(by_number[number], issue)
+        ]
+        if len(rows) < 2:
+            continue
         holders = {int(row["number"]): held(row) for row in rows}
         if any(holders.values()):
             done.append({"issue": issue, "status": "waiting for release",
                          "held": {n: why for n, why in holders.items() if why}})
             continue
-        if budget.dry_run or not budget.take():
+        if resolved >= MAX_GROUPS or budget.dry_run or not budget.take():
             done.append({"issue": issue, "status": "would-resolve", "prs": numbers})
             continue
+        resolved += 1
         kept, why = keeper(github, rows)
         kept_files = set(files(github, kept))
         for row in rows:

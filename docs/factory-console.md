@@ -930,8 +930,11 @@ trusted comment that links the kept PR and lists the files that PR changed and
 the kept PR does not, leaves the same list on the kept PR, and closes the
 duplicate. The closed branch stays. The kept PR's next repair run reads that
 list as context (`factory_duplicate_context.py`, staged from trusted main) and
-ports what applies. A store event per closure keeps a reopened PR from being
-closed again. While any PR of the group has a worker owner label
+ports what applies. Only PRs that claim the whole issue are closed: a
+`Part of #N.` slice or a `factory/work-checkpoints/` branch never is. The store
+event is written after the close, so a failed pass is finished by the next one
+without a second comment, and a PR the factory closed once and someone
+reopened is not closed again. While any PR of the group has a worker owner label
 (`factory:N`, `factory:local`) or an `agent:*` label, the whole group waits.
 One sweep resolves at most two groups.
 
