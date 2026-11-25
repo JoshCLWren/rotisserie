@@ -48,6 +48,8 @@ CONTROLS: dict[str, tuple[str, ...]] = {
     "incident": ("read:incident", "write:incident_start", "write:incident_stop"),
     "assign": ("write:assign",),
     "assigned": ("read:assigned",),
+    "health": ("write:health_reset",),
+    "outcome": ("read:outcome",),
 }
 
 _AGENT = (

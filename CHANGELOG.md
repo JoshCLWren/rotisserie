@@ -17,6 +17,17 @@ such change must be called out here and in its release notes.
   failing checks and the linked issue's criteria. `baste assigned` lists who
   holds what and for how long, and `baste finish` also removes `agent:*`.
 
+- `baste health reset MODEL [--source S] --via github` clears one model's
+  health bench and model backoff rows through the model health reset workflow,
+  which takes new `model` and `source` inputs, and lists each cleared row.
+
+- `baste outcome RUN [--follow]` shows what one worker run did from its job
+  logs: the outcome class record, notices, the error annotation, the failing
+  job and step, and links. `--follow` retries transient GitHub errors.
+
+- `baste limits` also shows the factory App installation's REST budget from
+  the newest dispatcher run, and warns near the 1,200-request dispatch reserve.
+
 - `baste pause --reason TEXT` and `baste resume`: a maintenance drain. Pause
   turns off the dispatch, claim and state-writing workflows and records the
   reason in `FACTORY_PAUSED`; `status`, `turning` and `recap` show it. Resume

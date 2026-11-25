@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 
+from rotisserie.factory_console.commands import health_reset
 from rotisserie.factory_console.commands.parser_insight import _common
 from rotisserie.factory_console.service import assign_task, pause
 
@@ -61,3 +62,20 @@ def add_operator_parsers(commands: argparse._SubParsersAction[argparse.ArgumentP
     )
     wake.add_argument("--yes", "-y", action="store_true", help="resume without asking")
     _common(wake)
+
+    result = commands.add_parser(
+        "outcome",
+        help="what one worker run did: outcome class, notices, error, failing step, links",
+        description=(
+            "Read every job log of one run (not the truncated 'gh run view --log') and show "
+            "the [factory-outcome-class] record, notices, the error annotation and the job "
+            "and step that failed. --follow waits for an unfinished run and retries GitHub "
+            "errors that a dropped connection causes."
+        ),
+    )
+    result.add_argument("run", help="workflow run ID or URL")
+    result.add_argument("--follow", action="store_true", help="wait until the run finishes")
+    result.add_argument("--interval", type=int, default=30, help="seconds between checks (30)")
+    result.add_argument("--timeout", type=int, default=3600, help="give up after (3600; 0 never)")
+    _common(result)
+    health_reset.add_parser(commands)

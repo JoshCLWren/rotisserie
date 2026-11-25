@@ -38,6 +38,7 @@ READ_SAMPLES: dict[str, dict[str, str]] = {
     "estimate": {"target": "issue:4", "run": "123"},
     "follow": {"target": "issue:4"},
     "store": {"mode": "selftest", "run": "123"},
+    "outcome": {"run": "123"},
 }
 WRITE_SAMPLES: dict[str, dict[str, Any]] = {
     "run": {"provider": "opencode-go"},
@@ -56,6 +57,7 @@ WRITE_SAMPLES: dict[str, dict[str, Any]] = {
     "backoffs_reset": {},
     "estimate_neon": {"target": "issue:4"},
     "assign": {"target": "pr:4", "agent": "claude"},
+    "health_reset": {"model": "nvidia/moonshotai/kimi-k3.1-pro"},
 }
 
 

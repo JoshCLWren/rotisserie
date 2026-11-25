@@ -416,6 +416,23 @@ nothing done is marked "going in circles": another round on the same models
 is unlikely to help. `--limit N` reads more scheduler passes (default 40,
 newest first) for long windows.
 
+### What one worker run did
+
+```bash
+baste outcome 45635205302          # or the run's URL
+baste outcome RUN --follow         # wait for an unfinished run first
+```
+
+`outcome` reads every job log of the run on its own, so a long run that
+`gh run view --log` truncates still shows everything. It prints the
+`[factory-outcome-class]` record (class, source, model, target, kind and
+selection), the worker's verdict, each `##[notice]` line, the error
+annotation, the job and step that failed, and links to the run and its failed
+jobs. `--follow` waits until the run finishes. It retries a dropped or garbled
+GitHub answer (such as "unexpected end of JSON input") up to five times in a
+row, and it never retries a login, permission, rate limit or not-found error.
+The Diagnostics page has Run outcome.
+
 ## How long will it take?
 
 `baste estimate issue:N` (or `pr:N`) compares the item with recent
@@ -1074,6 +1091,24 @@ When the controller refuses the claim, nothing is labelled.
 A repeated `assign` with the same task does not post it again. The web UI's
 Item tracker has Assign to agent and Agent holds.
 
+### Resetting one model's health
+
+```bash
+baste health reset nvidia/moonshotai/kimi-k3.1-pro --via github
+baste health reset MODEL --source nvidia --via github
+```
+
+`health reset` deletes one model's health bench rows and model backoff rows,
+for every source or only `--source`, through the trusted model health reset
+workflow. MODEL is the ID that `baste backoffs` lists, or the `source/model`
+form that run titles print. It lists each deleted row. Worker, provider and
+pool cooldowns stay, retired (HTTP 410) records stay, and so does every other
+model's state. The repository's reset
+marker stays too, so a new failure of this model can still count its recent
+failures. `backoffs reset --quota-only` is the repository-wide reset. An
+adopter whose reset caller predates the `model` input gets "re-run the
+Rotisserie installer". The Diagnostics page has Reset one model.
+
 ### Pausing the factory for maintenance
 
 ```bash
@@ -1129,7 +1164,14 @@ move into the service when they are next changed.
 **authenticated local GitHub CLI credential**, including used/remaining requests,
 local reset times and countdowns. `baste limits --json` exposes the
 same resource counters and UTC reset timestamps as structured data. Factory
-worker GitHub App installation tokens may have **different limits**.
+worker GitHub App installation tokens may have **different limits**, so
+`limits` also shows the factory App installation's REST budget. It reads the
+"Factory installation REST budget" line that the newest successful dispatcher
+run's quota gate printed, with its age. It warns near the dispatcher's
+1,200-request reserve, below which the dispatcher skips dispatch, and it says
+when that reading is stale because its reset time has passed. It costs this
+credential about three REST calls, so it is skipped when this credential's own
+core quota is spent.
 
 If GitHub rate-limits an operation, Rotisserie consults the quota endpoint and
 prints the earliest **known** retry time. A primary REST quota reset is shown

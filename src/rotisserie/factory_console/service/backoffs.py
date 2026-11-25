@@ -79,3 +79,36 @@ def reset_quota_via_github(
         started=started,
     )
     return {**result.data, "bridge": result.summary()}
+
+
+def reset_model_direct(repo: str, model: str, source: str = "") -> dict[str, object]:
+    return dict(_operations().reset_one_model(repo, model, source))
+
+
+def reset_model_via_github(
+    github: GitHub,
+    clock: Clock,
+    model: str,
+    source: str = "",
+    *,
+    started: dict[str, object] | None = None,
+) -> dict[str, object]:
+    inputs = {"model": model, **({"source": source} if source else {})}
+    try:
+        result = bridge.run(
+            github,
+            clock,
+            RESET_WORKFLOW,
+            inputs,
+            artifact=RESET_ARTIFACT,
+            timeout=bridge.CLAIM_TIMEOUT,
+            started=started,
+        )
+    except bridge.BridgeError as exc:
+        if "Unexpected inputs" in str(exc):
+            raise BackoffsUnavailableError(
+                f"This repository's {RESET_WORKFLOW} caller does not accept a model yet. "
+                "Re-run the Rotisserie installer to update it."
+            ) from None
+        raise
+    return {**result.data, "bridge": result.summary()}

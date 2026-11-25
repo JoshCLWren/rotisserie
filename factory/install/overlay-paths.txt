@@ -132,6 +132,7 @@
 .github/scripts/factory_turso_external.py
 .github/scripts/factory_turso_leases.py
 .github/scripts/factory_turso_loops.py
+.github/scripts/factory_turso_model_reset.py
 .github/scripts/factory_turso_operations.py
 .github/scripts/factory_turso_runtime.py
 .github/scripts/factory_turso_slots.py
