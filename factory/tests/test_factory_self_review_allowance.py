@@ -102,6 +102,10 @@ def test_a_person_labelled_pr_lets_the_head_author_pass_the_gate(gate) -> None:
     result = gate(World(), comments())
     assert result.eligible
     assert "Self-review allowed by owner (label by JoshCLWren)" in result.reason
+    assert "42" in result.cleared_agents
+    assert policy.head_has_authorized_approval(
+        approvers={"42"}, contributors={"42"}, model_cleared=result.cleared_agents
+    )
 
 
 def test_a_person_labelled_pr_lets_the_head_author_pass_reviewer_selection() -> None:
@@ -214,4 +218,21 @@ def test_settle_removes_the_label_when_the_pr_closes_or_the_head_changes(change:
     )
     assert gh.calls == [
         ("api", "--method", "DELETE", f"repos/o/r/issues/{PR}/labels/{allowance.LABEL}")
+    ]
+
+
+def test_a_grant_records_one_store_event(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    monkeypatch.setenv("FACTORY_STATE_SQLITE", str(tmp_path / "store.sqlite"))
+    monkeypatch.delenv("FACTORY_TURSO_URL", raising=False)
+    core = importlib.import_module("factory_turso_core")
+    monkeypatch.setattr(core, "_STORE", None)
+    settle(World())
+    settle(World())
+    rows = core.store().read(
+        "SELECT origin, event_type, subject_type, subject_number FROM factory_state_events"
+    )
+    assert [tuple(row.values()) if isinstance(row, dict) else tuple(row) for row in rows] == [
+        (allowance.ORIGIN, "self_review_allowed", "pr", PR)
     ]
