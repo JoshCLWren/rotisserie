@@ -56,7 +56,6 @@ WRITE_SAMPLES: dict[str, dict[str, Any]] = {
     "backoffs_reset": {},
     "estimate_neon": {"target": "issue:4"},
     "assign": {"target": "pr:4", "agent": "claude"},
-    "pause": {"reason": "maintenance"},
 }
 
 

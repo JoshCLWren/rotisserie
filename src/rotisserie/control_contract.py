@@ -92,8 +92,6 @@ WRITE_OPERATIONS = frozenset(
         "store_migrate",
         "schema_apply",
         "assign",
-        "pause",
-        "resume",
     )
 )
 MAX_BODY = 4096
@@ -351,13 +349,6 @@ def write_command(data: Mapping[str, Any]) -> list[str]:
         return ["store", name.removeprefix("store_"), "--no-wait"]
     if name == "assign":
         return _assign(data)
-    if name == "pause":
-        reason = _match(_string(data, "reason", required=True), REASON, "reason").strip()
-        if not reason:
-            raise InvalidRequest("Pausing needs a reason")
-        return ["pause", f"--reason={reason}", "--yes"]
-    if name == "resume":
-        return ["resume", "--yes"]
     if name == "store_migrate":
         dry_run = data.get("dry_run", True)
         if not isinstance(dry_run, bool):

@@ -224,19 +224,16 @@ def test_each_stage_has_a_default_task() -> None:
         assert any("Model:" in step for step in steps), kind
 
 
-def test_the_control_rooms_send_assign_pause_and_resume() -> None:
+def test_the_control_rooms_send_assign_but_never_pause_or_resume() -> None:
     assert contract.write_command(
         {"operation": "assign", "target": "pr:7", "agent": "claude", "kind": "ci-repair"}
     ) == ["assign", "pr:7", "--agent", "claude", "--no-wait", "--kind=ci-repair"]
-    assert contract.write_command({"operation": "pause", "reason": "store migration"}) == [
-        "pause", "--reason=store migration", "--yes",
-    ]  # fmt: skip
-    assert contract.write_command({"operation": "resume"}) == ["resume", "--yes"]
+    for owner_only in ("pause", "resume"):
+        assert owner_only not in contract.WRITE_OPERATIONS
     assert contract.read_command("assigned", {}) == ["assigned"]
     for bad in (
         {"operation": "assign", "target": "pr:7", "agent": "Bad Name"},
         {"operation": "assign", "target": "pr:7", "agent": "x", "kind": "advance"},
-        {"operation": "pause", "reason": " "},
     ):
         with pytest.raises(contract.InvalidRequest):
             contract.write_command(bad)

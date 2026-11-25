@@ -48,15 +48,20 @@ CONTROLS: dict[str, tuple[str, ...]] = {
     "incident": ("read:incident", "write:incident_start", "write:incident_stop"),
     "assign": ("write:assign",),
     "assigned": ("read:assigned",),
-    "pause": ("write:pause",),
-    "resume": ("write:resume",),
 }
 
 _AGENT = (
     "outside-agent claim protocol: the agent's own identity must hold the fenced "
     "claim, so an operator in a browser uses claim and finish instead"
 )
+_PAUSE = (
+    "owner decision: pausing turns factory workflows off and writes a repository "
+    "variable, which needs the owner's own gh login with the workflow scope; the "
+    "operator workflow's Actions token can do neither"
+)
 CLI_ONLY: dict[str, str] = {
+    "pause": _PAUSE,
+    "resume": _PAUSE,
     "label-event": "handles one GitHub label event; only trusted Actions may run it",
     "estimate-history": (
         "publishes store history inside the label claim workflow; only trusted Actions "

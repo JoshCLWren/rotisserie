@@ -1089,10 +1089,10 @@ reason, the time and the list in the `FACTORY_PAUSED` repository variable.
 Running work is not cancelled. `resume` turns on only the workflows in that
 list, so a workflow that was already off stays off, and it lists each one.
 Both need your own `gh` login with the workflow scope
-(`gh auth refresh -s workflow`). A GitHub Actions token cannot write the
-variable, so the hosted control room's Pause and Resume buttons fail with
-that message. While paused, `assign` refuses, because no claim controller
-answers.
+(`gh auth refresh -s workflow`), so they are CLI only: neither control room
+has a Pause or Resume button, because the operator workflow's Actions token
+cannot turn workflows off or write the variable. While paused, `assign`
+refuses, because no claim controller answers.
 
 ## Other front ends
 
