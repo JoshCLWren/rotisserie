@@ -138,7 +138,8 @@ def record(
     )
     excerpt = ctrl.redact_review_text(body)[:7000]
     comments = [
-        approval + f"\nOutside review: {actor} ({model})\n" + excerpt,
+        approval + f"\nOutside review: {actor} ({model})\n" + excerpt
+        + ctrl.issue_acceptance.deferred_note(issue_body),
         policy.reviewer_model_marker(
             pr=pr_number, head=head, reviewer_model=model, reviewer_agent=identity
         ),

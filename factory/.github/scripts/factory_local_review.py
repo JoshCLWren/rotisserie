@@ -126,7 +126,7 @@ def main() -> None:
     recheck()
     for lane in lanes:
         marker = policy.review_marker(pr=pr_number, head=head, reviewer=lane["identity"], producer=None, verdict="approve")
-        controller.run_gh(["issue", "comment", str(pr_number), "--repo", controller.REPO, "--body", marker + "\nActual local review: " + lane["identity"] + "\n" + controller.redact_review_text(lane["report"])[:7000]])
+        controller.run_gh(["issue", "comment", str(pr_number), "--repo", controller.REPO, "--body", marker + "\nActual local review: " + lane["identity"] + "\n" + controller.redact_review_text(lane["report"])[:7000] + controller.issue_acceptance.deferred_note(body)])
         # Record the executed model for every lane; the merge gate decides
         # whether it is known self-review against the PR's recorded authors.
         marker = policy.reviewer_model_marker(pr=pr_number, head=head, reviewer_model=lane["model"], reviewer_agent=lane["identity"])
