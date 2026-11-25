@@ -630,7 +630,7 @@ reject_out_of_scope_diff() {
     --latest-json "$latest" \
     --git-state "$git_state" \
     --title "$(jq -r .title <<< "$scope")" \
-    --body "$(jq -r .body <<< "$scope")")"
+    --body "$(jq -r .body <<< "$scope")" --findings-file "/tmp/factory-review-findings-${WORKER:-agent}-pr${number}.md")"
   if [[ "$(jq -r .reject <<< "$decision")" != true ]]; then
     return 0
   fi
