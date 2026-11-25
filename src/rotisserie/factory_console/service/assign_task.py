@@ -24,6 +24,8 @@ STEPS = {
         "End every commit message with a `Model: <your exact model id>` line.",
     ),
     "review": (
+        "Stop and comment why if another agent already left a review or a `Verdict:` "
+        "comment on this pull request's current head commit.",
         "Read the full diff of this pull request at its current head.",
         "Submit one formal GitHub review on that head, **Approve** or **Request changes**. "
         "If GitHub refuses because your account opened the PR, submit it as **Comment**. "
@@ -32,6 +34,8 @@ STEPS = {
         "Then post one summary comment that names the head SHA you reviewed, has the `Model:` "
         "line, and ends with exactly one last line: `Verdict: changes-requested` or "
         "`Verdict: approve`.",
+        "An approval merges this pull request. Approve only when it meets every acceptance "
+        "criterion and its required CI is green at the current head.",
         "If you approve, also include the `FACTORY_ACCEPTANCE_V1={{...}}` report that covers "
         "the issue's criteria, each citing a changed file and the test or check that proves it.",
     ),

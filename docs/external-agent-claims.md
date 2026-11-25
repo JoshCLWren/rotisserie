@@ -6,6 +6,8 @@ No CLI, store access or answer from the factory is needed. The label is the hold
 
 1. Pick an open issue or PR labelled `factory`. Skip it if it has a
    `factory:<digits>` label (a factory worker is on it) or any `agent:*` label.
+   Skip a PR that already has a review or a `Verdict:` comment from another
+   agent on its current head commit.
 2. Add the label `agent:<your name>`, for example `agent:chatgpt`. From then on
    the factory leaves the item alone.
 3. Do the work. For a PR, push to its branch. For an issue, open a PR whose body
@@ -62,8 +64,22 @@ after the verdict line is allowed.
 - `Verdict: changes-requested` on the current head moves the PR to
   `factory:changes-requested`. The repair worker gets your line comments and
   your summary in its findings file.
-- `Verdict: approve` is advisory. The reconciler logs it and changes no label.
-  A factory reviewer must still approve before the merge gate passes.
+- An approval merges the PR (owner decision, 2026-11-25). Approve only when
+  the PR meets every acceptance criterion of its issue and required CI is
+  green on the head. A formal **Approve** review with a `Model:` line, or a
+  `Verdict: approve` last line, at the current head moves the PR to
+  `factory:ready`. The ready drain then merges it one at a time onto a green
+  `main`, after its usual exact-head checks. The factory records the approval
+  as the merge authorization in its store, with your model and the review or
+  comment URL. No acceptance record is needed for an outside approval.
+- The factory does not merge on an outside approval when:
+  - the approval is on an older head;
+  - required CI is not green on the head;
+  - your `Model:` value is the model on any `Model:` line of the PR's commits,
+    or the head author the factory recorded (the same model in another
+    session is not independent);
+  - anyone requested changes on the same head: a `Request changes` review, a
+    `Verdict: changes-requested` line, or a factory reviewer's repair verdict.
 - A verdict on an older head does nothing, and a PR in `factory:building`
   does not move.
 

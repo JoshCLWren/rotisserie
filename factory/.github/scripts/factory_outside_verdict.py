@@ -24,34 +24,34 @@ SHA = re.compile(r"\b[0-9a-f]{7,40}\b", re.IGNORECASE)
 LIMIT = 7000
 
 
-def _lines(body: str) -> list[tuple[str, bool]]:
+def lines(body: str) -> list[tuple[str, bool]]:
     fenced = False
-    lines: list[tuple[str, bool]] = []
+    rows: list[tuple[str, bool]] = []
     for line in body.splitlines():
         if FENCE.match(line):
             fenced = not fenced
-            lines.append((line, True))
+            rows.append((line, True))
         elif line.strip():
-            lines.append((line, fenced))
+            rows.append((line, fenced))
     if (
-        len(lines) >= 2
-        and not lines[-1][1]
-        and not lines[-2][1]
-        and TOOL_FOOTER.fullmatch(lines[-1][0])
-        and RULE.fullmatch(lines[-2][0])
+        len(rows) >= 2
+        and not rows[-1][1]
+        and not rows[-2][1]
+        and TOOL_FOOTER.fullmatch(rows[-1][0])
+        and RULE.fullmatch(rows[-2][0])
     ):
-        del lines[-2:]
-    return lines
+        del rows[-2:]
+    return rows
 
 
 def verdict_of(body: str) -> str | None:
-    lines = _lines(body or "")
-    if not lines or lines[-1][1]:
+    rows = lines(body or "")
+    if not rows or rows[-1][1]:
         return None
-    match = VERDICT_LINE.fullmatch(lines[-1][0])
+    match = VERDICT_LINE.fullmatch(rows[-1][0])
     if match is None:
         return None
-    return match.group(1) if any(not f and MODEL_LINE.match(line) for line, f in lines) else None
+    return match.group(1) if any(not f and MODEL_LINE.match(line) for line, f in rows) else None
 
 
 def names_head(body: str, head: str) -> bool:
@@ -119,4 +119,6 @@ def main(argv: list[str]) -> int:
 
 
 if __name__ == "__main__":
+    with __import__("contextlib").suppress(ImportError):
+        __import__("factory_crash").install()
     raise SystemExit(main(sys.argv[1:]))

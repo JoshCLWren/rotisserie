@@ -114,6 +114,19 @@ jobs:
               await visibility.reconcileMissingPrLabels({ github, context });
             }
 
+      - name: Make an outside agent's approved PR ready to merge
+        # Owner decision 2026-11-25: an outside approval at the current head
+        # merges through the ready drain. factory_outside_approval.py checks
+        # the head, the approver's independence and open change requests.
+        if: >-
+          steps.api_budget.outputs.allow != 'false' && github.event.sender.login == github.repository_owner &&
+          (github.event_name == 'pull_request_review' || github.event_name == 'pull_request_review_comment' ||
+          (github.event_name == 'issue_comment' && github.event.issue.pull_request))
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ github.event.pull_request.number || github.event.issue.number }}
+        run: python3 .github/scripts/factory_outside_approval.py promote --repo "$GITHUB_REPOSITORY" --pr "$PR_NUMBER"
+
       - name: Settle the owner's self-review exception on this PR
         # The exception lasts one head: a push or a close removes the label.
         if: >-

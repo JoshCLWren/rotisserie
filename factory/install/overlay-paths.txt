@@ -82,6 +82,7 @@
 .github/scripts/factory_model_failover.py
 .github/scripts/factory_model_track_record.py
 .github/scripts/factory_ready.py
+.github/scripts/factory_outside_approval.py
 .github/scripts/factory_outside_verdict.py
 .github/scripts/factory_track_record_cooldown.py
 .github/scripts/factory_manual_model.py

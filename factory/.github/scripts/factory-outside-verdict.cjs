@@ -126,7 +126,7 @@ async function route(github, context, number, deps) {
   });
   if (!found) return { routed: false, reason: 'no-verdict' };
   if (found.verdict === 'approve') {
-    console.log(`Outside verdict on PR #${number} head ${head}: approve by ${found.login} (${found.url}). Advisory only; a factory reviewer must still approve.`);
+    console.log(`Outside verdict on PR #${number} head ${head}: approve by ${found.login} (${found.url}). The outside approval step decides whether it merges.`);
     return { routed: false, reason: 'advisory-approve', verdict: 'approve', url: found.url };
   }
   if (current.has('factory:changes-requested')) return { routed: false, reason: 'already-routed' };
