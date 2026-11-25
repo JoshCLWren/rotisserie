@@ -48,7 +48,7 @@ def test_every_python_entry_point_installs_crash_capture_in_its_main_block() -> 
         block = MAIN.search(path.read_text(encoding="utf-8"))
         if block is None or not HOOKED.search(block.group("body")):
             missing.append(name)
-    assert not missing, f"call factory_crash.run(main) in the __main__ block of: {missing}"
+    assert not missing, f"install factory_crash in the __main__ block of: {missing}"
 
 
 def test_the_runtime_overlay_and_the_fork_helpers_ship_the_crash_modules() -> None:
