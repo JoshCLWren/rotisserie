@@ -13,6 +13,10 @@ failure prints a warning and never replaces the original exception.
 non-fatal ``item`` row, and the pass continues. Every other exception, such as
 NameError, UnboundLocalError, TypeError, AttributeError or KeyError, still
 propagates and fails the run.
+
+``gh_with_retry`` repeats an idempotent ``gh`` call (a read, PUT, PATCH,
+DELETE, a label POST or a GraphQL query) up to three times after a transient
+GitHub failure, so one 502 does not end a pass.
 """
 
 from __future__ import annotations
@@ -22,6 +26,7 @@ import contextlib
 import hashlib
 import json
 import os
+import random
 import re
 import subprocess
 import sys
@@ -60,6 +65,104 @@ TRANSIENT: tuple[type[BaseException], ...] = (
     subprocess.TimeoutExpired,
     json.JSONDecodeError,
 )
+
+GH_ATTEMPTS = 3
+GH_READ_COMMANDS = frozenset({"view", "list", "diff", "checks", "download"})
+GH_VALUE_FLAGS = frozenset({"-H", "--header", "-q", "--jq", "-t", "--template", "--cache"})
+GH_BODY_FLAGS = frozenset({"-f", "-F", "--field", "--raw-field", "--input"})
+GH_FATAL = re.compile(r"HTTP (?:401|403|404|422)\b")
+GH_TRANSIENT = re.compile(
+    r"HTTP 50[0234]\b|server error|bad gateway|unexpected end of JSON input"
+    r"|connection reset|timeout|timed out",
+    re.IGNORECASE,
+)
+GH_RATE_LIMIT = re.compile(r"secondary rate limit", re.IGNORECASE)
+GH_RETRY_AFTER = re.compile(r"retry[- ]after\D{0,3}(\d+)", re.IGNORECASE)
+GH_LABELS_PATH = re.compile(r"(?:^|/)issues/\d+/labels/?$")
+
+
+def gh_idempotent(args: list[str], stdin: str | None = None) -> bool:
+    """Whether repeating ``gh <args>`` cannot duplicate a write. Unknown means no."""
+    if not args or args[0] != "api":
+        reader = len(args) > 1 and args[0] in {"pr", "issue", "run", "repo"}
+        return reader and args[1] in GH_READ_COMMANDS
+    method, path, body, query = "", "", False, None
+    rest = iter(args[1:])
+    for arg in rest:
+        flag, eq, inline = arg.partition("=") if arg.startswith("--") else (arg, "", "")
+        value = inline if eq else ""
+        if flag in ("-X", "--method"):
+            method = value or next(rest, "")
+        elif arg.startswith("-X"):
+            method = arg[2:]
+        elif flag in GH_BODY_FLAGS:
+            body = True
+            value = value or next(rest, "")
+            if value.startswith("query="):
+                query = value.removeprefix("query=")
+        elif flag in GH_VALUE_FLAGS and not eq:
+            next(rest, "")
+        elif not arg.startswith("-") and not path:
+            path = arg.split("?", 1)[0]
+    method = method.upper() or ("POST" if body else "GET")
+    if path == "graphql":
+        if query is None and stdin:
+            with contextlib.suppress(ValueError, AttributeError):
+                query = json.loads(stdin).get("query")
+        return isinstance(query, str) and not re.match(r"\s*mutation\b", query)
+    if method == "POST":
+        return bool(GH_LABELS_PATH.search(path))
+    return method in {"GET", "HEAD", "PUT", "PATCH", "DELETE"}
+
+
+def gh_retry_delay(stderr: str, attempt: int) -> float | None:
+    """Seconds to wait before retrying a failed gh call; None when the failure is not transient."""
+    if GH_RATE_LIMIT.search(stderr):
+        after = GH_RETRY_AFTER.search(stderr)
+        default = float(os.environ.get("FACTORY_GH_RATE_LIMIT_DELAY", "60"))
+        return min(float(after.group(1)), 300.0) if after else default
+    if GH_FATAL.search(stderr) or not GH_TRANSIENT.search(stderr):
+        return None
+    delays = [float(d) for d in os.environ.get("FACTORY_GH_RETRY_DELAYS", "2,5").split(",")]
+    base = delays[min(attempt, len(delays) - 1)]
+    return base + random.uniform(0, base / 4)
+
+
+def gh_with_retry(
+    command: list[str],
+    call: Callable[[], subprocess.CompletedProcess[str]],
+    *,
+    stdin: str | None = None,
+    sleep: Callable[[float], None] = time.sleep,
+) -> subprocess.CompletedProcess[str]:
+    """Run one ``gh`` call, repeating an idempotent one after a transient failure.
+
+    Returns the last result for the caller to check as before; a last
+    ``TimeoutExpired`` propagates unchanged. POSTs and mutations run once.
+    """
+    retryable = gh_idempotent(command[1:], stdin)
+    for attempt in range(GH_ATTEMPTS):
+        last = attempt == GH_ATTEMPTS - 1
+        try:
+            proc = call()
+        except subprocess.TimeoutExpired:
+            if last or not retryable:
+                raise
+            delay, reason = gh_retry_delay("timed out", attempt), "timed out"
+        else:
+            if not proc.returncode or last or not retryable:
+                return proc
+            delay = gh_retry_delay(proc.stderr or "", attempt)
+            if delay is None:
+                return proc
+            reason = short_message((proc.stderr or "").strip())
+        print(
+            f"gh transient failure, retry {attempt + 2}/{GH_ATTEMPTS} in {delay or 0:.0f}s: "
+            f"{' '.join(command[:3])}: {reason}",
+            file=sys.stderr,
+        )
+        sleep(delay or 0)
+    raise AssertionError("unreachable")
 
 
 @dataclass(frozen=True)

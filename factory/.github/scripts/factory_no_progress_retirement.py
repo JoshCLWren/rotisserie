@@ -26,6 +26,7 @@ from factory_work_policy import (
     parse_no_diff_attempts_from_comments,
 )
 from factory_adopter import MARKER_PREFIX, repository
+import factory_crash
 
 REPO = repository()
 SHA_RE = re.compile(r"^[0-9a-f]{40}$")
@@ -35,15 +36,10 @@ OWNER_RE = re.compile(r"^factory:(?:local|[1-9][0-9]*)$")
 
 
 def gh(args: list[str], *, payload: object | None = None) -> str:
-    command = ["gh", *args]
-    result = subprocess.run(
-        command,
-        input=json.dumps(payload) if payload is not None else None,
-        text=True,
-        capture_output=True,
-        timeout=120,
-        check=False,
-    )
+    command, stdin = ["gh", *args], json.dumps(payload) if payload is not None else None
+    result = factory_crash.gh_with_retry(command, lambda: subprocess.run(
+        command, input=stdin, text=True, capture_output=True, timeout=120, check=False
+    ), stdin=stdin)
     if result.returncode:
         raise RuntimeError(f"GitHub command failed: {command[:3]}: {result.stderr.strip()}")
     return result.stdout

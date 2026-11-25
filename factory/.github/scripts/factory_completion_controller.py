@@ -14,6 +14,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 from factory_adopter import repository
+import factory_crash
 
 REPO = repository()
 GH_TIMEOUT_SECONDS = 120
@@ -37,13 +38,9 @@ OWNER_RE = re.compile(r"^factory:(?P<worker>\d+)$")
 def run_gh(args: list[str], *, check: bool = True) -> subprocess.CompletedProcess[str]:
     """Run one bounded GitHub CLI command."""
     try:
-        proc = subprocess.run(
-            ["gh", *args],
-            text=True,
-            capture_output=True,
-            check=False,
-            timeout=GH_TIMEOUT_SECONDS,
-        )
+        proc = factory_crash.gh_with_retry(["gh", *args], lambda: subprocess.run(
+            ["gh", *args], text=True, capture_output=True, check=False, timeout=GH_TIMEOUT_SECONDS
+        ))
     except subprocess.TimeoutExpired as exc:
         raise RuntimeError(f"gh {' '.join(args)} timed out") from exc
     if check and proc.returncode:

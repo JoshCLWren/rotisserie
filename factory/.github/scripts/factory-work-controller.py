@@ -74,9 +74,9 @@ __all__ = ["linked_issue_from_branch", "plan_distinct_assignments", "signal_comp
 
 def run_gh(args: list[str], *, input_json: object | None = None, check: bool = True) -> str:
     """Run a bounded GitHub CLI command and return stdout."""
-    command = ['gh', *args]
+    command, stdin = ['gh', *args], None if input_json is None else json.dumps(input_json)
     try:
-        proc = subprocess.run(command, input=None if input_json is None else json.dumps(input_json), text=True, capture_output=True, check=False, timeout=GH_TIMEOUT_SECONDS)
+        proc = factory_crash.gh_with_retry(command, lambda: subprocess.run(command, input=stdin, text=True, capture_output=True, check=False, timeout=GH_TIMEOUT_SECONDS), stdin=stdin)
     except subprocess.TimeoutExpired as exc:
         raise factory_crash.GitHubCallError(f"{' '.join(command)} timed out") from exc
     if check and proc.returncode:

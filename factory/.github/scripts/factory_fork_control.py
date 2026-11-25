@@ -23,6 +23,7 @@ import zipfile
 
 from factory_worker_slots import resolve
 from factory_adopter import MARKER_PREFIX, repository
+import factory_crash
 
 REPO = repository()
 EXECUTION_PATH = ".github/workflows/factory-fork-execution.yml"
@@ -67,12 +68,11 @@ def _run(args: list[str], *, cwd: Path | None = None, env: dict[str, str] | None
 
 
 def _gh(args: list[str], payload: object | None = None) -> object:
-    command = ["gh", *args]
+    command, stdin = ["gh", *args], None if payload is None else json.dumps(payload)
     if payload is not None:
         command += ["--input", "-"]
-    result = subprocess.run(
-        command, input=None if payload is None else json.dumps(payload),
-        text=True, capture_output=True, timeout=120)
+    result = factory_crash.gh_with_retry(command, lambda: subprocess.run(
+        command, input=stdin, text=True, capture_output=True, timeout=120), stdin=stdin)
     if result.returncode:
         raise RuntimeError("GitHub metadata request failed")
     return json.loads(result.stdout) if result.stdout.strip() else None

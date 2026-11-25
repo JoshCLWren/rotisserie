@@ -18,6 +18,7 @@ from collections.abc import Iterable
 from dataclasses import dataclass
 from typing import Any
 from factory_adopter import repository
+import factory_crash
 
 REPO = repository()
 GH_TIMEOUT_SECONDS = 120
@@ -142,16 +143,12 @@ def plan_lane(prs: Iterable[MigrationPr]) -> tuple[int | None, tuple[int, ...], 
 
 
 def run_gh(args: list[str], *, input_json: object | None = None, check: bool = True) -> str:
-    command = ["gh", *args]
+    command, stdin = ["gh", *args], None if input_json is None else json.dumps(input_json)
     try:
-        proc = subprocess.run(
-            command,
-            input=None if input_json is None else json.dumps(input_json),
-            text=True,
-            capture_output=True,
-            check=False,
+        proc = factory_crash.gh_with_retry(command, lambda: subprocess.run(
+            command, input=stdin, text=True, capture_output=True, check=False,
             timeout=GH_TIMEOUT_SECONDS,
-        )
+        ), stdin=stdin)
     except subprocess.TimeoutExpired as exc:
         raise RuntimeError(f"{' '.join(command)} timed out") from exc
     if check and proc.returncode:
