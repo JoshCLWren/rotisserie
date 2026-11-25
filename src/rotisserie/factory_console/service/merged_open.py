@@ -8,7 +8,15 @@ redo merged work, so the recap puts each one in front of the owner.
 from __future__ import annotations
 
 from rotisserie.factory_console import runtime
-from rotisserie.factory_console.github import GitHub, Obj, integer, label_names, obj, string
+from rotisserie.factory_console.github import (
+    GitHub,
+    Obj,
+    integer,
+    items,
+    label_names,
+    obj,
+    string,
+)
 
 LIMIT = 30
 FACTORY_LABEL = "factory"
@@ -17,6 +25,7 @@ FACTORY_LABEL = "factory"
 def scan(github: GitHub, merged: list[Obj]) -> list[dict[str, object]]:
     """Read each merged factory PR's linked issue and keep the ones still open."""
     linkage = runtime.module("factory_merge_linkage").linkage
+    policy = runtime.module("factory_work_policy")
     rows: list[dict[str, object]] = []
     states: dict[int, Obj] = {}
     factory = [pr for pr in merged if FACTORY_LABEL in label_names(pr)][:LIMIT]
@@ -34,6 +43,14 @@ def scan(github: GitHub, merged: list[Obj]) -> list[dict[str, object]]:
         found = states[issue]
         if string(found, "state") != "open":
             continue
+        owner = policy.owner_of(label_names(found))
+        owned = owner not in (None, "factory:unowned")
+        unowned = {**found, "number": issue, "labels": [{"name": "factory:unowned"}] + [
+            label for label in items(found, "labels")
+            if not policy.OWNER_RE.fullmatch(string(label, "name"))
+        ]}
+        if not policy.issue_is_static_candidate(unowned, set()):
+            continue
         rows.append(
             {
                 "pr": number,
@@ -43,6 +60,7 @@ def scan(github: GitHub, merged: list[Obj]) -> list[dict[str, object]]:
                 "url": string(found, "html_url"),
                 "kind": link.kind,
                 "closes": link.issue is not None,
+                "owned": owned,
             }
         )
     return rows

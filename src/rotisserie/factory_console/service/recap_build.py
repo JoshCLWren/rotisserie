@@ -205,9 +205,10 @@ def _merged_open_line(row: dict[str, object]) -> tuple[str, str]:
     pr_number = row["pr"] if isinstance(row["pr"], int) else None
     issue = named(str(row["issue_title"]), issue_number)
     pr = named(str(row["pr_title"]), pr_number)
+    again = "A worker already took it again." if row.get("owned") else "Workers can take it again."
     if row["closes"]:
         return (
-            f"{pr} merged, but {issue} is still open. Workers can take it again.",
+            f"{pr} merged, but {issue} is still open. {again}",
             "The next merge drain closes it. If a person reopened it, leave it open.",
         )
     how = (
@@ -216,7 +217,7 @@ def _merged_open_line(row: dict[str, object]) -> tuple[str, str]:
         else "says it is only part of it"
     )
     return (
-        f"{pr} merged. It {how}, so {issue} stays open. Workers can take it again.",
+        f"{pr} merged. It {how}, so {issue} stays open. {again}",
         f"If the merge finished it, close it: `gh issue close {issue_number}`.",
     )
 
