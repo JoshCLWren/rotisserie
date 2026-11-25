@@ -28,6 +28,7 @@ def pr(number: int, body: str = "Adds the thing.") -> dict[str, Any]:
 def test_a_summary_is_prose_only_and_capped() -> None:
     body = (
         "<!-- hidden marker -->Moves the cache.\n```python\nprint('x')\n```\n"
+        "Worker: opencode-free-model-factory-7\nCloses #7.\n"
         "https://claude.ai/code/session_01ABC\n" + "word " * 2000
     )
     found = memory.summarize(
@@ -36,6 +37,7 @@ def test_a_summary_is_prose_only_and_capped() -> None:
     assert len(found.summary) <= memory.SUMMARY_CAP
     assert "hidden marker" not in found.summary and "print(" not in found.summary
     assert "claude.ai" not in found.summary and "\x07" not in found.summary
+    assert "Worker:" not in found.summary and "Closes #7" not in found.summary
     assert found.summary.startswith("PR #70: Fix part 70. Moves the cache.")
     assert found.files == ("a/b.py",) and found.prs == (70,)
 
@@ -81,10 +83,11 @@ def test_decide_remembers_only_a_closed_issue(monkeypatch: pytest.MonkeyPatch) -
         "remember_closure",
         lambda _r, issue, number, _i: calls.append((issue, number)),
     )
-    for outcome in ("closed", "already-closed", "open-dependency"):
+    for outcome in ("closed", "already-closed", "open-dependency", "not-merged"):
         monkeypatch.setattr(closure, "close_merged_pr_issue", lambda *_a, o=outcome, **_k: o)
         closure.decide(70)
-    assert calls == [(7, 70)]
+        closure.decide(70, dry_run=True)
+    assert calls == [(7, 70), (7, 70)]
 
 
 def test_old_memories_compact_to_one_line(store: Any) -> None:

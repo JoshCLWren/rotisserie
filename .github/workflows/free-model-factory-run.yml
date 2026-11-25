@@ -223,6 +223,7 @@ jobs:
             memory="$(python3 .github/scripts/factory_memory.py context --repo "$GITHUB_REPOSITORY" --issue "$issue")" || memory='""'
           fi
           jq -e 'type == "string"' <<< "$memory" >/dev/null 2>&1 || memory='""'
+          echo "Related closed-issue context: $(jq -r 'length' <<< "$memory") characters"
           echo "memory=$(jq -c . <<< "$memory")" >> "$GITHUB_OUTPUT"
       # Trusted lifecycle evidence lives in the factory store, keyed by this Entry run.
       # It replaces the retired issue #1093 heartbeat comments; the model job

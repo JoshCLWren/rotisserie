@@ -408,8 +408,10 @@ def decide(
     outcome = close_merged_pr_issue(
         pr_number, dry_run=dry_run, require_quiescent=require_quiescent, info=info
     )
-    if memory and outcome == "closed" and (number := linked_issue(info["branch"], info["body"])):
-        memory.remember_closure(github._repo_slug(), number, pr_number, info)
+    linked = linked_issue(info["branch"], info["body"])
+    # A worker's canonical merge route may close the issue first; the sweep then sees it closed.
+    if memory and outcome in ("closed", "already-closed") and not dry_run and linked:
+        memory.remember_closure(github._repo_slug(), linked, pr_number, info)
     link = linkage(info["branch"], info["body"], info.get("title", ""))
     return outcome, explain(pr_number, outcome, link)
 
@@ -464,6 +466,8 @@ def main() -> int:
     args = parser.parse_args()
 
     if args.self_test:
+        if memory:
+            memory.ENABLED = False
         # Keep the self-test hermetic: the tests stub the gh call sites, and a
         # deterministic slug prevents a fallback ``gh repo view`` on machines
         # without GITHUB_REPOSITORY (GitHub Actions always sets it).
