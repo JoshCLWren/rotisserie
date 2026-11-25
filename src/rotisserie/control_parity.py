@@ -41,6 +41,7 @@ CONTROLS: dict[str, tuple[str, ...]] = {
     "leases": ("read:leases", "write:release_expired"),
     "checks": ("read:checks",),
     "review": ("read:review",),
+    "allow-self-review": ("write:allow_self_review",),
     "providers": ("read:providers", "write:provider_switch"),
     "models": ("read:models", "write:model_switch"),
     "incident": ("read:incident", "write:incident_start", "write:incident_stop"),

@@ -48,6 +48,7 @@ from rotisserie.factory_console.commands.prs import (
 from rotisserie.factory_console.commands.recap import cmd_recap
 from rotisserie.factory_console.commands.report import cmd_report, cmd_stats
 from rotisserie.factory_console.commands.run import cmd_run
+from rotisserie.factory_console.commands.self_review import cmd_allow_self_review
 from rotisserie.factory_console.commands.settings import cmd_prioritize, cmd_settings
 from rotisserie.factory_console.commands.status import cmd_cancel, cmd_status
 from rotisserie.factory_console.commands.store import cmd_store
@@ -248,6 +249,7 @@ HANDLERS = {
     "close": cmd_close,
     "checks": cmd_checks,
     "review": cmd_review,
+    "allow-self-review": cmd_allow_self_review,
     "groom": cmd_groom,
     "conflicts": cmd_conflicts,
     "sync": cmd_sync,

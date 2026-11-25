@@ -86,6 +86,7 @@ def record(
         head=head,
         base_branch=str(pr.get("baseRefName") or ""),
         comments=ctrl.model_comment_bodies(pr_number),
+        pull=pr,
     )
     clash = exclusion.matches(model)
     if clash:

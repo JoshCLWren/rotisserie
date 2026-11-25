@@ -44,6 +44,7 @@ WRITE_SAMPLES: dict[str, dict[str, Any]] = {
     "cancel": {"target": "pr:4"},
     "prioritize": {"target": "issue:4"},
     "sync": {"target": "pr:4"},
+    "allow_self_review": {"target": "pr:4"},
     "settings": {"name": "FACTORY_PR_WIP_LIMIT", "value": "3"},
     "provider_switch": {"provider": "opencode-go", "enabled": True},
     "model_switch": {"provider": "opencode-go", "model": "m", "enabled": True},

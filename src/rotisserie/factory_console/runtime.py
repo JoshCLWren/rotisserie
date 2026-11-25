@@ -37,6 +37,7 @@ RUNTIME_MODULES = (
     "factory_review_policy",
     "factory_self_heal_rules",
     "factory_review_exclusion",
+    "factory_self_review_allowance",
     "factory_label_policy",
     "factory_adopter",
     "factory_billing_pool",

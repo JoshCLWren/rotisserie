@@ -83,6 +83,7 @@ WRITE_OPERATIONS = frozenset(
         "estimate_neon",
         "close",
         "backoffs_reset",
+        "allow_self_review",
         "store_selftest",
         "store_export",
         "store_migrate",
@@ -293,8 +294,9 @@ def write_command(data: Mapping[str, Any]) -> list[str]:
         if level not in LEVELS:
             raise InvalidRequest("Invalid priority")
         return ["prioritize", target, "--level", level]
-    if name == "sync":
-        return ["sync", _match(_string(data, "target", required=True), PR, "target"), "--yes"]
+    if name in ("sync", "allow_self_review"):
+        command = name.replace("_", "-")
+        return [command, _match(_string(data, "target", required=True), PR, "target"), "--yes"]
     if name == "unstick":
         return ["unstick", "--yes"]
     if name == "settings":

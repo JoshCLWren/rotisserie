@@ -9,6 +9,7 @@ from rotisserie.factory_console.commands import (
     heal,
     incident,
     recap,
+    self_review,
     store,
     turning,
 )
@@ -486,6 +487,7 @@ def add_parser(
     backoffs.add_parser(commands)
     db_usage.add_parser(commands)
     recap.add_parser(commands)
+    self_review.add_parser(commands)
     heal.add_parser(commands)
     store.add_parser(commands)
     turning.add_parser(commands)
