@@ -411,6 +411,13 @@ jobs:
           FACTORY_OMNIROUTE_ENABLED: ${{ vars.FACTORY_OMNIROUTE_ENABLED || 'off' }}
         run: |
           set -Eeuo pipefail
+          # The self-heal sweep asks for a split run as target split:N; the
+          # caller's action choice has no split value, so the target carries it.
+          if [[ "$TARGET" =~ ^split:([1-9][0-9]*)$ ]]; then
+            TARGET="issue:${BASH_REMATCH[1]}"
+            ACTION=split
+            export FACTORY_DISCOVERY_TARGET="$TARGET"
+          fi
           if [[ -n "$TARGET" && -z "$REQUESTED_PROVIDER" ]]; then
             if [[ "${FORCE_SLOT:-false}" == true || -n "${SLOT_INDEX:-}" ]]; then
               echo "::error::Force-slot options require an explicit provider"

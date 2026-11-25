@@ -39,9 +39,7 @@ if [[ -f "$(dirname "${BASH_SOURCE[0]}")/factory-fast-checks.sh" ]]; then
 else
   source .github/scripts/factory-fast-checks.sh
 fi
-# Canonical exact-head merge route (see factory-canonical-merge-route.sh).
-# Loaded before any PR checkout so worker-direct merges only ever execute the
-# trusted controller gate and the trusted post-merge closure policy.
+# Canonical exact-head merge route, loaded before any PR checkout (worker merges run only trusted gates).
 # shellcheck source=factory-canonical-merge-route.sh
 if [[ -f "$(dirname "${BASH_SOURCE[0]}")/factory-canonical-merge-route.sh" ]]; then
   source "$(dirname "${BASH_SOURCE[0]}")/factory-canonical-merge-route.sh"
@@ -502,6 +500,8 @@ run_agent() {
     else
       log "no trusted Jev completion action for PR #${number} (action=${JEV_ACTION:-none}, head=${JEV_ACTION_HEAD:-none}, stage=${ASSIGNED_PR_STAGE:-none}); using generic PR mission"
     fi
+  elif [[ "${FACTORY_SPLIT:-0}" == 1 ]]; then
+    target="issue #${number}"; mission="$(python3 .github/scripts/factory_split_plan.py mission "$number")"
   else
     target="issue #${number}"
     mission="Implement the full closure-critical acceptance contract for this issue with code and focused tests. Do not stop at planning or optional polish.$(python3 .github/scripts/factory_issue_intake_guard.py merged-context "$number" --repo "$GITHUB_REPOSITORY" 2>/dev/null || true)"

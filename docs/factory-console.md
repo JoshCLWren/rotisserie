@@ -897,9 +897,30 @@ The dispatcher's pool pass sends no implement run to an issue in two cases
   names them and asks for only the remaining work.
 - It is too large for one task: its body is over 16,000 characters
   (`FACTORY_ISSUE_BODY_LIMIT`), or it carries an `epic`, `umbrella` or
-  `tracking` label. The factory comments once to ask for a split proposal and
-  adds `factory:needs-split`. The owner approves each split and creates the
-  child issues; the factory never does.
+  `tracking` label. The factory comments once and adds `factory:needs-split`,
+  then splits the issue on its own (`factory_self_heal_split.py`):
+  - The dispatcher's self-heal sweep sends one `split` run (target `split:N`)
+    to the model with the best track record for splits. The run edits nothing:
+    the model answers with a plan of 2 to 8 child issues, each with a title, a
+    body, 1 to 3 acceptance criteria, the files it touches and its blockers
+    among its siblings. A run whose plan is missing or invalid fails, and the
+    sweep tries again after 6 hours, at most 3 times.
+  - The worker validates the plan, and the trusted Entry persister validates it
+    again, checks the dispatcher's `action=split` lease, and records it in the
+    store once per parent, so the parent never gets a second, different set.
+  - Trusted code writes each child body: a `Part of #N.` line, the acceptance
+    criteria, the files and a `Blocked by:` list of sibling issues. Each body
+    must pass the factory's own parsers: under the size limit, not held for a
+    split, not manual-only, not an acceptance parent, and declaring exactly its
+    sibling blockers.
+  - The sweep creates the children in blocker order with `factory` and
+    `factory:unowned`, records each in the store, and resumes the same plan on
+    the next pass after a failure. It adopts a child it created but did not
+    record (by the child marker in its body) before it creates another.
+  - The parent gets the `tracking` label and one comment with the checklist
+    and a split-done marker. A parent is never split twice and a child is never
+    split. The sweep closes the parent once every child is closed as completed.
+    To undo a split, close the children (as not planned): the parent stays open.
 
 A targeted run, `factory:override` and `factory:claimed` are never held.
 
@@ -947,7 +968,8 @@ sweeps judge that run from the worker outcomes in the store:
   oversized or umbrella issue then waits for a split, see "Issue intake
   holds").
 - A run that never reached an outcome in 6 hours (it did not start, or hit
-  only quota or provider limits) gets one more dispatch, then the PR closes.
+  only quota or provider limits) gets another dispatch. Only a counted run
+  that changed nothing closes the PR. One sweep acts on at most three parks.
 
 An owner override, a claim, an outside agent, incident work or a live lease
 exempts the PR, as for the park itself. Reopening the closed PR undoes the

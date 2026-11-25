@@ -29,7 +29,7 @@ oldest item first within each step.
 | `factory:changes-requested` | Fix the review findings, push. |
 | `factory:ci` with failing checks | Fix the failing checks, push. |
 | `factory:review` | Review the PR (see below). Never review a head you wrote. |
-| A "Factory self-heal: Parked" comment | Fix the cause it names and push. If the issue is too big for one PR, comment a split proposal (child issues, each with 1 to 3 acceptance criteria) and stop. The owner approves splits. |
+| A "Factory self-heal: Parked" comment | Fix the cause it names and push. If the issue is too big for one PR, add `umbrella` to it and stop: the factory splits it into child issues itself. |
 | An issue labelled `factory` with no PR | Implement it. Open a PR whose body says `Closes #N`. |
 
 A review is a GitHub review with one line comment per problem, then one

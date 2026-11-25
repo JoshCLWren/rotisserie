@@ -275,6 +275,14 @@ jobs:
             echo "::warning::Store terminal write failed; retrying attempt $((attempt + 1))/4" >&2
             sleep "$((1 << attempt))"
           done
+          # A split run's plan goes to the store once per parent; the dispatcher
+          # sweep creates the child issues from it (factory_self_heal_split).
+          if jq -e '.action == "split"' <<< "${INPUT_ASSIGNMENT:-null}" >/dev/null 2>&1; then
+            python3 .github/scripts/factory_split_plan.py persist --repo "$GITHUB_REPOSITORY" \
+              --run-id "$GITHUB_RUN_ID" --worker "$INPUT_WORKER" --assignment "$INPUT_ASSIGNMENT" \
+              --log "$RUNNER_TEMP/factory-entry.log" \
+              --outcome "$RUNNER_TEMP/worker-outcome-attested.json" || echo "::warning::Split plan not recorded"
+          fi
           # The trusted classifier, not the wrapper job's shell exit, owns
           # the Entry run's final meaning. Persist first, then fail visibly
           # when the coding attempt really failed. Idle is not delivery.

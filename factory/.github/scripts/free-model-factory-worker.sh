@@ -350,7 +350,7 @@ select_controller_assignment() {
     fi
     read_trusted_completion_decision "$NUMBER" "$WORKER"
   else
-    BRANCH="factory/${WORKER}-${NUMBER}-${BRANCH_SUFFIX}"
+    BRANCH="factory/${WORKER}-${NUMBER}-${BRANCH_SUFFIX}"; FACTORY_SPLIT="$(jq -r 'if .action == "split" then 1 else 0 end' <<< "$assignment")"
   fi
   return 0
 }
@@ -398,7 +398,7 @@ CHECKPOINT_PID=''
 CHECKPOINT_LOG=''
 CHECKPOINT_REF_FILE=''
 start_work_checkpoint() {
-  [[ "${FACTORY_FORK_STATIC_REVIEW:-0}" != 1 ]] || return 0
+  [[ "${FACTORY_FORK_STATIC_REVIEW:-0}" != 1 && "${FACTORY_SPLIT:-0}" != 1 ]] || return 0
   [[ -n "${GITHUB_RUN_ID:-}" ]] || return 0
   local checkpoint_issue
   if [[ "$MODE" == issue ]]; then
@@ -626,7 +626,7 @@ select_next_eligible_model() {
 # run, so each next model costs no new dispatch or worker setup. A PR repair
 # that reports ready, any review, and any edit or commit keep the normal path.
 no_change_failover_eligible() {
-  [[ "$SOURCE" != omniroute-free && "${FACTORY_FORK_STATIC_REVIEW:-0}" != 1 ]] || return 1
+  [[ "$SOURCE" != omniroute-free && "${FACTORY_FORK_STATIC_REVIEW:-0}" != 1 && "${FACTORY_SPLIT:-0}" != 1 ]] || return 1
   [[ -z "${FACTORY_PUSH_BLOCKED_REASON:-}" ]] || return 1
   [[ "$MODE" == issue || "${ASSIGNED_PR_STAGE:-}" != 'factory:review' ]] || return 1
   [[ -z "$(git status --porcelain)" && "$(git rev-parse HEAD)" == "$EXPECTED_HEAD" ]] || return 1
@@ -747,10 +747,10 @@ while :; do
   agent_timeout=$((available - 240 - FAST_CHECK_RESERVE_SECONDS))
   (( agent_timeout >= 300 )) || break
 done
+[[ "${FACTORY_SPLIT:-0}" != 1 ]] || { source "$(dirname "${BASH_SOURCE[0]}")/factory-split-worker.sh"; factory_finish_split; exit 0; }
 
-# Flush pending model edits before checks while retaining periodic protection
-# for the optional correction model run inside the persistence helpers. EXIT
-# performs the final synchronous snapshot on all other handoff/failure paths.
+# Flush pending model edits before checks while keeping periodic protection for the
+# optional correction run; EXIT performs the final snapshot on other handoff paths.
 [[ -z "$CHECKPOINT_PID" ]] || kill -USR2 "$CHECKPOINT_PID" 2>/dev/null || true
 
 # Flush synchronously and adopt the saved parent chain before overlap detection.

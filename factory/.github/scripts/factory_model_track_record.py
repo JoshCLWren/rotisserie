@@ -128,7 +128,7 @@ def action_kind(assignment: Mapping[str, Any], labels: Collection[str] = ()) -> 
     The assignment stage never names a conflict, so the PR's labels decide that.
     """
     if assignment.get("kind") == "issue":
-        return "implement"
+        return "split" if assignment.get("action") == "split" else "implement"
     if assignment.get("kind") != "pr":
         return ""
     from factory_work_policy_backlog import completion_action_for
