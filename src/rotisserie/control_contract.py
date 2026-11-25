@@ -23,6 +23,7 @@ INTEGER = re.compile(r"^[0-9]{1,7}$")
 REASON = re.compile(r"^[A-Za-z0-9 _.,:;()'/+#-]{0,180}$")
 CHECKS = re.compile(r"^(?:pr:[1-9][0-9]*|main)$")
 RUN_ID = re.compile(r"^[1-9][0-9]{0,19}$")
+FINGERPRINT = re.compile(r"^[0-9a-f]{6,64}$")
 AGENT = re.compile(r"^[a-z0-9][a-z0-9._-]{0,38}$")
 REQUEST_ID = re.compile(r"^[A-Za-z0-9-]{8,64}$")
 ACTIONS = frozenset(
@@ -57,6 +58,8 @@ READ_ONLY = frozenset(
         "limits",
         "backoffs",
         "db-usage",
+        "crashes",
+        "crash-trace",
         "store",
         "schema",
         "assigned",
@@ -65,7 +68,7 @@ READ_ONLY = frozenset(
     )
 )
 # Served on GitHub Pages from the published snapshot without sign-in.
-PUBLIC_READS = frozenset(("status", "report", "stats", "doctor", "outcomes", "db-usage"))
+PUBLIC_READS = frozenset(("status", "report", "stats", "doctor", "outcomes", "db-usage", "crashes"))
 # Need a live evaluation: the hosted page runs them in the read-only workflow.
 LIVE_READS = READ_ONLY - PUBLIC_READS
 WRITE_OPERATIONS = frozenset(
@@ -117,6 +120,8 @@ _READ_PARAMETERS = {
     "store": {"mode", "run"},
     "outcome": {"run"},
     "watch": {"run"},
+    "crashes": {"since"},
+    "crash-trace": {"fingerprint"},
 }
 
 
@@ -156,8 +161,11 @@ def read_command(name: str, query: Mapping[str, str], *, trusted: bool = False) 
         raise InvalidRequest("Unknown read operation")
     if set(query) - _READ_PARAMETERS.get(name, set()):
         raise InvalidRequest("Unsupported query parameter")
-    args = [name]
-    if name == "models":
+    args = ["crashes"] if name == "crash-trace" else [name]
+    if name == "crash-trace":
+        fingerprint = _string(query, "fingerprint", required=True)
+        args.extend(("--show", _match(fingerprint, FINGERPRINT, "fingerprint")))
+    elif name == "models":
         args.append(_match(_string(query, "provider", required=True), PROVIDER, "provider"))
     elif name == "why":
         target = _string(query, "target")
@@ -184,8 +192,8 @@ def read_command(name: str, query: Mapping[str, str], *, trusted: bool = False) 
         if mode not in ("selftest", "export", "migrate"):
             raise InvalidRequest("Invalid store mode")
         args.extend((mode, "--run", _match(_string(query, "run", required=True), RUN_ID, "run")))
-    elif name in ("report", "failures", "recap", "heal"):
-        default = {"failures": "10h", "heal": "24h"}.get(name, "12h")
+    elif name in ("report", "failures", "recap", "heal", "crashes"):
+        default = {"failures": "10h", "heal": "24h", "crashes": "6h"}.get(name, "12h")
         since = _string(query, "since") or default
         args.extend(("--since", _match(since, re.compile(r"^[0-9]{1,3}[hd]$"), "since")))
     elif name == "outcomes":

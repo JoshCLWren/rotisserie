@@ -40,6 +40,7 @@ TABLES = (
     "factory_state_events",
     "factory_model_attempt_daily",
     "factory_cursor",
+    "factory_crash",
 )
 
 

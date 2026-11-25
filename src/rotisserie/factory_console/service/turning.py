@@ -26,6 +26,7 @@ from rotisserie.factory_console.github import (
     string,
 )
 from rotisserie.factory_console.service import (
+    crashes,
     db_usage,
     loops,
     parked,
@@ -57,6 +58,7 @@ NEXT = {
     "unknown": "baste why",
     "control-failures": "baste failures",
     "item-loops": "baste recap",
+    "crash": "baste crashes",
 }
 
 
@@ -75,6 +77,7 @@ class Evidence:
     holds: dict[str, Any] = field(default_factory=dict)
     store: dict[str, Any] = field(default_factory=dict)
     loops: list[dict[str, object]] = field(default_factory=list)
+    crashes: list[dict[str, Any]] = field(default_factory=list)
     unread: list[str] = field(default_factory=list)
 
 
@@ -158,6 +161,11 @@ def assess(found: Evidence) -> Verdict:
     offered = any(item.eligible for item in found.passes)
     work_or_workers = offered or work > 0 or not (work_known or found.passes)
     evidence = evidence_dict(found)
+    hot = crashes.burning(found.crashes, found.now, found.window)
+    if hot is not None:
+        return Verdict(
+            BURNING, "crash", crashes.burning_text(hot, found.window), NEXT["crash"], evidence
+        )
     if "worker runs" in found.unread:
         text = "The worker runs could not be read, so there is no verdict this time."
         return Verdict(UNKNOWN, "unread", text, "baste status", evidence)
@@ -207,6 +215,7 @@ def evidence_dict(found: Evidence) -> dict[str, object]:
         "holds": found.holds,
         "store": found.store,
         "item_loops": found.loops,
+        "crashes": crashes.within(found.crashes, found.now - found.window),
         "unread": sorted(found.unread),
     }
 
@@ -305,6 +314,7 @@ def gather(
         snapshot = reliability.load_stats(github)
         found.providers = provider_state(snapshot, now)
         found.store = store_state(snapshot)
+        found.crashes = list(crashes.from_stats(snapshot)["groups"])
 
     def backlog() -> None:
         found.backlog = backlog_state(github, now)

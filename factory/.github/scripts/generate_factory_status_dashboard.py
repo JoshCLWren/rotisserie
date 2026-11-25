@@ -314,9 +314,7 @@ def build_worker_rows(
             "persisted_work": str(attempt.get("persisted_work") or ""),
             "attempt_detail": str(attempt.get("detail") or ""),
             "attempt_run": str(attempt.get("run") or ""),
-            "updated": max(
-                str(attempt.get("updated") or ""), str(heartbeat.get("updated") or "")
-            ),
+            "updated": max(str(attempt.get("updated") or ""), str(heartbeat.get("updated") or "")),
             "merged_day": int(credit.get("day") or 0),
             "merged_week": int(credit.get("week") or 0),
             "work": work,
@@ -918,4 +916,6 @@ def main() -> int:
 
 
 if __name__ == "__main__":
+    with __import__("contextlib").suppress(ImportError):
+        __import__("factory_crash").install()
     raise SystemExit(main())

@@ -49,4 +49,6 @@ def main():
     print("Recorded factory Actions installation quota observation (private artifact).")
 
 if __name__ == "__main__":
+    with __import__("contextlib").suppress(ImportError):
+        __import__("factory_crash").install()
     main()

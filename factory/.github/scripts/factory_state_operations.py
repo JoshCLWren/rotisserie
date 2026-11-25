@@ -81,7 +81,9 @@ STORE_COMMANDS = frozenset({"bootstrap", "reset-model-health", "export-backoffs"
 
 
 def prune(repo: str) -> dict[str, int]:
-    """Bounded retention: aged lifecycle events, then expired raw model attempts."""
+    """Bounded retention: aged lifecycle events, expired raw model attempts, old crashes."""
+    import factory_crash_store
+    from factory_turso_core import store
     from factory_turso_events import BATCH, prune_lifecycle, rollup_model_attempts
 
     pruned = rolled = 0
@@ -95,7 +97,12 @@ def prune(repo: str) -> dict[str, int]:
         rolled += count
         if count < BATCH:
             break
-    return {"lifecycle_events_pruned": pruned, "model_attempts_rolled_up": rolled}
+    crashes = factory_crash_store.prune(store(), repo)
+    return {
+        "lifecycle_events_pruned": pruned,
+        "model_attempts_rolled_up": rolled,
+        "crashes_pruned": crashes,
+    }
 
 
 def bootstrap() -> str:
@@ -193,4 +200,6 @@ def main() -> int:
 
 
 if __name__ == "__main__":
+    with __import__("contextlib").suppress(ImportError):
+        __import__("factory_crash").install()
     raise SystemExit(main())

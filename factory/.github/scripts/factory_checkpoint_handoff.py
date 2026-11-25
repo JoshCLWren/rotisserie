@@ -368,8 +368,7 @@ def set_work_labels(repo: str, pr: dict, issue: dict | None, saved: dict, run: d
                     *, validated: bool, source_ended: bool = False) -> str:
     """Maintain one truthful owner/stage without stealing a newer live lease."""
     owner = f"factory:{saved['worker']}"
-    source = issue if saved["mode"] == "issue" else obj(
-        f"repos/{repo}/issues/{saved['number']}")
+    source = issue if saved["mode"] == "issue" else obj(f"repos/{repo}/issues/{saved['number']}")
     source_labels = labels_of(source)
     source_owners = {label for label in source_labels if OWNER_RE.fullmatch(label)}
     pr_labels = labels_of(obj(f"repos/{repo}/issues/{pr['number']}"))
@@ -430,8 +429,7 @@ def record_producer(repo: str, pr: dict, saved: dict) -> None:
     result = subprocess.run(
         ["python3", controller, "record-contribution", "--worker", saved["worker"],
          "--pr", str(pr["number"]), "--head", head], capture_output=True, text=True, timeout=90,
-        env={**os.environ, "GITHUB_REPOSITORY": repo},
-    )
+        env={**os.environ, "GITHUB_REPOSITORY": repo})
     if result.returncode:
         raise RuntimeError("Canonical exact-head producer recording failed; retry required")
 
@@ -682,4 +680,6 @@ def main() -> int:
 
 
 if __name__ == "__main__":
+    with __import__("contextlib").suppress(ImportError):
+        __import__("factory_crash").install()
     sys.exit(main())

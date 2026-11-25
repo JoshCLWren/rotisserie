@@ -3,6 +3,9 @@
 # snapshots go to a private per-run tracking branch; assigned PRs advance only
 # through the trusted wrapper after its scope and fast-check guards.
 set -Eeuo pipefail
+crash_trap="$(dirname "${BASH_SOURCE[0]}")/factory_crash_trap.sh"
+# shellcheck source=factory_crash_trap.sh
+[[ ! -f "$crash_trap" ]] || source "$crash_trap"
 
 [[ "$#" -eq 4 ]] || { echo 'usage: factory-work-checkpoint.sh MODE NUMBER WORKER RUN_ID' >&2; exit 2; }
 mode="$1" number="$2" worker="$3" run_id="$4"

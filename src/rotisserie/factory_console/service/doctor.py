@@ -40,17 +40,22 @@ from rotisserie.factory_console.github import (
 from rotisserie.factory_console.service import (
     baseline,
     checks,
-    db_usage,
     main_health,
     outcomes,
     providers,
     queue,
     reliability,
     review,
-    schema,
     stalls,
     turning,
     unstick,
+)
+from rotisserie.factory_console.service.doctor_published import (
+    DASHBOARD_WORKFLOW,
+    published_checks,
+)
+from rotisserie.factory_console.service.doctor_published import (
+    Finding as Finding,
 )
 from rotisserie.factory_console.service.failures import WORKER_JOB, first_failed_step
 from rotisserie.factory_console.tracker import (
@@ -63,53 +68,12 @@ from rotisserie.factory_console.tracker import (
     run_version,
 )
 
-DASHBOARD_WORKFLOW = "factory-status-pages.yml"
-STATS_STALE = timedelta(hours=1)
 SCHEDULER_STALE = timedelta(minutes=20)
 # A gate rejecting this share of recent finished workers (and at least this many)
 # is a factory problem, not a model problem.
 SYSTEMIC_SHARE = 0.5
 SYSTEMIC_MINIMUM = 3
 GATE = re.compile(r"factory fast checks failed: (?P<gate>[^(;]+)")
-
-
-@dataclass(frozen=True)
-class Finding:
-    """One health check: ok, warn or fail, with what to do about it."""
-
-    check: str
-    status: str  # ok | warn | fail
-    text: str
-    hint: str = ""
-    fix: str = ""  # a safe repair `apply_fixes` can make; empty when none
-    targets: tuple[str, ...] = ()  # what the fix acts on, e.g. "pr:N@HEAD"
-    secondary_limit: bool = False
-    retry_after_seconds: int | None = None
-
-    def to_dict(self) -> dict[str, object]:
-        return asdict(self)
-
-
-def _stats(stats: Obj | None, now: datetime) -> Finding:
-    if stats is None:
-        return Finding(
-            "reliability snapshot",
-            "fail",
-            "factory-stats.json has never been published, so stats and model picking are blind",
-            f"check the {DASHBOARD_WORKFLOW} runs below; doctor --fix runs it now",
-            fix="publish-snapshot",
-        )
-    generated = timestamp(stats, "generated_at")
-    if generated is None or now - generated > STATS_STALE:
-        age = "unknown" if generated is None else f"{int((now - generated).total_seconds() // 60)}m"
-        return Finding(
-            "reliability snapshot",
-            "warn",
-            f"factory-stats.json is stale (age {age}; it should refresh every 15 minutes)",
-            "GitHub's 15-minute schedule can lag by hours; doctor --fix runs the publisher now",
-            fix="publish-snapshot",
-        )
-    return Finding("reliability snapshot", "ok", "published and fresh")
 
 
 def _dashboard(github: GitHub, tracker: Tracker) -> Finding:
@@ -415,9 +379,7 @@ def run_checks(github: GitHub, *, now: datetime, clock: Clock | None = None) -> 
         return systemic_rejection(recent)
 
     checks: list[tuple[str, Callable[[], Finding]]] = [
-        ("reliability snapshot", lambda: _stats(stats(), now)),
-        ("database usage", lambda: Finding("database usage", *db_usage.health(stats(), now))),
-        ("store schema", lambda: Finding("store schema", *schema.health(stats(), now))),
+        *published_checks(stats, now),
         ("dashboard publisher", lambda: _dashboard(github, tracker)),
         ("scheduler", lambda: _scheduler(github, now)),
         (turning.CHECK, lambda: Finding(turning.CHECK, *turning.health(github, now, clock))),

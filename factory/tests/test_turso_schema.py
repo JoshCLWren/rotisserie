@@ -97,11 +97,30 @@ def test_a_version_2_store_gains_the_cursor_table_beside_the_upgrade_record(
     )
     report = schema.status(store)
     assert report["stored_version"] == 2 and report["missing"] == ["factory_cursor"]
-    assert libsql.SCHEMA_VERSION == 3
+    assert libsql.SCHEMA_VERSION == 4
     assert libsql.ensure_schema(store) is True
     after = schema.status(store)
-    assert after["status"] == "ok" and after["stored_version"] == 3
+    assert after["status"] == "ok" and after["stored_version"] == 4
     assert after["last_upgrade"]["created"] == ["factory_cursor"]
+
+
+def test_a_version_3_store_gains_the_crash_table_and_its_indexes(tmp_path: Path) -> None:
+    store = _store(tmp_path)
+    _sql(
+        tmp_path / "store.db",
+        "DROP TABLE factory_crash",
+        "DELETE FROM _schema_version WHERE version > 3",
+    )
+    report = schema.status(store)
+    assert report["stored_version"] == 3 and "factory_crash" in report["missing"]
+    assert libsql.ensure_schema(store) is True
+    after = schema.status(store)
+    assert after["status"] == "ok" and after["stored_version"] == 4
+    assert after["last_upgrade"]["created"] == [
+        "factory_crash",
+        "idx_factory_crash_recent",
+        "idx_factory_crash_group",
+    ]
 
 
 class RefusesUpgrades(libsql.FileStore):

@@ -16,7 +16,7 @@ from datetime import datetime, timedelta
 from rotisserie.factory_console import runtime
 from rotisserie.factory_console.github import Obj, integer, items, label_names, obj, string
 from rotisserie.factory_console.service import db_usage, gh_usage, reliability
-from rotisserie.factory_console.service.doctor import Finding
+from rotisserie.factory_console.service.doctor_published import Finding
 from rotisserie.factory_console.service.failures import (
     FAILED_CONCLUSIONS,
     WorkerFailure,

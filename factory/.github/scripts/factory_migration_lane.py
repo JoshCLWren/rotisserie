@@ -422,6 +422,8 @@ def main() -> int:
 
 
 if __name__ == "__main__":
+    with __import__("contextlib").suppress(ImportError):
+        __import__("factory_crash").install()
     try:
         raise SystemExit(main())
     except GitHubQuotaDeferredError:

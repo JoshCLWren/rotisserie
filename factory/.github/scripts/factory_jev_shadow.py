@@ -725,9 +725,7 @@ def completion_markdown(report: dict[str, Any]) -> str:
     if "confidence" in report:
         lines.append(f"- Confidence: {report['confidence']:.2f}")
     if "probabilities" in report:
-        lines.append(
-            f"- Probabilities: `{json.dumps(report['probabilities'], sort_keys=True)}`"
-        )
+        lines.append(f"- Probabilities: `{json.dumps(report['probabilities'], sort_keys=True)}`")
     if "usage" in report:
         lines.append(f"- Reported usage: `{json.dumps(report['usage'], sort_keys=True)}`")
     if "latency_ms" in report:
@@ -957,4 +955,6 @@ def main() -> int:
 
 
 if __name__ == "__main__":
+    with __import__("contextlib").suppress(ImportError):
+        __import__("factory_crash").install()
     sys.exit(main())

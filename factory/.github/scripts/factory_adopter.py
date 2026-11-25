@@ -94,6 +94,9 @@ def __getattr__(name: str) -> str:
 if __name__ == "__main__":
     import sys
 
+    with __import__("contextlib").suppress(ImportError):
+        __import__("factory_crash").install()
+
     commands = {
         "repository": repository,
         "marker-prefix": marker_prefix,

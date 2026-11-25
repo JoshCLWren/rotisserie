@@ -240,6 +240,24 @@ jobs:
           jq -r '"Store schema: \(.schema.status) \(.schema.reasons | join("; "))"' \
             site/factory-stats.json >> "$GITHUB_STEP_SUMMARY"
 
+      # Crash groups of the last day, without tracebacks; read by `baste crashes`,
+      # `baste turning` and `baste doctor`. Every run refreshes them.
+      - name: Add recent factory crashes to the published stats
+        continue-on-error: true
+        env:
+          PYTHONPATH: .github/scripts
+        run: |
+          set -Eeuo pipefail
+          [[ -s site/factory-stats.json ]] || exit 0
+          python3 .github/scripts/factory_crash.py export --repo "$GITHUB_REPOSITORY" --hours 24 \
+            > "$RUNNER_TEMP/crashes.json"
+          jq -e 'type == "object" and (.groups | type) == "array"' "$RUNNER_TEMP/crashes.json" >/dev/null
+          jq --slurpfile crashes "$RUNNER_TEMP/crashes.json" '.crashes = $crashes[0]' \
+            site/factory-stats.json > site/factory-stats.json.tmp
+          mv site/factory-stats.json.tmp site/factory-stats.json
+          jq -r '"Factory crash groups in 24h: \(.crashes.groups | length)"' \
+            site/factory-stats.json >> "$GITHUB_STEP_SUMMARY"
+
       # Per-job GitHub request counts and the workflow token's budget, as the
       # dispatcher and merge drain recorded them; read by `baste recap` and
       # `baste limits`.

@@ -30,6 +30,7 @@ TABLES = {
     "factory_state_events": ("id",),
     "factory_model_attempt_daily": ("repo", "day", "source", "model", "outcome_class"),
     "factory_cursor": ("repo", "name"),
+    "factory_crash": ("id",),
 }
 
 
@@ -124,4 +125,6 @@ def main(argv: list[str] | None = None) -> int:
 
 
 if __name__ == "__main__":
+    with __import__("contextlib").suppress(ImportError):
+        __import__("factory_crash").install()
     sys.exit(main())

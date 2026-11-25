@@ -30,7 +30,7 @@ from typing import Any
 from urllib.parse import urlsplit
 
 SCHEMA = Path(__file__).resolve().parents[1] / "factory-state.sqlite.sql"
-SCHEMA_VERSION = 3
+SCHEMA_VERSION = 4
 URL_ENV = "FACTORY_TURSO_URL"
 TOKEN_FILE_ENV = "FACTORY_TURSO_TOKEN_FILE"
 FILE_ENV = "FACTORY_STATE_SQLITE"
