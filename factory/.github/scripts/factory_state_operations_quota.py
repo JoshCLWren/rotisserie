@@ -11,7 +11,9 @@ scoped by factory_quota_reset:
   "@credit_pool" exclusion so only that source's priced models are skipped;
 - model: factory_model_health for the exact pair.
 
-A later refusal never shortens an active cooldown.
+A later refusal never shortens an active account or pool cooldown. On the
+model health row it keeps an older end only while that end is valid for its
+own cause (factory_health_cooldown), and the row names that cause.
 """
 
 from __future__ import annotations

@@ -146,8 +146,17 @@ Where the cooldown lives:
   only the models whose catalog row publishes a positive price.
 - model: `factory_model_health` status `cooling` for the exact pair.
 
-A later refusal never shortens an active cooldown. Old Fibonacci rows whose
-outcome was quota or throttle no longer gate dispatch.
+A later refusal never shortens an active account or pool cooldown. On the
+model health row, a capacity refusal never inherits an end from a different
+cause. The row ends at the later of the new end and the older row's end
+clamped to its own cause's current cap, and `last_outcome` names the cause
+that owns that end. An older `model_unavailable` row counts for at most 15
+minutes on a kept model. A real longer quota or throttle end is kept. Readers
+of `factory_model_health` (dispatcher exclusions, forced runs, `baste
+backoffs`) apply the same clamp (`factory_health_cooldown.py`). A capacity
+row keeps its stored end, because a throttle row can carry a daily reset.
+Old Fibonacci rows whose outcome was quota or throttle no longer gate
+dispatch.
 
 ### Reset hints and the probe
 
