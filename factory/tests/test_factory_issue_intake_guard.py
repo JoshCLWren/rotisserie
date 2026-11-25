@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import Any
 
 import factory_issue_intake_guard as guard
+import pytest
 from factory_work_policy import build_candidates
 
 # Measured on ComicPile 2026-11-25: the largest body of 33 recently merged issues
@@ -79,7 +80,12 @@ def test_the_size_limit_keeps_every_merged_issue_and_holds_the_epic() -> None:
 
 def test_an_epic_umbrella_or_tracking_label_holds_the_issue() -> None:
     for label in ("epic", "Umbrella", "tracking"):
-        assert issue_numbers([issue(4350, "Small body.", label)], []) == set()
+        assert issue_numbers([issue(4400, "Small body.", label)], []) == set()
+
+
+@pytest.fixture(autouse=True)
+def fresh_requests() -> None:
+    guard._ASKED.clear()
 
 
 def test_a_split_request_is_posted_once_with_a_label() -> None:
@@ -94,6 +100,22 @@ def test_a_split_request_is_posted_once_with_a_label() -> None:
     assert "never creates them" in comment
     labelled = issue(4335, "x" * EPIC_4335_BODY, guard.NEEDS_SPLIT)
     assert guard.request_splits([labelled], lambda *_: writes.append(("again", None))) == []
+
+
+def test_a_second_pool_pass_in_one_job_does_not_ask_again() -> None:
+    writes: list[str] = []
+    rows = [issue(4335, "x" * EPIC_4335_BODY)]
+    assert guard.request_splits(rows, lambda path, _: writes.append(path)) == [4335]
+    assert guard.request_splits(rows, lambda path, _: writes.append(path)) == []
+    assert writes.count("issues/4335/comments") == 1
+
+
+def test_only_issues_the_pool_would_dispatch_are_asked() -> None:
+    owned = issue(1, "x" * EPIC_4335_BODY)
+    owned["labels"] = [{"name": "factory"}, {"name": "factory:42"}]
+    manual = issue(2, "<!-- factory-execution:manual-only -->\n" + "x" * EPIC_4335_BODY)
+    blocked = issue(3, "x" * EPIC_4335_BODY, "factory:blocked")
+    assert guard.request_splits([owned, manual, blocked], lambda *_: None) == []
 
 
 def test_the_controller_holds_slices_only_on_the_pool_pass(monkeypatch: Any) -> None:

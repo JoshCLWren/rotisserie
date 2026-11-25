@@ -33,6 +33,7 @@ NEEDS_SPLIT_DEFINITION = ("d93f0b", "Too large for one factory task; the owner a
 BYPASS = frozenset({"factory:override", "factory:claimed"})
 MARKER = "factory-split-request-v1"
 PART_OF_RE = re.compile(r"(?im)^[ \t]*part[ \t]+of[ \t]+#(?P<issue>\d+)\b")
+_ASKED: set[int] = set()
 CHECKPOINT_BRANCH_RE = re.compile(r"^factory/work-checkpoints/issue-(?P<issue>\d+)/")
 
 
@@ -96,8 +97,7 @@ def split_comment(number: int, reason: str) -> str:
         f"**Factory intake:** issue #{number} needs a split before the factory takes it: "
         f"{reason}. The factory does not dispatch it as one task. Post a split proposal"
         " (the child issues and what each one delivers) and create the issues you approve;"
-        " the factory never creates them. Remove the `factory:needs-split` label or add"
-        " `factory:override` to send it as one task anyway."
+        " the factory never creates them. Add `factory:override` to send it as one task anyway."
     )
 
 
@@ -108,11 +108,20 @@ def request_splits(
     limit: int | None = None,
     budget: int = 3,
 ) -> list[int]:
-    """Comment and label each oversized issue once; the label records that it was asked."""
+    """Comment and label each oversized issue once; the label records that it was asked.
+
+    Only issues the pool would otherwise dispatch qualify: never a manual-only,
+    owned, blocked or non-factory issue. ``_ASKED`` keeps one dispatcher job,
+    which runs the pool pass once per worker, from asking twice.
+    """
+    from factory_work_policy_candidates import issue_is_static_candidate
+
     asked: list[int] = []
     for issue in issues:
         labels = _labels(issue)
         if len(asked) >= budget or NEEDS_SPLIT in labels or BYPASS & labels:
+            continue
+        if int(issue["number"]) in _ASKED or not issue_is_static_candidate(dict(issue), set()):
             continue
         reason = split_reason(issue, limit)
         if reason is None:
@@ -124,6 +133,7 @@ def request_splits(
         except RuntimeError, OSError, subprocess.SubprocessError, ValueError:
             pass
         write(f"issues/{number}/labels", {"labels": [NEEDS_SPLIT]})
+        _ASKED.add(number)
         write(f"issues/{number}/comments", {"body": split_comment(number, reason)})
         asked.append(number)
     return asked
