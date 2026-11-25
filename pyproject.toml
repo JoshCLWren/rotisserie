@@ -65,6 +65,7 @@ include = [
   "/factory/.github/scripts/factory_turso_usage.py",
   "/factory/.github/scripts/factory_dynamic_outcome.py",
   "/factory/.github/scripts/factory_item_loop.py",
+  "/factory/.github/scripts/factory_merge_linkage.py",
   "/factory/scripts/factory_eligibility.py",
   "/CHANGELOG.md",
   "/docs",
