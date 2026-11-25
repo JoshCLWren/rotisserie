@@ -58,6 +58,7 @@ RUNTIME_SOURCES = {
     "factory_work_policy_backlog": "factory/.github/scripts/factory_work_policy_backlog.py",
     "factory_work_policy_base": "factory/.github/scripts/factory_work_policy_base.py",
     "factory_work_policy_candidates": "factory/.github/scripts/factory_work_policy_candidates.py",
+    "factory_issue_intake_guard": "factory/.github/scripts/factory_issue_intake_guard.py",
     "factory_work_policy_priority": "factory/.github/scripts/factory_work_policy_priority.py",
     "factory_eligibility": "factory/scripts/factory_eligibility.py",
 }

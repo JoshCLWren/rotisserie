@@ -30,9 +30,10 @@ IGNORED_BY_WORKFLOWS = (
     "factory:needs-split",
     "factory:gate-rejected",
     "factory:duplicate",
-    "factory:incident",
     "factory:cooling",
 )
+# The owner's incident label (factory_incident.LABEL) starts work; it is an input, not a mirror.
+OWNER_INPUTS = ("factory:incident",)
 
 
 _DEFINED: set[tuple[str, str]] = set()

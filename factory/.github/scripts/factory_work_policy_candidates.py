@@ -31,6 +31,7 @@ from factory_work_policy_base import (
     producer_worker_from_pr,
     stage_of,
 )
+import factory_issue_intake_guard as intake_guard
 from factory_incident import active as active_incidents
 from factory_incident import linked_issue as incident_issue_of
 from factory_work_policy_priority import (
@@ -214,6 +215,7 @@ def build_candidates(
     review_backlog_limit: int = FACTORY_REVIEW_BACKLOG_LIMIT,
     external_wip: int = 0,
     incidents: Mapping[int, int] | None = None,
+    intake_holds: bool = True,
 ) -> list[Candidate]:
     """Build and rank executable issue and pull-request candidates.
 
@@ -231,6 +233,8 @@ def build_candidates(
         incidents: Declared incidents (issue -> attempts); None reads
             ``FACTORY_INCIDENTS``. While one is open its work ranks first, its
             issue bypasses intake limits, and other new issue intake pauses.
+        intake_holds: Hold issues with an open partial PR or that need a split
+            (``factory_issue_intake_guard``). A targeted run passes False.
     """
     issue_map = {int(issue['number']): issue for issue in issues}
     retry_counts = no_diff_attempts_by_issue or {}
@@ -255,6 +259,8 @@ def build_candidates(
         intake_backlog_count(prs, review_backlog_limit) >= review_backlog_limit
     )
     incident_issues = set(active_incidents(issues, incidents))
+    slices = intake_guard.open_slice_issues(prs) if intake_holds else set()
+    limit = intake_guard.body_limit()
     candidates: list[Candidate] = []
     for issue in issues:
         number = int(issue['number'])
@@ -267,6 +273,8 @@ def build_candidates(
             continue
         body = str(issue.get('body') or '')
         if body_depends_on_unresolved(body, open_numbers - {number}):
+            continue
+        if intake_holds and not in_incident and intake_guard.held(issue, slices, limit=limit):
             continue
         if not include_backpressured_issues and not in_incident:
             if incident_issues:

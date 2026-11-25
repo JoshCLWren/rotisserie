@@ -55,3 +55,11 @@ def test_the_pr_review_wakeup_and_label_claim_wake_only_on_their_own_label() -> 
     )
     claim = (WORKFLOWS / "rotisserie-label-claim.yml").read_text()
     assert "github.event.label.name == 'factory:claimed')" in claim
+
+
+def test_the_owner_incident_label_still_wakes_work() -> None:
+    module = runtime.module("factory_state_labels")
+    assert runtime.module("factory_incident").LABEL in module.OWNER_INPUTS
+    assert not set(module.OWNER_INPUTS) & set(module.IGNORED_BY_WORKFLOWS)
+    for name in ("factory-issue-wakeup.yml", "factory-issue-pr-state-reconciler.yml"):
+        assert "factory:incident" not in job_condition(name)
