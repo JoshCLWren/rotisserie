@@ -197,6 +197,7 @@ factory_run_fast_checks() {
   local base_ref="$1" log="${2:-/tmp/factory-fast-checks-${WORKER:-agent}.log}"
   local plan failures=() file status=0
   local -a node_files=() py_files=() pytest_files=() fe_files=()
+  FACTORY_FAST_CHECK_FAILURES=''
   : > "$log"
   case "$(printf '%s' "${FACTORY_FAST_CHECKS:-on}" | tr '[:upper:]' '[:lower:]')" in
     0|off|false|no) printf 'fast checks disabled by FACTORY_FAST_CHECKS\n' >> "$log"; return 0 ;;
@@ -327,6 +328,7 @@ factory_run_fast_checks() {
   fi
 
   if (( ${#failures[@]} )); then
+    FACTORY_FAST_CHECK_FAILURES="$(IFS=';'; echo "${failures[*]}")"
     printf '\nFAST CHECKS FAILED: %s\n' "$(IFS=';'; echo "${failures[*]}")" >> "$log"
     printf 'factory fast checks failed: %s (log: %s)\n' "$(IFS=';'; echo "${failures[*]}")" "$log" >&2
     _factory_fast_check_publish_failures "$log" >&2

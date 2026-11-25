@@ -304,6 +304,8 @@ jobs:
             else
               message="No verified saved code or PR delivery; worker failed: $classification"
             fi
+            failure_detail="$(jq -r '.detail // empty' "$RUNNER_TEMP/worker-outcome-attested.json" | tr -d '\r\n' | cut -c1-300)"
+            [[ -z "$failure_detail" ]] || message="$message; what happened: $failure_detail"
           fi
           {
             echo "### Factory outcome: $verdict"
