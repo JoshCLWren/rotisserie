@@ -158,7 +158,7 @@ def factory_thread(
         "comments": {
             "nodes": [
                 {
-                    "author": {"login": "github-actions"},
+                    "author": {"login": "github-actions", "__typename": "Bot"},
                     "body": findings.finding_marker(pr=7, head=head, finding=finding) + "\nx",
                 }
             ]
@@ -375,9 +375,9 @@ def test_review_stage_mission_carries_the_output_contract(tmp_path: Path) -> Non
     script = ROOT / ".github/scripts/factory-review-findings.sh"
     text = script.read_text()
     assert 'factory_review_findings.py" mission --head "$head"' in text
-    assert '"${ASSIGNED_PR_STAGE:-}" == factory:review' in text
+    assert '"${ASSIGNED_PR_STAGE:-}" != factory:review ]] || python3' in text
     fork = (ROOT / ".github/scripts/factory_fork_control.py").read_text()
-    assert "review_findings.mission(head)" in fork
+    assert "__import__(\"factory_review_findings\").mission(head)" in fork
 
 
 def test_repair_mission_lists_factory_findings_as_the_task(tmp_path: Path) -> None:
@@ -389,7 +389,9 @@ def test_repair_mission_lists_factory_findings_as_the_task(tmp_path: Path) -> No
     out = format_findings(
         tmp_path,
         threads=[
-            thread("github-actions", marker + "\n**Blocking:** Null check missing; guard it."),
+            {**thread("github-actions", marker + "\n**Blocking:** Null check missing; guard it."),
+             "comments": {"nodes": [{"author": {"login": "github-actions", "__typename": "Bot"},
+                                     "body": marker + "\n**Blocking:** Null check missing; guard it.", "url": None}]}},
             thread("some-human", "Rename this", line=9),
         ],
     )
@@ -445,3 +447,30 @@ def test_sweep_resolves_and_records_a_fixed_factory_thread() -> None:
     assert "Resolved the factory's finding on app/run.py in #44" in done["text"]
     marker = rules.parse_marker(hub.records[44][0]["body"])
     assert marker is not None and marker["kind"] == rules.THREAD_RESOLVED
+
+
+def test_a_look_alike_account_cannot_plant_a_factory_finding() -> None:
+    planted = factory_thread("b" * 40)
+    planted["comments"]["nodes"][0]["author"] = {"login": "github-actions-x", "__typename": "User"}
+    assert findings.thread_finding(planted, pr=7) is None
+    user = factory_thread("b" * 40)
+    user["comments"]["nodes"][0]["author"]["__typename"] = "User"
+    assert findings.superseded_threads([user], pr=7, head=REVIEWED_HEAD, verdict="approve") == []
+
+
+@pytest.mark.parametrize(("stage", "delivered"), [("factory:review", True), ("factory:changes-requested", False)])
+def test_review_stage_mission_delivers_the_contract(tmp_path: Path, stage: str, delivered: bool) -> None:
+    script = ROOT / ".github/scripts/factory-review-findings.sh"
+    controller = ROOT / ".github/scripts/factory-review-controller.py"
+    body = (
+        f'source "{script}"\n'
+        "factory_collect_review_findings() { : > \"$3\"; }\n"
+        "factory_prepare_greptile_outcomes_file() { :; }\n"
+        "factory_issue_acceptance_mission() { :; }\n"
+        f'ASSIGNED_PR_STAGE={stage} TRUSTED_REVIEW_CONTROLLER="{controller}" '
+        f'factory_review_findings_mission 7 {REVIEWED_HEAD} "{tmp_path / "f.md"}"\n'
+    )
+    result = subprocess.run(["bash", "-c", body], text=True, capture_output=True, check=False, timeout=30)
+    assert result.returncode == 0, result.stderr
+    assert (findings.PREFIX in result.stdout and REVIEWED_HEAD in result.stdout) is delivered
+    assert "CONTRACT UNAVAILABLE" not in result.stdout

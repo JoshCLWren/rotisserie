@@ -26,7 +26,7 @@ FAILURE_STATUSES = frozenset(
 THREADS = (
     "query($owner:String!,$name:String!,$number:Int!){repository(owner:$owner,name:$name){"
     "pullRequest(number:$number){reviewThreads(first:100){pageInfo{hasNextPage} nodes{id "
-    "isResolved comments(first:1){nodes{body author{login}}}}}}}}"
+    "isResolved comments(first:1){nodes{body author{login __typename}}}}}}}}"
 )
 RESOLVE = "mutation($thread:ID!){resolveReviewThread(input:{threadId:$thread}){thread{id}}}"
 
@@ -59,6 +59,9 @@ def post(
     payload = findings.review_payload(
         pr=pr, head=head, reviewer=reviewer, verdict=verdict, review=review
     )
+    payload["body"] = ctl.redact_review_text(payload["body"])
+    for comment in payload["comments"]:
+        comment["body"] = ctl.redact_review_text(comment["body"])
     created = ctl.json_object(
         ctl.gh_json(
             ["api", "--method", "POST", f"repos/{ctl.REPO}/pulls/{pr}/reviews", "--input", "-"],
@@ -80,7 +83,8 @@ def post(
     return f"inline comments not anchored to their line: {', '.join(missing)}" if missing else ""
 
 
-def resolve_superseded(ctl: Any, *, pr: int, head: str, verdict: str) -> int:
+def superseded(ctl: Any, *, pr: int, head: str, verdict: str) -> list[str]:
+    """Read before posting, so an unreadable thread list never leaves a duplicate review."""
     owner, name = ctl.REPO.split("/", 1)
     data = (
         ctl.json_object(
@@ -106,12 +110,9 @@ def resolve_superseded(ctl: Any, *, pr: int, head: str, verdict: str) -> int:
     ) or {}
     if (threads.get("pageInfo") or {}).get("hasNextPage"):
         raise RuntimeError("review threads were only partially read")
-    stale = findings.superseded_threads(
+    return findings.superseded_threads(
         threads.get("nodes") or [], pr=pr, head=head, verdict=verdict
     )
-    for thread in stale:
-        ctl.gh_json(["api", "graphql", "-F", f"thread={thread}", "-f", f"query={RESOLVE}"])
-    return len(stale)
 
 
 def run(
@@ -126,7 +127,7 @@ def run(
             findings.FAILED,
             status="review-findings-missing",
             note=f"Review run failed: {error}. A review must print one {findings.PREFIX} "
-            "record; another model reviews this head.",
+            "record; the head returns to review.",
         )
     try:
         files = head_files(ctl, pr)
@@ -142,9 +143,10 @@ def run(
     if verdict == findings.REPAIR:
         decided = findings.stricter(findings.REPAIR, decided)
     try:
+        stale = superseded(ctl, pr=pr, head=head, verdict=decided)
         problem = post(ctl, pr=pr, head=head, reviewer=worker, verdict=decided, review=review)
-        if not problem:
-            resolve_superseded(ctl, pr=pr, head=head, verdict=decided)
+        for thread in [] if problem else stale:
+            ctl.gh_json(["api", "graphql", "-F", f"thread={thread}", "-f", f"query={RESOLVE}"])
     except RuntimeError as exc:
         problem = ctl.redact_review_text(str(exc))[-300:]
     if problem:

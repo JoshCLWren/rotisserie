@@ -118,7 +118,7 @@ factory_format_review_findings() {
     | [$open[] | select(.comments.nodes[0].author.login | is_greptile)] as $g
     | [$open[] | select(.comments.nodes[0].author.login | is_greptile | not)
           | select((.comments.nodes[0].author.login // "") as $login | ($login != "coderabbitai" and $login != "coderabbitai[bot]"))] as $nongreptile
-    | [$nongreptile[] | select(.comments.nodes[0] | ((.author.login // "") | test("^github-actions")) and ((.body // "") | test("^<!-- [a-z0-9-]+-factory-review-finding-v1:")))] as $factory
+    | [$nongreptile[] | select(.comments.nodes[0] | ((.author.__typename // "") == "Bot" and ((.author.login // "") | test("^github-actions(\\[bot\\])?$"))) and ((.body // "") | test("^<!-- [a-z0-9-]+-factory-review-finding-v1:")))] as $factory
     | [$nongreptile[] | select(IN($factory[]) | not)] as $other
     | ([$reviews[0][]? | select(.user.login | is_greptile) | select((.body // "" | trim) != "")]
        | sort_by(.submitted_at // "") | last) as $grev
@@ -548,7 +548,7 @@ factory_review_findings_mission() {
 ----- BEGIN REVIEW FINDINGS -----
 ${content}
 ----- END REVIEW FINDINGS -----"
-  [[ "${ASSIGNED_PR_STAGE:-}" == factory:review ]] && python3 "$(dirname "${TRUSTED_REVIEW_CONTROLLER:-.github/scripts/x}")/factory_review_findings.py" mission --head "$head" 2>/dev/null || true
+  [[ "${ASSIGNED_PR_STAGE:-}" != factory:review ]] || python3 "$(dirname "${TRUSTED_REVIEW_CONTROLLER:-.github/scripts/x}")/factory_review_findings.py" mission --head "$head" 2>/dev/null || printf '\nREVIEW OUTPUT CONTRACT UNAVAILABLE: the trusted findings policy failed to load; this review run will fail.\n'
   factory_issue_acceptance_mission "$pr" "$head"
   return 0
 }

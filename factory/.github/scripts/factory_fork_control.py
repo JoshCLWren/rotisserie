@@ -23,7 +23,6 @@ from urllib.parse import quote
 import zipfile
 
 from factory_worker_slots import resolve
-import factory_review_findings as review_findings
 from factory_adopter import MARKER_PREFIX, repository
 
 REPO = repository()
@@ -379,7 +378,7 @@ def _review(pr: int, head: str, worker: str, runtime: str, timeout: int, log: Pa
             '"explanation":"file:line and regression evidence"}]}. Use rebutted with an evidence '
             "field only for concrete rebuttals; never fabricate fixes or test execution. "
             "The trusted wrapper validates and posts these replies; never resolve threads. "
-            + review_findings.mission(head)
+            + __import__("factory_review_findings").mission(head)
             + f"\nRun context: PR #{pr} at exact head {head}."
         )
         with log.open("w") as stream:

@@ -344,8 +344,9 @@ def thread_finding(thread: Mapping[str, Any], *, pr: int) -> dict[str, str] | No
     if not isinstance(first, Mapping):
         return None
     author = first.get("author")
-    login = author.get("login") if isinstance(author, Mapping) else ""
-    if not isinstance(login, str) or not login.startswith("github-actions"):
+    if not isinstance(author, Mapping) or author.get("__typename") != "Bot":
+        return None
+    if author.get("login") not in ("github-actions", "github-actions[bot]"):
         return None
     match = FINDING_MARKER_RE.match(str(first.get("body") or ""))
     return match.groupdict() if match and int(match.group("pr")) == pr else None

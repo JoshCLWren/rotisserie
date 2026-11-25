@@ -2044,7 +2044,7 @@ def handle_review(
             )
         verdict = line.verdict
         if line.review.blocking:
-            excerpt = line.handoff
+            excerpt = redact_review_text(line.handoff)
 
     # For approval, require evidence of diff / PR inspection. Failed attempts must
     # not render as APPROVE: that false signal stalls promotion while looking done.
