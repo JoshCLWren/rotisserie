@@ -93,9 +93,11 @@ def read_board(
     prs = _rows(github.gh("pr", *listing, PR_FIELDS, "--limit", "500"))
     wip_limit = runtime.setting_integer("FACTORY_PR_WIP_LIMIT", variables)
     backlog_limit = runtime.setting_integer("FACTORY_REVIEW_BACKLOG_LIMIT", variables)
-    prs = parked.stamp(github, prs, backlog_limit, now, looping)
+    declared = runtime.module("factory_work_policy").declared_incidents(variables)
+    hot = frozenset(runtime.module("factory_incident").active(issues, declared))
+    prs = parked.stamp(github, prs, backlog_limit, now, looping, hot)
     board = Board(issues, prs, wip_limit, backlog_limit, intake={})
-    board.incidents = runtime.module("factory_work_policy").declared_incidents(variables)
+    board.incidents = declared
     _read_intake(github, board, now)
     return board
 

@@ -8,14 +8,17 @@ The dispatcher's pool pass reads that event and sends no worker of any kind
 while the head is unchanged, whatever the stage: a failed worker's own release
 flips the stage. Nothing changes the PR's labels, so an owner's targeted run,
 ``factory:override`` or claim still reaches it; a new head releases the hold.
+An active incident's PRs are never parked: owner-directed work is not throttled.
 """
 
 from __future__ import annotations
 
+import subprocess
 from collections.abc import Mapping, Sequence
 from datetime import UTC, datetime
 from typing import Any
 
+import factory_incident as incident
 import factory_item_loop as loop
 import factory_self_heal as heal
 import factory_self_heal_rules as rules
@@ -31,6 +34,20 @@ def _number(row: Mapping[str, Any]) -> int:
 def _head(row: Mapping[str, Any]) -> str:
     head = row.get("head")
     return str(head.get("sha") or "") if isinstance(head, Mapping) else ""
+
+
+def incident_pulls(github: heal.GitHub, pulls: Sequence[Mapping[str, Any]]) -> frozenset[int]:
+    """Open PRs of an active incident; an unreadable incident issue counts as active."""
+    declared = incident.declared()
+    issues: list[Mapping[str, Any]] = []
+    for number in declared:
+        try:
+            row = github.api(f"issues/{number}")
+        except RuntimeError, ValueError, OSError, subprocess.TimeoutExpired:
+            row = {"number": number, "labels": [incident.LABEL]}
+        if isinstance(row, Mapping):
+            issues.append({**row, "number": number})
+    return incident.incident_prs(pulls, incident.active(issues, declared))
 
 
 def park_text(found: loop.Loop, title: str) -> str:
@@ -63,10 +80,14 @@ def park_loops(
         threshold=threshold,
         window_seconds=window,
     )
+    exempt = incident_pulls(github, pulls) if found else frozenset()
     done: list[dict[str, Any]] = []
     for item in found:
         pull = by_target[item.target]
         names = heal.labels(pull)
+        if item.number in exempt:
+            done.append({"pr": item.number, "status": "incident", "text": item.text()})
+            continue
         if loop.bypassed(names):
             done.append({"pr": item.number, "status": "owner", "text": item.text()})
             continue

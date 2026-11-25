@@ -27,11 +27,13 @@ from rotisserie.factory_console.github import (
 )
 from rotisserie.factory_console.service import (
     db_usage,
+    incident,
     loops,
     parked,
     providers,
     queue,
     reliability,
+    review,
     sync,
 )
 from rotisserie.factory_console.service import turning_reads as reads
@@ -313,7 +315,10 @@ def gather(
         found.holds = hold_state(github)
 
     def looping() -> None:
-        found.loops = loops.scan(github, now=now, tracker=tracker)
+        pulls = review.open_pulls(github)
+        found.loops = loops.scan(github, now=now, tracker=tracker, pulls=pulls)
+        if found.loops:
+            loops.mark_incidents(found.loops, pulls, incident.active_issues(github))
 
     steps: dict[str, Callable[[], None]] = {
         "worker runs": workers,
@@ -335,7 +340,9 @@ def gather(
     with ThreadPoolExecutor(max_workers=len(steps)) as pool:
         list(pool.map(attempt, steps))
     if found.loops and found.backlog.get("limit"):
-        looping_prs = frozenset(int(str(row["number"])) for row in found.loops)
+        looping_prs = frozenset(
+            int(str(row["number"])) for row in found.loops if not row.get("incident")
+        )
         try:
             found.backlog = backlog_state(github, now, looping_prs)
         except READ_ERRORS:

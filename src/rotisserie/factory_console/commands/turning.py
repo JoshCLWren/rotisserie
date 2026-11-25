@@ -142,6 +142,7 @@ def _render_loops(console: Console, rows: object) -> None:
     console.line(f"🔁 Looping items: {len(found)}")
     for row in found[:5]:
         name = f"{row.get('title') or row.get('target')} (#{row.get('number')})"
+        name += " [incident]" if row.get("incident") else ""
         console.line(f"    {name}: {row.get('text')}  {row.get('url') or ''}".rstrip())
         console.line(f"      👉 {row.get('next')}")
         for run in (row.get("runs") or [])[-6:]:

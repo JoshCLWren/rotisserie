@@ -11,6 +11,7 @@ from collections.abc import Iterable, Mapping
 from typing import Any
 
 import factory_assign_trace as trace
+import factory_incident as incident
 from factory_work_policy_backlog import LOOP_HOLD_KEY, LOOP_HOLDS
 from factory_work_policy_base import is_factory_managed_pr, labels_of, stage_of
 from factory_work_policy_priority import OVERRIDE_LABEL
@@ -28,7 +29,7 @@ def apply(repo: str, candidates: list[Any], prs: Iterable[Mapping[str, Any]]) ->
             if c.kind == "pr"
         }
         issues = frozenset(c.number for c in candidates if c.kind == "issue")
-        exempt = frozenset(c.number for c in candidates if c.override)
+        exempt = frozenset(c.number for c in candidates if c.override or c.incident)
         found = holds(repo, heads, issues, exempt)
     except Exception as exc:  # noqa: BLE001 - advisory holds never block the pool
         print(
@@ -42,8 +43,16 @@ def apply(repo: str, candidates: list[Any], prs: Iterable[Mapping[str, Any]]) ->
     return [c for c in candidates if c.number not in found or trace.skip(c.number, found[c.number])]
 
 
-def stamp(repo: str, prs: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    """Mark each PR the loop breaker holds, so backlog limits skip it; a failed read marks none."""
+def stamp(
+    repo: str,
+    prs: list[dict[str, Any]],
+    issues: Iterable[Mapping[str, Any]] = (),
+    incidents: Mapping[int, int] | None = None,
+) -> list[dict[str, Any]]:
+    """Mark each PR the loop breaker holds, so backlog limits skip it; a failed read marks none.
+
+    An active incident's PRs are never marked: owner-directed work is not throttled.
+    """
     heads = {
         int(pr["number"]): (
             str(pr.get("headRefOid") or ""),
@@ -59,7 +68,7 @@ def stamp(repo: str, prs: list[dict[str, Any]]) -> list[dict[str, Any]]:
 
         exempt = frozenset(
             int(pr["number"]) for pr in prs if OVERRIDE_LABEL in labels_of(pr)
-        )
+        ) | incident.incident_prs(prs, incident.active(issues, incidents))
         found = holds(repo, heads, frozenset(), exempt)
     except Exception as exc:  # noqa: BLE001 - a failed read keeps the old backlog count
         print(

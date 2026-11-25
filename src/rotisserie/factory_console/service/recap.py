@@ -21,6 +21,7 @@ from rotisserie.factory_console.service import (
     doctor,
     failures,
     fleet,
+    incident,
     loops,
     merged_open,
     reliability,
@@ -179,6 +180,9 @@ def gather(
         sources.parked = loops.parked(github, now=now, pulls=pulls)
         held = [int(str(row["number"])) for row in sources.parked]
         sources.loops = loops.scan(github, now=now, pulls=pulls, parked=held)
+        if sources.parked or sources.loops:
+            hot = incident.active_issues(github)
+            loops.mark_incidents([*sources.parked, *sources.loops], pulls, hot)
 
     reads: dict[str, Callable[[], None]] = {
         "doctor": checks,
