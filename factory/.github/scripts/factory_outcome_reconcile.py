@@ -5,10 +5,12 @@ Entry's ``persist_outcome`` job downloads the completed factory job log,
 classifies it and writes the terminal outcome to the factory store. When GitHub's
 installation rate limit is exhausted (runs 44031401652 and 44032359658) the
 log download fails, the job exits and no outcome ever reaches the store. This
-bounded reconciler, run by later Entry persisters, finds recent completed
-Entry runs without a recorded ``runtime:<run_id>`` event and classifies them
-with the same trusted code path. It is idempotent, and it stops at the first
-GitHub API failure so a still-limited installation is not hammered.
+bounded reconciler finds recent completed Entry runs without a recorded
+``runtime:<run_id>`` event and classifies them with the same trusted code path.
+It is idempotent, and it stops at the first GitHub API failure so a
+still-limited installation is not hammered. Every Entry persister used to run
+it, so each Entry run listed the last 100 Entry runs again. The dispatcher now
+runs it, and ``--min-interval`` lets one job per interval do the sweep.
 """
 from __future__ import annotations
 
@@ -25,6 +27,7 @@ from typing import Any
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 ENTRY_WORKFLOW = "free-model-factory-entry.yml"
+INTERVAL_CURSOR = "outcome-reconcile"
 FACTORY_JOB = "run / factory"
 # Entry runs from before the store cutover name the persister job "... in Neon".
 PERSIST_JOB = "Persist trusted worker outcome"
@@ -162,12 +165,19 @@ def main() -> int:
     parser.add_argument("--hours", type=int, default=12)
     parser.add_argument("--limit", type=int, default=3)
     parser.add_argument("--exclude-run", action="append", default=[])
+    parser.add_argument("--min-interval", type=int, default=0)
     args = parser.parse_args()
     from factory_state_ledger import enabled, recorded_runtime_runs
 
     if not enabled():
         print("[factory-outcome-reconcile] factory store unavailable; nothing to reconcile", file=sys.stderr)
         return 0
+    if args.min_interval > 0:
+        from factory_turso_cursors import claim_interval
+
+        if not claim_interval(args.repo, INTERVAL_CURSOR, args.min_interval):
+            print(f"[factory-outcome-reconcile] {json.dumps({'skipped': 'interval'})}")
+            return 0
     summary = reconcile(
         args.repo, recorded=recorded_runtime_runs, record=_record,
         now=datetime.now(UTC), hours=max(1, args.hours),

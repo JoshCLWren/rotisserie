@@ -939,6 +939,22 @@ jobs:
           gh workflow run local-ollama-review.yml \
             --repo "$GITHUB_REPOSITORY" --ref main -f "pr=${pr}"
 
+      - name: Reconcile Entry outcomes missing from the factory store
+        if: always() && steps.api_budget.outputs.allow == 'true'
+        continue-on-error: true
+        timeout-minutes: 5
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -Eeuo pipefail
+          # Entry persisters that hit the installation rate limit (runs
+          # 44031401652, 44032359658) left no store outcome. One dispatcher job
+          # per 15 minutes backfills a bounded number of them with the same
+          # classifier; every Entry run used to list the last 100 Entry runs.
+          python3 .github/scripts/factory_outcome_reconcile.py \
+            --repo "$GITHUB_REPOSITORY" --hours 12 --limit 5 --min-interval 900
+
       - name: Report GitHub CLI request usage
         if: ${{ always() }}
         continue-on-error: true

@@ -8,6 +8,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
+import pytest
 import yaml
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -124,14 +125,34 @@ def test_limit_bounds_one_pass() -> None:
     assert len(persisted) == 2 and len(summary["missing"]) == 4
 
 
-def test_entry_persister_runs_reconciliation_without_owning_the_verdict() -> None:
-    entry = yaml.safe_load((ROOT.parent / ".github/workflows/free-model-factory-entry.yml").read_text())
-    steps = entry["jobs"]["persist_outcome"]["steps"]
-    step = next(s for s in steps if s.get("name") == "Reconcile earlier Entry outcomes missing from the factory store")
-    assert step["if"] == "${{ always() }}"
-    assert step["continue-on-error"] is True
-    assert '--exclude-run "$GITHUB_RUN_ID"' in step["run"]
+def test_the_dispatcher_reconciles_once_per_interval_instead_of_every_entry() -> None:
+    workflows = ROOT.parent / ".github/workflows"
+    entry = yaml.safe_load((workflows / "free-model-factory-entry.yml").read_text())
+    assert not any("factory_outcome_reconcile.py" in str(s.get("run", ""))
+                   for job in entry["jobs"].values() for s in job.get("steps", []))
     assert entry["jobs"]["persist_outcome"]["permissions"]["actions"] == "read"
+    dispatch = yaml.safe_load((workflows / "fixed-model-factory-dispatch.yml").read_text())
+    steps = dispatch["jobs"]["dispatch"]["steps"]
+    step = next(s for s in steps if s.get("name") == "Reconcile Entry outcomes missing from the factory store")
+    assert step["continue-on-error"] is True
+    assert "--min-interval 900" in step["run"]
+    names = [s.get("name") for s in steps]
+    assert names.index(step["name"]) < names.index("Remove the factory store token")
+
+
+def test_the_interval_gate_skips_github_reads(monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]) -> None:
+    ledger = importlib.import_module("factory_state_ledger")
+    cursors = importlib.import_module("factory_turso_cursors")
+    monkeypatch.setattr(ledger, "enabled", lambda: True)
+    monkeypatch.setattr(cursors, "claim_interval", lambda repo, name, seconds: False)
+
+    def no_github(*args: object, **kwargs: object) -> str:
+        raise AssertionError("an interval skip must not read GitHub")
+
+    monkeypatch.setattr(RECONCILE, "gh_api", no_github)
+    monkeypatch.setattr(sys, "argv", ["reconcile", "--repo", "o/r", "--min-interval", "900"])
+    assert RECONCILE.main() == 0
+    assert '"skipped": "interval"' in capsys.readouterr().out
 
 
 def test_worker_run_titles_parse_with_and_without_a_model() -> None:
