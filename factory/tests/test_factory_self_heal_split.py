@@ -6,6 +6,7 @@ import json
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
+from urllib.parse import unquote
 
 import factory_model_track_record as track
 import factory_self_heal as heal
@@ -62,7 +63,8 @@ class Hub:
 
     def api(self, path: str, *args: str, payload: object | None = None) -> Any:
         if path.startswith("issues?labels="):
-            return self.held
+            wanted = set(unquote(path.split("=", 1)[1].split("&", 1)[0]).split(","))
+            return [row for row in self.held if wanted <= {x["name"] for x in row["labels"]}]
         if path.startswith("issues?creator="):
             return [{"number": row["number"], "body": row["body"]} for row in self.created]
         if path == "issues" and payload is not None:
@@ -224,3 +226,26 @@ def test_closing_a_child_as_not_planned_undoes_the_split_and_keeps_the_parent(en
     assert sweep(repo, hub)[0]["status"].startswith("split undone")
     assert not any(path == f"issues/{PARENT}" for path, _ in hub.writes)
     assert sweep(repo, Hub(repo, states=states)) == []
+
+
+def test_an_umbrella_issue_with_a_merged_slice_is_split(env) -> None:
+    _, repo = env
+    names = ["factory", "factory:unowned", "factory:ready", "umbrella"]
+    ready = {"number": PARENT, "state": "open", "body": "Migrate every consumer.",
+             "labels": [{"name": name} for name in names]}
+    hub = Hub(repo, held=[ready])
+    assert sweep(repo, hub)[0]["status"] == "split run dispatched"
+
+
+@pytest.mark.parametrize(
+    ("extra", "body"),
+    [("epic", "Big."), ("umbrella", "- [ ] #12 an existing child"), ("factory:7", "Big.")],
+    ids=["epic", "already lists children", "owned by a worker"],
+)
+def test_epics_listed_children_and_owned_issues_are_not_split(env, extra, body) -> None:
+    _, repo = env
+    names = ["factory", "factory:needs-split", "umbrella", extra]
+    issue = {"number": PARENT, "state": "open", "body": body,
+             "labels": [{"name": name} for name in names]}
+    hub = Hub(repo, held=[issue])
+    assert sweep(repo, hub) == [] and hub.writes == []

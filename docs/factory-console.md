@@ -933,7 +933,11 @@ The dispatcher's pool pass sends no implement run to an issue in two cases
   `tracking` label. The factory comments once and adds `factory:needs-split`,
   then splits the issue on its own (`factory_self_heal_split.py`):
   - The dispatcher's self-heal sweep sends one `split` run (target `split:N`)
-    to the model with the best track record for splits. The run edits nothing:
+    to the model with the best track record for splits. A `factory` issue
+    labeled `umbrella` is split even after a merged slice made it
+    `factory:ready`. An epic or PRD, an acceptance parent, an issue that
+    already lists its children (`- [ ] #N`) and an owned issue are not split.
+    The run edits nothing:
     the model answers with a plan of 2 to 8 child issues, each with a title, a
     body, 1 to 3 acceptance criteria, the files it touches and its blockers
     among its siblings. A run whose plan is missing or invalid fails, and the
