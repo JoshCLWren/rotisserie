@@ -246,6 +246,15 @@ such change must be called out here and in its release notes.
 
 ### Fixed
 
+- PRs the loop breaker parks or holds as looping no longer count toward the
+  review backlog limit or the open-PR limit. No worker can drain them, so on
+  2026-11-25 six parked PRs filled a limit of six and stopped all issue intake.
+  The dispatcher, the Rotisserie intake decision, `baste why`, `baste unstick`
+  and `baste turning` share one count. A separate cap still applies: once
+  `FACTORY_PARKED_PR_LIMIT` parked PRs are open (default twice
+  `FACTORY_REVIEW_BACKLOG_LIMIT`, set in the job environment), new issues wait,
+  and `why`, `unstick` and `turning` say "N parked PRs waiting on the owner".
+
 - Issue acceptance no longer rejects good reviews over parsing. Context
   sections such as "Existing implementation / related work" and "Original
   reporter evidence" are no longer criteria. A citation that joins files with a

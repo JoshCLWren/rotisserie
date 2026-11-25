@@ -370,6 +370,8 @@ class Explanation:
     intake: str  # legacy-unrestricted | authorized | not-authorized
     open_blocker: bool | None
     incident_pause: bool = False
+    parked: int = 0
+    parked_limit: int = 0
 
 
 def explain_issue(
@@ -413,6 +415,8 @@ def explain_issue(
         intake=str(gates["rotisserie_intake"]),
         open_blocker=None if blocker is None else bool(blocker),
         incident_pause=bool(gates.get("incident_intake_pause")),
+        parked=int(gates.get("parked_prs", 0)),
+        parked_limit=int(gates.get("parked_pr_limit", 0)),
     )
 
 

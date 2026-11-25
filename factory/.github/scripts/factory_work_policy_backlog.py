@@ -1,10 +1,12 @@
 """Worker WIP and completion backlog counting for the factory work policy."""
 from __future__ import annotations
+import os
 from collections.abc import Iterable
 from typing import Any
 
 from factory_work_policy_base import (
     BLOCKED_LABELS,
+    FACTORY_REVIEW_BACKLOG_LIMIT,
     is_factory_managed_pr,
     labels_of,
     owner_of,
@@ -12,6 +14,55 @@ from factory_work_policy_base import (
     stage_of,
 )
 from factory_work_policy_priority import OVERRIDE_LABEL
+
+LOOP_HOLD_KEY = 'factoryLoopHold'
+LOOP_HOLDS = frozenset({'held: loop-parked', 'held: looping'})
+PARKED_LIMIT_ENV = 'FACTORY_PARKED_PR_LIMIT'
+
+
+def loop_held(pr: dict[str, Any]) -> bool:
+    """Whether the loop breaker holds this PR; it waits on a person, not the fleet."""
+    return pr.get(LOOP_HOLD_KEY) in LOOP_HOLDS
+
+
+def parked_pr_limit(review_backlog_limit: int = FACTORY_REVIEW_BACKLOG_LIMIT) -> int:
+    """How many loop-held PRs may sit open before new issue intake stops.
+
+    ``FACTORY_PARKED_PR_LIMIT`` in the job environment overrides the default of
+    twice the review backlog limit.
+    """
+    raw = os.environ.get(PARKED_LIMIT_ENV, '').strip()
+    if raw.isdecimal() and int(raw) > 0:
+        return int(raw)
+    return 2 * max(1, int(review_backlog_limit))
+
+
+def factory_parked_count(prs: Iterable[dict[str, Any]]) -> int:
+    """Count open factory PRs the loop breaker holds (parked or looping)."""
+    return sum(1 for pr in prs if loop_held(pr) and _open_factory_pr(pr))
+
+
+def intake_backlog_count(
+    prs: Iterable[dict[str, Any]],
+    review_backlog_limit: int = FACTORY_REVIEW_BACKLOG_LIMIT,
+) -> int:
+    """The completion backlog that gates new issue intake.
+
+    Loop-held PRs do not count: no worker can drain them, so counting them
+    deadlocked intake on 2026-11-25. Once the parked cap is reached,
+    the backlog reads as saturated so the factory stops opening new PRs.
+    """
+    rows = list(prs)
+    count = factory_review_backlog_count(rows)
+    if factory_parked_count(rows) >= parked_pr_limit(review_backlog_limit):
+        return max(count, int(review_backlog_limit))
+    return count
+
+
+def _open_factory_pr(pr: dict[str, Any]) -> bool:
+    if str(pr.get('state') or 'OPEN').upper() != 'OPEN' or pr.get('isDraft'):
+        return False
+    return is_factory_managed_pr(pr) and 'factory:ready' not in labels_of(pr)
 
 
 def issue_bypasses_wip_limit(
@@ -54,7 +105,7 @@ def factory_review_backlog_count(prs: Iterable[dict[str, Any]]) -> int:
 
 def in_completion_backlog(pr: dict[str, Any]) -> bool:
     """Whether a PR counts toward ``FACTORY_REVIEW_BACKLOG_LIMIT``."""
-    if str(pr.get('state') or 'OPEN').upper() != 'OPEN' or pr.get('isDraft'):
+    if str(pr.get('state') or 'OPEN').upper() != 'OPEN' or pr.get('isDraft') or loop_held(pr):
         return False
     labels = labels_of(pr)
     if not is_factory_managed_pr(pr):
@@ -135,7 +186,7 @@ def factory_pr_wip_count(prs: Iterable[dict[str, Any]]) -> int:
         labels = labels_of(pr)
         if not is_factory_managed_pr(pr):
             continue
-        if 'factory:ready' in labels or labels & BLOCKED_LABELS:
+        if 'factory:ready' in labels or labels & BLOCKED_LABELS or loop_held(pr):
             continue
         owner = owner_of(labels)
         if owner not in (None, 'factory:unowned'):

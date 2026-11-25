@@ -11,6 +11,9 @@ from collections.abc import Iterable, Mapping
 from typing import Any
 
 import factory_assign_trace as trace
+from factory_work_policy_backlog import LOOP_HOLD_KEY, LOOP_HOLDS
+from factory_work_policy_base import is_factory_managed_pr, labels_of, stage_of
+from factory_work_policy_priority import OVERRIDE_LABEL
 
 
 def apply(repo: str, candidates: list[Any], prs: Iterable[Mapping[str, Any]]) -> list[Any]:
@@ -37,3 +40,35 @@ def apply(repo: str, candidates: list[Any], prs: Iterable[Mapping[str, Any]]) ->
         numbers = sorted(number for number, why in found.items() if why == reason)
         print(f"[factory-controller] {reason}: {numbers}", file=sys.stderr)
     return [c for c in candidates if c.number not in found or trace.skip(c.number, found[c.number])]
+
+
+def stamp(repo: str, prs: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Mark each PR the loop breaker holds, so backlog limits skip it; a failed read marks none."""
+    heads = {
+        int(pr["number"]): (
+            str(pr.get("headRefOid") or ""),
+            stage_of(labels_of(pr)) or "factory:review",
+        )
+        for pr in prs
+        if is_factory_managed_pr(pr)
+    }
+    if not heads:
+        return prs
+    try:
+        from factory_state_operations import holds
+
+        exempt = frozenset(
+            int(pr["number"]) for pr in prs if OVERRIDE_LABEL in labels_of(pr)
+        )
+        found = holds(repo, heads, frozenset(), exempt)
+    except Exception as exc:  # noqa: BLE001 - a failed read keeps the old backlog count
+        print(
+            f"[factory-controller] loop hold read deferred ({type(exc).__name__})",
+            file=sys.stderr,
+        )
+        return prs
+    held = {number: why for number, why in found.items() if why in LOOP_HOLDS}
+    return [
+        {**pr, LOOP_HOLD_KEY: held[int(pr["number"])]} if int(pr["number"]) in held else pr
+        for pr in prs
+    ]

@@ -129,14 +129,16 @@ def scan(
     return rows
 
 
-def parked(github: GitHub, *, now: datetime, pulls: Sequence[Obj]) -> list[dict[str, object]]:
+def parked(
+    github: GitHub, *, now: datetime, pulls: Sequence[Obj], limit: int = PARKED_LIMIT
+) -> list[dict[str, object]]:
     """Open PRs the factory parked at their current head, in any stage (the hold is still on)."""
     rules = runtime.module("factory_self_heal_rules")
     by_number = {integer(pr, "number") or 0: pr for pr in pulls}
     since = (now - PARK_LOOKBACK).astimezone(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
     query = f'repo:{github.repo} is:pr is:open "Factory self-heal" "Parked" in:comments'
     rows: list[dict[str, object]] = []
-    for hit in search(github, query)[:PARKED_LIMIT]:
+    for hit in search(github, query)[:limit]:
         number = integer(hit, "number") or 0
         pr = by_number.get(number)
         if pr is None:

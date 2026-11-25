@@ -315,6 +315,14 @@ same board, then plans:
   review-backlog and open-PR limits leave room for. Every started issue becomes
   a PR in that backlog, and the scheduler fills free slots on its own.
 
+PRs the loop breaker parked or holds as looping are outside both limits: they
+wait on the owner, not on a worker. They count toward a separate cap,
+`FACTORY_PARKED_PR_LIMIT` in the job environment (default twice
+`FACTORY_REVIEW_BACKLOG_LIMIT`). When that cap is reached, new issues wait, and
+`why`, `unstick` and `turning` report "N parked PRs waiting on the owner". The
+console finds parked PRs by their park comment, and reads them only when the
+review backlog looks full.
+
 PRs a worker already holds are listed, never taken. PRs `main` has moved past
 (half or more of the files they change no longer exist on the default branch,
 for example after a program was retired or code moved to another repository)

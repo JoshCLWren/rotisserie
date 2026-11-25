@@ -25,7 +25,15 @@ from rotisserie.factory_console.github import (
     obj,
     string,
 )
-from rotisserie.factory_console.service import db_usage, loops, providers, queue, reliability, sync
+from rotisserie.factory_console.service import (
+    db_usage,
+    loops,
+    parked,
+    providers,
+    queue,
+    reliability,
+    sync,
+)
 from rotisserie.factory_console.service import turning_reads as reads
 from rotisserie.factory_console.tracker import Clock, Tracker
 
@@ -43,6 +51,7 @@ NEXT = {
     "dispatcher-none": "baste unstick --dry-run",
     "dispatch-broken": "baste doctor",
     "review-limit": "baste unstick --dry-run",
+    "parked-limit": "baste recap",
     "wip-limit": "baste unstick --dry-run",
     "no-capacity": "baste backoffs --via github",
     "unknown": "baste why",
@@ -231,7 +240,14 @@ def backlog_state(github: GitHub, now: datetime) -> dict[str, Any]:
     }
     sample = explained[0] if explained else None
     if sample is not None:
-        if sample.review_backlog >= sample.review_backlog_limit:
+        full = sample.review_backlog >= sample.review_backlog_limit
+        if full and parked.full(sample):
+            found["limit"] = "parked-limit"
+            found["limit_text"] = (
+                f"The review backlog is full of parked PRs: {sample.parked} parked PRs are "
+                f"waiting on the owner (limit {sample.parked_limit}), so new issue work waits."
+            )
+        elif full:
             found["limit"] = "review-limit"
             found["limit_text"] = (
                 f"The review backlog is at its limit ({sample.review_backlog} of "
