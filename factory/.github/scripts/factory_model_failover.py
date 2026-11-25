@@ -103,11 +103,13 @@ def select_next(
     if source in exclusions.get("@credit_pool", ()):
         from factory_billing_pool import credit_pool_members
         excluded |= credit_pool_members(catalog_json)
+    from factory_model_track_record import has_history, proven_bad
+    from factory_model_track_record import proven as track_proven
+
+    excluded |= proven_bad(source, sorted(ids - excluded))
     available = ids - excluded
     if not available:
         raise ExhaustedCandidatesError(f"no eligible unattempted {source} models")
-    from factory_model_track_record import has_history
-    from factory_model_track_record import proven as track_proven
 
     if has_history(source, sorted(available)):
         # The selector weights by track record and keeps exploring; narrowing would stop that.
