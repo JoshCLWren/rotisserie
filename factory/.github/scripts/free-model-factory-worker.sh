@@ -871,7 +871,7 @@ if (( agent_status != 0 )); then
   exit 0
 fi
 
-if [[ -n "$FACTORY_PUSH_BLOCKED_REASON" ]]; then
+if [[ -n "$FACTORY_PUSH_BLOCKED_REASON" && "$ASSIGNED_PR_STAGE" != 'factory:review' ]]; then
   release_pr_and_issue "$NUMBER" "$BRANCH" factory:changes-requested failed-validation
   record_terminal_outcome work_failure "PR #${NUMBER} failed trusted checks; work retained"
   exit 0
