@@ -49,6 +49,7 @@ from factory_turso_exports import (  # noqa: F401
     reset_model_health,
     reset_quota_backoffs,
 )
+from factory_turso_model_reset import reset_one_model  # noqa: F401
 from factory_turso_operations import (  # noqa: F401
     cooling_prs,
     holds,
@@ -110,6 +111,13 @@ def _store_command(args: argparse.Namespace) -> None:
         raise SystemExit(f"the factory store is required for {args.command}")
     if args.command == "export-backoffs":
         print(json.dumps(export_backoffs(args.repo), sort_keys=True, default=str))
+    elif args.command == "reset-model-health" and (args.model or args.source):
+        if not args.model:
+            raise SystemExit("--source needs --model")
+        if args.quota_only or args.include_retired:
+            raise SystemExit("--model clears one model; it does not combine with other resets")
+        found = reset_one_model(args.repo, args.model, args.source or "")
+        print(json.dumps(found, sort_keys=True, default=str))
     elif args.command == "reset-model-health" and args.quota_only:
         print(json.dumps(reset_quota_backoffs(args.repo), sort_keys=True))
     elif args.command == "reset-model-health":
@@ -139,6 +147,8 @@ def main() -> int:
         action="store_true",
         help="clear only quota/throttle backoffs; cap real-failure streaks",
     )
+    parser.add_argument("--model", default="", help="reset-model-health: only this model")
+    parser.add_argument("--source", default="", help="with --model: only this source")
     args = parser.parse_args()
     args.repo = args.repo or repository()
     if not REPO_RE.fullmatch(args.repo):

@@ -8,6 +8,7 @@ from datetime import datetime
 from rotisserie.factory_console import runtime
 from rotisserie.factory_console.commands import turning as turning_view
 from rotisserie.factory_console.commands._shared import EXIT_OK, TARGET, Outcome
+from rotisserie.factory_console.commands.app_budget import show_app_budget
 from rotisserie.factory_console.commands.status import parse_since
 from rotisserie.factory_console.context import Context, UsageError
 from rotisserie.factory_console.github import GitHubError, GitHubRateLimitError
@@ -323,6 +324,7 @@ def _show_rate_limits(
 
 def cmd_limits(context: Context, arguments: argparse.Namespace) -> Outcome:
     data = _show_rate_limits(context)
+    data["factory_app"] = show_app_budget(context, data.get("rate_limits"))
     return Outcome(Result.COMPLETED, EXIT_OK, data)
 
 

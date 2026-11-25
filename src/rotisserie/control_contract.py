@@ -60,6 +60,7 @@ READ_ONLY = frozenset(
         "store",
         "schema",
         "assigned",
+        "outcome",
     )
 )
 # Served on GitHub Pages from the published snapshot without sign-in.
@@ -92,6 +93,7 @@ WRITE_OPERATIONS = frozenset(
         "store_migrate",
         "schema_apply",
         "assign",
+        "health_reset",
     )
 )
 MAX_BODY = 4096
@@ -112,6 +114,7 @@ _READ_PARAMETERS = {
     "failures": {"since"},
     "stats": {"window"},
     "store": {"mode", "run"},
+    "outcome": {"run"},
 }
 
 
@@ -192,6 +195,8 @@ def read_command(name: str, query: Mapping[str, str], *, trusted: bool = False) 
         args.extend(("--window", window))
     elif name == "unstick":
         args.append("--dry-run")
+    elif name == "outcome":
+        args.append(_match(_string(query, "run", required=True), RUN_ID, "run"))
     elif name in ("backoffs", "schema") and not trusted:
         args.extend(("--via", "github"))
     return args
@@ -349,6 +354,13 @@ def write_command(data: Mapping[str, Any]) -> list[str]:
         return ["store", name.removeprefix("store_"), "--no-wait"]
     if name == "assign":
         return _assign(data)
+    if name == "health_reset":
+        model = _match(_string(data, "model", required=True), MODEL, "model")
+        args = ["health", "reset", model, "--yes", "--via", "github"]
+        source = _string(data, "source")
+        if source:
+            args.extend(("--source", _match(source, PROVIDER, "source")))
+        return args
     if name == "store_migrate":
         dry_run = data.get("dry_run", True)
         if not isinstance(dry_run, bool):

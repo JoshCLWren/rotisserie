@@ -12,6 +12,16 @@ on:
         type: boolean
         default: false
         required: false
+      model:
+        description: Clear only this exact model ID (its health and backoff rows)
+        type: string
+        default: ''
+        required: false
+      source:
+        description: With model, clear it only for this provider source
+        type: string
+        default: ''
+        required: false
 permissions:
   contents: read
 concurrency:
@@ -23,6 +33,8 @@ jobs:
     with:
       include_retired: ${{ inputs.include_retired == true }}
       quota_only: ${{ inputs.quota_only == true }}
+      model: ${{ inputs.model }}
+      source: ${{ inputs.source }}
     secrets:
       FACTORY_TURSO_TOKEN: ${{ secrets.FACTORY_TURSO_TOKEN }}
       FACTORY_TURSO_URL: ${{ secrets.FACTORY_TURSO_URL }}

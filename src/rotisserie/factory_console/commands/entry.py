@@ -35,9 +35,11 @@ from rotisserie.factory_console.commands.health import (
     cmd_outcomes,
     cmd_unstick,
 )
+from rotisserie.factory_console.commands.health_reset import cmd_health
 from rotisserie.factory_console.commands.history import cmd_history, cmd_use
 from rotisserie.factory_console.commands.incident import cmd_incident
 from rotisserie.factory_console.commands.models import cmd_close, cmd_groom
+from rotisserie.factory_console.commands.outcome import cmd_outcome
 from rotisserie.factory_console.commands.parser import add_parser
 from rotisserie.factory_console.commands.pause import cmd_pause, cmd_resume
 from rotisserie.factory_console.commands.prs import (
@@ -187,11 +189,13 @@ def _help_text() -> str:
             "  baste unstick       start the workers that clear the bottleneck",
             "  baste heal          what the factory cleared by itself",
             "  baste outcomes      did the requested work actually happen",
+            "  baste outcome RUN   what one worker run did (--follow waits)",
             "  baste checks pr:N   why its checks fail",
             "  baste conflicts pr:N  what main changed under it",
             "  baste sync pr:N     merge main in (never while a worker holds it)",
             "  baste leases        who holds which item",
             "  baste backoffs      what keeps each provider waiting, and until when",
+            "  baste health reset MODEL --via github  clear one model's health and backoffs",
             "  baste db-usage      Turso rows, storage and quota this month",
             "  baste store selftest  test the factory store; store export backs it up",
             "  baste schema        store tables, indexes and the last schema upgrade",
@@ -200,7 +204,7 @@ def _help_text() -> str:
             "  baste assign pr:N --agent NAME  hand it to an outside agent; assigned lists them",
             "  baste pause --reason TEXT  drain: turn off dispatch and claims; resume undoes it",
             "  baste follow pr:N   each lifecycle change until done; runs pr:N",
-            "  baste limits        GitHub API quota and reset time",
+            "  baste limits        GitHub API quota, reset time and the factory App budget",
             "  baste estimate issue:N  attempts, time and unattended chance",
             "  baste close pr:N --reason TEXT   close work that should not be done",
             "  baste cancel issue:N",
@@ -287,6 +291,8 @@ HANDLERS = {
     "assigned": cmd_assigned,
     "pause": cmd_pause,
     "resume": cmd_resume,
+    "health": cmd_health,
+    "outcome": cmd_outcome,
 }
 
 

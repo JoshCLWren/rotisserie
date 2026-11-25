@@ -8,6 +8,12 @@ on:
       quota_only:
         type: boolean
         required: false
+      model:
+        type: string
+        required: false
+      source:
+        type: string
+        required: false
     secrets:
       FACTORY_TURSO_URL:
         required: false
@@ -62,6 +68,8 @@ jobs:
         env:
           INCLUDE_RETIRED: ${{ inputs.include_retired }}
           QUOTA_ONLY: ${{ inputs.quota_only }}
+          MODEL: ${{ inputs.model }}
+          SOURCE: ${{ inputs.source }}
         run: |
           set -Eeuo pipefail
           if [[ -z "${FACTORY_TURSO_TOKEN_FILE:-}" ]]; then
@@ -69,10 +77,28 @@ jobs:
             exit 1
           fi
           args=(reset-model-health --repo "$GITHUB_REPOSITORY")
-          if [[ "$INCLUDE_RETIRED" == "true" ]]; then
+          # One model is checked first so an empty model never reaches the full reset.
+          if [[ -n "$MODEL" || -n "$SOURCE" ]]; then
+            if [[ ! "$MODEL" =~ ^[A-Za-z0-9_./:+-]{1,180}$ ]]; then
+              echo "::error::model must be one exact model ID"
+              exit 1
+            fi
+            if [[ -n "$SOURCE" && ! "$SOURCE" =~ ^[A-Za-z0-9][A-Za-z0-9_.-]{0,79}$ ]]; then
+              echo "::error::source must be one provider source name"
+              exit 1
+            fi
+            if [[ "$INCLUDE_RETIRED" == "true" || "$QUOTA_ONLY" == "true" ]]; then
+              echo "::error::model clears one model; it does not combine with other resets"
+              exit 1
+            fi
+            args+=(--model "$MODEL")
+            if [[ -n "$SOURCE" ]]; then
+              args+=(--source "$SOURCE")
+            fi
+          elif [[ "$INCLUDE_RETIRED" == "true" ]]; then
             args+=(--include-retired)
           fi
-          if [[ "$QUOTA_ONLY" == "true" ]]; then
+          if [[ -z "$MODEL" && "$QUOTA_ONLY" == "true" ]]; then
             args+=(--quota-only)
           fi
           python3 .github/scripts/factory_state_operations.py "${args[@]}" \
