@@ -486,6 +486,27 @@ jobs:
               finish_merge "$pr" "$main_before"
               exit 0
             fi
+            # gh refuses on its own merge-state check without asking GitHub;
+            # the REST merge either merges this exact head or returns why not.
+            refusal="$RUNNER_TEMP/factory-merge-refusal-${pr}.json"
+            if gh api --method PUT "repos/${GITHUB_REPOSITORY}/pulls/${pr}/merge" \
+              -f sha="$expected_head" -f merge_method=merge > "$refusal" 2>&1; then
+              echo "Merged ready PR #${pr} through the REST merge"
+              finish_merge "$pr" "$main_before"
+              exit 0
+            fi
+            reason="$(jq -r '.message // empty' "$refusal" 2>/dev/null || true)"
+            reason="${reason:-$(tr '\n' ' ' < "$refusal" | cut -c1-300)}"
+            echo "GitHub refused the merge of #${pr} at ${expected_head}: ${reason}" >&2
+            prefix="$(python3 .github/scripts/factory_adopter.py marker-prefix 2>/dev/null || echo factory)"
+            marker="<!-- ${prefix}-merge-refused-v1:pr-${pr}:head-${expected_head} -->"
+            if ! gh api "repos/${GITHUB_REPOSITORY}/issues/${pr}/comments?per_page=100" \
+              --jq '.[].body' 2>/dev/null | grep -qF "$marker"; then
+              body="$(printf '%s\n\n**Factory merge drain:** this PR is approved and ready, but GitHub refused the merge of `%s`: %s. The drain retries on each pass.' \
+                "$marker" "${expected_head:0:12}" "$reason")"
+              gh api --method POST "repos/${GITHUB_REPOSITORY}/issues/${pr}/comments" \
+                -f body="$body" >/dev/null || true
+            fi
             python3 "$main_health" release --repo "$GITHUB_REPOSITORY" --sha "$main_before" >/dev/null || true
             echo "Unable to merge ready PR #${pr}; it will retry on the next drain" >&2
           done
