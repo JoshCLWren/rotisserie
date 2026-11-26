@@ -4,6 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <meta name="theme-color" content="#131a23">
+<link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 64 64%22%3E%3Crect width=%2264%22 height=%2264%22 rx=%2214%22 fill=%22%232a1710%22/%3E%3Cpath d=%22M6 32h52%22 stroke=%22%23c9d3dc%22 stroke-width=%223%22 stroke-linecap=%22round%22/%3E%3Cellipse cx=%2232%22 cy=%2232%22 rx=%2219%22 ry=%2213%22 fill=%22%23e59a45%22/%3E%3Cellipse cx=%2232%22 cy=%2229%22 rx=%2214%22 ry=%227%22 fill=%22%23f5c277%22/%3E%3Ccircle cx=%2215%22 cy=%2225%22 r=%225%22 fill=%22%23d98a38%22/%3E%3Ccircle cx=%2249%22 cy=%2225%22 r=%225%22 fill=%22%23d98a38%22/%3E%3Cpath d=%22M14 52q4-9 8 0q4-12 10 0q4-9 8 0q4-12 8 0%22 fill=%22none%22 stroke=%22%23ff6a2b%22 stroke-width=%224%22 stroke-linecap=%22round%22/%3E%3C/svg%3E">
 <title>Rotisserie · Control room</title>
 <style>
 :root{color-scheme:dark;--bg:#101720;--panel:#1a2330;--panel2:#202c3a;--line:#32404f;--text:#f5f6f4;--muted:#a7b4c0;--ember:#ff9d62;--ember2:#ffbe91;--mint:#74dbc4;--red:#ff8493;--shadow:0 18px 46px #00000024;font-family:Inter,ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}
@@ -60,12 +61,29 @@
 @media(max-width:740px){.main{padding:16px 12px 32px}.model-list{grid-template-columns:1fr}.kpi{padding:10px}.kpi .value{font-size:23px}.advanced summary .hint{display:none}}
 .recap-h{font-size:13px;margin:18px 0 6px}.recap-verdict{font-size:17px}
 .step-error{color:#ffb6c1}.step-live{display:inline-block;width:9px;height:9px;margin-right:7px;border:2px solid currentColor;border-right-color:transparent;border-radius:50%;animation:spin .7s linear infinite;vertical-align:-1px}
+
+/* Rotisserie theme: spinning chickens, flickering embers, animated brand mark. */
+.mark{background:linear-gradient(145deg,#ffb877,#e8722f);position:relative;overflow:hidden}
+.mark svg{width:27px;height:27px}.mark .spin{transform-origin:50% 50%;animation:spin 3.2s linear infinite}
+.hero{position:relative;overflow:hidden;border:1px solid #5a3a28;border-radius:18px;margin:0 0 16px;background:radial-gradient(ellipse 70% 120% at 50% 130%,#7a2f0f 0,#3b1a10 45%,#1b1210 80%);box-shadow:0 18px 50px #ff7a2b1f}
+.hero-copy{position:relative;z-index:2;padding:16px 22px 0}.hero-copy b{display:block;font-size:clamp(20px,2.6vw,30px);letter-spacing:-1px;color:#ffe3c8;text-shadow:0 2px 14px #000a}.hero-copy span{color:#e9b998;font-size:13px}
+.hero svg{display:block;width:100%;height:auto}
+.bird .stripes{animation:roll 1.6s linear infinite}.bird{animation:bob 2.4s ease-in-out infinite}.bird.b2{animation-delay:-.8s}.bird.b2 .stripes{animation-duration:2.1s}.bird.b3{animation-delay:-1.6s}.bird.b3 .stripes{animation-duration:1.3s}
+@keyframes roll{from{transform:translateX(0)}to{transform:translateX(-24px)}}
+@keyframes bob{50%{transform:translateY(-2.5px)}}
+.flame{transform-box:fill-box;transform-origin:50% 100%;animation:flick .9s ease-in-out infinite alternate}.flame:nth-child(2n){animation-duration:.65s;animation-delay:-.3s}.flame:nth-child(3n){animation-duration:1.1s;animation-delay:-.5s}
+@keyframes flick{from{transform:scaleY(.8) scaleX(1.05);opacity:.85}to{transform:scaleY(1.2) scaleX(.9);opacity:1}}
+.drip{animation:drip 2s ease-in infinite;opacity:0}.drip.d2{animation-delay:-.7s}.drip.d3{animation-delay:-1.3s}
+@keyframes drip{0%{transform:translateY(0);opacity:0}15%{opacity:1}100%{transform:translateY(34px);opacity:0}}
+.spit-rod{stroke-dasharray:6 0}
+@media(max-width:740px){.hero svg{max-height:110px}}
+@media(prefers-reduced-motion:reduce){.bird,.bird .stripes,.flame,.drip,.mark .spin{animation:none}}
 </style>
 </head>
 <body>
 <div class="shell">
 <aside class="sidebar" aria-label="Main navigation">
- <div class="brand"><div class="mark">✳</div><div>rotisserie<small>CONTROL ROOM</small></div></div>
+ <div class="brand"><div class="mark"><svg viewBox="0 0 32 32" aria-hidden="true"><g class="spin"><ellipse cx="16" cy="16" rx="11" ry="11" fill="#fff3df"/><path d="M16 5v22M5 16h22M8 8l16 16M24 8L8 24" stroke="#e8722f" stroke-width="2.2" stroke-linecap="round"/></g><circle cx="16" cy="16" r="4.2" fill="#342015"/></svg></div><div>rotisserie<small>CONTROL ROOM</small></div></div>
  <div class="nav-heading">WORKSPACE</div>
  <nav class="nav-menu" id="nav">
   <button class="nav active" data-view="overview"><span>◫</span> Overview</button>
@@ -80,6 +98,18 @@
 </aside>
 <main class="main">
  <header class="top"><div><div class="eyebrow">Factory operations</div><h1 class="title" id="page-title">Control room</h1><p class="sub" id="page-sub">Real workers, real claims, and one deliberate place to start work.</p></div><div class="top-actions"><div class="repo" id="repository"></div><span id="operation-status" class="hint" role="status" aria-live="polite"></span><button class="button ghost" id="refresh">↻ Refresh</button></div></header>
+<div class="hero" aria-label="Chickens turning on rotisserie spits over a fire"><div class="hero-copy"><b>Always turning. Never burning.</b><span>Your factory keeps the work rotating until it is golden and merged.</span></div>
+<svg viewBox="0 0 1000 200" role="img" aria-hidden="true"><defs>
+<linearGradient id="skin" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#f7c27a"/><stop offset=".55" stop-color="#e08a3a"/><stop offset="1" stop-color="#9a4a1b"/></linearGradient>
+<linearGradient id="fire" x1="0" y1="1" x2="0" y2="0"><stop offset="0" stop-color="#ff3d1f"/><stop offset=".6" stop-color="#ff9d2b"/><stop offset="1" stop-color="#ffe27a"/></linearGradient>
+<clipPath id="body"><ellipse cx="100" cy="86" rx="62" ry="38"/></clipPath>
+<g id="chicken"><g><path d="M52 98L22 128" stroke="#f3e6d0" stroke-width="7" stroke-linecap="round"/><circle cx="19" cy="131" r="6" fill="#f3e6d0"/><ellipse cx="58" cy="100" rx="22" ry="14" transform="rotate(-40 58 100)" fill="#d8803a"/></g><g><path d="M148 98L178 128" stroke="#f3e6d0" stroke-width="7" stroke-linecap="round"/><circle cx="181" cy="131" r="6" fill="#f3e6d0"/><ellipse cx="142" cy="100" rx="22" ry="14" transform="rotate(40 142 100)" fill="#d8803a"/></g>
+<ellipse cx="100" cy="86" rx="62" ry="38" fill="url(#skin)"/><g clip-path="url(#body)"><g class="stripes"><path d="M-40 130L0 40M-16 130L24 40M8 130L48 40M32 130L72 40M56 130L96 40M80 130L120 40M104 130L144 40M128 130L168 40M152 130L192 40M176 130L216 40" stroke="#7a3512" stroke-opacity=".38" stroke-width="7"/></g><ellipse cx="100" cy="72" rx="48" ry="14" fill="#fff" fill-opacity=".22"/></g>
+<ellipse cx="100" cy="86" rx="62" ry="38" fill="none" stroke="#6a2d0e" stroke-opacity=".5" stroke-width="2"/>
+<circle class="drip" cx="86" cy="124" r="3" fill="#ffd27a"/><circle class="drip d2" cx="112" cy="124" r="2.6" fill="#ffd27a"/><circle class="drip d3" cx="100" cy="124" r="2.2" fill="#ffd27a"/></g></defs>
+<g stroke="#2a1710" stroke-width="12" stroke-linecap="round"><path d="M10 40v136M990 40v136"/></g>
+<g class="spit-rod" stroke="#d3dce4" stroke-width="5" stroke-linecap="round"><path d="M14 86H986"/></g><circle cx="14" cy="86" r="9" fill="#8a5a3a"/><circle cx="986" cy="86" r="9" fill="#8a5a3a"/>
+<g transform="translate(60 0)"><g class="bird b1"><use href="#chicken"/></g></g><g transform="translate(290 0)"><g class="bird b2"><use href="#chicken"/></g></g><g transform="translate(520 0)"><g class="bird b3"><use href="#chicken"/></g></g><g transform="translate(750 0)"><g class="bird b2"><use href="#chicken"/></g></g><rect x="0" y="180" width="1000" height="20" fill="#1b0f0b"/><path class="flame" d="M20 192q-7-20 0-38q4 12 10 6q8 14-2 32z" fill="url(#fire)"/><path class="flame" d="M54 192q-7-20 0-38q4 12 10 6q8 14-2 32z" fill="url(#fire)"/><path class="flame" d="M88 192q-7-20 0-38q4 12 10 6q8 14-2 32z" fill="url(#fire)"/><path class="flame" d="M122 192q-7-20 0-38q4 12 10 6q8 14-2 32z" fill="url(#fire)"/><path class="flame" d="M156 192q-7-20 0-38q4 12 10 6q8 14-2 32z" fill="url(#fire)"/><path class="flame" d="M190 192q-7-20 0-38q4 12 10 6q8 14-2 32z" fill="url(#fire)"/><path class="flame" d="M224 192q-7-20 0-38q4 12 10 6q8 14-2 32z" fill="url(#fire)"/><path class="flame" d="M258 192q-7-20 0-38q4 12 10 6q8 14-2 32z" fill="url(#fire)"/><path class="flame" d="M292 192q-7-20 0-38q4 12 10 6q8 14-2 32z" fill="url(#fire)"/><path class="flame" d="M326 192q-7-20 0-38q4 12 10 6q8 14-2 32z" fill="url(#fire)"/><path class="flame" d="M360 192q-7-20 0-38q4 12 10 6q8 14-2 32z" fill="url(#fire)"/><path class="flame" d="M394 192q-7-20 0-38q4 12 10 6q8 14-2 32z" fill="url(#fire)"/><path class="flame" d="M428 192q-7-20 0-38q4 12 10 6q8 14-2 32z" fill="url(#fire)"/><path class="flame" d="M462 192q-7-20 0-38q4 12 10 6q8 14-2 32z" fill="url(#fire)"/><path class="flame" d="M496 192q-7-20 0-38q4 12 10 6q8 14-2 32z" fill="url(#fire)"/><path class="flame" d="M530 192q-7-20 0-38q4 12 10 6q8 14-2 32z" fill="url(#fire)"/><path class="flame" d="M564 192q-7-20 0-38q4 12 10 6q8 14-2 32z" fill="url(#fire)"/><path class="flame" d="M598 192q-7-20 0-38q4 12 10 6q8 14-2 32z" fill="url(#fire)"/><path class="flame" d="M632 192q-7-20 0-38q4 12 10 6q8 14-2 32z" fill="url(#fire)"/><path class="flame" d="M666 192q-7-20 0-38q4 12 10 6q8 14-2 32z" fill="url(#fire)"/><path class="flame" d="M700 192q-7-20 0-38q4 12 10 6q8 14-2 32z" fill="url(#fire)"/><path class="flame" d="M734 192q-7-20 0-38q4 12 10 6q8 14-2 32z" fill="url(#fire)"/><path class="flame" d="M768 192q-7-20 0-38q4 12 10 6q8 14-2 32z" fill="url(#fire)"/><path class="flame" d="M802 192q-7-20 0-38q4 12 10 6q8 14-2 32z" fill="url(#fire)"/><path class="flame" d="M836 192q-7-20 0-38q4 12 10 6q8 14-2 32z" fill="url(#fire)"/><path class="flame" d="M870 192q-7-20 0-38q4 12 10 6q8 14-2 32z" fill="url(#fire)"/><path class="flame" d="M904 192q-7-20 0-38q4 12 10 6q8 14-2 32z" fill="url(#fire)"/><path class="flame" d="M938 192q-7-20 0-38q4 12 10 6q8 14-2 32z" fill="url(#fire)"/><path class="flame" d="M972 192q-7-20 0-38q4 12 10 6q8 14-2 32z" fill="url(#fire)"/></svg></div>
  <div role="status" aria-live="polite" class="message" id="message"></div>
  <section class="view active" id="overview">
   <section class="panel" id="turning-panel" style="margin-bottom:18px"><div class="panel-header"><div><h2>Is it turning?</h2><p class="section-desc">Is the factory moving work right now: 🍗🔄 Turning, 🐢 Slowing or 🔥🔥 Burning, with the evidence.</p></div><button class="button small" id="turning-refresh">Check again</button></div><div class="panel-body" id="overview-turning"><div class="empty">Loading…</div></div></section>
