@@ -39,6 +39,7 @@ STAMP = re.compile(r"^\d{4}-\d\d-\d\dT[0-9:.]+Z ", re.MULTILINE)
 MIN_CHILDREN, MAX_CHILDREN = 2, 8
 MAX_CRITERIA = 3
 MAX_FILES = 30
+MAX_DISPATCHES = 3
 PLACEHOLDER = 9_999_999
 CHILD_MARKER = "factory-split-child-v1"
 DONE_MARKER = "factory-split-done-v1"
@@ -236,6 +237,68 @@ def rejected_note(parent: int, run: str, reason: str) -> str:
         " entry. A larger change becomes several children that each leave the repository"
         " working."
     )
+
+
+REJECTED_REASON = re.compile(r"was rejected: (?P<reason>.+?)\. The next split run starts")
+
+
+def rejected_reason(body: str) -> str | None:
+    """The reason ``rejected_note`` wrote, or None for any other comment."""
+    if f"{MARKER_PREFIX}-{REJECTED_MARKER}:" not in body:
+        return None
+    found = REJECTED_REASON.search(body)
+    return found.group("reason") if found else None
+
+
+def history(comments: Sequence[Mapping[str, Any]], parent: int) -> dict[str, Any]:
+    """The split record on a parent issue, from trusted factory comments only.
+
+    Requests come from the intake guard, runs from the controller's split
+    claims and the worker's release markers, reasons from ``rejected_note`` and
+    the result from the sweep's split-done checklist.
+    """
+    import factory_review_policy as policy
+    from factory_issue_intake_guard import MARKER as REQUEST_MARKER
+
+    request = f"<!-- {REQUEST_MARKER}:issue-{parent} -->"
+    claim = re.compile(
+        rf"{MARKER_PREFIX}-factory-controller-claim-v1:issue-{parent}:(?P<worker>[^:\s>]+):"
+        r"\d{10}(?P<fields>[^>]*)-->"
+    )
+    release = re.compile(
+        rf"{MARKER_PREFIX}-factory-claim-released-v3:issue-{parent}:(?P<worker>[^:\s>]+):"
+        r"\d{10}:split-plan-(?P<end>handoff|rejected)\b"
+    )
+    done = f"<!-- {MARKER_PREFIX}-{DONE_MARKER}:issue-{parent} -->"
+    found: dict[str, Any] = {
+        "requested_at": "", "requests": 0, "runs": [], "done_at": "", "children": 0
+    }
+    for comment in comments:
+        if not policy.controller_comment_bodies([comment]):
+            continue
+        body, at = str(comment.get("body") or ""), str(comment.get("created_at") or "")
+        if request in body:
+            found["requests"] += 1
+            found["requested_at"] = found["requested_at"] or at
+        for match in claim.finditer(body):
+            if ":action=split" in match.group("fields"):
+                found["runs"].append(
+                    {"worker": match.group("worker"), "started_at": at, "end": "", "reason": ""}
+                )
+        for match in release.finditer(body):
+            for run in reversed(found["runs"]):
+                if not run["end"] and match.group("worker").endswith(run["worker"]):
+                    run["end"], run["ended_at"] = match.group("end"), at
+                    break
+        reason = rejected_reason(body)
+        if reason is not None:
+            waiting = [r for r in found["runs"] if r["end"] == "rejected" and not r["reason"]]
+            if waiting:
+                waiting[-1]["reason"] = reason
+        if done in body:
+            found["done_at"] = at
+            found["children"] = len(eligibility.ACCEPTANCE_PARENT_CHILD_RE.findall(body))
+    return found
 
 
 def plan_event(plan: Mapping[str, Any], run: str) -> dict[str, Any]:
