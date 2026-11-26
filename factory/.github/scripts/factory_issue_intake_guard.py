@@ -108,12 +108,15 @@ def request_splits(
     *,
     limit: int | None = None,
     budget: int = 3,
+    read: Callable[[str], object] | None = None,
 ) -> list[int]:
     """Comment and label each oversized issue once; the label records that it was asked.
 
     Only issues the pool would otherwise dispatch qualify: never a manual-only,
     owned, blocked or non-factory issue. ``_ASKED`` keeps one dispatcher job,
-    which runs the pool pass once per worker, from asking twice.
+    which runs the pool pass once per worker, from asking twice. ``read`` gets
+    the issue's live labels, because passes that start from one stale listing
+    must not each ask again.
     """
     from factory_work_policy_candidates import issue_is_static_candidate
 
@@ -131,6 +134,10 @@ def request_splits(
         if reason is None:
             continue
         number = int(issue["number"])
+        live = read(f"issues/{number}") if read is not None else None
+        if isinstance(live, Mapping) and NEEDS_SPLIT in _labels(live):
+            _ASKED.add(number)
+            continue
         color, description = NEEDS_SPLIT_DEFINITION
         try:
             write("labels", {"name": NEEDS_SPLIT, "color": color, "description": description})
@@ -155,8 +162,17 @@ def request_splits_gh(issues: Iterable[Mapping[str, Any]], repo: str) -> list[in
             raise RuntimeError((proc.stderr or proc.stdout).strip() or "gh api failed")
         return proc.stdout
 
+    def read(path: str) -> object:
+        proc = subprocess.run(
+            ["gh", "api", f"repos/{repo}/{path}"],
+            capture_output=True, text=True, timeout=60, check=False,
+        )
+        if proc.returncode:
+            raise RuntimeError((proc.stderr or proc.stdout).strip() or "gh api failed")
+        return json.loads(proc.stdout or "null")
+
     try:
-        return request_splits(issues, write)
+        return request_splits(issues, write, read=read)
     except (RuntimeError, OSError, subprocess.SubprocessError, ValueError) as exc:
         print(f"[factory-controller] split request deferred: {exc}", file=sys.stderr)
         return []

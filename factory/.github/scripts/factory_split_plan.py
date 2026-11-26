@@ -35,12 +35,14 @@ from factory_work_policy_base import eligibility
 SENTINEL = "FACTORY_SPLIT_PLAN"
 LOGGED = re.compile(rf"{SENTINEL}: (?P<plan>\{{.*\}})\s*$")
 ANSI = re.compile(r"\x1b\[[0-9;]*[A-Za-z]")
+STAMP = re.compile(r"^\d{4}-\d\d-\d\dT[0-9:.]+Z ", re.MULTILINE)
 MIN_CHILDREN, MAX_CHILDREN = 2, 8
 MAX_CRITERIA = 3
 MAX_FILES = 30
 PLACEHOLDER = 9_999_999
 CHILD_MARKER = "factory-split-child-v1"
 DONE_MARKER = "factory-split-done-v1"
+REJECTED_MARKER = "factory-split-rejected-v1"
 FILE_RE = re.compile(r"[A-Za-z0-9_.][A-Za-z0-9_./*-]{0,199}")
 
 
@@ -63,11 +65,16 @@ def mission(parent: int, limit: int | None = None) -> str:
         f" `gh issue view {parent} --comments`, and the code it names. The issue is too large"
         " for one factory task. Split it into 2 to 8 child issues that together deliver all of"
         " it. Each child is one reviewable change: a title, a body that explains the change"
-        f" (plain markdown, no HTML comments, well under {cap // 2} characters), 1 to 3"
-        " acceptance criteria that a reviewer can check independently, the repository files it"
-        " touches, and the siblings that must land first (by 1-based position; no cycles). Do"
-        " not add dependency lines, issue links or checklists to the body; the factory adds"
-        f" them. End your final response with a line `{SENTINEL}` and then one JSON object:"
+        f" (plain markdown, no HTML comments, well under {cap // 2} characters), 1 to"
+        f" {MAX_CRITERIA} acceptance criteria that a reviewer can check independently, the 1 to"
+        f" {MAX_FILES} repository files it touches, and the siblings that must land first (by"
+        " 1-based position; no cycles). A glob such as `docs/api/*.json` counts as one file"
+        " entry, so list many files of one kind as a glob. A change that still needs more"
+        " entries is more than one child: split it into steps that each leave the repository"
+        " working. If a factory comment says"
+        " an earlier split plan was rejected, fix that reason. Do not add dependency lines, issue"
+        " links or checklists to the body; the factory adds them. End your final response with"
+        f" a line `{SENTINEL}` and then one JSON object:"
         ' {"children": [{"title": "...", "body": "...", "acceptance": ["..."],'
         ' "files": ["path/to/file"], "blocked_by": [1]}]}'
     )
@@ -211,6 +218,26 @@ def _claimed_for_split(comments: Sequence[Mapping[str, Any]], issue: int, worker
     return latest is not None and ":action=split" in latest
 
 
+def rejection(log: str, parent: int) -> str | None:
+    """Why the model's plan in the job log fails validation, computed here, not read from the log."""
+    try:
+        validate(from_agent_log(STAMP.sub("", ANSI.sub("", log))), parent)
+    except PlanError as exc:
+        return str(exc)
+    return None
+
+
+def rejected_note(parent: int, run: str, reason: str) -> str:
+    return (
+        f"<!-- {MARKER_PREFIX}-{REJECTED_MARKER}:issue-{parent}:run-{run} -->\n\n"
+        f"**Factory split:** the split plan from run {run} was rejected: {reason}. The next"
+        " split run starts at once and must fix this reason. Each child is one reviewable"
+        f" change with 1 to {MAX_FILES} file entries. A glob such as `docs/api/*.json` is one"
+        " entry. A larger change becomes several children that each leave the repository"
+        " working."
+    )
+
+
 def plan_event(plan: Mapping[str, Any], run: str) -> dict[str, Any]:
     parent = int(plan["parent"])
     return {
@@ -232,17 +259,39 @@ def persist(
     comments: Sequence[Mapping[str, Any]],
     record: Any,
     run: str,
+    note: Any = None,
 ) -> str:
-    """Record a split run's plan once per parent; returns what happened."""
+    """Record a split run's plan once per parent, or why its plan failed; returns what happened.
+
+    A rejected plan is a store event the sweep reads to retry at once, and a
+    trusted comment on the parent that the next split run reads.
+    """
     if assignment.get("kind") != "issue" or assignment.get("action") != "split":
         return "not a split run"
     issue = assignment.get("number")
     if type(issue) is not int or str(assignment.get("worker")) != worker:
         return "assignment does not match this worker"
-    if outcome.get("outcome_class") != "success":
-        return f"split run ended {outcome.get('outcome_class') or 'without an outcome'}"
+    ended = outcome.get("outcome_class")
+    if ended not in ("success", "work_failure"):
+        return f"split run ended {ended or 'without an outcome'}"
     if not _claimed_for_split(comments, issue, worker):
         return "no trusted split lease for this worker"
+    if ended == "work_failure":
+        reason = rejection(log, issue)
+        if reason is None:
+            return "split run ended work_failure"
+        entry = {
+            "event_type": "factory_split",
+            "event_id": f"split:rejected:{issue}:{run}",
+            "worker": "0",
+            "kind": "rejected",
+            "issue": issue,
+            "run": run,
+            "reason": reason,
+        }
+        if record([entry]) and note is not None:
+            note(rejected_note(issue, run, reason))
+        return f"split plan rejected: {reason}"
     plan = validate(from_job_log(log), issue)
     inserted = record([plan_event(plan, run)])
     return f"recorded a {len(plan['children'])}-child plan" if inserted else "plan already recorded"
@@ -295,6 +344,9 @@ def main(argv: Sequence[str] | None = None) -> int:
             comments,
             lambda entries: ledger.record_events(args.repo, entries),
             args.run_id,
+            lambda body: heal.GhCli(args.repo).api(
+                f"issues/{issue}/comments", "--method", "POST", payload={"body": body}
+            ),
         )
     except PlanError as exc:
         result = f"split plan rejected: {exc}"

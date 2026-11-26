@@ -110,6 +110,18 @@ def test_a_second_pool_pass_in_one_job_does_not_ask_again() -> None:
     assert writes.count("issues/4335/comments") == 1
 
 
+def test_a_pass_from_a_stale_listing_reads_the_live_label_and_does_not_ask_again() -> None:
+    writes: list[str] = []
+    stale = [issue(5743, "Small body.", "umbrella")]
+    live = issue(5743, "Small body.", "umbrella", guard.NEEDS_SPLIT)
+    asked = guard.request_splits(stale, lambda path, _: writes.append(path), read=lambda _: live)
+    assert asked == [] and writes == []
+    fresh = issue(5743, "Small body.", "umbrella")
+    guard._ASKED.clear()
+    assert guard.request_splits(stale, lambda path, _: writes.append(path), read=lambda _: fresh)
+    assert writes.count("issues/5743/comments") == 1
+
+
 def test_only_issues_the_pool_would_dispatch_are_asked() -> None:
     owned = issue(1, "x" * EPIC_4335_BODY)
     owned["labels"] = [{"name": "factory"}, {"name": "factory:42"}]

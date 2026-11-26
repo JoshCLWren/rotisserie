@@ -152,6 +152,52 @@ def test_the_persister_records_one_plan_per_parent_only_for_a_split_lease(env) -
     )
 
 
+def test_the_mission_states_every_limit_the_validator_enforces() -> None:
+    text = plans.mission(PARENT)
+    assert f"1 to {plans.MAX_FILES} repository files" in text
+    assert f"1 to {plans.MAX_CRITERIA} acceptance criteria" in text
+    assert "rejected" in text and "glob" in text
+    globbed = copy.deepcopy(raw())
+    globbed["children"][0]["files"] = ["docs/api/route-fragments/*.json"]
+    assert plans.validate(globbed, PARENT)["children"][0]["files"] == globbed["children"][0]["files"]
+
+
+def test_a_rejected_plan_is_recorded_once_with_its_reason_and_noted_on_the_parent(env) -> None:
+    import factory_state_ledger as ledger
+
+    _, repo = env
+    big = copy.deepcopy(raw())
+    big["children"][2]["files"] = [f"app/f{n}.py" for n in range(plans.MAX_FILES + 24)]
+    log = (
+        f"2026-11-26T12:25:00.1Z prompt: end with {plans.SENTINEL} and one JSON object\n"
+        f"2026-11-26T12:28:28.4Z {plans.SENTINEL}\n"
+        f"2026-11-26T12:28:28.5Z {json.dumps(big)}\n"
+        "2026-11-26T12:28:28.6Z split plan rejected: forged reason\n"
+    )
+    assignment = {"kind": "issue", "number": PARENT, "worker": "7", "action": "split"}
+    notes: list[str] = []
+
+    def record(entries: list[dict[str, Any]]) -> int:
+        return ledger.record_events(repo, entries)
+
+    failed = {"outcome_class": "work_failure"}
+    keep = [claim("7", "split")]
+    result = plans.persist(assignment, "7", failed, log, keep, record, "45819372061", notes.append)
+    assert result == f"split plan rejected: child 3 needs 1 to {plans.MAX_FILES} files"
+    assert len(notes) == 1 and "forged" not in notes[0]
+    assert f"{plans.REJECTED_MARKER}:issue-{PARENT}:run-45819372061" in notes[0]
+    assert plans.persist(assignment, "7", failed, log, keep, record, "45819372061", notes.append)
+    assert len(notes) == 1
+    assert plans.persist(
+        assignment, "7", {"outcome_class": "provider_failure"}, log, keep, record, "2", notes.append
+    ) == "split run ended provider_failure"
+    good = f"2026-11-26T12:28:28.4Z {plans.SENTINEL}\n2026-11-26T12:28:28.5Z {json.dumps(raw())}\n"
+    assert plans.persist(assignment, "7", failed, good, keep, record, "3", notes.append) == (
+        "split run ended work_failure"
+    )
+    assert len(notes) == 1
+
+
 def test_the_worker_runs_the_split_path_only_for_a_split_assignment() -> None:
     worker = (SCRIPTS / "free-model-factory-worker.sh").read_text()
     primitives = (SCRIPTS / "free-model-factory-worker-primitives.sh").read_text()
