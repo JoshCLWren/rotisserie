@@ -28,7 +28,7 @@ toward ``MAX_DISPATCHES``; one the dispatcher deferred is sent again after
 
 from __future__ import annotations
 
-from collections.abc import Mapping, Sequence
+from collections.abc import Collection, Mapping, Sequence
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
@@ -49,7 +49,8 @@ LISTINGS = ("factory%3Aneeds-split", "factory%2Cumbrella")
 def statement(repo: str) -> tuple[str, dict[str, Any]]:
     return (
         "SELECT created_at, detail ->> 'kind' AS kind, detail ->> 'issue' AS issue,"
-        " detail ->> 'index' AS idx, detail ->> 'child' AS child, detail ->> 'plan' AS plan"
+        " detail ->> 'index' AS idx, detail ->> 'child' AS child, detail ->> 'plan' AS plan,"
+        " detail ->> 'source' AS source"
         " FROM factory_state_events WHERE repo = :repo AND event_type = :event",
         {"repo": repo, "event": EVENT},
     )
@@ -73,6 +74,7 @@ def state(repo: str) -> dict[int, dict[str, Any]]:
                 "at": None,
                 "children": {},
                 "dispatches": [],
+                "sources": [],
                 "rejected": [],
                 "done": False,
                 "closed": False,
@@ -88,6 +90,7 @@ def state(repo: str) -> dict[int, dict[str, Any]]:
             entry["children"][int(row["idx"])] = int(row["child"])
         elif kind == "dispatch":
             entry["dispatches"].append(at)
+            entry["sources"].append(str(row.get("source") or ""))
         elif kind == "rejected":
             entry["rejected"].append(at)
         elif kind in ("done", "closed"):
@@ -106,11 +109,13 @@ def event(kind: str, issue: int, ref: str, **detail: object) -> dict[str, Any]:
     }
 
 
-def dispatch_inputs(parent: int) -> tuple[dict[str, str], str] | None:
+def dispatch_inputs(
+    parent: int, skip: Collection[str] = ()
+) -> tuple[dict[str, str], str, str] | None:
     import factory_model_track_record as track
     from factory_self_heal_park_retry import runtime_model
 
-    found = track.best("split")
+    found = (track.best("split", skip) if skip else None) or track.best("split")
     if found is None:
         return None
     source, model, why = found
@@ -125,7 +130,7 @@ def dispatch_inputs(parent: int) -> tuple[dict[str, str], str] | None:
         "force_slot": "true",
         "target": f"split:{parent}",
     }
-    return inputs, f"{name} ({why})"
+    return inputs, f"{name} ({why})", source
 
 
 def splittable(issue: Mapping[str, Any]) -> bool:
@@ -154,24 +159,27 @@ def splittable(issue: Mapping[str, Any]) -> bool:
 
 def due(
     github: heal.GitHub, number: int, tries: Sequence[datetime], rejected: int, now: datetime
-) -> bool:
+) -> tuple[bool, int]:
     """Whether the issue gets another split run now.
 
     Only a dispatch that started a split run (a controller split claim) counts
     toward ``MAX_DISPATCHES``. A dispatch the dispatcher deferred, for example
-    to a cooling provider, is sent again after ``START_SECONDS``. A run whose
-    plan was rejected is retried at once; any other run waits ``RETRY_SECONDS``.
+    to a cooling provider, is sent again after ``START_SECONDS``, to another
+    provider when one has a proven split record. A run whose plan was rejected
+    is retried at once; any other run waits ``RETRY_SECONDS``. Also returns how
+    many dispatches started a run.
     """
     if len(tries) >= MAX_SENDS:
-        return False
+        return False, 0
     runs = plans.history(github.comments(number), number)["runs"]
     if len(runs) >= MAX_DISPATCHES:
-        return False
+        return False, len(runs)
     since = now - tries[-1]
     if len(tries) > len(runs):
-        return since >= timedelta(seconds=START_SECONDS)
+        return since >= timedelta(seconds=START_SECONDS), len(runs)
     rejected_run = bool(runs) and runs[-1].get("end") == "rejected"
-    return rejected_run or rejected >= len(runs) or since >= timedelta(seconds=RETRY_SECONDS)
+    retry = rejected_run or rejected >= len(runs) or since >= timedelta(seconds=RETRY_SECONDS)
+    return retry, len(runs)
 
 
 def dispatch_splits(
@@ -191,15 +199,20 @@ def dispatch_splits(
         if entry.get("plan") or not splittable(issue):
             continue
         tries = entry.get("dispatches", [])
-        if tries and not due(github, number, tries, len(entry.get("rejected", [])), now):
-            continue
-        chosen = dispatch_inputs(number)
+        started = 0
+        if tries:
+            ready, started = due(github, number, tries, len(entry.get("rejected", [])), now)
+            if not ready:
+                continue
+        skip = {source for source in entry.get("sources", [])[started:] if source}
+        chosen = dispatch_inputs(number, skip)
         if chosen is None:
             return [{"issue": number, "status": "no proven model for split"}]
         if budget.dry_run or not budget.take():
             return [{"issue": number, "status": "would-dispatch"}]
-        inputs, model = chosen
-        if not store.record([event("dispatch", number, str(len(tries) + 1), model=model)]):
+        inputs, model, source = chosen
+        entry_id = str(len(tries) + 1)
+        if not store.record([event("dispatch", number, entry_id, model=model, source=source)]):
             return []
         github.api(
             f"actions/workflows/{DISPATCH_WORKFLOW}/dispatches",

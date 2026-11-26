@@ -308,3 +308,42 @@ def test_epics_listed_children_and_owned_issues_are_not_split(env, extra, body) 
              "labels": [{"name": name} for name in names]}
     hub = Hub(repo, held=[issue])
     assert sweep(repo, hub) == [] and hub.writes == []
+
+
+def test_a_resent_split_goes_to_another_proven_provider(
+    env, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Every resend of split:5743 went to the cooling openrouter-free account on Nov 26."""
+    _, repo = env
+    stamp = datetime.now(UTC).isoformat()
+    strong = {"completed": 19, "failed": 1, "delivered": 19}
+    window = {"completed": 9, "failed": 1, "delivered": 9}
+    stats = tmp_path / "two-sources.json"
+    stats.write_text(
+        json.dumps(
+            {
+                "generated_at": stamp,
+                "counts_generated_at": stamp,
+                "models": [
+                    {"source": "openrouter-free", "model": "recursive/flint-v1.0:free",
+                     "windows": {"7d": strong}},
+                    {"source": "opencode-free", "model": "planner", "windows": {"7d": window}},
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setenv(track.FILE_ENV, str(stats))
+    hub = Hub(repo, held=[held(PARENT)])
+    store = heal.LedgerStore(repo)
+    now = datetime.now(UTC)
+
+    def provider(found: Hub) -> str:
+        sent = [p for path, p in found.writes if path.endswith("/dispatches")]
+        return str(sent[-1]["inputs"]["provider"])
+
+    assert sweep(repo, hub)[0]["status"] == "split run dispatched"
+    assert provider(hub) == "openrouter-free"
+    later = now + timedelta(seconds=split.START_SECONDS + 60)
+    split.advance_splits(hub, store, [], heal_budget(), now=later)
+    assert provider(hub) == "opencode-free"
