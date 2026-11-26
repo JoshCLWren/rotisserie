@@ -31,6 +31,17 @@ jobs:
         run: |
           set -Eeuo pipefail
           [[ "$ISSUE_NUMBER" =~ ^[1-9][0-9]*$ ]] || exit 1
+          # One new issue fires opened plus one labeled event per label. A
+          # dispatch for this issue that has not finished yet covers them all;
+          # duplicates queue behind the dispatcher's single assignment lock.
+          since="$(date -u -d '-15 minutes' +%Y-%m-%dT%H:%M:%SZ)"
+          pending="$(gh api "repos/${GITHUB_REPOSITORY}/actions/workflows/fixed-model-factory-dispatch.yml/runs?created=>=${since}&per_page=100" \
+            --jq "[.workflow_runs[] | select(.status != \"completed\" and .display_title == \"Factory dispatch · issue:${ISSUE_NUMBER}\")] | length" \
+            2>/dev/null || echo 0)"
+          if [[ "$pending" =~ ^[1-9][0-9]*$ ]]; then
+            echo "A dispatch for issue #${ISSUE_NUMBER} is already waiting; not sending another"
+            exit 0
+          fi
           gh workflow run fixed-model-factory-dispatch.yml \
             --repo "$GITHUB_REPOSITORY" --ref main \
             -f target="issue:$ISSUE_NUMBER" -f action=advance
