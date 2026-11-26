@@ -251,17 +251,19 @@ def proven(source: str, models: Sequence[str]) -> set[str]:
     }
 
 
-def best(kind: str) -> tuple[str, str, str] | None:
+def best(kind: str, skip: Collection[str] = ()) -> tuple[str, str, str] | None:
     """The proven model with the strongest record for ``kind``: (source, model, why).
 
     Deterministic, unlike ``pick``: the highest Wilson floor among models with
-    ``MIN_TRIALS`` trials, a success, and no proven-bad record. None without one.
+    ``MIN_TRIALS`` trials, a success, and no proven-bad record, outside the
+    ``skip`` sources. None without one.
     """
     ranked = sorted(
         (
             (-wilson_floor(record), -record.successes, source, model, record)
             for (source, model), record in records(kind).items()
             if record.trials >= MIN_TRIALS and record.successes > 0 and not record.proven_bad
+            and source not in skip
         ),
         key=lambda row: row[:4],
     )
