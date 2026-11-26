@@ -125,3 +125,13 @@ def test_both_views_are_bounded_live_reads() -> None:
     assert control_contract.read_command("attempts", {}) == ["attempts", "--since", "24h"]
     assert control_contract.read_command("splits", {}) == ["splits", "--since", "3d"]
     assert {"attempts", "splits"} <= control_contract.LIVE_READS
+
+
+def test_the_sdist_carries_every_runtime_source_the_wheel_force_includes() -> None:
+    import tomllib
+    from pathlib import Path
+
+    root = Path(__file__).resolve().parents[1]
+    config = tomllib.loads((root / "pyproject.toml").read_text())
+    sdist = set(config["tool"]["hatch"]["build"]["targets"]["sdist"]["include"])
+    assert {f"/{source}" for source in runtime.RUNTIME_SOURCES.values()} <= sdist
