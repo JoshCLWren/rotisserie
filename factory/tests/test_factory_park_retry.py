@@ -210,3 +210,19 @@ def test_one_sweep_closes_at_most_three_parks(env) -> None:
     found = retry.resolve_long_parks(hub, heal.LedgerStore(repo), pulls, heal_budget())
     assert [p for p in hub.paths() if p.startswith("pulls/")] == ["pulls/12", "pulls/13", "pulls/14"]
     assert {"pr": 15, "status": "would-close"} in found
+
+
+@pytest.mark.parametrize(
+    "branch, body",
+    [
+        (f"factory/work-checkpoints/issue-{ISSUE}/m/1", "No closing line."),
+        ("feature/slice", f"Part of #{ISSUE}."),
+    ],
+)
+def test_a_checkpoint_or_slice_pr_still_requeues_its_issue(env, branch: str, body: str) -> None:
+    db, repo = env
+    park(db, repo, 0)
+    hub = Hub(repo)
+    row = {**pull(), "body": body, "head": {"sha": HEAD, "ref": branch}}
+    found = retry.resolve_long_parks(hub, heal.LedgerStore(repo), [row], heal_budget())
+    assert found[0]["issue"] == ISSUE and found[0]["issue_status"] == "requeued"

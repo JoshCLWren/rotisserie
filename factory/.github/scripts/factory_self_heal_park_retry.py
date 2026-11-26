@@ -26,6 +26,7 @@ import factory_item_loop as loop
 import factory_self_heal as heal
 import factory_self_heal_rules as rules
 import factory_turso_loops as turso_loops
+from factory_issue_intake_guard import sliced_issue
 from factory_work_policy_base import linked_issue_from_pr
 
 MAX_PER_SWEEP = 3
@@ -196,9 +197,8 @@ def close(
     if not posted:
         body = rules.comment_body(kind=rules.PARK_CLOSED, pr=pr, head=head, ref=ref, text=text)
         github.api(f"issues/{pr}/comments", "--method", "POST", payload={"body": body})
-    issue = linked_issue_from_pr(
-        {"headRefName": _branch(pull), "body": pull.get("body"), "title": pull.get("title")}
-    )
+    shape = {"headRefName": _branch(pull), "body": pull.get("body"), "title": pull.get("title")}
+    issue = linked_issue_from_pr(shape) or sliced_issue(shape)
     handoff = requeue(github, issue, pull, park) if issue else "no linked issue"
     github.api(f"pulls/{pr}", "--method", "PATCH", payload={"state": "closed"})
     store.record(
