@@ -23,7 +23,7 @@ WORDS = {
     "loop-parked": "parked a looping item",
     "loop-released": "ended a park",
     "park-retry": "sent one forced run to a long park",
-    "park-closed": "closed a PR its forced run could not move",
+    "park-closed": "closed a parked PR as a failed attempt",
     "duplicate-closed": "closed a duplicate PR",
 }
 

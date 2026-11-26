@@ -12,9 +12,9 @@ Run by the trusted dispatcher once per tick (``sweep``):
   a commit that is in the current head, and the factory's own line-anchored
   finding thread once a later commit changed the lines it cites;
 * parks a PR that loops (``factory_item_loop``): no more workers go to it at
-  its current head, in any stage, until its owner acts;
-* sends a PR parked for 12 hours one forced run, then ends the park or closes
-  the PR and requeues its issue (``factory_self_heal_park_retry``);
+  its current head, in any stage;
+* closes a parked PR as a failed attempt and requeues its issue, and splits an
+  issue on its second failed attempt (``factory_self_heal_park_retry``);
 * splits an issue held for its size into child issues (``factory_self_heal_split``);
 * allows self-review on a head that waited 6 hours with no eligible reviewer
   (``factory_self_heal_self_review``);
@@ -62,8 +62,9 @@ class Store(Protocol):
 
     def holder(self, number: int) -> str | None: ...
 
-    def loop_evidence(self, seconds: int) -> tuple[dict[str, list[Any]], dict[str, dict[str, Any]]]:
-        ...
+    def loop_evidence(
+        self, seconds: int
+    ) -> tuple[dict[str, list[Any]], dict[str, dict[str, Any]]]: ...
 
 
 class GhCli:
@@ -235,22 +236,32 @@ def sweep(
 
     pulls = open_pulls(github)
     budget = actions.Budget(actions=max_actions, syncs=max_syncs, dry_run=dry_run)
-    from factory_self_heal_loops import park_loops, sync_parked
-    from factory_self_heal_park_retry import resolve_long_parks
-    from factory_self_heal_split import advance_splits
-    from factory_self_heal_self_review import allow_long_waits
     from factory_self_heal_duplicates import resolve_duplicates
     from factory_self_heal_incident import clear_closed, sync_incident_work
+    from factory_self_heal_loops import park_loops, sync_parked
+    from factory_self_heal_park_retry import resolve_long_parks
+    from factory_self_heal_self_review import allow_long_waits
+    from factory_self_heal_split import advance_splits
     from factory_self_heal_state import sync_state
 
     out: dict[str, Any] = {
-        "dry_run": dry_run, "verdicts": [], "threads": [], "conflicts": [], "loops": [],
-        "park_retries": [], "splits": [], "self_reviews": [], "duplicates": [],
-        "parked_labels": [], "state_labels": [], "incident_labels": [], "closed_labels": [],
+        "dry_run": dry_run,
+        "verdicts": [],
+        "threads": [],
+        "conflicts": [],
+        "loops": [],
+        "park_closures": [],
+        "splits": [],
+        "self_reviews": [],
+        "duplicates": [],
+        "parked_labels": [],
+        "state_labels": [],
+        "incident_labels": [],
+        "closed_labels": [],
     }
     for name, step in (
         ("loops", park_loops),
-        ("park_retries", resolve_long_parks),
+        ("park_closures", resolve_long_parks),
         ("splits", advance_splits),
         ("self_reviews", allow_long_waits),
         ("duplicates", resolve_duplicates),
@@ -265,11 +276,23 @@ def sweep(
             out[name] = step(github, store, pulls, budget)
         except (RuntimeError, ValueError, OSError, subprocess.TimeoutExpired) as exc:
             out[name] = [{"error": f"{type(exc).__name__}: {exc}"}]
+        pulls = still_open(pulls, out[name])
     try:
         out["conflicts"] = actions.sync_conflicts(github, store, pulls, budget, sync=sync)
     except (RuntimeError, ValueError, OSError, subprocess.TimeoutExpired) as exc:
         out["conflicts"] = [{"error": f"{type(exc).__name__}: {exc}"}]
     return out
+
+
+CLOSING_KINDS = frozenset({rules.PARK_CLOSED, rules.DUPLICATE_CLOSED})
+
+
+def still_open(
+    pulls: list[dict[str, Any]], rows: Sequence[Mapping[str, Any]]
+) -> list[dict[str, Any]]:
+    """Drop the PRs a step closed, so later steps never act on them."""
+    closed = {row.get("pr") for row in rows if row.get("kind") in CLOSING_KINDS}
+    return [pull for pull in pulls if pull.get("number") not in closed] if closed else pulls
 
 
 def main(argv: Sequence[str] | None = None) -> int:
@@ -298,8 +321,16 @@ def main(argv: Sequence[str] | None = None) -> int:
         max_actions=max(0, args.max_actions),
         dry_run=args.dry_run,
     )
-    for name in ("loops", "park_retries", "splits", "self_reviews", "duplicates", "verdicts",
-                 "threads", "conflicts"):
+    for name in (
+        "loops",
+        "park_closures",
+        "splits",
+        "self_reviews",
+        "duplicates",
+        "verdicts",
+        "threads",
+        "conflicts",
+    ):
         for row in result[name]:
             print(
                 f"self-heal {name}: {row.get('text') or row.get('error') or row}", file=sys.stderr
@@ -310,4 +341,5 @@ def main(argv: Sequence[str] | None = None) -> int:
 
 if __name__ == "__main__":
     import factory_crash
+
     raise SystemExit(factory_crash.run(main))

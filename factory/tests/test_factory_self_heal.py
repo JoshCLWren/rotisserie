@@ -377,3 +377,14 @@ def test_the_review_guard_matches_a_runtime_model_to_the_avoided_note_model(
     )
     avoided = rules.avoided_reviewers([trusted(body)], pr=44)
     assert guard.self_review(runtime_model, avoided) == [note_model]
+
+
+def test_later_steps_never_see_a_pr_an_earlier_step_closed() -> None:
+    pulls = [{"number": 1}, {"number": 2}, {"number": 3}]
+    rows = [
+        {"kind": rules.PARK_CLOSED, "pr": 1},
+        {"kind": rules.DUPLICATE_CLOSED, "pr": 3},
+        {"kind": rules.LOOP_PARKED, "pr": 2},
+    ]
+    assert heal.still_open(pulls, rows) == [{"number": 2}]
+    assert heal.still_open(pulls, [{"pr": 1, "status": "owner"}]) is pulls

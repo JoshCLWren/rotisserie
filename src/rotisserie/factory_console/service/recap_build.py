@@ -213,8 +213,8 @@ def _loop_rows(sources: Sources, pulls: dict[int, Obj], add: Callable[..., None]
         add(
             "loop",
             f"{named(str(row.get('title') or ''), number)} is parked: it was looping.",
-            f"Review it yourself, merge it, or force one more try with "
-            f"`baste run --target pr:{number}`.",
+            "The factory closes it as a failed attempt. To keep it, reopen it or force one"
+            f" more try with `baste run --target pr:{number}`.",
             str(row.get("url") or ""),
         )
 
