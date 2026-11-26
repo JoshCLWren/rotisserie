@@ -13,6 +13,7 @@ import re
 import subprocess
 import sys
 from collections.abc import Callable, Iterable
+from fnmatch import fnmatchcase
 from pathlib import Path
 from typing import TYPE_CHECKING
 from urllib.parse import quote
@@ -69,22 +70,20 @@ def _is_test_path(path: str) -> bool:
     )
 
 
-def substantive_changed_files(changed_files: Iterable[str]) -> list[str]:
-    """Find candidate behavioral source files, excluding docs and tests.
+def substantive_changed_files(changed_files: Iterable[str], named: Iterable[str] = ()) -> list[str]:
+    """Candidate behavioral source files, excluding tests, and docs unless ``named``.
 
-    Args:
-        changed_files: Paths reported by the reviewed PR diff.
-
-    Returns:
-        Source file paths that could contain the requested implementation.
+    ``named`` is a split child's ``## Files`` list: a ``docs/`` file it names is
+    its deliverable (some repositories keep build inputs there).
     """
+    named = tuple(named)
     return [
         path for path in changed_files
         if path.strip()
         and (path.lower().endswith(SOURCE_SUFFIXES)
              or path.lower().rsplit("/", 1)[-1] in BEHAVIORAL_FILENAMES
              or path.lower().endswith((".dockerfile", ".containerfile")))
-        and not _is_docs_path(path)
+        and (not _is_docs_path(path) or any(fnmatchcase(path, item) for item in named))
         and not _is_test_path(path)
     ]
 
@@ -345,7 +344,8 @@ def pr_delivers_implementation(
     """
     if not is_implementation_issue(issue_body):
         return True, "explicit non-implementation issue type; documentation allowed"
-    candidates = substantive_changed_files(changed_files)
+    from factory_split_plan import declared_files
+    candidates = substantive_changed_files(changed_files, declared_files(issue_body))
     if not candidates:
         return False, "implementation issue has no changed production source files"
     if diff_text is None:

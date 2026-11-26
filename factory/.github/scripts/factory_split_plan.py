@@ -55,6 +55,15 @@ def child_marker(parent: int, index: int) -> str:
     return f"<!-- {MARKER_PREFIX}-{CHILD_MARKER}:parent-{parent}:index-{index} -->"
 
 
+def declared_files(body: str | None) -> list[str]:
+    """The ``## Files`` list of a split child that ``compose`` wrote; nothing for other issues."""
+    text = str(body or "")
+    if not is_child(text) or "\n## Files\n" not in text:
+        return []
+    section = text.split("\n## Files\n", 1)[1].split("\n## ", 1)[0].split("\nBlocked by:", 1)[0]
+    return re.findall(r"(?m)^- `([^`]+)`\s*$", section)
+
+
 def is_child(body: str | None) -> bool:
     return f"{MARKER_PREFIX}-{CHILD_MARKER}:" in str(body or "")
 
