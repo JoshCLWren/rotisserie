@@ -86,7 +86,8 @@ def test_scan_reads_the_persisted_outcome_lines_and_finds_the_loop() -> None:
         "6 of 7 worker runs in the last 6h changed nothing; most often work_failure (5)."
     )
     assert row["next"] == (
-        "Review it yourself, merge it, or force one more try with `baste run --target pr:5766`."
+        "The factory closes it as a failed attempt. To keep it, reopen it or force one"
+        " more try with `baste run --target pr:5766`."
     )
     assert row["url"] == "https://github.com/acme/widgets/pull/5766"
 
@@ -129,7 +130,7 @@ def test_turning_shows_the_loop_row(capsys: pytest.CaptureFixture[str]) -> None:
     out = capsys.readouterr().out
     assert "🔁 Looping items: 2" in out
     assert f"{TITLE} (#5766): 6 of 7 worker runs" in out
-    assert "👉 Review it yourself, merge it, or force one more try" in out
+    assert "👉 The factory closes it as a failed attempt." in out
     assert "review  moonshotai/kimi-k3.1-pro  work_failure" in out
 
 

@@ -98,8 +98,8 @@ class Loop:
 
     def next_step(self) -> str:
         return (
-            "Review it yourself, merge it, or force one more try with "
-            f"`baste run --target {self.target}`."
+            "The factory closes it as a failed attempt. To keep it, reopen it or force one"
+            f" more try with `baste run --target {self.target}`."
         )
 
     def to_dict(self) -> dict[str, object]:
