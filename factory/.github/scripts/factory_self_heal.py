@@ -12,9 +12,9 @@ Run by the trusted dispatcher once per tick (``sweep``):
   a commit that is in the current head, and the factory's own line-anchored
   finding thread once a later commit changed the lines it cites;
 * parks a PR that loops (``factory_item_loop``): no more workers go to it at
-  its current head, in any stage, until its owner acts;
-* sends a PR parked for 12 hours one forced run, then ends the park or closes
-  the PR and requeues its issue (``factory_self_heal_park_retry``);
+  its current head, in any stage;
+* closes a parked PR as a failed attempt and requeues its issue, and splits an
+  issue on its second failed attempt (``factory_self_heal_park_retry``);
 * splits an issue held for its size into child issues (``factory_self_heal_split``);
 * allows self-review on a head that waited 6 hours with no eligible reviewer
   (``factory_self_heal_self_review``);
@@ -245,12 +245,12 @@ def sweep(
 
     out: dict[str, Any] = {
         "dry_run": dry_run, "verdicts": [], "threads": [], "conflicts": [], "loops": [],
-        "park_retries": [], "splits": [], "self_reviews": [], "duplicates": [],
+        "park_closures": [], "splits": [], "self_reviews": [], "duplicates": [],
         "parked_labels": [], "state_labels": [], "incident_labels": [], "closed_labels": [],
     }
     for name, step in (
         ("loops", park_loops),
-        ("park_retries", resolve_long_parks),
+        ("park_closures", resolve_long_parks),
         ("splits", advance_splits),
         ("self_reviews", allow_long_waits),
         ("duplicates", resolve_duplicates),
@@ -298,7 +298,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         max_actions=max(0, args.max_actions),
         dry_run=args.dry_run,
     )
-    for name in ("loops", "park_retries", "splits", "self_reviews", "duplicates", "verdicts",
+    for name in ("loops", "park_closures", "splits", "self_reviews", "duplicates", "verdicts",
                  "threads", "conflicts"):
         for row in result[name]:
             print(

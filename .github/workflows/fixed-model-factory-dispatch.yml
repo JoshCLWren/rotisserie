@@ -526,9 +526,9 @@ jobs:
       # in, once per head. Comments use the workflow token so they stay trusted
       # records; the merge uses the rebase token so the PR's CI starts. Cost: one
       # open-PR list, one paginated GraphQL thread read, one comment read per
-      # changes-requested PR, and at most 10 writes plus 3 merges. A PR parked
-      # for 12 hours gets one forced run on the model with the best track
-      # record, then its park ends or the PR closes and its issue is requeued.
+      # changes-requested PR, and at most 10 writes plus 3 merges. A parked PR
+      # closes as a failed attempt and its issue is requeued; an issue's second
+      # failed attempt labels it umbrella so the split sweep splits it.
       - name: Clear self-healable factory stalls
         if: steps.api_budget.outputs.allow == 'true' && !(inputs.target || inputs.provider)
         continue-on-error: true

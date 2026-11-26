@@ -56,8 +56,8 @@ def incident_pulls(github: heal.GitHub, pulls: Sequence[Mapping[str, Any]]) -> f
 def park_text(found: loop.Loop, title: str) -> str:
     name = f"{title} (#{found.number})" if title else f"#{found.number}"
     return (
-        f"Parked {name}: {found.text()} The factory sends no more workers to it at this head."
-        f" {found.next_step()} An owner `factory:override` label also sends it back."
+        f"Parked {name}: {found.text()} The factory closes it as a failed attempt and puts"
+        " its issue back in the queue. An owner `factory:override` label keeps it open."
     )
 
 

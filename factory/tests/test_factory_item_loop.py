@@ -182,7 +182,7 @@ def test_the_sweep_parks_a_looping_pr_with_a_comment_and_an_event() -> None:
     text = str(body["body"])  # type: ignore[index]
     assert rules.parse_marker(text.splitlines()[0])["kind"] == rules.LOOP_PARKED
     assert "Parked Normalize the API key at one boundary (#5766): 6 of 7 worker runs" in text
-    assert "baste run --target pr:5766" in text
+    assert "closes it as a failed attempt" in text
     event = store.events[0]
     assert (event["kind"], event["stage"], event["head"]) == ("loop-parked", "factory:review", HEAD)
     assert event["loop"]["reason"] == "work_failure"
