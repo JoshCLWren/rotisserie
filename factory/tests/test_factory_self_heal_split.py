@@ -192,11 +192,27 @@ def test_a_held_issue_gets_one_split_run_on_the_best_model_and_never_a_second_pl
     assert not any(path.endswith("/dispatches") for path, _ in planned.writes)
 
 
+def started(hub: Hub, worker: str, end: str = "") -> None:
+    from factory_adopter import MARKER_PREFIX
+    from tests.test_factory_split_plan import claim
+
+    rows = hub.posted.setdefault(PARENT, [])
+    rows.append(claim(worker, "split"))
+    if end:
+        body = (
+            f"<!-- {MARKER_PREFIX}-factory-claim-released-v3:issue-{PARENT}:"
+            f"opencode-free-model-factory-{worker}:1764100100:split-plan-{end} -->"
+        )
+        rows.append({**claim(worker, "split"), "body": body})
+
+
 def test_a_rejected_plan_is_retried_on_the_next_pass_and_a_silent_run_waits(env) -> None:
     _, repo = env
     hub = Hub(repo, held=[held(PARENT)])
     assert sweep(repo, hub)[0]["status"] == "split run dispatched"
-    assert sweep(repo, Hub(repo, held=[held(PARENT)])) == []
+    started(hub, "7")
+    hub.writes.clear()
+    assert sweep(repo, hub) == []
     rejected = {
         "event_type": split.EVENT,
         "event_id": f"split:rejected:{PARENT}:1",
@@ -206,9 +222,33 @@ def test_a_rejected_plan_is_retried_on_the_next_pass_and_a_silent_run_waits(env)
         "reason": "child 3 needs 1 to 30 files",
     }
     assert ledger.record_events(repo, [rejected]) == 1
-    retry = Hub(repo, held=[held(PARENT)])
-    assert sweep(repo, retry)[0]["status"] == "split run dispatched"
-    assert sweep(repo, Hub(repo, held=[held(PARENT)])) == []
+    assert sweep(repo, hub)[0]["status"] == "split run dispatched"
+
+
+def test_an_old_rejected_release_marker_also_retries_at_once(env) -> None:
+    _, repo = env
+    hub = Hub(repo, held=[held(PARENT)])
+    assert sweep(repo, hub)[0]["status"] == "split run dispatched"
+    started(hub, "7", "rejected")
+    assert sweep(repo, hub)[0]["status"] == "split run dispatched"
+
+
+def test_a_deferred_dispatch_is_sent_again_and_never_counts_as_a_run(env) -> None:
+    _, repo = env
+    hub = Hub(repo, held=[held(PARENT)])
+    store = heal.LedgerStore(repo)
+    now = datetime.now(UTC)
+    assert sweep(repo, hub)[0]["status"] == "split run dispatched"
+    soon = now + timedelta(seconds=split.START_SECONDS - 60)
+    assert split.advance_splits(hub, store, [], heal_budget(), now=soon) == []
+    for n in range(1, split.MAX_DISPATCHES + 2):
+        later = now + timedelta(seconds=n * (split.START_SECONDS + 60))
+        found = split.advance_splits(hub, store, [], heal_budget(), now=later)
+        assert found[0]["status"] == "split run dispatched"
+    for worker in ("7", "8", "9"):
+        started(hub, worker, "handoff")
+    far = now + timedelta(days=2)
+    assert split.advance_splits(hub, store, [], heal_budget(), now=far) == []
 
 
 def test_a_child_and_an_override_are_never_split(env) -> None:
