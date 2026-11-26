@@ -37,3 +37,14 @@ def test_repair_guard_cancels_superseded_pr_heads() -> None:
 
     assert 'group: fixed-model-pr-repair-guard-${{ github.event.pull_request.number || github.ref }}' in guard
     assert 'cancel-in-progress: true' in guard
+
+
+def test_a_refused_merge_asks_github_why_and_says_so_once_per_head() -> None:
+    """gh's own merge-state check refused #5848 for hours and never asked GitHub why."""
+    drain = adopter_view("factory-ready-merge-drain.yml")
+    rest = 'gh api --method PUT "repos/${GITHUB_REPOSITORY}/pulls/${pr}/merge"'
+    assert rest in drain
+    assert '-f sha="$expected_head" -f merge_method=merge' in drain
+    assert drain.index("--merge --match-head-commit") < drain.index(rest)
+    assert "-merge-refused-v1:pr-${pr}:head-${expected_head}" in drain
+    assert 'grep -qF "$marker"' in drain
