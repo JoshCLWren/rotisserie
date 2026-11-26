@@ -48,3 +48,13 @@ def test_a_refused_merge_asks_github_why_and_says_so_once_per_head() -> None:
     assert drain.index("--merge --match-head-commit") < drain.index(rest)
     assert "-merge-refused-v1:pr-${pr}:head-${expected_head}" in drain
     assert 'grep -qF "$marker"' in drain
+
+
+def test_a_workflow_permission_refusal_retries_once_with_the_operator_token() -> None:
+    """#5848 changed ci.yml; the Actions token cannot hold the workflows permission."""
+    drain = adopter_view("factory-ready-merge-drain.yml")
+    assert "WORKFLOW_MERGE_TOKEN: ${{ secrets.PR_REBASE_TOKEN }}" in drain
+    retry = drain.index('GH_TOKEN="$WORKFLOW_MERGE_TOKEN" gh api --method PUT')
+    assert drain.index("without `workflows` permission") < retry
+    assert drain.index('-f sha="$expected_head" -f merge_method=merge', retry) > retry
+    assert retry < drain.index("-merge-refused-v1:pr-${pr}")
