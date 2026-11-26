@@ -36,6 +36,8 @@ READ_ONLY = frozenset(
         "recap",
         "turning",
         "heal",
+        "attempts",
+        "splits",
         "report",
         "failures",
         "stats",
@@ -118,6 +120,8 @@ _READ_PARAMETERS = {
     "report": {"since"},
     "recap": {"since"},
     "heal": {"since"},
+    "attempts": {"since"},
+    "splits": {"since"},
     "failures": {"since"},
     "stats": {"window"},
     "store": {"mode", "run"},
@@ -195,8 +199,9 @@ def read_command(name: str, query: Mapping[str, str], *, trusted: bool = False) 
         if mode not in ("selftest", "export", "migrate"):
             raise InvalidRequest("Invalid store mode")
         args.extend((mode, "--run", _match(_string(query, "run", required=True), RUN_ID, "run")))
-    elif name in ("report", "failures", "recap", "heal", "crashes"):
-        default = {"failures": "10h", "heal": "24h", "crashes": "6h"}.get(name, "12h")
+    elif name in ("report", "failures", "recap", "heal", "crashes", "attempts", "splits"):
+        defaults = {"failures": "10h", "heal": "24h", "crashes": "6h", "attempts": "24h"}
+        default = {**defaults, "splits": "3d"}.get(name, "12h")
         since = _string(query, "since") or default
         args.extend(("--since", _match(since, re.compile(r"^[0-9]{1,3}[hd]$"), "since")))
     elif name == "outcomes":

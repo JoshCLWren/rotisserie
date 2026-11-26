@@ -253,6 +253,8 @@ CACHED_COMMANDS = frozenset(
         "status",
         "recap",
         "heal",
+        "attempts",
+        "splits",
         "report",
         "failures",
         "stats",

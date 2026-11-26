@@ -253,3 +253,51 @@ def test_the_trusted_classifier_counts_a_split_run_as_success() -> None:
     result = module.classify(log)
     assert result["outcome_class"] == "success"
     assert (result["selected_kind"], result["selected_number"]) == ("issue", str(PARENT))
+
+
+def bot(body: str, at: str) -> dict[str, Any]:
+    return {"body": body, "created_at": at, "user": {"login": policy.TRUSTED_COMMENT_LOGIN}}
+
+
+def test_the_split_history_reads_requests_runs_reasons_and_the_result() -> None:
+    from factory_issue_intake_guard import MARKER as REQUEST
+
+    def claim_marker(worker: str, action: str = "split") -> str:
+        return (
+            f"<!-- {MARKER_PREFIX}-factory-controller-claim-v1:issue-{PARENT}:{worker}:1764100000"
+            f":source=operator:action={action} -->"
+        )
+
+    def release(worker: str, end: str) -> str:
+        return (
+            f"<!-- {MARKER_PREFIX}-factory-claim-released-v3:issue-{PARENT}:"
+            f"opencode-free-model-factory-{worker}:1764100100:split-plan-{end} -->"
+        )
+
+    request = f"<!-- {REQUEST}:issue-{PARENT} -->\n\nneeds a split"
+    reason = f"child 3 needs 1 to {plans.MAX_FILES} files"
+    forged = {**bot(claim_marker("9"), "2026-11-26T12:00:00Z"), "user": {"login": "someone"}}
+    comments = [
+        bot(request, "2026-11-26T12:22:40Z"),
+        bot(request, "2026-11-26T12:22:59Z"),
+        forged,
+        bot(claim_marker("7"), "2026-11-26T12:24:32Z"),
+        bot(release("7", "rejected"), "2026-11-26T12:28:31Z"),
+        bot(claim_marker("8"), "2026-11-26T13:00:00Z"),
+        bot(release("8", "rejected"), "2026-11-26T13:05:00Z"),
+        bot(plans.rejected_note(PARENT, "45", reason), "2026-11-26T13:06:00Z"),
+        bot(claim_marker("8", "implement"), "2026-11-26T13:30:00Z"),
+    ]
+    found = plans.history(comments, PARENT)
+    assert found["requested_at"] == "2026-11-26T12:22:40Z" and found["requests"] == 2
+    assert [(r["worker"], r["end"], r["reason"]) for r in found["runs"]] == [
+        ("7", "rejected", ""),
+        ("8", "rejected", reason),
+    ]
+    assert plans.rejected_reason(plans.rejected_note(PARENT, "45", reason)) == reason
+    unmarked = "Factory split: anything was rejected: x. The next split run starts"
+    assert plans.rejected_reason(unmarked) is None
+    done_marker = f"<!-- {MARKER_PREFIX}-{plans.DONE_MARKER}:issue-{PARENT} -->"
+    done = f"{done_marker}\n\n- [ ] #5001 A\n- [x] #5002 B\n"
+    finished = plans.history([*comments, bot(done, "2026-11-26T14:00:00Z")], PARENT)
+    assert finished["done_at"] == "2026-11-26T14:00:00Z" and finished["children"] == 2

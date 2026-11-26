@@ -36,7 +36,7 @@ from factory_adopter import MARKER_PREFIX
 
 DISPATCH_WORKFLOW = "fixed-model-factory-dispatch.yml"
 RETRY_SECONDS = 6 * 3600
-MAX_DISPATCHES = 3
+MAX_DISPATCHES = plans.MAX_DISPATCHES
 TRACKING = "tracking"
 EVENT = "factory_split"
 LISTINGS = ("factory%3Aneeds-split", "factory%2Cumbrella")

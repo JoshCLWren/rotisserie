@@ -14,6 +14,7 @@ from rotisserie.factory_console import runtime
 from rotisserie.factory_console.commands._shared import EXIT_INTERRUPTED, EXIT_OK, EXIT_USAGE
 from rotisserie.factory_console.commands.agents import cmd_external, cmd_wait_for_work
 from rotisserie.factory_console.commands.assign import cmd_assign, cmd_assigned
+from rotisserie.factory_console.commands.attempts import cmd_attempts, cmd_splits
 from rotisserie.factory_console.commands.backoffs import cmd_backoffs
 from rotisserie.factory_console.commands.claims import (
     cmd_claim,
@@ -191,6 +192,8 @@ def _help_text() -> str:
             "     the repository's installed workflow when this machine has no claim store)",
             "  baste unstick       start the workers that clear the bottleneck",
             "  baste heal          what the factory cleared by itself",
+            "  baste attempts      PRs closed as failed attempts, and what each issue did next",
+            "  baste splits        issues held for a split: runs, rejected plans, result",
             "  baste outcomes      did the requested work actually happen",
             "  baste outcome RUN   what one worker run did (--follow waits)",
             "  baste checks pr:N   why its checks fail",
@@ -290,6 +293,8 @@ HANDLERS = {
     "schema": cmd_schema,
     "recap": cmd_recap,
     "heal": cmd_heal,
+    "attempts": cmd_attempts,
+    "splits": cmd_splits,
     "store": cmd_store,
     "turning": cmd_turning,
     "assign": cmd_assign,

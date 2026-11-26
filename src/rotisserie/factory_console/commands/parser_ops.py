@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import argparse
 
-from rotisserie.factory_console.commands import health_reset
+from rotisserie.factory_console.commands import attempts, health_reset
 from rotisserie.factory_console.commands.parser_insight import _common
 from rotisserie.factory_console.service import assign_task, pause
 
@@ -79,3 +79,4 @@ def add_operator_parsers(commands: argparse._SubParsersAction[argparse.ArgumentP
     result.add_argument("--timeout", type=int, default=3600, help="give up after (3600; 0 never)")
     _common(result)
     health_reset.add_parser(commands)
+    attempts.add_parser(commands)

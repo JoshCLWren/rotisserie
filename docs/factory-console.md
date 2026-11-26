@@ -446,6 +446,19 @@ Each action posts a factory comment on the PR and records an event in the
 factory store. `baste heal [--since 24h]` lists them; `baste recap` shows them
 under "Fixed by itself".
 
+`baste attempts [--since 24h]` lists the PRs the factory closed as failed
+attempts. For each PR it names the linked issue, found as the factory finds it,
+and what the issue did next: a later PR merged it, an open PR works on it, it
+was split, it closed, or it waits at its stage label.
+
+`baste splits [--since 3d]` lists each issue held for a split. It shows when
+the split was requested, each split run and its result, the reason for each
+rejected plan, the runs used out of 3, and the state: waiting, retrying, held
+after 3 rejected plans, or done with its child count. A plan rejected before
+the factory recorded reasons shows "no recorded reason" and retries after 6
+hours. Both views read GitHub only and are in the control room under
+Diagnostics.
+
 ## Closing work that should not be done
 
 `baste close pr:N [pr:M …] --reason TEXT` is for work you
