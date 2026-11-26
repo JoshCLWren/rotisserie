@@ -192,6 +192,25 @@ def test_a_held_issue_gets_one_split_run_on_the_best_model_and_never_a_second_pl
     assert not any(path.endswith("/dispatches") for path, _ in planned.writes)
 
 
+def test_a_rejected_plan_is_retried_on_the_next_pass_and_a_silent_run_waits(env) -> None:
+    _, repo = env
+    hub = Hub(repo, held=[held(PARENT)])
+    assert sweep(repo, hub)[0]["status"] == "split run dispatched"
+    assert sweep(repo, Hub(repo, held=[held(PARENT)])) == []
+    rejected = {
+        "event_type": split.EVENT,
+        "event_id": f"split:rejected:{PARENT}:1",
+        "worker": "0",
+        "kind": "rejected",
+        "issue": PARENT,
+        "reason": "child 3 needs 1 to 30 files",
+    }
+    assert ledger.record_events(repo, [rejected]) == 1
+    retry = Hub(repo, held=[held(PARENT)])
+    assert sweep(repo, retry)[0]["status"] == "split run dispatched"
+    assert sweep(repo, Hub(repo, held=[held(PARENT)])) == []
+
+
 def test_a_child_and_an_override_are_never_split(env) -> None:
     _, repo = env
     child_body = plans.child_marker(PARENT, 1) + "\n" + BIG

@@ -6,7 +6,10 @@ or labeled umbrella or tracking), or a ``factory`` issue labeled ``umbrella``
 even after a merged slice made it ``factory:ready``, gets one ``split`` run on the model with
 the best track record for splits, through the dispatcher's targeted path
 (``target=split:N``). The trusted Entry persister records the validated plan in
-the store once per parent (``factory_split_plan``). This sweep step then:
+the store once per parent (``factory_split_plan``). A run whose plan failed
+validation (or that wrote none) is retried at once, and its reason is a comment
+the next run reads; a run that crashed or hit a provider failure is retried
+after ``RETRY_SECONDS``. This sweep step then:
 
 * creates the children in blocker order, each with ``factory``,
   ``factory:unowned``, a ``Part of #PARENT.`` line and a ``Blocked by:`` list of
@@ -66,6 +69,7 @@ def state(repo: str) -> dict[int, dict[str, Any]]:
                 "at": None,
                 "children": {},
                 "dispatches": [],
+                "rejected": [],
                 "done": False,
                 "closed": False,
             },
@@ -80,6 +84,8 @@ def state(repo: str) -> dict[int, dict[str, Any]]:
             entry["children"][int(row["idx"])] = int(row["child"])
         elif kind == "dispatch":
             entry["dispatches"].append(at)
+        elif kind == "rejected":
+            entry["rejected"].append(at)
         elif kind in ("done", "closed"):
             entry[kind] = True
     return found
@@ -159,8 +165,10 @@ def dispatch_splits(
         if entry.get("plan") or not splittable(issue):
             continue
         tries = entry.get("dispatches", [])
+        rejected = entry.get("rejected", [])
+        answered = bool(tries) and len(rejected) >= len(tries)
         if len(tries) >= MAX_DISPATCHES or (
-            tries and now - tries[-1] < timedelta(seconds=RETRY_SECONDS)
+            tries and not answered and now - tries[-1] < timedelta(seconds=RETRY_SECONDS)
         ):
             continue
         chosen = dispatch_inputs(number)
