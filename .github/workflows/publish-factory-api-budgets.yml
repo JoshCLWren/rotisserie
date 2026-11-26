@@ -38,11 +38,13 @@ jobs:
         uses: actions/setup-python@v7
         with:
           python-version: '3.14'
-      - name: Checkout pinned, tested Rotisserie publisher
+      # The publisher runs at the same commit as the observer that writes the
+      # samples; a fixed pin drifted from the observer's public alias.
+      - name: Checkout the Rotisserie publisher at this workflow's commit
         uses: actions/checkout@v7
         with:
-          repository: JoshCLWren/rotisserie
-          ref: 2f642ec2fa7841e4941486d83c4c686c5c61ad2a
+          repository: ${{ job.workflow_repository }}
+          ref: ${{ job.workflow_sha }}
           path: rotisserie
           ssh-key: ${{ secrets.ROTISSERIE_DEPLOY_KEY }}
           persist-credentials: false

@@ -32,3 +32,16 @@ def test_publisher_remains_explicitly_enabled_and_separately_scoped() -> None:
     assert "permission-actions: read" in publisher
     assert "permission-contents: write" in publisher
     assert "python3 -m scripts.sync_factory_quota" in publisher
+
+
+def test_publisher_runs_at_the_observers_commit_and_accepts_its_alias() -> None:
+    """A fixed publisher pin skipped every sample after the observer's alias changed."""
+    import re
+
+    publisher = adopter_view("publish-factory-api-budgets.yml")
+    assert re.search(r"ref: [0-9a-f]{40}", publisher) is None
+    assert "ref: ${{ job.workflow_sha }}" in publisher
+    observer = (ROOT / ".github" / "scripts" / "factory-quota-observer.py").read_text()
+    sync = (ROOT.parent / "scripts" / "sync_factory_quota.py").read_text()
+    alias = re.search(r'PUBLIC_ALIAS = "([^"]+)"', sync)
+    assert alias and f'"public_alias": "{alias.group(1)}"' in observer
