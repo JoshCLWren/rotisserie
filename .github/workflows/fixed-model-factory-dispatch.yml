@@ -1028,7 +1028,7 @@ jobs:
 
       - name: Queue roster successor outside assignment lease lock
         id: chain
-        if: always() && (github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && inputs.mode == 'roster')) && !(inputs.target || inputs.provider) && steps.rotisserie_install.outcome == 'success' && (steps.api_budget.outputs.allow == 'true' || steps.api_budget.outputs.quota_deferred == 'true')
+        if: always() && (github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && (inputs.mode == 'roster' || inputs.source_run_id != ''))) && !(inputs.target || inputs.provider) && steps.rotisserie_install.outcome == 'success' && (steps.api_budget.outputs.allow == 'true' || steps.api_budget.outputs.quota_deferred == 'true')
         continue-on-error: true
         shell: bash
         env:
@@ -1040,8 +1040,24 @@ jobs:
           QUOTA_DEFERRED: ${{ steps.api_budget.outputs.quota_deferred }}
           BUDGET_DEFERRED: ${{ steps.dispatch_workers.outputs.budget_deferred }}
           BUDGET_UNREADABLE: ${{ steps.dispatch_workers.outputs.budget_unreadable }}
+          COMPLETION_SOURCE: ${{ inputs.source_run_id }}
         run: |
           set -Eeuo pipefail
+          # A completion pass can replace a pending roster pass in the caller's
+          # single-slot ingress queue. It keeps the chain alive only when no
+          # roster pass or roster successor is already waiting.
+          if [[ -n "${COMPLETION_SOURCE:-}" ]]; then
+            waiting="$( {
+              gh api "repos/${GITHUB_REPOSITORY}/actions/workflows/fixed-model-factory-roster-successor.yml/runs?per_page=20" \
+                --jq '[.workflow_runs[] | select(.status != "completed")] | length'
+              gh api "repos/${GITHUB_REPOSITORY}/actions/workflows/fixed-model-factory-dispatch.yml/runs?per_page=50" \
+                --jq '[.workflow_runs[] | select(.status != "completed" and .display_title == "Factory dispatch · roster")] | length'
+            } 2>/dev/null | awk '{ total += $1 } END { print total + 0 }')"
+            if (( waiting > 0 )); then
+              echo "A roster pass or successor is already waiting; this completion pass leaves the chain to it"
+              exit 0
+            fi
+          fi
           # GitHub throttles scheduled delivery to roughly hourly. Only
           # roster-mode work schedules a successor, and a trustworthy zero-work
           # tick ends that chain. Dispatch the independent delay workflow NOW,
