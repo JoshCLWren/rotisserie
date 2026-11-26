@@ -63,3 +63,41 @@ def test_the_owner_incident_label_still_wakes_work() -> None:
     assert not set(module.OWNER_INPUTS) & set(module.IGNORED_BY_WORKFLOWS)
     for name in ("factory-issue-wakeup.yml", "factory-issue-pr-state-reconciler.yml"):
         assert '"factory:incident"' not in job_condition(name)
+
+
+def _wakeup_script() -> str:
+    import textwrap
+
+    text = (WORKFLOWS / "factory-issue-wakeup.yml").read_text()
+    return textwrap.dedent(text.split("run: |\n", 1)[1])
+
+
+def _wake(tmp_path: Path, pending: str) -> str:
+    import os
+    import subprocess
+
+    stub = tmp_path / "gh"
+    stub.write_text(
+        "#!/usr/bin/env bash\n"
+        'if [[ "$1" == api ]]; then echo "$STUB_PENDING"; exit 0; fi\n'
+        'echo "$@" >> "$STUB_LOG"\n'
+    )
+    stub.chmod(0o755)
+    log = tmp_path / "dispatched.log"
+    env = {
+        **os.environ,
+        "PATH": f"{tmp_path}:{os.environ['PATH']}",
+        "STUB_PENDING": pending,
+        "STUB_LOG": str(log),
+        "ISSUE_NUMBER": "5862",
+        "GITHUB_REPOSITORY": "o/r",
+    }
+    subprocess.run(["bash", "-c", _wakeup_script()], env=env, check=True)
+    return log.read_text() if log.exists() else ""
+
+
+def test_an_issue_wakeup_sends_one_dispatch_while_one_is_still_waiting(tmp_path: Path) -> None:
+    """Six new Muse QA issues fired twelve dispatches on Nov 26 and starved the roster chain."""
+    assert "target=issue:5862" in _wake(tmp_path, "0")
+    (tmp_path / "dispatched.log").unlink()
+    assert _wake(tmp_path, "1") == ""
