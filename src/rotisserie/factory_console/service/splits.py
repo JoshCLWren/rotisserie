@@ -54,7 +54,7 @@ def state(record: dict[str, Any], max_runs: int) -> str:
         return f"held: {max_runs} split plans rejected, no fallback"
     if last["reason"]:
         return "plan rejected; the next split run starts on the next sweep"
-    return "plan rejected with no recorded reason; the next split run waits 6 hours"
+    return "plan rejected with no recorded reason; the next split run starts on the next sweep"
 
 
 def comments(github: GitHub, number: int) -> list[Obj]:

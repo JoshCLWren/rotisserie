@@ -108,7 +108,9 @@ def test_a_split_issue_shows_its_runs_and_a_rejection_without_a_recorded_reason(
     [found] = splits.recent(cast(GitHub, hub), since=SINCE)
     assert found.issue == 5743 and len(found.runs) == 1
     assert found.runs[0]["end"] == "rejected" and found.runs[0]["reason"] == ""
-    assert found.state.startswith("plan rejected with no recorded reason")
+    assert found.state == (
+        "plan rejected with no recorded reason; the next split run starts on the next sweep"
+    )
     assert found.max_runs == plans.MAX_DISPATCHES
     assert sum(call.startswith("issues/5743/comments") for call in hub.calls) == 1
 
