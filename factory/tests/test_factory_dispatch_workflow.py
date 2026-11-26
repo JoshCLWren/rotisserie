@@ -165,7 +165,7 @@ def test_roster_chain_step_still_fires_on_always_for_schedule_or_roster() -> Non
     workflow = adopter_view(WORKFLOW.name)
 
     assert (
-        "if: always() && (github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && inputs.mode == 'roster'))"
+        "if: always() && (github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && (inputs.mode == 'roster' || inputs.source_run_id != '')))"
         in workflow
     )
     assert "- cron: '7 * * * *'" in workflow

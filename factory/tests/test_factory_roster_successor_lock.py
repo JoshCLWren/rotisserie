@@ -69,6 +69,22 @@ def test_dispatcher_releases_both_locks_before_roster_delay() -> None:
     assert steps[-1]["name"] == "Remove the factory store token"
 
 
+def test_a_completion_pass_restarts_a_broken_roster_chain_only_when_none_waits() -> None:
+    """Completion passes replaced the pending roster passes on Nov 26 and the chain died."""
+    job = load_workflow(DISPATCHER_PATH)["jobs"]["dispatch"]
+    cadence = next(
+        step for step in own_steps(job)
+        if step.get("name") == "Queue roster successor outside assignment lease lock"
+    )
+    assert "inputs.source_run_id != ''" in cadence["if"]
+    script = cadence["run"]
+    guard = script.index('if [[ -n "${COMPLETION_SOURCE:-}" ]]')
+    assert guard < script.index("chain_roster_successor()")
+    assert "fixed-model-factory-roster-successor.yml/runs" in script
+    assert 'display_title == "Factory dispatch · roster"' in script
+    assert cadence["env"]["COMPLETION_SOURCE"] == "${{ inputs.source_run_id }}"
+
+
 def test_successor_is_isolated_and_read_only_except_actions_dispatch() -> None:
     workflow = load_workflow(SUCCESSOR_PATH)
     job = workflow["jobs"]["wait_and_wake"]
