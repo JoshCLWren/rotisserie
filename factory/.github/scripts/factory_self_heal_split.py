@@ -9,7 +9,9 @@ the best track record for splits, through the dispatcher's targeted path
 the store once per parent (``factory_split_plan``). A run whose plan failed
 validation (or that wrote none) is retried at once, and its reason is a comment
 the next run reads; a run that crashed or hit a provider failure is retried
-after ``RETRY_SECONDS``. This sweep step then:
+after ``RETRY_SECONDS``. Only a dispatch that started a split run counts
+toward ``MAX_DISPATCHES``; one the dispatcher deferred is sent again after
+``START_SECONDS``. This sweep step then:
 
 * creates the children in blocker order, each with ``factory``,
   ``factory:unowned``, a ``Part of #PARENT.`` line and a ``Blocked by:`` list of
@@ -36,6 +38,8 @@ from factory_adopter import MARKER_PREFIX
 
 DISPATCH_WORKFLOW = "fixed-model-factory-dispatch.yml"
 RETRY_SECONDS = 6 * 3600
+START_SECONDS = 20 * 60
+MAX_SENDS = 12
 MAX_DISPATCHES = plans.MAX_DISPATCHES
 TRACKING = "tracking"
 EVENT = "factory_split"
@@ -148,6 +152,28 @@ def splittable(issue: Mapping[str, Any]) -> bool:
     return item_is_unowned(names)
 
 
+def due(
+    github: heal.GitHub, number: int, tries: Sequence[datetime], rejected: int, now: datetime
+) -> bool:
+    """Whether the issue gets another split run now.
+
+    Only a dispatch that started a split run (a controller split claim) counts
+    toward ``MAX_DISPATCHES``. A dispatch the dispatcher deferred, for example
+    to a cooling provider, is sent again after ``START_SECONDS``. A run whose
+    plan was rejected is retried at once; any other run waits ``RETRY_SECONDS``.
+    """
+    if len(tries) >= MAX_SENDS:
+        return False
+    runs = plans.history(github.comments(number), number)["runs"]
+    if len(runs) >= MAX_DISPATCHES:
+        return False
+    since = now - tries[-1]
+    if len(tries) > len(runs):
+        return since >= timedelta(seconds=START_SECONDS)
+    rejected_run = bool(runs) and runs[-1].get("end") == "rejected"
+    return rejected_run or rejected >= len(runs) or since >= timedelta(seconds=RETRY_SECONDS)
+
+
 def dispatch_splits(
     github: heal.GitHub,
     store: heal.Store,
@@ -165,11 +191,7 @@ def dispatch_splits(
         if entry.get("plan") or not splittable(issue):
             continue
         tries = entry.get("dispatches", [])
-        rejected = entry.get("rejected", [])
-        answered = bool(tries) and len(rejected) >= len(tries)
-        if len(tries) >= MAX_DISPATCHES or (
-            tries and not answered and now - tries[-1] < timedelta(seconds=RETRY_SECONDS)
-        ):
+        if tries and not due(github, number, tries, len(entry.get("rejected", [])), now):
             continue
         chosen = dispatch_inputs(number)
         if chosen is None:
