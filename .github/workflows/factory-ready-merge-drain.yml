@@ -358,6 +358,7 @@ jobs:
         env:
           # FACTORY_STATE_REQUIRED (workflow env): an unconnected required store holds merges closed.
           GH_TOKEN: ${{ github.token }}
+          WORKFLOW_MERGE_TOKEN: ${{ secrets.PR_REBASE_TOKEN }}
           FACTORY_MAIN_CI_WORKFLOWS: ${{ vars.FACTORY_MAIN_CI_WORKFLOWS }}
           MAIN_STATE: ${{ steps.main_health.outputs.state }}
         run: |
@@ -497,6 +498,19 @@ jobs:
             fi
             reason="$(jq -r '.message // empty' "$refusal" 2>/dev/null || true)"
             reason="${reason:-$(tr '\n' ' ' < "$refusal" | cut -c1-300)}"
+            # The Actions token can never hold the workflows permission. A PR
+            # whose head another App pushed with workflow changes merges only
+            # with the operator token, at the same exact head.
+            if [[ "$reason" == *'without `workflows` permission'* && -n "${WORKFLOW_MERGE_TOKEN:-}" ]]; then
+              if GH_TOKEN="$WORKFLOW_MERGE_TOKEN" gh api --method PUT "repos/${GITHUB_REPOSITORY}/pulls/${pr}/merge" \
+                -f sha="$expected_head" -f merge_method=merge > "$refusal" 2>&1; then
+                echo "Merged ready PR #${pr} with the workflow-capable token"
+                finish_merge "$pr" "$main_before"
+                exit 0
+              fi
+              reason="$(jq -r '.message // empty' "$refusal" 2>/dev/null || true)"
+              reason="${reason:-$(tr '\n' ' ' < "$refusal" | cut -c1-300)}"
+            fi
             echo "GitHub refused the merge of #${pr} at ${expected_head}: ${reason}" >&2
             prefix="$(python3 .github/scripts/factory_adopter.py marker-prefix 2>/dev/null || echo factory)"
             marker="<!-- ${prefix}-merge-refused-v1:pr-${pr}:head-${expected_head} -->"
