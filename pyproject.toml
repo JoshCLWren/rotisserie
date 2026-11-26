@@ -49,6 +49,7 @@ include = [
   "/factory/.github/scripts/factory_published_model_catalog.py",
   "/factory/.github/scripts/factory_work_policy.py",
   "/factory/.github/scripts/factory_acceptance_criteria.py",
+  "/factory/.github/scripts/factory_split_plan.py",
   "/factory/.github/scripts/factory_work_policy_assignment.py",
   "/factory/.github/scripts/factory_work_policy_backlog.py",
   "/factory/.github/scripts/factory_work_policy_base.py",

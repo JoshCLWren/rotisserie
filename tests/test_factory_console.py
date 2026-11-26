@@ -900,9 +900,11 @@ def test_wheel_ships_every_runtime_module_the_console_loads() -> None:
     config = tomllib.loads((root / "pyproject.toml").read_text())
     included = config["tool"]["hatch"]["build"]["targets"]["wheel"]["force-include"]
     assert set(runtime.RUNTIME_MODULES) <= set(runtime.RUNTIME_SOURCES)
+    sdist = set(config["tool"]["hatch"]["build"]["targets"]["sdist"]["include"])
     for name, source in runtime.RUNTIME_SOURCES.items():
         assert included[source] == f"rotisserie/factory_console/factory_runtime/{name}.py"
         assert (root / source).is_file()
+        assert f"/{source}" in sdist
 
 
 # why ---------------------------------------------------------------------------------
