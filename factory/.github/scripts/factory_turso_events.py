@@ -169,7 +169,7 @@ def recorded_runtime_runs(repo: str, run_ids: list[str]) -> set[str]:
         raise ValueError("invalid run ID")
     marks, params = placeholders("e", [f"runtime:{run_id}" for run_id in run_ids])
     rows = core.store().read(
-        f"SELECT run_id FROM factory_state_events WHERE event_id IN ({marks}) AND repo = :repo",
+        f"SELECT run_id FROM factory_state_events WHERE event_id IN ({marks}) AND +repo = :repo",
         {**params, "repo": repo},
     )
     return {str(row["run_id"]) for row in rows}
