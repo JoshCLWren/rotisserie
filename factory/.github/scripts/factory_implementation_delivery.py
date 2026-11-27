@@ -454,7 +454,7 @@ def _unified_file_diff(path: str, old: str, new: str) -> str:
 
 def complete_pr_diff(
     pr_number: int, expected_head: str, repo: str,
-    run: Callable[[list[str]], str],
+    run: Callable[[list[str]], str], issue_body: str | None = None,
 ) -> tuple[list[str], str]:
     """Fetch full source context and reconstruct the PR's original base.
 
@@ -463,12 +463,11 @@ def complete_pr_diff(
         expected_head: Commit being reviewed.
         repo: Repository owner/name.
         run: GitHub CLI reader that raises RuntimeError on failure.
+        issue_body: Linked issue; a split child's named docs files get full context too.
 
     Returns:
-        Changed paths and a unified diff with complete source context.
-
-    Raises:
-        RuntimeError: If the head changes or complete source is unavailable.
+        Changed paths and a unified diff with complete source context. Raises
+        RuntimeError if the head changes or complete source is unavailable.
     """
     info = json.loads(run(["api", f"repos/{repo}/pulls/{pr_number}"]))
     if info["head"]["sha"] != expected_head:
@@ -480,7 +479,7 @@ def complete_pr_diff(
     ]))
     records = [record for page in files for record in page]
     paths = [record["filename"] for record in records]
-    candidates = set(substantive_changed_files(paths))
+    candidates = set(substantive_changed_files(paths, _child_files(issue_body)))
     patches: list[str] = []
     for record in records:
         path = record["filename"]

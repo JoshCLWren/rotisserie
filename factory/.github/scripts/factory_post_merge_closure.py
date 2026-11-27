@@ -257,7 +257,7 @@ def close_merged_pr_issue(
         try:
             if implementation_delivery.is_implementation_issue(issue_body):
                 paths, patch = implementation_delivery.complete_pr_diff(
-                    pr_number, info.get("head", ""), github._repo_slug(), lambda args: github._run_gh(*args)
+                    pr_number, info.get("head", ""), github._repo_slug(), lambda args: github._run_gh(*args), issue_body
                 )
                 delivered, reason = implementation_delivery.pr_delivers_implementation(
                     issue_body, paths, patch
@@ -347,7 +347,7 @@ def close_merged_pr_issue(
     try:
         if implementation_delivery.is_implementation_issue(issue_body):
             paths, patch = implementation_delivery.complete_pr_diff(
-                pr_number, info.get("head", ""), github._repo_slug(), lambda args: github._run_gh(*args)
+                pr_number, info.get("head", ""), github._repo_slug(), lambda args: github._run_gh(*args), issue_body
             )
             delivered, reason = implementation_delivery.pr_delivers_implementation(
                 issue_body, paths, patch

@@ -1636,7 +1636,7 @@ def implementation_delivery_gate(
         return gate_result("deny", "reviewed commit SHA is missing or invalid")
     try:
         files, patch = implementation_delivery.complete_pr_diff(
-            pr_number, expected_head, REPO, lambda args: run_gh(args).stdout
+            pr_number, expected_head, REPO, lambda args: run_gh(args).stdout, issue_body
         )
     except (RuntimeError, ValueError, KeyError, TypeError) as exc:
         return gate_result("retry", f"implementation diff unavailable: {exc}")
