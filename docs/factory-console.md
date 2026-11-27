@@ -929,7 +929,7 @@ of the overview, above the morning recap.
 These labels mirror facts the factory already holds. They never start or stop
 work: the store and the controllers decide, and the label-triggered workflows
 ignore their events. The code that changes the state writes the label with the
-workflow token. The label doctor (`baste labels`) fixes the ones it can read.
+workflow token. The label doctor (`baste labels --audit`, `--repair`) fixes the ones it can read.
 
 | Label | On when | Off when | Written by |
 | --- | --- | --- | --- |
@@ -943,6 +943,36 @@ workflow token. The label doctor (`baste labels`) fixes the ones it can read.
 A closed or merged item loses every state label: the sweep finds them with one
 search per pass. `factory:incident` is not in this table. It is the owner's
 input that declares an incident, so its events still wake work.
+
+### Label glossary
+
+`baste labels` prints every factory label and state. Each entry says what the
+label means, what sets it, what clears it and what it blocks or allows. The
+glossary lives in `src/rotisserie/factory_console/service/label_glossary.py`.
+A test reads the label constants of the factory runtime and fails when a label
+has no entry.
+
+`baste labels N` (or `issue:N`, `pr:N`) reads the item's labels from GitHub on
+the `--repo` repository or the saved default. It prints one line per label
+with its meaning. A label with no entry is "not a factory label". The last line
+says what the labels show the factory does next, for example
+`held: no worker until a new head, factory:override or a claim`. When the
+labels leave the next step open, the line names `baste why issue:N` or
+`baste follow pr:N --once`. Labels only mirror the store, and those two
+commands read the full state.
+
+```bash
+baste labels                 # the glossary
+baste labels 5963            # each label on #5963 and what the factory does next
+baste labels 5963 --json     # the same as JSON
+baste labels --audit         # label doctor dry run (was bare `baste labels`)
+```
+
+Any doctor flag (`--audit`, `--repair`, `--delete-legacy`, `--run`,
+`--no-wait`, `--via github`) runs the label doctor. An item number with a
+doctor flag is refused. Both control rooms serve the glossary (the Label
+glossary button under Diagnostics) and the item form (the Labels button on an
+item). The hosted control room runs both as live reads after sign-in.
 
 ### Duplicate PRs
 
@@ -1028,7 +1058,7 @@ The factory acts on it in two places:
 
 The park adds the `factory:parked` label. The same sweep removes it when the
 hold ends: a new head, an owner `factory:override` label, a `factory:claimed`
-claim or active incident work. The label doctor (`baste labels`) fixes it to match
+claim or active incident work. The label doctor (`baste labels --repair`) fixes it to match
 the park at the PR's current head. The label never holds or releases anything;
 the store does. A targeted or forced run (`baste run --target pr:N`), an owner
 `factory:override` label and a `factory:claimed` claim are never held. A

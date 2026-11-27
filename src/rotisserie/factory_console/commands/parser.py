@@ -9,6 +9,7 @@ from rotisserie.factory_console.commands import (
     db_usage,
     heal,
     incident,
+    labels,
     recap,
     schema,
     self_review,
@@ -361,23 +362,6 @@ def add_parser(
     )
     _common(quota)
 
-    tags = commands.add_parser(
-        "labels",
-        help="audit claim and lifecycle labels against the store and the frontier (dry run)",
-    )
-    tags.add_argument("--repair", action="store_true", help="apply the planned label changes")
-    tags.add_argument(
-        "--delete-legacy",
-        action="store_true",
-        help="with --repair, also delete the obsolete label definitions it lists",
-    )
-    tags.add_argument(
-        "--no-wait", action="store_true", help="with --via github, start the run and return"
-    )
-    tags.add_argument("--run", type=int, help="show the report of an earlier doctor run")
-    _via(tags)
-    _common(tags)
-
     event = commands.add_parser(
         "label-event", help="handle one GitHub label-claim event (trusted Actions only)"
     )
@@ -490,6 +474,7 @@ def add_parser(
     incident.add_parser(commands)
     backoffs.add_parser(commands)
     db_usage.add_parser(commands)
+    labels.add_parser(commands)
     crashes.add_parser(commands)
     recap.add_parser(commands)
     self_review.add_parser(commands)

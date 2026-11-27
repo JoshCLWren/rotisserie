@@ -42,7 +42,7 @@ CONTROLS: dict[str, tuple[str, ...]] = {
     "crashes": ("read:crashes", "read:crash-trace"),
     "schema": ("read:schema", "write:schema_apply"),
     "store": ("read:store", "write:store_selftest", "write:store_export", "write:store_migrate"),
-    "labels": ("write:labels",),
+    "labels": ("read:labels", "write:labels"),
     "conflicts": ("read:conflicts",),
     "sync": ("write:sync",),
     "leases": ("read:leases", "write:release_expired"),

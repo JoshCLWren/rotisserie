@@ -132,7 +132,7 @@ jobs:
                 db-usage) args=(factory db-usage --live) ;;
                 # Every schema statement is IF NOT EXISTS; publishes names and counts only.
                 schema-apply) args=(factory schema --apply) ;;
-                *) args=(factory labels) ;;
+                *) args=(factory labels --audit) ;;
               esac ;;
             *)
               test -s "${FACTORY_TURSO_TOKEN_FILE:-}"

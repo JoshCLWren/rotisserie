@@ -148,7 +148,7 @@ def cmd_follow(context: Context, arguments: argparse.Namespace) -> Outcome:
     return Outcome(Result.NO_WORK, EXIT_CODES[Result.NO_WORK], data)
 
 
-def cmd_labels(context: Context, arguments: argparse.Namespace) -> Outcome:
+def cmd_label_doctor(context: Context, arguments: argparse.Namespace) -> Outcome:
     console = context.console
     if arguments.delete_legacy and not arguments.repair:
         console.fail("--delete-legacy needs --repair")
