@@ -17,4 +17,4 @@ def _no_person_reopen(request: pytest.FixtureRequest, monkeypatch: pytest.Monkey
     if str(SCRIPTS) not in sys.path:
         sys.path.insert(0, str(SCRIPTS))
     github = importlib.import_module("factory_post_merge_closure_github")
-    monkeypatch.setattr(github, "_reopened_by_person", lambda _number: False)
+    monkeypatch.setattr(github, "_reopened_by_person", lambda _number, _since="": False)
