@@ -74,6 +74,10 @@ remain; remote factory backpressure does not constrain locals.
 
 - Python anywhere in the change: `bash scripts/check-python-ci-lint.sh` (whole-repo
   `ruff check .` + `ty check --error-on-warning`). Path-filtered runs are not valid.
+- Rust anywhere in the change: run `cargo fmt --all`, commit the result, then run
+  `bash scripts/check-rust-factory-prepush.sh` (format check, Clippy with `-D warnings`,
+  `cargo check`) when the adopter has it. Factory workers run that script before each push;
+  a local session whose hooks do not fire must run it by hand.
 - Frontend: run `pnpm run lint:anti-slop` from the repository root. From `frontend/`,
   run `pnpm run lint`, `pnpm run typecheck`, `pnpm run build`, and targeted Vitest files.
   Restore missing or stale worktree dependencies with `pnpm install --frozen-lockfile`
