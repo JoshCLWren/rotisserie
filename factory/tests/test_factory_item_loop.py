@@ -209,6 +209,23 @@ def test_an_owner_override_is_never_parked() -> None:
     assert found[0]["status"] == "owner"
 
 
+def authored(login: str) -> dict[str, Any]:
+    return {**pull(5766), "user": {"login": login}}
+
+
+def test_an_owner_authored_pr_is_never_parked() -> None:
+    """comic-pile #5963 and #5949, the owner's own PRs, were parked and closed on Nov 27."""
+    hub, found = sweep(Store(), authored("Acme"))
+    assert hub.writes == []
+    assert found[0]["status"] == "owner"
+
+
+def test_a_factory_authored_pr_is_still_parked() -> None:
+    hub, found = sweep(Store(), authored("github-actions[bot]"))
+    assert [row["pr"] for row in found] == [5766]
+    assert hub.writes[0][0] == "issues/5766/comments"
+
+
 def test_the_sweep_runs_the_park_step(monkeypatch: pytest.MonkeyPatch) -> None:
     store = Store()
 
