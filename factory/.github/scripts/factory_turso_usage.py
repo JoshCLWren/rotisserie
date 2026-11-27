@@ -251,6 +251,33 @@ def read(fetch: Fetch, org: str, database: str, *, now: datetime, in_use: bool) 
         return {**report, "status": "critical", "blocked": blocked}
 
 
+TOP_QUERIES = 20
+QUERY_CHARS = 160
+_LITERAL = re.compile(r"'(?:[^']|'')*'|\"(?:[^\"]|\"\")*\"|\b\d+(?:\.\d+)?\b")
+
+
+def scrub_query(text: str) -> str:
+    """The query's shape: every string and number literal becomes ``?``; whitespace is folded."""
+    return " ".join(_LITERAL.sub("?", text).split())[:QUERY_CHARS]
+
+
+def top_queries(stats: Any) -> list[dict[str, Any]]:
+    """The database's top queries from the Platform API stats answer, scrubbed, most rows read first."""
+    rows = (stats or {}).get("top_queries") if isinstance(stats, dict) else None
+    if not isinstance(rows, list):
+        raise UsageError("Turso database stats have an unexpected response shape")
+    found = [
+        {
+            "query": scrub_query(str(row.get("query") or "")),
+            "rows_read": int(row.get("rows_read") or 0),
+            "rows_written": int(row.get("rows_written") or 0),
+        }
+        for row in rows
+        if isinstance(row, dict)
+    ]
+    return sorted(found, key=lambda row: -row["rows_read"])[:TOP_QUERIES]
+
+
 def _read_usage(
     fetch: Fetch,
     base: str,
@@ -289,7 +316,15 @@ def _read_usage(
         now=now,
         in_use=in_use,
     )
-    return {**report, "organization_source": organization_source}
+    report = {**report, "organization_source": organization_source}
+    try:
+        stats = fetch(
+            f"{base}/databases/{urllib.parse.quote(database, safe='')}/stats", "database stats"
+        )
+        report["top_queries"] = top_queries(stats)
+    except UsageError as exc:
+        report["top_queries"], report["top_queries_error"] = [], str(exc)
+    return report
 
 
 def from_env(
@@ -312,7 +347,7 @@ def from_env(
         return read(fetch or http_fetch(token), org, database, now=moment, in_use=in_use)
     except UsageError as exc:
         return failed(moment, in_use, str(exc))
-    except (AttributeError, TypeError, KeyError):
+    except AttributeError, TypeError, KeyError:
         return failed(moment, in_use, "Turso usage has an unexpected response shape")
 
 

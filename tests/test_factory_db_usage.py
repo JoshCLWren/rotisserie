@@ -60,6 +60,7 @@ def fake_api(
         "/organizations/acme/plans": plans
         if plans is not None
         else {"plans": [{"name": "free", "quotas": FREE}]},
+        "/organizations/acme/databases/rotisserie-factory/stats": {"top_queries": []},
     }
 
     def fetch(path: str, what: str) -> object:
@@ -328,3 +329,36 @@ def test_workflows_publish_usage_and_scope_the_token() -> None:
     for caller in ("factory-status-pages.yml", "rotisserie-label-claim.yml"):
         text = (ROOT / "factory/install/callers" / caller).read_text(encoding="utf-8")
         assert "FACTORY_TURSO_API_TOKEN: ${{ secrets.FACTORY_TURSO_API_TOKEN }}" in text
+
+
+def test_top_queries_are_published_scrubbed_and_a_stats_failure_never_fails_the_report() -> None:
+    fetch, _calls = fake_api(counts(10, 2, 3, 0))
+    stats = "/organizations/acme/databases/rotisserie-factory/stats"
+    heavy = {
+        "query": "SELECT * FROM factory_state_events WHERE repo = 'acme/widgets' AND n > 42",
+        "rows_read": 900,
+        "rows_written": 0,
+    }
+    light = {"query": "SELECT 1", "rows_read": 5, "rows_written": 1}
+
+    def answering(path: str, what: str) -> object:
+        return {"top_queries": [light, heavy]} if path == stats else fetch(path, what)
+
+    report = read(answering)
+    assert report["top_queries"] == [
+        {
+            "query": "SELECT * FROM factory_state_events WHERE repo = ? AND n > ?",
+            "rows_read": 900,
+            "rows_written": 0,
+        },
+        {"query": "SELECT ?", "rows_read": 5, "rows_written": 1},
+    ]
+
+    def refusing(path: str, what: str) -> object:
+        if path == stats:
+            raise usage.UsageError("Turso database stats answered HTTP 403")
+        return fetch(path, what)
+
+    report = read(refusing)
+    assert report["status"] in ("ok", "warn", "critical") and report["top_queries"] == []
+    assert report["top_queries_error"] == "Turso database stats answered HTTP 403"

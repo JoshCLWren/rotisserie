@@ -52,7 +52,7 @@ def claims_paused() -> str:
     if path:
         try:
             report = json.loads(Path(path).read_text(encoding="utf-8"))
-        except (OSError, ValueError):
+        except OSError, ValueError:
             report = None
     paused, reason = pause_new_claims(report if isinstance(report, Mapping) else None)
     return reason if paused else ""
@@ -82,16 +82,45 @@ def store() -> Store:
         if os.environ.get(METRICS_FILE_ENV):
             import atexit
 
+            if hasattr(candidate, "trace"):
+                candidate.trace = []
             atexit.register(_record_usage, candidate)
     return _STORE
 
 
+TOP_STATEMENTS = 20
+
+
+def top_statements(
+    trace: Sequence[tuple[str, int, int]], limit: int = TOP_STATEMENTS
+) -> list[dict[str, Any]]:
+    """The statements that read the most rows, grouped by their normalized SQL text.
+
+    The text is the statement's SQL shape (parameters stay ``:name`` placeholders),
+    so no key or value is ever written.
+    """
+    grouped: dict[str, dict[str, Any]] = {}
+    for sql, read, written in trace:
+        row = grouped.setdefault(sql, {"sql": sql, "calls": 0, "rows_read": 0, "rows_written": 0})
+        row["calls"] += 1
+        row["rows_read"] += read
+        row["rows_written"] += written
+    ranked = sorted(
+        grouped.values(), key=lambda row: (-row["rows_read"], -row["calls"], row["sql"])
+    )
+    return ranked[:limit]
+
+
 def _record_usage(db: Store) -> None:
-    """Append this process's request and row counts; never SQL, keys or values."""
+    """Append this process's request and row counts and its top statements by rows read."""
+    record: dict[str, Any] = dict(db.usage)
+    trace = getattr(db, "trace", None)
+    if isinstance(trace, list):
+        record["statements"] = top_statements(trace)
     try:
         with Path(os.environ[METRICS_FILE_ENV]).open("a", encoding="utf-8") as output:
-            output.write(json.dumps(dict(db.usage), sort_keys=True) + "\n")
-    except (KeyError, OSError):
+            output.write(json.dumps(record, sort_keys=True) + "\n")
+    except KeyError, OSError:
         pass
 
 

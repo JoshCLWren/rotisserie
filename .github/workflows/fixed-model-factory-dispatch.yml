@@ -993,6 +993,12 @@ jobs:
           [[ -s "$counts" ]] || { echo "No factory store requests were measured" | tee -a "$GITHUB_STEP_SUMMARY"; exit 0; }
           jq -rs '"Factory store: \(map(.requests) | add) requests, \(map(.rows_read) | add) rows read, \(map(.rows_written) | add) rows written, in \(length) process(es)"' "$counts" \
             | tee -a "$GITHUB_STEP_SUMMARY"
+          # One line per statement shape, summed over every process in this pass.
+          jq -rs '[.[].statements // [] | .[]] | group_by(.sql)
+            | map({sql: .[0].sql, calls: (map(.calls) | add), rows_read: (map(.rows_read) | add), rows_written: (map(.rows_written) | add)})
+            | sort_by(-.rows_read) | .[:20][]
+            | "store statement: \(.rows_read) rows read, \(.rows_written) written, \(.calls) calls: \(.sql)"' "$counts" \
+            | tee -a "$GITHUB_STEP_SUMMARY"
 
       # Runs started by GITHUB_TOKEN never fire workflow_run, and GitHub skips
       # most */15 crons, so the reliability snapshot went hours stale. A
