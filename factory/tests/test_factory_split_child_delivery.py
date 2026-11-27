@@ -44,3 +44,31 @@ def test_an_ordinary_issue_or_unnamed_docs_file_still_needs_production_source() 
     assert not delivery.pr_delivers_implementation(other, [FRAGMENT], PATCH)[0]
     tests = child_body("tests/*.py")
     assert not delivery.pr_delivers_implementation(tests, ["tests/test_roll.py"], PATCH)[0]
+
+
+def test_the_guard_runs_from_the_trusted_review_stage_alone(tmp_path) -> None:
+    """#349 imported factory_split_plan, which the review stage does not copy; every verdict crashed."""
+    import os
+    import re
+    import shutil
+    import subprocess
+    import sys
+    from pathlib import Path
+
+    scripts = Path(delivery.__file__).parent
+    primitives = (scripts / "free-model-factory-worker-primitives.sh").read_text(encoding="utf-8")
+    block = primitives.split("stage_trusted_review_controller() {", 1)[1].split("\n}\n", 1)[0]
+    for name in sorted(set(re.findall(r"\.github/scripts/([\w.-]+\.py)", block))):
+        shutil.copy(scripts / name, tmp_path / name)
+    body = child_body("docs/api/route-fragments/*.json")
+    code = (
+        "import json, sys, factory_implementation_delivery as d\n"
+        "print(json.dumps(d.pr_delivers_implementation(sys.argv[1], [sys.argv[2]], sys.argv[3])))"
+    )
+    env = {k: v for k, v in os.environ.items() if k != "PYTHONPATH"}
+    out = subprocess.run(
+        [sys.executable, "-c", code, body, FRAGMENT, PATCH],
+        cwd=tmp_path, text=True, capture_output=True, env=env,
+    )
+    assert out.returncode == 0, out.stderr
+    assert out.stdout.strip().startswith("[true")

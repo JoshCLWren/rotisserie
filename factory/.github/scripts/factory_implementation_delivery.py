@@ -71,11 +71,7 @@ def _is_test_path(path: str) -> bool:
 
 
 def substantive_changed_files(changed_files: Iterable[str], named: Iterable[str] = ()) -> list[str]:
-    """Candidate behavioral source files, excluding tests, and docs unless ``named``.
-
-    ``named`` is a split child's ``## Files`` list: a ``docs/`` file it names is
-    its deliverable (some repositories keep build inputs there).
-    """
+    """Candidate behavioral source files: no tests, and docs only when a split child ``named`` them."""
     named = tuple(named)
     return [
         path for path in changed_files
@@ -326,6 +322,15 @@ def _file_patches(diff_text: str) -> dict[str, str]:
     return patches
 
 
+def _child_files(body: str | None) -> list[str]:
+    """A split child's ``## Files`` list, parsed here: the trusted review stage copies this module alone."""
+    text = str(body or "")
+    if "-factory-split-child-v1:" not in text.split("\n", 1)[0] or "\n## Files\n" not in text:
+        return []
+    section = text.split("\n## Files\n", 1)[1].split("\n## ", 1)[0].split("\nBlocked by:", 1)[0]
+    return re.findall(r"(?m)^- `([^`]+)`\s*$", section)
+
+
 def pr_delivers_implementation(
     issue_body: str | None,
     changed_files: Iterable[str],
@@ -333,19 +338,12 @@ def pr_delivers_implementation(
 ) -> tuple[bool, str]:
     """Reject non-delivering implementations without judging feature correctness.
 
-    Args:
-        issue_body: Exact linked-issue body.
-        changed_files: File paths of the current PR head.
-        diff_text: Full unified patch for that same PR head, if available.
-
-    Returns:
-        Whether the mechanical behavioral-diff prerequisite is satisfied,
-        plus an actionable reason. Missing diff never counts as evidence.
+    Returns whether the behavioral-diff prerequisite holds for this exact head,
+    plus an actionable reason. A missing diff never counts as evidence.
     """
     if not is_implementation_issue(issue_body):
         return True, "explicit non-implementation issue type; documentation allowed"
-    from factory_split_plan import declared_files
-    candidates = substantive_changed_files(changed_files, declared_files(issue_body))
+    candidates = substantive_changed_files(changed_files, _child_files(issue_body))
     if not candidates:
         return False, "implementation issue has no changed production source files"
     if diff_text is None:
