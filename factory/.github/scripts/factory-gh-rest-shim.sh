@@ -353,7 +353,10 @@ if [[ "$command_group" == pr && "$command_name" == view ]]; then
       headRefOid: .head.sha,
       author: {login: .user.login},
       isCrossRepository: (.head.repo.full_name != .base.repo.full_name),
-      headRefName: .head.ref
+      headRefName: .head.ref,
+      createdAt: .created_at,
+      mergedAt: .merged_at,
+      mergeCommit: (if .merged_at != null then {oid: .merge_commit_sha} else null end)
     }
   ' <<< "$raw")"
   emit_with_optional_jq "$payload" "$jq_expr"
