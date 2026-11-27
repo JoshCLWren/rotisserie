@@ -92,7 +92,7 @@ def park_loops(
             if item.number in exempt:
                 done.append({"pr": item.number, "status": "incident", "text": item.text()})
                 continue
-            if loop.bypassed(names):
+            if loop.bypassed(names) or heal.owner_authored(pull, github.repo):
                 done.append({"pr": item.number, "status": "owner", "text": item.text()})
                 continue
             if any(name.startswith("agent:") for name in names):

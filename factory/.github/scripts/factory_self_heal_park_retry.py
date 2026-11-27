@@ -213,9 +213,11 @@ def close(
     }
 
 
-def exempt(store: heal.Store, pull: Mapping[str, Any], incidents: frozenset[int]) -> str:
+def exempt(
+    store: heal.Store, pull: Mapping[str, Any], incidents: frozenset[int], repo: str
+) -> str:
     names = heal.labels(pull)
-    if loop.bypassed(names):
+    if loop.bypassed(names) or heal.owner_authored(pull, repo):
         return "owner"
     if any(name.startswith("agent:") for name in names):
         return "outside agent"
@@ -250,7 +252,7 @@ def resolve_long_parks(
     taken = 0
     for pull, park in due:
         pr = _number(pull)
-        why = exempt(store, pull, incidents)
+        why = exempt(store, pull, incidents, github.repo)
         if why:
             done.append({"pr": pr, "status": why})
             continue

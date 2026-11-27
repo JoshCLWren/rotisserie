@@ -162,6 +162,13 @@ def labels(row: Mapping[str, Any]) -> set[str]:
     return found
 
 
+def owner_authored(row: Mapping[str, Any], repo: str) -> bool:
+    """A PR the repository owner opened (by hand or through a local agent), never factory work."""
+    user = row.get("user")
+    author = str(user.get("login") or "") if isinstance(user, Mapping) else ""
+    return bool(author) and author.lower() == repo.split("/", 1)[0].lower()
+
+
 def label_holder(names: set[str]) -> str | None:
     """Who holds the PR by its labels: a worker owner label or a person's claim."""
     owners = sorted(name for name in names if OWNER_LABEL_RE.fullmatch(name))

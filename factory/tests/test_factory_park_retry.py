@@ -186,6 +186,19 @@ def test_an_owner_override_keeps_the_pr_open(env) -> None:
     assert hub.writes == [] and found == [{"pr": PR, "status": "owner"}]
 
 
+@pytest.mark.parametrize(("login", "kept"), [("owner", True), ("github-actions[bot]", False)])
+def test_an_owner_authored_pr_stays_open(env, login: str, kept: bool) -> None:
+    db, repo = env
+    park(db, repo, 0)
+    row = {**pull(), "user": {"login": repo.split("/")[0] if login == "owner" else login}}
+    hub = Hub(repo)
+    found = retry.resolve_long_parks(hub, heal.LedgerStore(repo), [row], heal_budget())
+    closed = f"pulls/{PR}" in hub.paths()
+    assert closed is not kept
+    if kept:
+        assert found == [{"pr": PR, "status": "owner"}]
+
+
 def test_a_pushed_head_is_no_longer_parked(env) -> None:
     db, repo = env
     park(db, repo, 0)
