@@ -74,7 +74,7 @@ def _pr_info(pr_number: int) -> dict[str, str]:
         "--repo",
         _repo_slug(),
         "--json",
-        "headRefName,headRefOid,mergeCommit,body,state,title",
+        "headRefName,headRefOid,mergeCommit,body,state,title,createdAt",
     )
     payload = json.loads(raw)
     return {
@@ -84,6 +84,7 @@ def _pr_info(pr_number: int) -> dict[str, str]:
         "body": str(payload.get("body") or ""),
         "state": str(payload.get("state") or ""),
         "title": str(payload.get("title") or ""),
+        "created": str(payload.get("createdAt") or ""),
     }
 
 
@@ -114,13 +115,17 @@ def _issue_view(issue_number: int) -> dict[str, object]:
     }
 
 
-def _reopened_by_person(issue_number: int) -> bool | str:
-    """Whether a person (not a bot) made the issue's latest reopen; "unknown" on failure."""
+def _reopened_by_person(issue_number: int, since: str = "") -> bool | str:
+    """Whether a person (not a bot) made the issue's latest reopen; "unknown" on failure.
+
+    With ``since`` (the merged PR's creation time), a reopen before it does not
+    count: that PR is a new attempt after the person's reopen.
+    """
     owner, name = _repo_slug().split("/", 1)
     query = (
         "query($owner:String!,$name:String!,$number:Int!){repository(owner:$owner,name:$name)"
         "{issue(number:$number){timelineItems(last:1,itemTypes:[REOPENED_EVENT])"
-        "{nodes{... on ReopenedEvent{actor{__typename login}}}}}}}"
+        "{nodes{... on ReopenedEvent{createdAt actor{__typename login}}}}}}}"
     )
     try:
         raw = _run_gh(
@@ -133,6 +138,8 @@ def _reopened_by_person(issue_number: int) -> bool | str:
     if not nodes:
         return False
     actor = nodes[-1].get("actor") or {}
+    if since and str(nodes[-1].get("createdAt") or "") < since:
+        return False
     return actor.get("__typename") == "User"
 
 

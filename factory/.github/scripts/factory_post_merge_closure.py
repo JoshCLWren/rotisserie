@@ -202,7 +202,7 @@ def close_merged_pr_issue(
         return "manual-only-issue"
     if str(issue["state"]) != CLOSED_STATE:
         # A person who reopened the issue says the merged PR did not finish it.
-        reopened = github._reopened_by_person(issue_number)
+        reopened = github._reopened_by_person(issue_number, str(info.get("created") or ""))
         if reopened:
             return "reopened-by-person" if reopened is True else "reopen-lookup-failed"
     if _acceptance_parent_has_incomplete_gates(labels, issue_body, issue_number):
