@@ -119,11 +119,12 @@ def test_migration_files_are_read_once_per_head(
     monkeypatch.setattr(lane, "FINALIZATION_STAGES", ("factory:ready",))
     monkeypatch.setattr(lane, "open_pull_requests", lambda: pulls)
     monkeypatch.setattr(lane, "pr_changed_files", lambda n: reads.append(n) or files[n])
-    monkeypatch.setattr(
-        lane,
-        "changed_file_is_migration",
-        lambda row: row["filename"].startswith("yoyo/migrations/"),
+    import factory_migration_families as migration_families
+
+    yoyo = migration_families.families(
+        {"migrations": [{"family": "yoyo", "directory": "yoyo/migrations/"}]}
     )
+    monkeypatch.setattr(lane, "declared", lambda: yoyo)
     first = [pr.number for pr in lane.current_migration_prs()]
     second = [pr.number for pr in lane.current_migration_prs()]
     assert first == second == [5]

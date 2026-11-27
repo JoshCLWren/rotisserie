@@ -399,7 +399,10 @@ def test_read_only_migration_sweep_does_not_probe_label_or_change_ownership(monk
     monkeypatch.setattr(module, "current_migration_prs", lambda: [])
     monkeypatch.setattr(module, "ensure_wait_label", lambda: pytest.fail("no park: no label probe"))
     monkeypatch.setattr(module, "replace_labels", lambda *_: pytest.fail("no lane work: no labels"))
-    assert module.reconcile() == {"holder": None, "parked": [], "released": None, "waiting": []}
+    assert module.reconcile() == {
+        "holder": None, "lanes": {}, "parked": [], "released": None, "stale_released": [],
+        "waiting": [], "dry_run": False,
+    }
 
 
 
