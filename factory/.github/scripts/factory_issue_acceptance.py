@@ -271,6 +271,21 @@ def linked_issue(branch: str, body: str) -> int | None:
     return linked_issue_mode(branch, body)[0]
 
 
+OWNER_EXEMPT_MISSION = (
+    "\nISSUE ACCEPTANCE NOT REQUIRED: the repository owner wrote this PR and it links no issue. "
+    "Review the diff against the PR description; your line-anchored findings decide the verdict.\n"
+)
+
+
+def owner_exempt(pr: Mapping[str, Any], repo: str) -> bool:
+    """An owner PR with no linked issue merges on its line review (owner decision 2026-11-27)."""
+    author = pr.get("author")
+    login = str(author.get("login") or "") if isinstance(author, Mapping) else ""
+    branch, body = str(pr.get("headRefName") or ""), str(pr.get("body") or "")
+    is_owner = bool(login) and login.lower() == repo.split("/")[0].lower()
+    return is_owner and linked_issue(branch, body) is None
+
+
 def mission(issue: int, head: str, body: str, non_closing: bool = False) -> str:
     """Give the reviewer an exact, complete acceptance schema for this issue."""
     revision = digest(body)
@@ -420,6 +435,12 @@ if __name__ == "__main__":
             if number is None:
                 raise ValueError("PR has no supported linked issue")
             print(number)
+        elif sys.argv[1:] == ["no-issue-mission"]:
+            from factory_adopter import repository
+
+            if not owner_exempt(json.load(sys.stdin), repository()):
+                raise ValueError("only an owner-authored PR may omit a linked issue")
+            print(OWNER_EXEMPT_MISSION, end="")
         elif sys.argv[1:] == ["non-closing"]:
             data = json.load(sys.stdin)
             print(
