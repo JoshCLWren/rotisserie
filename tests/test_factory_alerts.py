@@ -102,7 +102,7 @@ def test_follow_reports_only_starts_changes_and_clears() -> None:
     changed = alerts.Alert("verdicts", "no-verdict", "no review verdict in 45m while 3 PRs wait")
     assert alerts.changes({}, [first]) == [("alert", first)]
     assert alerts.changes({"verdicts": first}, [first]) == []
-    assert alerts.changes({"verdicts": first}, [changed]) == [("alert", changed)]
+    assert alerts.changes({"verdicts": first}, [changed]) == []
     assert alerts.changes({"verdicts": changed}, []) == [("cleared", changed)]
 
 
@@ -112,3 +112,14 @@ def test_alerts_is_a_read_only_control_room_command() -> None:
     assert "alerts" in control_contract.READ_ONLY
     assert control_contract.read_command("alerts", {}) == ["alerts"]
     assert control_parity.CONTROLS["alerts"] == ("read:alerts",)
+
+
+def test_loop_only_slowing_is_quiet_but_other_states_alert() -> None:
+    """Overnight Nov 27, every looping V2 API PR raised Slowing; the loop breaker handles those."""
+    assert alerts.state_alert({"verdict": "slowing", "reason": "item-loops", "text": "x"}) is None
+    slowing = alerts.state_alert({"verdict": "slowing", "reason": "control-failures", "text": "y"})
+    burning = alerts.state_alert({"verdict": "burning", "reason": "crash", "text": "z"})
+    assert slowing and slowing.key == "state:slowing"
+    assert burning and burning.key == "state:burning"
+    assert alerts.VERDICT_WINDOW.total_seconds() == 90 * 60
+    assert alerts.MERGE_WINDOW.total_seconds() == 150 * 60

@@ -14,9 +14,9 @@ HELP = """\
 Factory health alerts: the signals that catch a stalled factory within one check.
 
   repeated failure   the same worker error 3 or more times in 20 minutes
-  factory state      baste turning says Slowing or Burning
-  no review verdict  none in 45 minutes while PRs wait in review or ready
-  no merge           none in 90 minutes while PRs wait in review or ready
+  factory state      baste turning says Slowing or Burning (not Slowing from loops alone)
+  no review verdict  none in 90 minutes while PRs wait in review or ready
+  no merge           none in 150 minutes while PRs wait in review or ready
 
 Without --follow it prints the current alerts and exits 0 when there are none,
 or 4 when there are some. --follow N checks every N minutes (default 10) and

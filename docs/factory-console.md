@@ -461,11 +461,13 @@ Diagnostics.
 
 `baste alerts [--follow MINUTES]` checks factory health in one pass and
 reads GitHub only. It raises an alert when the same worker error repeats 3 or
-more times in 20 minutes, when `baste turning` says Slowing or Burning, when no
-review verdict was recorded in 45 minutes, or when no PR merged in 90 minutes,
-both while PRs wait in review or ready. It exits 0 with no alert and 4 with
+more times in 20 minutes, when `baste turning` says Slowing or Burning (but
+not Slowing whose only cause is looping items, which the loop breaker parks by
+itself), when no review verdict was recorded in 90 minutes, or when no PR merged
+in 150 minutes, both while PRs wait in review or ready. The drought limits allow
+for CI that takes about 20 minutes per push. It exits 0 with no alert and 4 with
 alerts. `--follow` re-checks every 10 minutes (or MINUTES) and prints a line
-only when an alert starts, changes or clears. It is in the control room under
+only when an alert starts or clears. It is in the control room under
 Diagnostics.
 
 ## Closing work that should not be done

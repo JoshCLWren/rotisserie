@@ -24,8 +24,10 @@ from rotisserie.factory_console.tracker import Clock
 FAILURE_WINDOW = timedelta(minutes=20)
 FAILURE_REPEATS = 3
 FAILURE_LIMIT = 25
-VERDICT_WINDOW = timedelta(minutes=45)
-MERGE_WINDOW = timedelta(minutes=90)
+# ComicPile CI takes 17 to 25 minutes per push, and reviews and merges wait on it.
+VERDICT_WINDOW = timedelta(minutes=90)
+MERGE_WINDOW = timedelta(minutes=150)
+LOOP_ONLY = "item-loops"
 WAITING_LABELS = ("factory:review", "factory:ready")
 VERDICT_MARKER = "semantic-review-v1:"
 NO_ERROR = ("", "(no error annotation)")
@@ -66,10 +68,13 @@ def repeated_failures(rows: Iterable[failures.WorkerFailure]) -> list[Alert]:
 
 
 def state_alert(verdict: dict[str, object]) -> Alert | None:
+    """Slowing or Burning, but not Slowing from looping items alone: the breaker parks those."""
     name = str(verdict.get("verdict") or "")
-    if name in ("", turning.TURNING):
+    if name in ("", turning.TURNING) or verdict.get("reason") == LOOP_ONLY:
         return None
-    return Alert("state", "factory-state", f"factory is {name}: {verdict.get('text') or ''}")
+    return Alert(
+        f"state:{name}", "factory-state", f"factory is {name}: {verdict.get('text') or ''}"
+    )
 
 
 def waiting_prs(pulls: Sequence[Obj]) -> list[int]:
@@ -123,8 +128,12 @@ def check(github: GitHub, *, clock: Clock) -> list[Alert]:
 
 
 def changes(previous: dict[str, Alert], current: Sequence[Alert]) -> list[tuple[str, Alert]]:
-    """What a follow pass reports: alerts that started or changed, then the ones that cleared."""
+    """What a follow pass reports: alerts that started, then the ones that cleared.
+
+    An alert is the same alert while its key holds, so a changing count inside its text
+    never prints again.
+    """
     now = {alert.key: alert for alert in current}
-    started = [("alert", a) for k, a in now.items() if previous.get(k) != a]
+    started = [("alert", a) for k, a in now.items() if k not in previous]
     cleared = [("cleared", a) for k, a in previous.items() if k not in now]
     return started + cleared
