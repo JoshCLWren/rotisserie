@@ -238,6 +238,7 @@ def sweep(
     budget = actions.Budget(actions=max_actions, syncs=max_syncs, dry_run=dry_run)
     from factory_self_heal_duplicates import resolve_duplicates
     from factory_self_heal_incident import clear_closed, sync_incident_work
+    from factory_self_heal_issue_ready import sync_issue_ready
     from factory_self_heal_loops import park_loops, sync_parked
     from factory_self_heal_park_retry import resolve_long_parks
     from factory_self_heal_self_review import allow_long_waits
@@ -256,6 +257,7 @@ def sweep(
         "duplicates": [],
         "parked_labels": [],
         "state_labels": [],
+        "issue_ready": [],
         "incident_labels": [],
         "closed_labels": [],
     }
@@ -269,6 +271,7 @@ def sweep(
         ("threads", actions.resolve_answered_threads),
         ("parked_labels", sync_parked),
         ("state_labels", sync_state),
+        ("issue_ready", sync_issue_ready),
         ("incident_labels", sync_incident_work),
         ("closed_labels", clear_closed),
     ):
