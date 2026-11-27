@@ -1,10 +1,12 @@
 #!/usr/bin/env python3
-"""Serialize final integration for factory PRs that change Alembic migrations.
+"""Serialize final integration for factory PRs that change database migrations.
 
-An adopter with a single Alembic head requires it, so migration-bearing PRs cannot safely
-finish review/CI/merge in parallel. This controller keeps ordinary implementation
-parallel, but parks all except one migration PR once they reach the finalization
-stages that can lead to merge.
+An adopter's migration family (``factory_migration_families``: Alembic by default,
+Refinery or another declared in adopter config) needs one ordered history, so PRs
+that change the same family cannot safely finish review/CI/merge in parallel. This
+controller keeps ordinary implementation parallel, but parks all except one PR per
+family once they reach the finalization stages that can lead to merge. A PR still
+marked waiting that no longer changes a migration is released.
 """
 
 from __future__ import annotations
@@ -17,13 +19,14 @@ import sys
 from collections.abc import Iterable
 from dataclasses import dataclass
 from typing import Any
-from factory_adopter import repository
+from factory_adopter import AdopterConfigError, repository
 import factory_crash
+import factory_migration_families as migration_families
 
 REPO = repository()
 GH_TIMEOUT_SECONDS = 120
 WAIT_LABEL = "factory:migration-wait"
-MIGRATION_PREFIX = "alembic/versions/"
+DEFAULT_FAMILY = "alembic"
 FINALIZATION_STAGES = (
     "factory:ready",
     "factory:ci",
@@ -42,7 +45,6 @@ STAGE_LABELS = {
 OWNER_RE = re.compile(r"^factory:(?:unowned|local|[1-9][0-9]*)$")
 ACTIVE_OWNER_RE = re.compile(r"^factory:(?:local|[1-9][0-9]*)$")
 RALPH_STATUS_RE = re.compile(r"^ralph-status:")
-BRANCH_ISSUE_RE = re.compile(r"^factory/\d+-(\d+)-")
 
 
 class LaneConflictError(RuntimeError):
@@ -59,6 +61,9 @@ class MigrationPr:
     created_at: str
     labels: frozenset[str]
     branch: str
+    families: frozenset[str] = frozenset({DEFAULT_FAMILY})
+    body: str = ""
+    title: str = ""
 
     @property
     def stage(self) -> str | None:
@@ -77,13 +82,18 @@ class MigrationPr:
         return self.stage is not None and "factory:blocked" not in self.labels
 
 
+@__import__("functools").cache
+def declared() -> tuple[migration_families.Family, ...]:
+    return migration_families.families()
+
+
+def changed_families(row: dict[str, Any]) -> frozenset[str]:
+    """The migration families a GitHub changed-file row touches, before or after a rename."""
+    return frozenset(change.family for change in migration_families.changes(row, declared()))
+
+
 def changed_file_is_migration(row: dict[str, Any]) -> bool:
-    """Return whether a GitHub changed-file row touches Alembic version history."""
-    for key in ("filename", "previous_filename"):
-        path = str(row.get(key) or "")
-        if path.startswith(MIGRATION_PREFIX):
-            return True
-    return False
+    return bool(changed_families(row))
 
 
 def label_names(value: object) -> frozenset[str]:
@@ -140,6 +150,37 @@ def plan_lane(prs: Iterable[MigrationPr]) -> tuple[int | None, tuple[int, ...], 
         return None, (), release.number
 
     return None, (), None
+
+
+def plan_lanes(
+    prs: Iterable[MigrationPr],
+) -> tuple[dict[str, int], tuple[int, ...], tuple[int, ...], tuple[int, ...]]:
+    """(holder per family, PRs to park, waiters to release, stale waiters) for one snapshot.
+
+    Each family is its own lane. A waiter is released only when no other PR holds
+    any family it touches; a waiter that touches no family any more is stale.
+    """
+    rows = list(prs)
+    by_number = {pr.number: pr for pr in rows}
+    holders: dict[str, int] = {}
+    park: set[int] = set()
+    freed: set[int] = set()
+    for name in sorted({family for pr in rows for family in pr.families}):
+        holder, parked, release = plan_lane(pr for pr in rows if name in pr.families)
+        if holder is not None:
+            holders[name] = holder
+        park.update(parked)
+        if release is not None:
+            freed.add(release)
+    release = tuple(
+        sorted(
+            number
+            for number in freed - park
+            if all(holders.get(name) in (None, number) for name in by_number[number].families)
+        )
+    )
+    stale = tuple(sorted(pr.number for pr in rows if pr.is_waiting and not pr.families))
+    return holders, tuple(sorted(park)), release, stale
 
 
 def run_gh(args: list[str], *, input_json: object | None = None, check: bool = True) -> str:
@@ -214,14 +255,14 @@ def pr_changed_files(pr_number: int) -> list[dict[str, Any]]:
     return flatten_pages(pages)
 
 
-def touches_migration(number: int, sha: str, memo: Any) -> bool:
-    """A head's changed files never change, so its answer is kept by SHA."""
+def touched_families(number: int, sha: str, memo: Any) -> frozenset[str]:
+    """A head's changed files never change, so its families are kept by SHA."""
     known = memo.get(sha) if sha else None
-    if isinstance(known, bool):
-        return known
-    found = any(changed_file_is_migration(row) for row in pr_changed_files(number))
+    if isinstance(known, list):
+        return frozenset(str(name) for name in known)
+    found: frozenset[str] = frozenset().union(*map(changed_families, pr_changed_files(number)))
     if sha:
-        memo.put(sha, found)
+        memo.put(sha, sorted(found))
     return found
 
 
@@ -229,7 +270,7 @@ def current_migration_prs() -> list[MigrationPr]:
     """Load only factory PRs currently relevant to migration finalization."""
     from factory_head_memo import HeadMemo
 
-    memo = HeadMemo(REPO, "migration-files")
+    memo = HeadMemo(REPO, f"migration-families-{migration_families.fingerprint(declared())}")
     heads: set[str] = set()
     result: list[MigrationPr] = []
     for pr in open_pull_requests():
@@ -249,7 +290,8 @@ def current_migration_prs() -> list[MigrationPr]:
         head = pr.get("head") or {}
         sha = str(head.get("sha") or "") if isinstance(head, dict) else ""
         heads.add(sha)
-        if not touches_migration(number, sha, memo):
+        families = touched_families(number, sha, memo)
+        if not families and WAIT_LABEL not in labels:
             continue
         branch = str(head.get("ref") or "") if isinstance(head, dict) else ""
         result.append(
@@ -258,6 +300,9 @@ def current_migration_prs() -> list[MigrationPr]:
                 created_at=str(pr.get("created_at") or ""),
                 labels=labels,
                 branch=branch,
+                families=families,
+                body=str(pr.get("body") or ""),
+                title=str(pr.get("title") or ""),
             )
         )
     memo.save(heads)
@@ -278,9 +323,12 @@ def replace_labels(number: int, labels: set[str]) -> None:
     )
 
 
-def linked_issue(branch: str) -> int | None:
-    match = BRANCH_ISSUE_RE.match(branch)
-    return int(match.group(1)) if match else None
+def linked_issue(pr: MigrationPr) -> int | None:
+    from factory_issue_intake_guard import sliced_issue
+    from factory_work_policy_base import linked_issue_from_pr
+
+    shape = {"headRefName": pr.branch, "body": pr.body, "title": pr.title}
+    return linked_issue_from_pr(shape) or sliced_issue(shape)
 
 
 def factory_labels_for_wait(current: set[str]) -> set[str]:
@@ -346,8 +394,8 @@ def issue_labels_for_review(current: set[str]) -> set[str]:
     return labels
 
 
-def transition_linked_issue(branch: str, *, waiting: bool) -> None:
-    issue_number = linked_issue(branch)
+def transition_linked_issue(pr: MigrationPr, *, waiting: bool) -> None:
+    issue_number = linked_issue(pr)
     if issue_number is None:
         return
     issue = target_json(issue_number)
@@ -364,46 +412,48 @@ def park_pr(pr: MigrationPr) -> None:
     target = target_json(pr.number)
     current = set(label_names(target.get("labels")))
     replace_labels(pr.number, factory_labels_for_wait(current))
-    transition_linked_issue(pr.branch, waiting=True)
+    transition_linked_issue(pr, waiting=True)
 
 
 def release_pr(pr: MigrationPr) -> None:
     target = target_json(pr.number)
     current = set(label_names(target.get("labels")))
     replace_labels(pr.number, factory_labels_for_review(current))
-    transition_linked_issue(pr.branch, waiting=False)
+    transition_linked_issue(pr, waiting=False)
 
 
-def reconcile() -> dict[str, Any]:
+def reconcile(*, dry_run: bool = False) -> dict[str, Any]:
     migration_prs = current_migration_prs()
     by_number = {pr.number: pr for pr in migration_prs}
-    holder, park, release = plan_lane(migration_prs)
+    holders, park, release, stale = plan_lanes(migration_prs)
 
-    # Only a genuine park transition needs a GitHub label-existence probe.
-    # Read-only sweeps and waiter releases already have the label.
-    if park:
-        ensure_wait_label()
-    for number in park:
-        pr = by_number[number]
-        if pr.active_owner is not None:
-            raise LaneConflictError(f"refusing to park actively leased migration PR #{number}")
-        park_pr(pr)
+    if not dry_run:
+        # Only a genuine park transition needs a GitHub label-existence probe.
+        if park:
+            ensure_wait_label()
+        for number in park:
+            pr = by_number[number]
+            if pr.active_owner is not None:
+                raise LaneConflictError(f"refusing to park actively leased migration PR #{number}")
+            park_pr(pr)
+        for number in (*release, *stale):
+            release_pr(by_number[number])
+    for number in release:
+        holders.update(dict.fromkeys(by_number[number].families, number))
 
-    if release is not None:
-        release_pr(by_number[release])
-        holder = release
-
+    freed = {*release, *stale}
     waiting = sorted(
-        {
-            *(pr.number for pr in migration_prs if pr.is_waiting and pr.number != release),
-            *park,
-        }
+        {*(pr.number for pr in migration_prs if pr.is_waiting and pr.number not in freed), *park}
     )
+    distinct = sorted(set(holders.values()))
     result = {
-        "holder": holder,
+        "holder": distinct[0] if len(distinct) == 1 else None,
+        "lanes": dict(sorted(holders.items())),
         "parked": list(park),
-        "released": release,
+        "released": release[0] if len(release) == 1 else (list(release) or None),
+        "stale_released": list(stale),
         "waiting": waiting,
+        "dry_run": dry_run,
     }
     print(json.dumps(result, sort_keys=True))
     return result
@@ -412,9 +462,10 @@ def reconcile() -> dict[str, Any]:
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("command", choices=("reconcile",))
+    parser.add_argument("--dry-run", action="store_true", help="print the plan; change nothing")
     args = parser.parse_args()
     if args.command == "reconcile":
-        reconcile()
+        reconcile(dry_run=args.dry_run)
     return 0
 
 
@@ -430,4 +481,8 @@ if __name__ == "__main__":
         raise SystemExit(0) from None
     except LaneConflictError as exc:
         print(f"migration finalization lane conflict: {exc}", file=sys.stderr)
+        raise SystemExit(2) from exc
+    except AdopterConfigError as exc:
+        # Fail closed like a lane conflict: no migration PR moves until the config is fixed.
+        print(f"::error::migration lane config: {exc}", file=sys.stderr)
         raise SystemExit(2) from exc
