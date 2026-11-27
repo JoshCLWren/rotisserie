@@ -66,7 +66,7 @@ class Hub:
             return {}
         if path.startswith("pulls?state=open"):
             return [self.pull_rows]
-        if path.startswith("issues?state=open&labels="):
+        if path.startswith(("issues?state=open&labels=", "issues?labels=factory%3Aready")):
             return []
         if path.startswith("issues/"):
             number = int(path.split("/")[1])
