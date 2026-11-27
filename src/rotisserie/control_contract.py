@@ -36,6 +36,7 @@ READ_ONLY = frozenset(
         "recap",
         "turning",
         "heal",
+        "alerts",
         "attempts",
         "splits",
         "report",

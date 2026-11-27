@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import argparse
 
-from rotisserie.factory_console.commands import attempts, health_reset
+from rotisserie.factory_console.commands import alerts, attempts, health_reset
 from rotisserie.factory_console.commands.parser_insight import _common
 from rotisserie.factory_console.service import assign_task, pause
 
@@ -80,3 +80,4 @@ def add_operator_parsers(commands: argparse._SubParsersAction[argparse.ArgumentP
     _common(result)
     health_reset.add_parser(commands)
     attempts.add_parser(commands)
+    alerts.add_parser(commands)
