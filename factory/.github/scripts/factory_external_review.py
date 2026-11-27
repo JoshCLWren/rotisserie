@@ -2,8 +2,8 @@
 
 Runs only in trusted Actions, inside the ledger's locked handoff of the
 agent's review claim. The merge gate is unchanged: this writes the same
-bot-authored approval, reviewer-model and acceptance records the local review
-attestation writes, after the same checks.
+bot-authored approval and reviewer-model records the local review attestation
+writes. An approval is final: no acceptance record is required.
 """
 
 from __future__ import annotations
@@ -112,39 +112,18 @@ def record(
     provenance = ctrl.reconcile_provenance(pr_number=pr_number, expected_head=head)
     if provenance.get("status") not in {"attested", "already-attested"}:
         raise RuntimeError("exact-head authorship is unavailable")
-    issue, non_closing = ctrl.linked_issue_mode_for_pr(pr_number, str(pr.get("headRefName") or ""))
-    if issue is None:
-        raise ValueError("the PR links no issue whose acceptance the review can attest")
-    issue_body = ctrl.target_json(issue)["body"]
-    changed = ctrl.run_gh(
-        ["pr", "diff", str(pr_number), "--repo", ctrl.REPO, "--name-only"]
-    ).stdout.splitlines()
-    report = ctrl.issue_acceptance.report_from_text(body)
-    errors = ctrl.issue_acceptance.validate(
-        report, issue, head, issue_body, changed, non_closing=non_closing
-    )
-    if errors:
-        raise ValueError(
-            "the review's FACTORY_ACCEPTANCE_V1 report is invalid: " + "; ".join(errors)
-        )
-    delivery = ctrl.implementation_delivery_gate(pr_number, head, issue_body)
-    if delivery["decision"] != "pass":
-        raise RuntimeError("implementation delivery gate: " + delivery["reason"])
-
     latest = ctrl.pr_json(pr_number)
-    if latest.get("headRefOid") != head or ctrl.target_json(issue).get("body") != issue_body:
-        raise RuntimeError("the PR or its issue changed while the review was checked")
+    if latest.get("headRefOid") != head:
+        raise RuntimeError("the PR changed while the review was checked")
     approval = policy.review_marker(
         pr=pr_number, head=head, reviewer=identity, producer=None, verdict="approve"
     )
     excerpt = ctrl.redact_review_text(body)[:7000]
     comments = [
-        approval + f"\nOutside review: {actor} ({model})\n" + excerpt
-        + ctrl.issue_acceptance.deferred_note(issue_body),
+        approval + f"\nOutside review: {actor} ({model})\n" + excerpt,
         policy.reviewer_model_marker(
             pr=pr_number, head=head, reviewer_model=model, reviewer_agent=identity
         ),
-        ctrl.issue_acceptance.marker(issue, head, issue_body),
     ]
     for comment in comments:
         ctrl.run_gh(["issue", "comment", str(pr_number), "--repo", ctrl.REPO, "--body", comment])

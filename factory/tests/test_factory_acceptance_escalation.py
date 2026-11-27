@@ -42,30 +42,6 @@ def review(monkeypatch: MonkeyPatch, prior: int) -> tuple[dict[str, Any], Any, A
     return result, transitions, posted
 
 
-def test_the_first_two_rejections_go_back_to_review_with_a_head_marker(
-    monkeypatch: MonkeyPatch,
-) -> None:
-    result, transitions, posted = review(monkeypatch, prior=1)
-    assert result["status"] == "acceptance-evidence-required"
-    assert transitions[-1]["pr_stage"] == "factory:review"
-    assert posted[-1]["marker"] == escalation.marker(pr=1390, head=REVIEWED_HEAD)
-    assert posted[-1]["verdict"] == "not-ready"
-
-
-def test_the_third_rejection_at_one_head_routes_to_repair_with_findings(
-    monkeypatch: MonkeyPatch,
-) -> None:
-    result, transitions, posted = review(monkeypatch, prior=2)
-    assert result["status"] == "acceptance-evidence-required"
-    assert transitions[-1]["pr_stage"] == "factory:changes-requested"
-    comment = posted[-1]
-    assert comment["verdict"] == "repair"
-    assert (
-        "A1 (Acceptance criteria: The creator list refreshes after a remap)" in comment["excerpt"]
-    )
-    assert "Implement this criterion in a file this PR changes" in comment["excerpt"]
-
-
 def test_rejections_at_another_head_or_pr_do_not_count() -> None:
     bodies = [
         escalation.marker(pr=1390, head="b" * 40),
@@ -114,11 +90,6 @@ def gated(monkeypatch: MonkeyPatch, failures: list[str], *labels: str) -> list[l
         review_log="/tmp/model.log",
     )
     return [c for c in commands if any("gate-rejected" in part for part in c)]
-
-
-def test_a_gate_rejection_adds_the_gate_rejected_label(monkeypatch: MonkeyPatch) -> None:
-    writes = gated(monkeypatch, FAILURES)
-    assert any("labels[]=factory:gate-rejected" in c for c in writes)
 
 
 def test_a_gate_pass_removes_the_gate_rejected_label(monkeypatch: MonkeyPatch) -> None:

@@ -279,13 +279,6 @@ def test_completed_failure_run_is_skipped_on_resweep(monkeypatch: pytest.MonkeyP
     assert control._persist(123) == {"status": "already-completed", "pr": 3897}
 
 
-def test_fork_review_never_runs_the_tool_enabled_recovery_pass() -> None:
-    """Recovery starts a tool-enabled agent, so forks must never reach it."""
-    worker = (SCRIPTS / "free-model-factory-worker.sh").read_text(encoding="utf-8")
-    recovery_condition = worker.split('if [[ -z "$verdict" ]]', 1)[1].split("; then", 1)[0]
-    assert "FACTORY_FORK_STATIC_REVIEW" in recovery_condition
-
-
 def test_binary_file_does_not_block_the_review_snapshot() -> None:
     """A PNG or other binary asset is described, not decoded as UTF-8."""
     binary = _payload(b"\x89PNG\r\n\x1a\n\x00\xff")

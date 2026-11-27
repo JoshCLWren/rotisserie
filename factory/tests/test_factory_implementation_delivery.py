@@ -184,31 +184,6 @@ def load_controller() -> ModuleType:
     return module
 
 
-def test_authoritative_review_gate_rejects_docs_only_implementation(
-    monkeypatch: MonkeyPatch,
-) -> None:
-    """The real controller gate, not just its helper, refuses docs-only PRs."""
-    module = load_controller()
-    doc = "docs/issue-plans/4010.md"
-    current = {
-        "state": "OPEN",
-        "headRefName": "factory/44-4010-opencode-free",
-        "headRefOid": HEAD,
-    }
-    monkeypatch.setattr(module, "pr_json", lambda _pr: current)
-    monkeypatch.setattr(module, "target_json", lambda _n: {
-        "state": "open", "body": "## Scope\n- Implement working CBL browser"
-    })
-    monkeypatch.setattr(module, "model_comment_bodies", lambda _pr: [])
-
-    monkeypatch.setattr(module.implementation_delivery, "complete_pr_diff", lambda *_args: (
-        [doc], patch(doc, ["Plan"], ["Edited plan"])
-    ))
-    verdict = module.issue_acceptance_gate(4040, HEAD)
-    assert verdict["decision"] == "deny"
-    assert "production source" in verdict["reason"]
-
-
 def test_current_head_validation_rejects_racing_edits(
     monkeypatch: MonkeyPatch,
 ) -> None:

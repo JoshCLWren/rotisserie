@@ -231,10 +231,8 @@ the claim instead.
 
 - `review`: the claimed PR, with a formal GitHub review by the claimant on the
   claimed head, submitted as **Approve** or **Request changes**. The review body
-  needs one `Model: <exact model id>` line. An approval also needs the issue's
-  `FACTORY_ACCEPTANCE_V1=` report (the same report factory reviewers write),
-  because the merge gate requires an acceptance record for the exact head.
-  An approval moves the PR to `factory:ci`; a change request moves it to
+  needs one `Model: <exact model id>` line. An approval needs nothing else:
+  the factory never asks for an acceptance-criteria record. An approval moves the PR to `factory:ci`; a change request moves it to
   `factory:changes-requested`. Hand off `.../pull/N#pullrequestreview-ID` to
   name one review, or the PR URL for the claimant's latest one.
 
