@@ -106,6 +106,18 @@ def test_a_waiter_is_released_only_when_every_family_it_touches_is_free(
     assert lane.plan_lanes([waiter])[2] == (11,)
 
 
+def test_two_waiters_that_share_a_family_are_never_both_released(
+    monkeypatch: MonkeyPatch,
+) -> None:
+    lane = lane_with(monkeypatch, BOTH)
+    wide = pr(lane, 21, "factory:blocked", {"refinery", "alembic"}, waiting=True,
+              created="2026-11-27T11:00:00Z")
+    older = pr(lane, 20, "factory:blocked", {"refinery"}, waiting=True,
+               created="2026-11-27T10:00:00Z")
+    holders, park, release, _stale = lane.plan_lanes([wide, older])
+    assert release == (20,) and holders == {"refinery": 20} and park == ()
+
+
 def test_a_stale_wait_label_is_released_through_reconcile(monkeypatch: MonkeyPatch) -> None:
     lane = lane_with(monkeypatch, BOTH)
     stale = pr(lane, 12, "factory:blocked", set(), waiting=True)
@@ -158,11 +170,22 @@ def test_a_changed_head_is_read_again_and_a_known_head_is_not(monkeypatch: Monke
     assert reads == [7, 7]
 
 
-def test_a_checkpoint_branch_finds_its_issue(monkeypatch: MonkeyPatch) -> None:
+def test_only_the_issue_a_pr_closes_has_its_labels_moved(monkeypatch: MonkeyPatch) -> None:
     lane = lane_with(monkeypatch, BOTH)
-    row = lane.MigrationPr(5, "t", frozenset(), "factory/work-checkpoints/issue-5701/m/1",
-                           frozenset({"refinery"}), "Part of #5701.", "V2 API 01")
-    assert lane.linked_issue(row) == 5701
+    branch = "factory/work-checkpoints/issue-5701/m/1"
+
+    def row(body: str) -> Any:
+        return lane.MigrationPr(5, "t", frozenset(), branch, frozenset({"refinery"}), body, "x")
+
+    assert lane.linked_issue(row("Closes #5701.")) == 5701
+    assert lane.linked_issue(row("Part of #4456.")) is None
+    moved: list[int] = []
+    waiting = [{"name": lane.WAIT_LABEL}]
+    monkeypatch.setattr(lane, "target_json", lambda n: {"state": "open", "labels": waiting})
+    monkeypatch.setattr(lane, "replace_labels", lambda n, _labels: moved.append(n))
+    lane.park_pr(row("Part of #4456."))
+    lane.release_pr(row("Closes #5701."))
+    assert moved == [5, 5, 5701]
 
 
 def test_an_invalid_config_exits_2_before_any_github_call(tmp_path: Path) -> None:

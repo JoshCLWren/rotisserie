@@ -172,13 +172,12 @@ def plan_lanes(
         park.update(parked)
         if release is not None:
             freed.add(release)
-    release = tuple(
-        sorted(
-            number
-            for number in freed - park
-            if all(holders.get(name) in (None, number) for name in by_number[number].families)
-        )
-    )
+    released: list[int] = []
+    for pr in sorted((by_number[n] for n in freed - park), key=lambda r: (r.created_at, r.number)):
+        if all(holders.get(name) in (None, pr.number) for name in pr.families):
+            holders.update(dict.fromkeys(pr.families, pr.number))
+            released.append(pr.number)
+    release = tuple(sorted(released))
     stale = tuple(sorted(pr.number for pr in rows if pr.is_waiting and not pr.families))
     return holders, tuple(sorted(park)), release, stale
 
@@ -324,11 +323,10 @@ def replace_labels(number: int, labels: set[str]) -> None:
 
 
 def linked_issue(pr: MigrationPr) -> int | None:
-    from factory_issue_intake_guard import sliced_issue
-    from factory_work_policy_base import linked_issue_from_pr
+    """The issue the PR closes, as merge closure reads it; never a ``Part of`` parent."""
+    from factory_merge_linkage import linkage
 
-    shape = {"headRefName": pr.branch, "body": pr.body, "title": pr.title}
-    return linked_issue_from_pr(shape) or sliced_issue(shape)
+    return linkage(pr.branch, pr.body, pr.title).issue
 
 
 def factory_labels_for_wait(current: set[str]) -> set[str]:
@@ -438,8 +436,6 @@ def reconcile(*, dry_run: bool = False) -> dict[str, Any]:
             park_pr(pr)
         for number in (*release, *stale):
             release_pr(by_number[number])
-    for number in release:
-        holders.update(dict.fromkeys(by_number[number].families, number))
 
     freed = {*release, *stale}
     waiting = sorted(
