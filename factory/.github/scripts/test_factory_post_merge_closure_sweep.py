@@ -12,6 +12,13 @@ from factory_post_merge_closure import close_merged_pr_issue, sweep_stranded_clo
 from factory_post_merge_closure_testing import ClosureIssueMixin
 
 
+def _answer(listing: str, open_issues: str):
+    def run(*args: str) -> str:
+        return open_issues if args[:2] == ("issue", "list") else listing
+
+    return run
+
+
 class FactoryPostMergeClosureSweepTests(ClosureIssueMixin, unittest.TestCase):
     """Cover sweep dependency handling and keyword-closed issue repair (#4083)."""
 
@@ -34,7 +41,7 @@ class FactoryPostMergeClosureSweepTests(ClosureIssueMixin, unittest.TestCase):
             ]
         )
         with patch.object(mod, "_repo_slug", return_value="owner/repo"):
-            with patch.object(mod, "_run_gh", return_value=listing):
+            with patch.object(mod, "_run_gh", side_effect=_answer(listing, '[{"number": 4010}]')):
                 with patch.object(mod, "_pr_info", return_value={
                     "branch": "factory/33-4010-kilo-auto",
                     "body": "Closes #4010.",
@@ -87,7 +94,7 @@ class FactoryPostMergeClosureSweepTests(ClosureIssueMixin, unittest.TestCase):
             ]
         )
         with patch.object(mod, "_repo_slug", return_value="owner/repo"):
-            with patch.object(mod, "_run_gh", return_value=listing):
+            with patch.object(mod, "_run_gh", side_effect=_answer(listing, '[{"number": 4017}]')):
                 with patch.object(mod, "_pr_info", return_value={
                     "branch": "factory/41-4017-kilo-auto",
                     "body": "Closes #4017.",
@@ -119,6 +126,21 @@ class FactoryPostMergeClosureSweepTests(ClosureIssueMixin, unittest.TestCase):
              "['enhancement', 'factory', 'ralph-status:done']+close "
              "(the PR body says it closes #4017)"],
         )
+
+    def test_sweep_skips_merged_prs_whose_issue_is_already_closed(self) -> None:
+        """After the shim fix the sweep read every recent merge each drain and drained the App budget."""
+        from unittest.mock import patch
+
+        merged_at = (datetime.now(timezone.utc) - timedelta(minutes=10)).strftime("%Y-%m-%dT%H:%M:%SZ")
+        listing = json.dumps(
+            [{"number": n, "headRefName": f"factory/41-{n - 30}-kilo-auto",
+              "body": f"Closes #{n - 30}.", "mergedAt": merged_at} for n in (4100, 4101)]
+        )
+        with patch.object(github, "_repo_slug", return_value="owner/repo"):
+            with patch.object(github, "_run_gh", side_effect=[listing, "[]"]):
+                with patch.object(github, "_pr_info") as info:
+                    self.assertEqual(sweep_stranded_closures(dry_run=True), [])
+        info.assert_not_called()
 
     def test_open_declared_dependency_blocks_closure_4017_4016(self) -> None:
         """CBL regression #4017/#4016: an open prerequisite refuses closure."""
