@@ -22,7 +22,6 @@ from rotisserie.factory_console.commands.claims import (
     cmd_finish,
     cmd_follow,
     cmd_label_event,
-    cmd_labels,
     cmd_runs,
 )
 from rotisserie.factory_console.commands.crashes import cmd_crashes
@@ -41,6 +40,7 @@ from rotisserie.factory_console.commands.health import (
 from rotisserie.factory_console.commands.health_reset import cmd_health
 from rotisserie.factory_console.commands.history import cmd_history, cmd_use
 from rotisserie.factory_console.commands.incident import cmd_incident
+from rotisserie.factory_console.commands.labels import cmd_labels
 from rotisserie.factory_console.commands.models import cmd_close, cmd_groom
 from rotisserie.factory_console.commands.outcome import cmd_outcome
 from rotisserie.factory_console.commands.parser import add_parser
@@ -205,6 +205,7 @@ def _help_text() -> str:
             "  baste backoffs      what keeps each provider waiting, and until when",
             "  baste health reset MODEL --via github  clear one model's health and backoffs",
             "  baste db-usage      Turso rows, storage and quota this month",
+            "  baste labels [N]    what each factory label means; --audit runs the label doctor",
             "  baste store selftest  test the factory store; store export backs it up",
             "  baste schema        store tables, indexes and the last schema upgrade",
             "  baste doctor        is the factory itself healthy",

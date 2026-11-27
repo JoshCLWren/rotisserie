@@ -373,7 +373,7 @@ Limits:
 
 ### Label doctor
 
-`baste labels` audits every open factory issue and PR and prints
+`baste labels --audit` audits every open factory issue and PR and prints
 the exact label changes, with reasons, without writing anything.
 `--repair` applies them; `--repair --delete-legacy` also deletes the obsolete
 label definitions it lists. The label claim workflow runs the repair every hour

@@ -61,6 +61,7 @@ READ_ONLY = frozenset(
         "limits",
         "backoffs",
         "db-usage",
+        "labels",
         "crashes",
         "ready",
         "crash-trace",
@@ -111,6 +112,7 @@ MAX_BATCH = 8
 _READ_PARAMETERS = {
     "models": {"provider"},
     "why": {"target"},
+    "labels": {"target"},
     "checks": {"target"},
     "review": {"target"},
     "conflicts": {"target"},
@@ -179,6 +181,10 @@ def read_command(name: str, query: Mapping[str, str], *, trusted: bool = False) 
         target = _string(query, "target")
         if target:
             args.append(_match(target, ISSUE, "target"))
+    elif name == "labels":
+        target = _string(query, "target")
+        if target:
+            args.append(_match(target, TARGET, "target"))
     elif name == "checks":
         args.append(_match(_string(query, "target", required=True), CHECKS, "target"))
     elif name in ("review", "conflicts"):
