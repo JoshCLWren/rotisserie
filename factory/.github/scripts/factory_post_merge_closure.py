@@ -417,14 +417,10 @@ def decide(
 
 
 def sweep_stranded_closures(*, dry_run: bool = False, max_age_hours: int = SWEEP_MAX_AGE_HOURS) -> list[str]:
-    """Heal issues stranded open by merges that predate direct closure.
+    """Heal issues stranded open by recent merges; one line per examined PR.
 
-    Args:
-        dry_run: When True, report intended actions without mutating GitHub.
-        max_age_hours: Only consider PRs merged within this many hours.
-
-    Returns:
-        One outcome line per examined merged factory PR.
+    Only a PR whose linked issue is still open costs a decision: one listing
+    of open factory issues replaces two reads per merged PR on every drain.
     """
     raw = github._run_gh(
         "pr",
@@ -440,12 +436,17 @@ def sweep_stranded_closures(*, dry_run: bool = False, max_age_hours: int = SWEEP
         "--json",
         "number,headRefName,body,mergedAt",
     )
+    listed = github._run_gh("issue", "list", "--repo", github._repo_slug(), "--state", "open",
+                            "--label", FACTORY_LABEL, "--limit", "1000", "--json", "number")
+    still_open = {int(row.get("number") or 0) for row in json.loads(listed)}
     now = datetime.now(timezone.utc)
     outcomes: list[str] = []
     for pr in json.loads(raw):
         pr_number = int(pr.get("number") or 0)
         merged_at = pr.get("mergedAt")
         if not merged_within_age(str(merged_at) if merged_at else None, now, max_age_hours):
+            continue
+        if linked_issue(str(pr.get("headRefName") or ""), str(pr.get("body") or "")) not in still_open:
             continue
         _outcome, line = decide(pr_number, dry_run=dry_run, require_quiescent=True)
         outcomes.append(line)
