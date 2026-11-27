@@ -1841,9 +1841,9 @@ def mechanical_merge_gate(pr_number: int, expected_head: str) -> GateResult:
             REPO, pr_number, head=expected_head, fetch=repo_fetch, store=False
         ) is None:
             return acceptance
-    dependency = declared_dependency_gate(pr_number)
-    if dependency["decision"] != "pass":
-        return dependency
+    for later in (lambda: declared_dependency_gate(pr_number), lambda: __import__("factory_migration_versions").merge_gate(REPO, pr_number, expected_head, gh_json)):
+        if (result := later())["decision"] != "pass":
+            return result
     return gate_result("pass", "all exact-head mechanical gates passed")
 
 

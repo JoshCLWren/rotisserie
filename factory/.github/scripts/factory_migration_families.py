@@ -7,9 +7,14 @@ An adopter lists each family in ``.rotisserie/config.toml``::
     family = "refinery"
     directory = "native/migrate/migrations/"
     version = '^V(?P<version>[0-9]+)__[A-Za-z0-9_]+\\.sql$'
+    increasing = true
 
 ``version`` is matched against the file name and must name a ``version`` group of
-digits. With no ``[[migrations]]`` table the one family is Alembic under
+digits. ``increasing`` (default false) also rejects a new version that is not higher
+than every version on the base branch, for tools such as Refinery that refuse
+migrations older than the last applied one.
+
+With no ``[[migrations]]`` table the one family is Alembic under
 ``alembic/versions/``, whose revision ids are not ordered numbers, so it has no
 version pattern. An invalid table is an error: the lane must not guess.
 """
@@ -35,6 +40,7 @@ class Family:
     name: str
     directory: str
     version: re.Pattern[str] | None
+    increasing: bool = False
 
     def owns(self, path: str) -> bool:
         return path.startswith(self.directory)
@@ -60,8 +66,13 @@ def _family(raw: Any, position: int) -> Family:
         raise AdopterConfigError(f"{where}: family must be a lowercase name")
     if not isinstance(directory, str) or not DIRECTORY_RE.fullmatch(directory):
         raise AdopterConfigError(f"{where}: directory must be a relative path ending in /")
+    increasing = raw.get("increasing", False)
+    if not isinstance(increasing, bool):
+        raise AdopterConfigError(f"{where}: increasing must be true or false")
     pattern = raw.get("version")
     if pattern is None:
+        if increasing:
+            raise AdopterConfigError(f"{where}: increasing needs a version pattern")
         return Family(name, directory, None)
     if not isinstance(pattern, str):
         raise AdopterConfigError(f"{where}: version must be a regular expression")
@@ -71,7 +82,7 @@ def _family(raw: Any, position: int) -> Family:
         raise AdopterConfigError(f"{where}: version is not a valid pattern: {exc}") from None
     if "version" not in compiled.groupindex:
         raise AdopterConfigError(f"{where}: version must name a (?P<version>...) group")
-    return Family(name, directory, compiled)
+    return Family(name, directory, compiled, increasing)
 
 
 def families(config: Mapping[str, Any] | None = None) -> tuple[Family, ...]:
@@ -94,7 +105,15 @@ def families(config: Mapping[str, Any] | None = None) -> tuple[Family, ...]:
 
 def fingerprint(declared: Iterable[Family]) -> str:
     """A short stable id of the declared families, so cached answers change with them."""
-    shape = [[f.name, f.directory, f.version.pattern if f.version else ""] for f in declared]
+    shape = [
+        [
+            f.name,
+            f.directory,
+            f.version.pattern if f.version else "",
+            *(["increasing"] * f.increasing),
+        ]
+        for f in declared
+    ]
     return hashlib.sha256(json.dumps(shape).encode()).hexdigest()[:12]
 
 

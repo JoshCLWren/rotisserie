@@ -152,7 +152,8 @@ def test_the_repair_mission_reads_the_duplicate_context() -> None:
     primitives = (SCRIPTS / "free-model-factory-worker-primitives.sh").read_text()
     assert 'factory_duplicate_context.py" "$number" --repo' in primitives
     worker = (SCRIPTS / "free-model-factory-worker.sh").read_text()
-    assert ".github/scripts/factory_duplicate_context.py \"$trusted_dir/\"" in worker
+    staging = worker.split("stage_trusted_review_controller() {", 1)[1].split("\n}\n", 1)[0]
+    assert ".github/scripts/factory_duplicate_context.py " in staging
 
 
 def test_a_failed_close_is_finished_by_the_next_pass_without_a_second_comment(env) -> None:
