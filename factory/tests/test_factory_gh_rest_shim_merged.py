@@ -42,3 +42,22 @@ def test_merged_pr_list_reads_one_closed_page_and_keeps_only_merged_rows(tmp_pat
     call = log.read_text(encoding="utf-8")
     assert "state=closed&sort=updated&direction=desc&per_page=100" in call
     assert "--paginate" not in call
+
+
+def test_pr_view_returns_created_merged_and_merge_commit(tmp_path: Path) -> None:
+    """The closure's reopen timing read createdAt through this shim and got nothing (#5525)."""
+    fake = tmp_path / "gh-real"
+    row = {**ROWS[0], "created_at": "2026-11-26T02:20:00Z", "merge_commit_sha": "c0ffee",
+           "draft": False, "user": {"login": "bot"}, "base": {"repo": {"full_name": "a/b"}}}
+    (tmp_path / "pr.json").write_text(json.dumps(row), encoding="utf-8")
+    fake.write_text(f"#!/usr/bin/env bash\ncat {tmp_path / 'pr.json'}\n", encoding="utf-8")
+    fake.chmod(0o755)
+    env = {**os.environ, "FACTORY_REAL_GH": str(fake), "GITHUB_REPOSITORY": "acme/widgets"}
+    out = subprocess.run(
+        ["bash", str(SHIM), "pr", "view", "5806", "--repo", "acme/widgets", "--json",
+         "headRefName,headRefOid,mergeCommit,body,state,title,createdAt"],
+        text=True, capture_output=True, check=True, env=env,
+    )
+    view = json.loads(out.stdout)
+    assert view["createdAt"] == "2026-11-26T02:20:00Z"
+    assert view["mergeCommit"] == {"oid": "c0ffee"} and view["state"] == "MERGED"
