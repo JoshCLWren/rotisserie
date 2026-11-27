@@ -72,3 +72,30 @@ def test_the_guard_runs_from_the_trusted_review_stage_alone(tmp_path) -> None:
     )
     assert out.returncode == 0, out.stderr
     assert out.stdout.strip().startswith("[true")
+
+
+def test_the_diff_builder_gives_named_docs_files_full_context() -> None:
+    """#5883, #5917 and #5936 changed only fragment JSON; partial hunks read as no code change."""
+    import json
+
+    head = "a" * 40
+    old = '{\n  "path": "/api/v2/activity",\n  "dest": "/api/native_roll.rs"\n}'
+    new = old.replace("native_roll", "native_api")
+
+    def read(args: list[str]) -> str:
+        endpoint = args[-1]
+        if endpoint.endswith("/pulls/5936"):
+            return json.dumps({"head": {"sha": head}, "base": {"sha": "base"}})
+        if "/compare/" in endpoint:
+            return json.dumps({"merge_base_commit": {"sha": "ancestor"}})
+        if endpoint.endswith("/files"):
+            return json.dumps([[{"filename": FRAGMENT, "status": "modified", "patch":
+                                 '@@ -3 +3 @@\n-  "dest": "/api/native_roll.rs"\n'
+                                 '+  "dest": "/api/native_api.rs"'}]])
+        return old if endpoint.endswith("ref=ancestor") else new
+
+    body = child_body("docs/api/route-fragments/*.json")
+    paths, diff = delivery.complete_pr_diff(5936, head, "o/r", read, body)
+    assert delivery.pr_delivers_implementation(body, paths, diff)[0]
+    plain_paths, plain_diff = delivery.complete_pr_diff(5936, head, "o/r", read)
+    assert not delivery.pr_delivers_implementation(body, plain_paths, plain_diff)[0]

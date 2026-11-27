@@ -10,7 +10,7 @@
   "factory/.github/scripts/factory_checkpoint_handoff.py": 684,
   "factory/.github/scripts/factory_completion_controller.py": 642,
   "factory/.github/scripts/factory_fork_control.py": 641,
-  "factory/.github/scripts/factory_implementation_delivery.py": 524,
+  "factory/.github/scripts/factory_implementation_delivery.py": 523,
   "factory/.github/scripts/factory_jev_shadow.py": 960,
   "factory/.github/scripts/factory_review_policy.py": 1144,
   "factory/.github/scripts/factory_rotisserie_adopter.py": 627,
