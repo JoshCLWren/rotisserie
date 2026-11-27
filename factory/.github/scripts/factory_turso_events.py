@@ -175,18 +175,48 @@ def recorded_runtime_runs(repo: str, run_ids: list[str]) -> set[str]:
     return {str(row["run_id"]) for row in rows}
 
 
+def _latest_sql() -> str:
+    """The newest events of each worker, read through the two per-worker partial indexes.
+
+    The view keeps one terminal and one heartbeat record per worker, so reading
+    seven days of every worker's events (about 8,200 rows on Nov 27) is not needed.
+    Two rows per group cover events stamped in the same second.
+    """
+    # SQLite uses a partial index only when the IN list is spelled exactly as in
+    # its WHERE clause (factory-state.sqlite.sql), so these lists are copied verbatim.
+    quoted = [
+        "('worker_completed', 'worker_idle', 'worker_failed')",
+        "('worker_started', 'worker_heartbeat', 'worker_outcome_signal')",
+    ]
+    walk = " UNION ".join(
+        f"SELECT * FROM (WITH RECURSIVE w{n}(worker) AS ("
+        f"SELECT (SELECT min(worker) FROM factory_state_events WHERE repo = :repo"
+        f" AND worker > '' AND event_type IN {types})"
+        f" UNION ALL SELECT (SELECT min(worker) FROM factory_state_events WHERE repo = :repo"
+        f" AND worker > w{n}.worker AND event_type IN {types}) FROM w{n}"
+        f" WHERE w{n}.worker IS NOT NULL) SELECT worker FROM w{n} WHERE worker IS NOT NULL)"
+        for n, types in enumerate(quoted)
+    )
+    newest = " UNION ALL ".join(
+        "SELECT * FROM (SELECT rowid FROM factory_state_events WHERE repo = :repo"
+        f" AND worker = workers.worker AND created_at > unixepoch() - 604800"
+        f" AND event_type IN {types} AND origin = :origin AND subject_type = 'worker'"
+        " ORDER BY created_at DESC LIMIT 2)"
+        for types in quoted
+    )
+    return (
+        f"WITH workers(worker) AS MATERIALIZED ({walk})"
+        " SELECT e.event_type, e.detail, e.created_at FROM workers"
+        f" JOIN factory_state_events e ON e.rowid IN ({newest})"
+    )
+
+
 def export_view(repo: str) -> dict[str, Any]:
     """Latest event per worker and lifecycle type over seven days, plus candidate health."""
-    from factory_runtime_view import EVENT_TYPES, project_events
+    from factory_runtime_view import project_events
     from factory_turso_exports import export_candidate_health
 
-    marks, params = placeholders("t", EVENT_TYPES)
-    rows = core.store().read(
-        "SELECT event_type, detail, created_at FROM factory_state_events"
-        f" WHERE repo = :repo AND event_type IN ({marks}) AND origin = :origin"
-        " AND subject_type = 'worker' AND created_at > unixepoch() - 604800",
-        {**params, "repo": repo, "origin": ORIGIN},
-    )
+    rows = core.store().read(_latest_sql(), {"repo": repo, "origin": ORIGIN})
     for row in rows:
         row["created_at"] = datetime.fromtimestamp(int(row["created_at"]), UTC)
     view: dict[str, Any] = project_events(rows)

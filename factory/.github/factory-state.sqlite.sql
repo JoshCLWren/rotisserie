@@ -183,6 +183,13 @@ CREATE INDEX IF NOT EXISTS idx_factory_events_model
 CREATE INDEX IF NOT EXISTS idx_factory_events_worker
     ON factory_state_events (repo, worker, created_at)
     WHERE event_type IN ('worker_failed', 'worker_completed');
+-- The runtime view reads only the newest events per worker, terminal and heartbeat apart.
+CREATE INDEX IF NOT EXISTS idx_factory_events_worker_terminal
+    ON factory_state_events (repo, worker, created_at)
+    WHERE event_type IN ('worker_completed', 'worker_idle', 'worker_failed');
+CREATE INDEX IF NOT EXISTS idx_factory_events_worker_heartbeat
+    ON factory_state_events (repo, worker, created_at)
+    WHERE event_type IN ('worker_started', 'worker_heartbeat', 'worker_outcome_signal');
 -- The provider daily cap counts today's assignments inside every acquisition.
 CREATE INDEX IF NOT EXISTS idx_factory_events_assigned
     ON factory_state_events (repo, source, created_at)
@@ -273,3 +280,4 @@ INSERT OR IGNORE INTO _schema_version (version, applied_at) VALUES (3, unixepoch
 INSERT OR IGNORE INTO _schema_version (version, applied_at) VALUES (4, unixepoch());
 INSERT OR IGNORE INTO _schema_version (version, applied_at) VALUES (5, unixepoch());
 INSERT OR IGNORE INTO _schema_version (version, applied_at) VALUES (6, unixepoch());
+INSERT OR IGNORE INTO _schema_version (version, applied_at) VALUES (7, unixepoch());
