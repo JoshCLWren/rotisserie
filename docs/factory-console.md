@@ -459,6 +459,15 @@ the factory recorded reasons shows "no recorded reason" and retries after 6
 hours. Both views read GitHub only and are in the control room under
 Diagnostics.
 
+`baste alerts [--follow MINUTES]` checks factory health in one pass and
+reads GitHub only. It raises an alert when the same worker error repeats 3 or
+more times in 20 minutes, when `baste turning` says Slowing or Burning, when no
+review verdict was recorded in 45 minutes, or when no PR merged in 90 minutes,
+both while PRs wait in review or ready. It exits 0 with no alert and 4 with
+alerts. `--follow` re-checks every 10 minutes (or MINUTES) and prints a line
+only when an alert starts, changes or clears. It is in the control room under
+Diagnostics.
+
 ## Closing work that should not be done
 
 `baste close pr:N [pr:M …] --reason TEXT` is for work you
