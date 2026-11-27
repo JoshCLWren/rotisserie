@@ -78,6 +78,7 @@
 .github/scripts/factory_main_health.py
 .github/scripts/factory_memory.py
 .github/scripts/factory_migration_families.py
+.github/scripts/factory_migration_versions.py
 .github/scripts/factory_migration_lane.py
 .github/scripts/factory_model_catalog.py
 .github/scripts/factory_model_attempt_events.py
