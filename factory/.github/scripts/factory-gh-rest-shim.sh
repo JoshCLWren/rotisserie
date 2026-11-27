@@ -263,15 +263,23 @@ if [[ "$command_group" == pr && "$command_name" == list ]]; then
   if [[ "$state" == open ]] && ! [[ " ${original[*]} " == *"author"* ]]; then
     snapshot="$(factory_snapshot "$repo" pr)" || snapshot=''
   fi
+  merged_only=false
   if [[ -n "$snapshot" ]]; then
     pages="$(jq -c '[.]' <<< "$snapshot")"
+  elif [[ "$state" == open ]]; then
+    pages="$(factory_api --paginate --slurp "repos/${repo}/pulls?state=open&per_page=100")"
   else
-    pages="$(factory_api --paginate --slurp "repos/${repo}/pulls?state=${state}&per_page=100")"
+    # REST has no merged state, and paging every closed PR is thousands of
+    # requests; the newest-updated page holds every recent merge or close.
+    [[ "$state" == merged ]] && merged_only=true
+    [[ "$state" == all ]] || state=closed
+    pages="[$(factory_api "repos/${repo}/pulls?state=${state}&sort=updated&direction=desc&per_page=100")]"
   fi
   labels_json="$(printf '%s\n' "${labels[@]:-}" | jq -Rsc 'split("\n") | map(select(length > 0))')"
-  payload="$(jq -c --argjson labels "$labels_json" --argjson limit "$limit" '
+  payload="$(jq -c --argjson labels "$labels_json" --argjson limit "$limit" --argjson merged "$merged_only" '
     [
       .[][]
+      | select(($merged | not) or ((.mergedAt // .merged_at) != null))
       | select([.labels[]?.name] as $item_labels
           | ($labels | all(. as $wanted | ($item_labels | index($wanted)) != null)))
       | {
@@ -292,7 +300,9 @@ if [[ "$command_group" == pr && "$command_name" == list ]]; then
           createdAt: (.createdAt // .created_at),
           updatedAt: (.updatedAt // .updated_at),
           isDraft: (.isDraft // .draft // false),
-          state: (if .state == "open" then "OPEN" else "CLOSED" end)
+          mergedAt: (.mergedAt // .merged_at),
+          state: (if (.mergedAt // .merged_at) != null then "MERGED"
+                  elif .state == "open" then "OPEN" else "CLOSED" end)
         }
     ][: $limit]
   ' <<< "$pages")"
