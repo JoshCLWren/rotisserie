@@ -1330,8 +1330,8 @@ def ready_pool(issues: list[dict[str, Any]], prs: list[dict[str, Any]], attempt_
     EXTERNAL_WIP_SEEN = external_wip
     # A PR-only target never leases new issue work, so it skips the intake decision.
     intake = (rotisserie_issue_intake(issues, prs, operator_force=True) if operator_force else rotisserie_issue_intake(issues, prs)) if target is None or target[0] == 'issue' else None
-    # Retry cooldown and the loop breaker never hold a manual target or a forced run.
-    holds = factory_dispatch_holds.reader(REPO, prs) if target is None and not operator_force else None
+    # Retry cooldown and the loop breaker also hold automatic wakeups; only a forced run skips them.
+    holds = factory_dispatch_holds.reader(REPO, prs) if not operator_force else None
     return factory_ready.pool(issues, prs, attempt_records=attempt_records, external_wip=external_wip, intake=intake, links=factory_deps.stored(REPO), holds=holds, kinds=kinds, operator_force=operator_force, intake_holds=target is None, rank=build_candidates)
 
 
