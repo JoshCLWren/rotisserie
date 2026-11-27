@@ -352,10 +352,19 @@ def test_the_controller_skips_a_looping_pr_and_keeps_the_owner_override(
     assert chosen.number == 13 and [c.number for c in picked] == [13]
 
 
-def test_a_targeted_run_is_never_held(monkeypatch: pytest.MonkeyPatch) -> None:
-    def cooling(*_a: Any, **_k: Any) -> set[int]:
-        raise AssertionError("a targeted run must not read the breaker")
+def test_a_wakeup_target_is_held_but_a_forced_run_is_not(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Repair-push and review wakeups kept sending workers to looping #5887 for about two hours."""
+    def cooling(repo: str, heads: Any, issues: Any, exempt: frozenset[int]) -> dict[int, str]:
+        return dict.fromkeys({12} - exempt, "held: looping")
 
     controller, picked = controller_with(monkeypatch, cooling)
-    controller.assign_from_pool("6", target=("pr", 12))
+    with pytest.raises(RuntimeError, match="No eligible work on this target"):
+        controller.assign_from_pool("6", target=("pr", 12))
+    assert picked == []
+
+    def unread(*_a: Any, **_k: Any) -> set[int]:
+        raise AssertionError("a forced run must not read the breaker")
+
+    controller, picked = controller_with(monkeypatch, unread)
+    controller.assign_from_pool("6", target=("pr", 12), operator_force=True)
     assert [c.number for c in picked] == [12]
