@@ -102,6 +102,8 @@ if spec is None or spec.loader is None:
 policy = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(policy)
 log_path = Path(sys.argv[1])
+if sys.argv[3].strip() == policy.OWNER_EXEMPT_MISSION.strip():
+    raise SystemExit(0)
 text = log_path.read_text(encoding="utf-8")
 report = policy.report_from_text(text)
 if report is None:

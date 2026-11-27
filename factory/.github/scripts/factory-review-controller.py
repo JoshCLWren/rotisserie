@@ -1657,7 +1657,7 @@ def issue_acceptance_gate(pr_number: int, expected_head: str) -> GateResult:
     pr = pr_json(pr_number)
     issue_number = linked_issue_for_pr(pr_number, str(pr.get("headRefName") or ""))
     if issue_number is None:
-        return gate_result("deny", "factory PR has no linked issue acceptance contract")
+        return gate_result("pass", "owner-authored PR with no linked issue: the line review decides") if issue_acceptance.owner_exempt(pr, REPO) else gate_result("deny", "factory PR has no linked issue acceptance contract")
     issue = target_json(issue_number)
     body = issue.get("body")
     if not isinstance(body, str):
@@ -2071,7 +2071,7 @@ def handle_review(
     # The review log is untrusted; only this controller may attest it, and
     # only for the exact issue revision + PR head it verified.
     accepted_contract_marker: str | None = None
-    if verdict == "approve":
+    if verdict == "approve" and not issue_acceptance.owner_exempt(pr, REPO):
         issue_number, non_closing = linked_issue_mode_for_pr(
             pr_number, branch, body=str(pr.get("body") or "")
         )

@@ -567,10 +567,10 @@ factory_issue_acceptance_mission() {
     printf '\nISSUE ACCEPTANCE UNAVAILABLE: trusted policy script is missing; do not approve.\n'
     return 0
   fi
-  pr_json="$(gh pr view "$pr" --json headRefName,body 2>/dev/null)" || pr_json=''
+  pr_json="$(gh pr view "$pr" --json headRefName,body,author 2>/dev/null)" || pr_json=''
   issue="$(printf '%s' "$pr_json" | python3 "$acceptance_script" resolve 2>/dev/null)" || issue=''
   if [[ -z "$issue" ]]; then
-    printf '\nISSUE ACCEPTANCE UNAVAILABLE: no linked issue; do not approve.\n'
+    printf '%s' "$pr_json" | python3 "$acceptance_script" no-issue-mission 2>/dev/null || printf '\nISSUE ACCEPTANCE UNAVAILABLE: no linked issue; do not approve.\n'
     return 0
   fi
   non_closing="$(printf '%s' "$pr_json" | python3 "$acceptance_script" non-closing 2>/dev/null)" || non_closing=0
