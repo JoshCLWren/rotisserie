@@ -19,6 +19,14 @@ model-health information through job outputs. The model job reads its assigned
 target, rejects stage/head drift, and checks the checkout SHA. Fork routing
 rejects head drift too. It does not reconstruct the queue.
 
+Before handing a PR assignment to Entry, the trusted dispatcher attests its
+PR number, exact head and stage on the existing assignment event, in a single
+store transaction fenced by the live claim. Replaying identical context is
+safe; changing the recorded generation is refused. Pre-session review-abort
+cooldowns join release events to this original claim identity. Legacy releases
+without exact assignment evidence remain historical records but cannot suppress
+a current head. This does not change provider or worker backoff.
+
 Cleanup receives the original claim UUID. A stale completion cannot discover
 and release a newer UUID; an unfenced old cleanup fails closed. Input-driven
 workers never perform broad startup/EXIT ownership scans. Explicit publication

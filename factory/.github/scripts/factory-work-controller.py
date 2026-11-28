@@ -1636,7 +1636,7 @@ def assignment_context(candidate: Candidate, worker: str) -> dict[str, object]:
         context['stage'] = stage_of(labels_of(live))
         context['head'] = live['head']['sha']
         context['branch'] = live['head']['ref']
-    return context
+    return factory_state_ledger.attest_assignment(REPO, context)
 
 
 def validate_assignment(worker: str, raw: str) -> dict[str, object]:

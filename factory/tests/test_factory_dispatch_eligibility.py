@@ -62,9 +62,18 @@ def test_credit_pool_counts_against_priced_models_only():
     ) == {"vercel-ai-gateway"}
 
 
-def _released(db, repo, released):
+def _released(db, repo, released, heads):
     statements = []
     for index, (targets, minutes_ago) in enumerate(released):
+        claim = f'{repo}:claim:{index}'
+        number = int(targets[0])
+        head, stage = heads[number]
+        statements.append(support.core.event_insert(
+            repo, 'github-actions', 'worker_assigned',
+            {'event_id': f'assigned:{claim}', 'claim_id': claim, 'worker': '1',
+             'assignment': {'pr': number, 'head': head, 'stage': stage}},
+            subject_type='worker', subject_number=1,
+        ))
         sql, params = support.core.event_insert(
             repo,
             "github-actions",
@@ -72,6 +81,7 @@ def _released(db, repo, released):
             {
                 "event_id": f"{repo}:released:{index}",
                 "worker": "1",
+                "claim_id": claim,
                 "targets": targets,
                 "reason": "pre-session-abort: no model",
             },
@@ -113,6 +123,7 @@ def test_review_pr_cooldown_starts_at_the_latest_abort_and_grows(store):
             ([5703], 60),
             (["5703"], 40),
         ],
+        heads,
     )
     assert operations.cooling_prs(repo, heads) == {5688, 5703}
 
