@@ -550,7 +550,7 @@ def publish(repo: str, run_id: str, *, cleanup: bool = False, source_ended: bool
     record_producer(repo, pr, saved)
     handoff_comment(repo, pr, saved, run, run_id)
     result = {"saved": True, "published": True, "validated": complete,
-              "checkpoint_sha": saved["head"], "work_pr": pr["number"],
+              "checkpoint_sha": saved.get("origin_head", saved["head"]), "work_pr": pr["number"],
               "recovery_pr": pr["number"], "work_branch": pr["head"]["ref"],
               "checkpoint_branch": saved["branch"], "stage": stage}
     if cleanup and original and saved["branch"] != pr["head"]["ref"]:
@@ -599,7 +599,7 @@ def record_delivery(repo: str, run_id: str, saved: dict, delivered_pr: int) -> d
         api(f"repos/{repo}/issues/{pr['number']}/comments", "POST", body=tag)
     return {"saved": True, "published": True, "validated": True,
             "work_pr": pr["number"], "recovery_pr": pr["number"],
-            "work_branch": pr["head"]["ref"], "checkpoint_sha": saved["head"],
+            "work_branch": pr["head"]["ref"], "checkpoint_sha": saved.get("origin_head", saved["head"]),
             "checkpoint_branch": saved["branch"]}
 
 
@@ -667,9 +667,9 @@ def main() -> int:
             if args.outcome:
                 try:
                     saved = checkpoint(args.repo, run_id)
-                    result["saved"] = bool(saved)
-                    if saved:
-                        result["checkpoint_sha"] = saved["head"]
+                    result["saved"] = bool(saved and source_worker(verified_run(args.repo, run_id)) == saved["worker"])
+                    if result["saved"]:
+                        result["checkpoint_sha"] = saved.get("origin_head", saved["head"])
                     enrich_outcome(args.outcome, result)
                 except (RuntimeError, ValueError, KeyError, subprocess.TimeoutExpired):
                     pass  # Independent reconciliation retries; never invent proof.
