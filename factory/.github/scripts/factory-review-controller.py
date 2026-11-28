@@ -2185,7 +2185,7 @@ def handle_review(
             if producer is not None:
                 run_gh(["pr", "close", str(pr_number), "--repo", REPO])
             return {
-                "status": "strike-limit-blocked" if producer is None else "strike-limit-cancelled",
+                "status": "strike-limit-cancelled" if producer is not None else "strike-limit-blocked",
                 "head": reviewed_head,
                 "producer": producer,
                 "repair_cycles": len(prior_repair_heads | {reviewed_head}),
