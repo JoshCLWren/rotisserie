@@ -193,7 +193,8 @@ def daily_usage(repo: str, sources: list[str]) -> dict[str, int] | None:
 
 
 def _review_churn(db: core.Store, repo: str, heads: dict[int, tuple[str, str]]) -> set[int]:
-    review = {number for number, (_, stage) in heads.items() if stage == "factory:review"}
+    review = {number: head for number, (head, stage) in heads.items()
+              if stage == "factory:review" and HEAD_RE.fullmatch(head)}
     if not review:
         return set()
     from factory_settings import integer
@@ -202,17 +203,21 @@ def _review_churn(db: core.Store, repo: str, heads: dict[int, tuple[str, str]]) 
     counts: dict[int, int] = {}
     latest: dict[int, int] = {}
     for row in db.read(
-        "SELECT detail ->> 'targets' AS targets, created_at FROM factory_state_events"
-        " WHERE repo = :repo AND event_type = 'worker_released'"
-        " AND created_at > unixepoch() - :lookback"
-        " AND substr(detail ->> 'reason', 1, 17) = 'pre-session-abort'",
+        "SELECT a.detail ->> '$.assignment.pr' AS pr, a.detail ->> '$.assignment.head' AS head,"
+        " r.created_at FROM factory_state_events AS r"
+        " JOIN factory_state_events AS a ON a.event_id = 'assigned:' || r.claim_id"
+        " AND a.repo = r.repo AND a.worker = r.worker AND a.claim_id = r.claim_id"
+        " AND a.event_type = 'worker_assigned'"
+        " WHERE r.repo = :repo AND r.event_type = 'worker_released'"
+        " AND r.created_at > unixepoch() - :lookback"
+        " AND substr(r.detail ->> 'reason', 1, 17) = 'pre-session-abort'"
+        " AND a.detail ->> '$.assignment.stage' = 'factory:review'",
         {"repo": repo, "lookback": REVIEW_ABORT_LOOKBACK_SECONDS},
     ):
-        for item in json.loads(row["targets"] or "[]"):
-            number = int(item) if str(item).isdecimal() else None
-            if number in review:
-                counts[number] = counts.get(number, 0) + 1
-                latest[number] = max(latest.get(number, 0), int(row["created_at"]))
+        number = row["pr"]
+        if type(number) is int and number in review and review[number] == row["head"]:
+            counts[number] = counts.get(number, 0) + 1
+            latest[number] = max(latest.get(number, 0), int(row["created_at"]))
     now = datetime.now(UTC).timestamp()
     return {
         number
