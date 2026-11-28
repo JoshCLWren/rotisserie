@@ -29,7 +29,7 @@ from factory_state_ledger_slots import (  # noqa: F401
 from factory_turso_core import ClaimsPaused, enabled, required  # noqa: F401
 from factory_turso_events import (  # noqa: F401
     LIFECYCLE_STATUSES, history_rows, record_events, record_lifecycle, record_runtime_outcome,
-    recorded_runtime_runs,
+    attest_assignment, recorded_runtime_runs,
 )
 from factory_turso_external import (  # noqa: F401
     _external_key, external_holder, external_lease_action, external_wip_count,
