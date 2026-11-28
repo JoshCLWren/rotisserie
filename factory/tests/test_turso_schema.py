@@ -97,10 +97,10 @@ def test_a_version_2_store_gains_the_cursor_table_beside_the_upgrade_record(
     )
     report = schema.status(store)
     assert report["stored_version"] == 2 and report["missing"] == ["factory_cursor"]
-    assert libsql.SCHEMA_VERSION == 6
+    assert libsql.SCHEMA_VERSION == 7
     assert libsql.ensure_schema(store) is True
     after = schema.status(store)
-    assert after["status"] == "ok" and after["stored_version"] == 6
+    assert after["status"] == "ok" and after["stored_version"] == 7
     assert after["last_upgrade"]["created"] == ["factory_cursor"]
 
 
@@ -115,7 +115,7 @@ def test_a_version_3_store_gains_the_crash_table_and_its_indexes(tmp_path: Path)
     assert report["stored_version"] == 3 and "factory_crash" in report["missing"]
     assert libsql.ensure_schema(store) is True
     after = schema.status(store)
-    assert after["status"] == "ok" and after["stored_version"] == 6
+    assert after["status"] == "ok" and after["stored_version"] == 7
     assert after["last_upgrade"]["created"] == [
         "factory_crash",
         "idx_factory_crash_recent",
@@ -133,7 +133,7 @@ def test_a_version_4_store_gains_the_dependency_table(tmp_path: Path) -> None:
     assert schema.status(store)["stored_version"] == 4
     assert libsql.ensure_schema(store) is True
     after = schema.status(store)
-    assert after["status"] == "ok" and after["stored_version"] == 6
+    assert after["status"] == "ok" and after["stored_version"] == 7
     assert after["last_upgrade"]["created"] == ["factory_dep", "idx_factory_dep_dst"]
 
 
@@ -147,8 +147,26 @@ def test_a_version_5_store_gains_the_memory_table(tmp_path: Path) -> None:
     assert schema.status(store)["stored_version"] == 5
     assert libsql.ensure_schema(store) is True
     after = schema.status(store)
-    assert after["status"] == "ok" and after["stored_version"] == 6
+    assert after["status"] == "ok" and after["stored_version"] == 7
     assert after["last_upgrade"]["created"] == ["factory_memory", "idx_factory_memory_closed"]
+
+
+def test_a_version_6_store_gains_the_worker_view_indexes(tmp_path: Path) -> None:
+    store = _store(tmp_path)
+    _sql(
+        tmp_path / "store.db",
+        "DROP INDEX idx_factory_events_worker_terminal",
+        "DROP INDEX idx_factory_events_worker_heartbeat",
+        "DELETE FROM _schema_version WHERE version > 6",
+    )
+    assert schema.status(store)["stored_version"] == 6
+    assert libsql.ensure_schema(store) is True
+    after = schema.status(store)
+    assert after["status"] == "ok" and after["stored_version"] == 7
+    assert after["last_upgrade"]["created"] == [
+        "idx_factory_events_worker_terminal",
+        "idx_factory_events_worker_heartbeat",
+    ]
 
 
 class RefusesUpgrades(libsql.FileStore):

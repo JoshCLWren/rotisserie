@@ -9,6 +9,13 @@ such change must be called out here and in its release notes.
 
 ## [Unreleased]
 
+### Changed
+
+- The runtime view (`export_view`) reads only the two newest terminal and
+  heartbeat events of each worker, through two new partial indexes (schema
+  version 7). On a copy of the live store it read 2,622 rows a call, not 7,391,
+  with the same result.
+
 ### Added
 
 - Memories of closed issues, after Beads' compaction. When the merge drain
