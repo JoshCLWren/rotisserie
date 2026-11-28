@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import importlib
 import tomllib
+from importlib.machinery import ExtensionFileLoader
 from pathlib import Path
 
 import rotisserie
@@ -30,3 +32,8 @@ def test_distribution_declares_apache_license() -> None:
 
 def test_supported_python_floor_is_explicit() -> None:
     assert _project_metadata()["requires-python"] == ">=3.14"
+
+
+def test_native_extension_loads_from_the_installed_distribution() -> None:
+    extension = importlib.import_module("_rotisserie_native")
+    assert isinstance(extension.__loader__, ExtensionFileLoader)

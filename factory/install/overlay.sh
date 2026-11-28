@@ -22,6 +22,12 @@ marker='# rotisserie factory overlay'
 grep -qxF "$marker" "$exclude_file" 2>/dev/null || printf '\n%s\n' "$marker" >> "$exclude_file"
 grep -qxF '/.rotisserie/runtime/' "$exclude_file" || printf '%s\n' '/.rotisserie/runtime/' >> "$exclude_file"
 
+native_script='scripts/_rotisserie_native.abi3.so'
+if git -C "$adopter" ls-files --error-unmatch -- "$native_script" >/dev/null 2>&1; then
+  printf 'overlay: adopter already tracks %s\n' "$native_script" >&2
+  exit 1
+fi
+
 conflicts=()
 while IFS= read -r path; do
   [[ -n "$path" && "$path" != \#* ]] || continue
@@ -43,6 +49,10 @@ if ((${#conflicts[@]})); then
   printf '  %s\n' "${conflicts[@]}" >&2
   exit 1
 fi
+
+# The shared eligibility module imports this binary beside the overlaid script.
+python3 "$factory_root/native/build_extension.py" "$adopter/scripts"
+grep -qxF "/$native_script" "$exclude_file" || printf '/%s\n' "$native_script" >> "$exclude_file"
 
 if [[ -n "${GITHUB_ENV:-}" ]]; then
   {

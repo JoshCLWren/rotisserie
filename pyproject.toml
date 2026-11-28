@@ -1,5 +1,5 @@
 [build-system]
-requires = ["hatchling>=1.27"]
+requires = ["hatchling==1.29.0"]
 build-backend = "hatchling.build"
 
 [project]
@@ -39,6 +39,11 @@ dev = [
 [tool.hatch.build.targets.sdist]
 include = [
   "/src",
+  "/factory/native/Cargo.toml",
+  "/factory/native/Cargo.lock",
+  "/factory/native/build_extension.py",
+  "/factory/native/src",
+  "/hatch_build.py",
   "/factory/.github/scripts/factory_provider_registry.py",
   "/factory/.github/scripts/factory_worker_slots.py",
   "/factory/.github/scripts/factory_manual_model.py",
@@ -83,6 +88,8 @@ include = [
   "/README.md",
 ]
 
+[tool.hatch.build.hooks.custom]
+
 [tool.hatch.build.targets.wheel]
 packages = ["src/rotisserie"]
 
@@ -126,6 +133,16 @@ packages = ["src/rotisserie"]
 "factory/.github/scripts/factory_deps.py" = "rotisserie/factory_console/factory_runtime/factory_deps.py"
 "factory/.github/scripts/factory_ready.py" = "rotisserie/factory_console/factory_runtime/factory_ready.py"
 "factory/scripts/factory_eligibility.py" = "rotisserie/factory_console/factory_runtime/factory_eligibility.py"
+
+[tool.uv]
+cache-keys = [
+  { file = "pyproject.toml" },
+  { file = "hatch_build.py" },
+  { file = "factory/native/Cargo.toml" },
+  { file = "factory/native/Cargo.lock" },
+  { file = "factory/native/build_extension.py" },
+  { file = "factory/native/src/**/*.rs" },
+]
 
 [tool.pytest.ini_options]
 addopts = "-ra"

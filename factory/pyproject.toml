@@ -14,6 +14,7 @@ factory-syntax = [
     "tree-sitter-typescript==0.23.2",
 ]
 dev = [
+    "rotisserie",
     { include-group = "factory-syntax" },
     "pytest>=8.0.0",
     "pytest-xdist>=3.0.0",
@@ -28,6 +29,9 @@ dev = [
     # changes between releases; persisted App names depend on this exact pin.
     "faker==40.40.0",
 ]
+
+[tool.uv.sources]
+rotisserie = { path = "..", editable = true }
 
 [tool.uv]
 package = false
