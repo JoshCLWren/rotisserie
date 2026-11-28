@@ -26,6 +26,14 @@ handoffs and trusted cleanup preserve the existing checkpoint and non-draft PR
 behavior. Controller deployments preserve active sessions; normal liveness and
 lease expiration recover interruptions.
 
+The trusted outcome collector also appends separate `checkpoint_evidence`
+events for saved, published and validated work. The event identity includes
+the source run, original checkpoint SHA, milestone and (where applicable) PR.
+Retries can add newly verified milestones without changing the original
+terminal execution event. A resumed branch's later commits do not replace
+the source checkpoint SHA. These records are not proof of merge or production
+deployment; those require separate authoritative GitHub evidence.
+
 Entry persists its trusted classified outcome before sending a completion run
 ID to the signal-only completion bridge. The bridge performs one Actions
 workflow dispatch with no checkout, store connection, demand/registry discovery,
