@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import importlib.util
+import os
 import re
 import shutil
 import subprocess
@@ -220,7 +221,7 @@ def _adopter(tmp_path: Path) -> Path:
     _git(repo, "-c", "user.email=t@example.com", "-c", "user.name=t", "commit", "-qm", "init")
     runtime = repo / ".rotisserie" / "runtime" / "factory"
     shutil.copytree(
-        FACTORY, runtime, ignore=shutil.ignore_patterns(".venv", "__pycache__", "tests")
+        FACTORY, runtime, ignore=shutil.ignore_patterns(".venv", "__pycache__", "tests", "target")
     )
     return repo
 
@@ -232,9 +233,17 @@ def test_overlay_is_invisible_to_git_and_exports_runtime_paths(tmp_path: Path) -
         ["bash", ".rotisserie/runtime/factory/install/overlay.sh", "."],
         cwd=repo,
         check=True,
-        env={"PATH": "/usr/bin:/bin", "GITHUB_ENV": str(env_file)},
+        env={**os.environ, "GITHUB_ENV": str(env_file), "CARGO_TARGET_DIR": str(FACTORY / "native" / "target")},
     )
     assert (repo / ".github" / "scripts" / "factory_checkpoint_handoff.py").is_file()
+    subprocess.run(
+        [sys.executable, "-c", "import _rotisserie_native; print(_rotisserie_native.__file__)"],
+        cwd=repo / "scripts",
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    assert (repo / "scripts" / "_rotisserie_native.abi3.so").is_file()
     assert _git(repo, "status", "--porcelain", "--untracked-files=all") == ""
     _git(repo, "add", "-A")
     assert _git(repo, "diff", "--cached", "--name-only") == ""

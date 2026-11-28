@@ -106,7 +106,8 @@ Rotisserie-specific.
 
 ## Development
 
-Rotisserie requires Python 3.14. Install
+Rotisserie requires Python 3.14. Building from source also requires Cargo and
+Rust 1.88 or newer. Install
 [uv](https://docs.astral.sh/uv/), then create the locked development
 environment and run the same verification used by CI:
 
@@ -115,7 +116,10 @@ uv sync --locked
 ./scripts/verify
 ```
 
-Build the source and wheel distributions with `uv build`. The package is still
+Build the source and platform wheel distributions with `uv build`. The wheel
+includes the native extension built from `factory/native/Cargo.lock`. Reusable
+workflows build that same extension from the pinned Rotisserie checkout during
+the factory overlay. The package is still
 pre-release and does not yet expose the prototype as a supported public API.
 Version history and release-note conventions live in
 [CHANGELOG.md](CHANGELOG.md).

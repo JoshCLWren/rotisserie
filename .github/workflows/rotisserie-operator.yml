@@ -70,7 +70,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           ROTISSERIE_REQUEST: ${{ inputs.request }}
-          PYTHONPATH: .rotisserie/runtime/src
+          PYTHONPATH: .rotisserie/runtime/src:scripts
         shell: bash
         # The shared contract validates the request; the CLI runs without a shell.
         run: python3 -m rotisserie.hosted_operator write --output "$RUNNER_TEMP/rotisserie-result.json"
