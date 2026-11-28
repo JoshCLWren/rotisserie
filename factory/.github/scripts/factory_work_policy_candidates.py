@@ -9,6 +9,8 @@ from factory_work_policy_backlog import (
     intake_backlog_count,
     issue_bypasses_wip_limit,
     parked_pr_limit,
+    needs_urgent_reserve,
+    urgent_reserve_available,
 )
 from factory_work_policy_base import (
     BLOCKED_LABELS,
@@ -236,6 +238,8 @@ def build_candidates(
     slices = intake_guard.open_slice_issues(prs) if intake_holds else set()
     limit = intake_guard.body_limit()
     candidates: list[Candidate] = []
+    overflow: list[Candidate] = []
+    reserve = review_backlog_full and urgent_reserve_available(issues, prs)
     for issue in issues:
         number = int(issue['number'])
         in_incident = number in incident_issues
@@ -250,6 +254,7 @@ def build_candidates(
             continue
         if intake_holds and not in_incident and intake_guard.held(issue, slices, limit=limit):
             continue
+        use_reserve = False
         if not include_backpressured_issues and not in_incident:
             if incident_issues:
                 continue
@@ -259,13 +264,11 @@ def build_candidates(
                 issue,
                 review_backlog_saturated=True,
             ):
-                # End-to-end backpressure: while the completion stages are
-                # saturated, the fleet drains existing PRs instead of
-                # manufacturing new ones. Only main-breakage bypasses this gate
-                # when the review backlog is saturated (>= FACTORY_REVIEW_BACKLOG_LIMIT).
-                continue
+                if not reserve or not needs_urgent_reserve(issue):
+                    continue
+                use_reserve = True
         labels = labels_of(issue)
-        candidates.append(
+        (overflow if use_reserve else candidates).append(
             Candidate(
                 kind='issue',
                 number=number,
@@ -277,6 +280,8 @@ def build_candidates(
                 incident=in_incident,
             )
         )
+    if overflow:
+        candidates.append(min(overflow, key=Candidate.sort_key))
     for pr in prs:
         pr_number = int(pr['number'])
         pr_labels = labels_of(pr)
@@ -323,6 +328,26 @@ def build_candidates(
             )
         )
     return sorted(candidates, key=Candidate.sort_key)
+
+
+def reserved_urgent_issue(
+    issues: list[dict[str, Any]],
+    prs: list[dict[str, Any]],
+    *,
+    pr_wip_limit: int = FACTORY_PR_WIP_LIMIT,
+    review_backlog_limit: int = FACTORY_REVIEW_BACKLOG_LIMIT,
+) -> int | None:
+    """Identify the sole ranked overflow issue for portable intake and diagnostics."""
+    if intake_backlog_count(prs, review_backlog_limit) < review_backlog_limit:
+        return None
+    if not urgent_reserve_available(issues, prs):
+        return None
+    urgent = {int(issue['number']) for issue in issues if needs_urgent_reserve(issue)}
+    return next((
+        candidate.number for candidate in build_candidates(
+            issues, prs, pr_wip_limit=pr_wip_limit, review_backlog_limit=review_backlog_limit
+        ) if candidate.kind == 'issue' and not candidate.incident and candidate.number in urgent
+    ), None)
 
 
 def explain_issue_report(
@@ -393,6 +418,7 @@ def explain_issue_report(
     )
     review_backlog = intake_backlog_count(prs, review_backlog_limit)
     in_incident = number in incident_issues
+    reserved = reserved_urgent_issue(issues, prs, pr_wip_limit=pr_wip_limit, review_backlog_limit=review_backlog_limit)
     gates: dict[str, Any] = {
         'active_incidents': incident_issues,
         'incident_intake_pause': bool(incident_issues) and not in_incident,
@@ -403,7 +429,8 @@ def explain_issue_report(
         'parked_prs': factory_parked_count(prs),
         'parked_pr_limit': parked_pr_limit(review_backlog_limit),
         'bypasses_wip_limit': in_incident or issue_bypasses_wip_limit(payload),
-        'bypasses_saturated_review_backlog': in_incident or issue_bypasses_wip_limit(
+        'urgent_reserve_issue': reserved,
+        'bypasses_saturated_review_backlog': in_incident or number == reserved or issue_bypasses_wip_limit(
             payload, review_backlog_saturated=True
         ),
         'rotisserie_intake': (
