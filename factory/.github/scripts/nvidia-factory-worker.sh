@@ -393,7 +393,7 @@ stage_trusted_review_controller() {
     cp .github/scripts/factory_worker_slots.py "$trusted_dir/factory_worker_slots.py"
     cp .github/scripts/factory_provider_registry.py "$trusted_dir/factory_provider_registry.py"
     cp .github/scripts/factory_work_policy.py .github/scripts/factory_work_policy_assignment.py .github/scripts/factory_work_policy_backlog.py .github/scripts/factory_work_policy_base.py .github/scripts/factory_work_policy_candidates.py .github/scripts/factory_issue_intake_guard.py .github/scripts/factory_work_policy_priority.py .github/scripts/factory_incident.py .github/scripts/factory_crash.py "$trusted_dir/"
-    cp .github/scripts/factory_settings.py "$trusted_dir/factory_settings.py"
+    cp .github/scripts/factory_settings.py scripts/factory_eligibility.py scripts/_rotisserie_native.abi3.so "$trusted_dir/"
     chmod +x "$trusted_dir/factory-review-controller.py"
     TRUSTED_REVIEW_CONTROLLER="$trusted_dir/factory-review-controller.py"
     export TRUSTED_REVIEW_CONTROLLER

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import importlib
 import shutil
 import subprocess
 import sys
@@ -34,6 +35,8 @@ def test_staged_worker_policy_imports_only_pinned_eligibility(tmp_path: Path) ->
     for name in ("factory_work_policy.py", "factory_review_policy.py", "factory_adopter.py", "factory_settings.py", *WORK_POLICY_SIBLINGS):
         shutil.copy2(ROOT / ".github/scripts" / name, staged / name)
     shutil.copy2(ROOT / "scripts/factory_eligibility.py", staged / "factory_eligibility.py")
+    module = importlib.import_module("_rotisserie_native")
+    shutil.copy2(module.__file__, staged)
 
     check = """
 import pathlib
@@ -42,6 +45,7 @@ sys.path.insert(0, sys.argv[1])
 import factory_work_policy
 canonical = pathlib.Path(sys.argv[1], 'factory_eligibility.py').resolve()
 assert pathlib.Path(factory_work_policy.eligibility.__file__).resolve() == canonical
+assert pathlib.Path(factory_work_policy.eligibility._rotisserie_native.__file__).resolve().parent == canonical.parent
 assert factory_work_policy.eligibility.is_manual_only('<!-- factory-execution:manual-only -->')
 """
     result = subprocess.run(
@@ -104,6 +108,7 @@ def test_work_policy_sibling_modules_are_staged_with_the_work_policy() -> None:
         content = (ROOT / ".github/scripts" / name).read_text()
         staging = content.split("stage_trusted_review_controller() {", 1)[1].split("\n}", 1)[0]
         assert "cp .github/scripts/factory_work_policy.py " in staging, name
+        assert "scripts/_rotisserie_native.abi3.so" in staging, name
         for sibling in WORK_POLICY_SIBLINGS:
             assert f".github/scripts/{sibling} " in staging, (name, sibling)
 
