@@ -2151,13 +2151,9 @@ def handle_review(
             review_comment_bodies(pr_number),
             pr=pr_number,
         )
-        if (
-            producer is not None
-            and reviewed_head not in prior_repair_heads
-            and len(prior_repair_heads) >= FACTORY_REPAIR_CYCLE_LIMIT
-        ):
-            if not has_actionable_review_findings(excerpt):
-                raise RuntimeError("strike-limit repair requires durable actionable review findings")
+        if len(prior_repair_heads | {reviewed_head}) > FACTORY_REPAIR_CYCLE_LIMIT:
+            # Unattributed PRs are not safe to cancel and recreate, but must
+            # not bypass the same repair budget as factory implementations.
             post_review_comment(
                 pr_number=pr_number,
                 marker=marker,
@@ -2165,16 +2161,18 @@ def handle_review(
                 verdict="repair",
                 excerpt=excerpt,
                 note=(
-                    "Fourth distinct semantic repair cycle reached. This implementation attempt "
+                    "Semantic repair budget exhausted; PR retained and blocked for "
+                    "resolution of the underlying blocker, not another blind repair."
+                    if producer is None
+                    else "Fourth distinct semantic repair cycle reached. This implementation attempt "
                     "is cancelled; the linked issue is returned for a clean implementation."
                 ),
             )
             issue = linked_issue_from_branch(branch)
-            if issue is not None:
-                excluded = producer or "unknown"
+            if producer is not None and issue is not None:
                 strike_marker = (
                     f"<!-- {STRIKE_RESET_MARKER}:issue-{issue}:pr-{pr_number}:"
-                    f"excluded-producer-{excluded} -->"
+                    f"excluded-producer-{producer} -->"
                 )
                 run_gh(["issue", "comment", str(issue), "--repo", REPO, "--body", strike_marker])
             transition_pr_and_linked_issue(
@@ -2182,14 +2180,15 @@ def handle_review(
                 branch=branch,
                 worker=worker,
                 pr_stage="factory:blocked",
-                issue_stage="factory:building",
+                issue_stage="factory:blocked" if producer is None else "factory:building",
             )
-            run_gh(["pr", "close", str(pr_number), "--repo", REPO])
+            if producer is not None:
+                run_gh(["pr", "close", str(pr_number), "--repo", REPO])
             return {
-                "status": "strike-limit-cancelled",
+                "status": "strike-limit-cancelled" if producer is not None else "strike-limit-blocked",
                 "head": reviewed_head,
                 "producer": producer,
-                "repair_cycles": len(prior_repair_heads) + 1,
+                "repair_cycles": len(prior_repair_heads | {reviewed_head}),
             }
         persist_repair_handoff(
             pr_number=pr_number,
