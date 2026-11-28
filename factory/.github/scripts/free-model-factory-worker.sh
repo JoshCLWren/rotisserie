@@ -151,8 +151,8 @@ stage_trusted_review_controller() {
   cp .github/scripts/factory_fork_control.py "$trusted_dir/factory_fork_control.py"
   # factory-fork-worker.sh reads this from the environment.
   export TRUSTED_FORK_CONTROL="$trusted_dir/factory_fork_control.py"
-  # The staged policy imports canonical eligibility rules; pin this dependency
-  # from trusted main too, never from an untrusted PR checkout or /scripts.
+  # Stage the eligibility policy and its extension from the trusted overlay.
+  cp scripts/_rotisserie_native.abi3.so "$trusted_dir/"
   cp scripts/factory_eligibility.py "$trusted_dir/factory_eligibility.py"
   chmod +x "$trusted_dir/factory-review-controller.py"
   TRUSTED_REVIEW_CONTROLLER="$trusted_dir/factory-review-controller.py"
@@ -373,7 +373,7 @@ stage_trusted_model_failover() {
     cp "$module" "$FACTORY_TRUSTED_FAILOVER_DIR/"
   done
   cp scripts/factory_eligibility.py "$FACTORY_TRUSTED_FAILOVER_DIR/factory_eligibility.py"
-  cp .github/scripts/wait-opencode-model.sh "$FACTORY_TRUSTED_FAILOVER_DIR/wait-opencode-model.sh"
+  cp .github/scripts/wait-opencode-model.sh scripts/_rotisserie_native.abi3.so "$FACTORY_TRUSTED_FAILOVER_DIR/"
   cp .github/scripts/factory_opencode_go_oidc.sh "$FACTORY_TRUSTED_FAILOVER_DIR/factory_opencode_go_oidc.sh"
   export FACTORY_TRUSTED_FAILOVER_DIR
 }

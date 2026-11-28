@@ -96,6 +96,7 @@ packages = ["src/rotisserie"]
 # The operator console reads provider, worker and settings metadata from the
 # same factory runtime files the dispatcher uses; ship them inside the wheel.
 [tool.hatch.build.targets.wheel.force-include]
+"src/_rotisserie_native.pyi" = "_rotisserie_native.pyi"
 "factory/.github/scripts/factory_provider_registry.py" = "rotisserie/factory_console/factory_runtime/factory_provider_registry.py"
 "factory/.github/scripts/factory_worker_slots.py" = "rotisserie/factory_console/factory_runtime/factory_worker_slots.py"
 "factory/.github/scripts/factory_manual_model.py" = "rotisserie/factory_console/factory_runtime/factory_manual_model.py"

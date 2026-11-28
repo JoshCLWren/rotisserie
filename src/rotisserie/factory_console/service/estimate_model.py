@@ -10,12 +10,12 @@ from __future__ import annotations
 
 import math
 import re
-import statistics
 from collections import Counter
 from collections.abc import Callable, Iterable, Sequence
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 
+import _rotisserie_native
 from rotisserie.factory_console.service.estimate_history import Thread
 
 INTAKE_LABELS = ("bug", "user-reported", "code-debt", "frontend")
@@ -202,10 +202,7 @@ def match(
 
 def spread(values: Sequence[float]) -> dict[str, object] | None:
     """Median and the middle 80% (10th to 90th percentile), or None with too few values."""
-    if len(values) < MIN_SIMILAR:
-        return None
-    low, *_, high = statistics.quantiles(values, n=10, method="inclusive")
-    return {"median": statistics.median(values), "low": low, "high": high, "n": len(values)}
+    return _rotisserie_native.spread(values, MIN_SIMILAR)
 
 
 def wilson(successes: int, total: int, z: float = Z80) -> tuple[float, float]:
