@@ -80,6 +80,46 @@ def record_events(repo: str, entries: list[dict[str, Any]]) -> int:
     return inserted
 
 
+def attest_assignment(repo: str, context: dict[str, object]) -> dict[str, object]:
+    """Record the exact dispatched PR generation against its live claim once.
+
+    Only the trusted dispatcher calls this, before handing the assignment to
+    Entry. A linked issue cannot accidentally become the retry subject. The
+    assignment's immutable scope stays in the existing assigned event.
+    """
+    if context.get("kind") != "pr" or not context.get("claim_id") or not core.enabled():
+        return context
+    head, stage = str(context.get("head") or ""), str(context.get("stage") or "")
+    number, worker, claim = context["number"], str(context["worker"]), str(context["claim_id"])
+    if type(number) is not int or number <= 0 or not HEAD_RE.fullmatch(head) or not stage:
+        raise RuntimeError("Invalid exact PR assignment scope")
+    db = core.store()
+    params = {"repo": repo, "number": number, "head": head, "stage": stage,
+              "worker": worker, "claim": claim, "event": f"assigned:{claim}"}
+    guard = (
+        "repo = :repo AND event_id = :event AND worker = :worker AND claim_id = :claim"
+        " AND event_type = 'worker_assigned'"
+        " AND EXISTS (SELECT 1 FROM factory_lease WHERE repo = :repo AND kind = 'target'"
+        " AND number = :number AND worker = :worker AND claim_id = :claim"
+        " AND expires_at > unixepoch())"
+    )
+    db.batch([(
+        "UPDATE factory_state_events SET detail = json_set(detail, 'assignment',"
+        " json_object('pr', :number, 'head', :head, 'stage', :stage))"
+        f" WHERE {guard} AND json_type(detail, '$.assignment') IS NULL",
+        params,
+    )])
+    verified = db.read(
+        f"SELECT 1 AS x FROM factory_state_events WHERE {guard}"
+        " AND detail ->> '$.assignment.pr' = :number"
+        " AND detail ->> '$.assignment.head' = :head"
+        " AND detail ->> '$.assignment.stage' = :stage", params,
+    )
+    if not verified:
+        raise RuntimeError("Exact PR assignment scope could not be attested")
+    return context
+
+
 def record_lifecycle(
     repo: str, run_id: str, worker: str, status: str, claim_id: str | None = None
 ) -> int:
