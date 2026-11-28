@@ -48,7 +48,8 @@ jobs:
       - name: Smoke test the installed wheel
         run: |
           wheel=(dist/*.whl)
-          uv run --no-project --with "${wheel[0]}" python -I -c             'import _rotisserie_native; from rotisserie.factory_console import runtime; runtime.module("factory_eligibility")'
+          uv run --no-project --with "${wheel[0]}" python -I -c \
+            'import _rotisserie_native; from rotisserie.factory_console import runtime; runtime.module("factory_work_policy")'
           uv run --no-project --with "${wheel[0]}" baste --help
 
   factory-runtime:
