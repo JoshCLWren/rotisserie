@@ -150,7 +150,6 @@ jobs:
         run: echo "FACTORY_DISCOVERY_DIR=$RUNNER_TEMP/factory-discovery" >> "$GITHUB_ENV"
 
       - name: Enable bounded factory query measurements
-        if: inputs.measure
         run: echo "FACTORY_STATE_METRICS_FILE=$RUNNER_TEMP/factory-query-counts.jsonl" >> "$GITHUB_ENV"
 
       - name: Install factory syntax parsers
@@ -987,7 +986,7 @@ jobs:
             --rate-limit "$rest" --record "$GITHUB_REPOSITORY"
 
       - name: Report factory query measurements
-        if: always() && inputs.measure
+        if: always()
         run: |
           counts="$RUNNER_TEMP/factory-query-counts.jsonl"
           [[ -s "$counts" ]] || { echo "No factory store requests were measured" | tee -a "$GITHUB_STEP_SUMMARY"; exit 0; }

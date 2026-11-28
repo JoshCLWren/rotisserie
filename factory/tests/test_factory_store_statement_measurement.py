@@ -97,3 +97,11 @@ def test_the_dispatch_report_sums_statements_over_processes(tmp_path: Path) -> N
         "store statement: 800 rows read, 6 written, 3 calls: SELECT b",
         "store statement: 600 rows read, 0 written, 3 calls: SELECT a",
     ]
+
+
+def test_every_dispatch_pass_records_and_reports_its_store_reads() -> None:
+    workflow: Any = yaml.safe_load(adopter_view("fixed-model-factory-dispatch.yml"))
+    steps = {s.get("name"): s for s in workflow["jobs"]["dispatch"]["steps"]}
+    enable = steps["Enable bounded factory query measurements"]
+    assert "if" not in enable and core.METRICS_FILE_ENV in enable["run"]
+    assert steps["Report factory query measurements"]["if"] == "always()"
