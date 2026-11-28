@@ -103,18 +103,20 @@ def attest_assignment(repo: str, context: dict[str, object]) -> dict[str, object
         " AND number = :number AND worker = :worker AND claim_id = :claim"
         " AND expires_at > unixepoch())"
     )
-    db.batch([(
-        "UPDATE factory_state_events SET detail = json_set(detail, 'assignment',"
-        " json_object('pr', :number, 'head', :head, 'stage', :stage))"
-        f" WHERE {guard} AND json_type(detail, '$.assignment') IS NULL",
-        params,
-    )])
-    verified = db.read(
-        f"SELECT 1 AS x FROM factory_state_events WHERE {guard}"
-        " AND detail ->> '$.assignment.pr' = :number"
-        " AND detail ->> '$.assignment.head' = :head"
-        " AND detail ->> '$.assignment.stage' = :stage", params,
-    )
+    _, verified = db.batch([
+        (
+            "UPDATE factory_state_events SET detail = json_set(detail, '$.assignment',"
+            " json_object('pr', :number, 'head', :head, 'stage', :stage))"
+            f" WHERE {guard} AND json_type(detail, '$.assignment') IS NULL",
+            params,
+        ),
+        (
+            f"SELECT 1 AS x FROM factory_state_events WHERE {guard}"
+            " AND detail ->> '$.assignment.pr' = :number"
+            " AND detail ->> '$.assignment.head' = :head"
+            " AND detail ->> '$.assignment.stage' = :stage", params,
+        ),
+    ])
     if not verified:
         raise RuntimeError("Exact PR assignment scope could not be attested")
     return context
