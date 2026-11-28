@@ -8,7 +8,6 @@ capacity checks run inside the batch itself (``factory_turso_leases``).
 
 from __future__ import annotations
 
-import json
 from datetime import UTC, datetime
 from typing import Any
 
