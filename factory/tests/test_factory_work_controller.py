@@ -350,10 +350,10 @@ def test_ready_pr_is_reserved_for_merge_controller_and_suppresses_duplicate_issu
     assert candidates == []
 
 
-def test_urgent_defects_bypass_wip_but_not_review_backlog_saturation(
+def test_urgent_defects_bypass_wip_and_use_bounded_backlog_reserve(
     controller: types.ModuleType,
 ) -> None:
-    """Urgent defects bypass worker WIP only; main-breakage alone beats backlog."""
+    """Urgent defects use the bounded reserve; main-breakage stays executable."""
     backlog = [
         pr(
             400 + index,
@@ -373,7 +373,7 @@ def test_urgent_defects_bypass_wip_but_not_review_backlog_saturation(
     produced = {candidate.number for candidate in candidates if candidate.kind == "issue"}
     assert "pr" in {candidate.kind for candidate in candidates}
     assert 501 not in produced, "ordinary issue intake must stop under backlog"
-    assert 502 not in produced, "urgent user-reported defects are stopped by backlog saturation"
+    assert 502 in produced, "one urgent defect remains executable under backlog saturation"
     assert 503 in produced, "main-breakage remains executable under backlog saturation"
 
     wip = [
