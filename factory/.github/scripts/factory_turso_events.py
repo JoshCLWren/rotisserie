@@ -142,6 +142,40 @@ def record_lifecycle(
     return record_events(repo, [entry])
 
 
+def checkpoint_evidence(run_id: str, worker: str, outcome: dict[str, Any]) -> list[dict[str, Any]]:
+    """Persist verified checkpoint milestones independently of execution.
+
+    The trusted checkpoint collector enriches the outcome, not the model log.
+    A SHA identifies the source commit, not the potentially resumed branch tip.
+    Each milestone has its own stable event identity, so later verification can
+    add a publication or validation without rewriting a terminal failure.
+    """
+    head = str(outcome.get("checkpoint_sha") or "")
+    if outcome.get("checkpoint_saved") is not True or not HEAD_RE.fullmatch(head):
+        return []
+    raw_pr = outcome.get("work_pr")
+    pr = int(raw_pr) if str(raw_pr).isdecimal() and int(raw_pr) > 0 else None
+    published = pr is not None and outcome.get("checkpoint_published") is True
+    validated = published and outcome.get("checkpoint_validated") is True
+    milestones = [("saved", None)]
+    if published:
+        milestones.append(("published", pr))
+    if validated:
+        milestones.append(("validated", pr))
+    return [
+        {
+            "event_type": "checkpoint_evidence",
+            "event_id": f"checkpoint:{run_id}:{head}:{milestone}:{number or 0}",
+            "worker": worker,
+            "run_id": run_id,
+            "checkpoint_sha": head,
+            "milestone": milestone,
+            "work_pr": number,
+        }
+        for milestone, number in milestones
+    ]
+
+
 def record_runtime_outcome(
     repo: str, run_id: str, outcome: dict[str, Any], job_log: str | None = None
 ) -> int:
@@ -192,6 +226,7 @@ def record_runtime_outcome(
             "head": head if HEAD_RE.fullmatch(head) else "",
             "no_reviewer_pr": int(number) if number.isdecimal() else None,
         }
+    entries.extend(checkpoint_evidence(run_id, worker, outcome))
     if job_log is not None:
         from factory_model_attempt_events import model_attempt_events
 
