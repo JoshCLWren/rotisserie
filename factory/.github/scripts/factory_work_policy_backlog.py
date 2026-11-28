@@ -8,12 +8,15 @@ from factory_work_policy_base import (
     BLOCKED_LABELS,
     FACTORY_REVIEW_BACKLOG_LIMIT,
     is_factory_managed_pr,
+    item_is_unowned,
+    linked_issue_from_pr,
     labels_of,
     owner_of,
     pr_is_conflicted,
     stage_of,
 )
 from factory_work_policy_priority import OVERRIDE_LABEL
+from factory_issue_intake_guard import sliced_issue
 
 LOOP_HOLD_KEY = 'factoryLoopHold'
 LOOP_HOLDS = frozenset({'held: loop-parked', 'held: looping'})
@@ -77,7 +80,8 @@ def issue_bypasses_wip_limit(
     end-to-end backpressure takes over: user-reported bugs and P0 issues must
     wait like everything else so the fleet drains existing completion-stage PRs
     instead of manufacturing unbounded new intake. Only main-breakage keeps
-    opening new work once the review backlog is saturated.
+    opening new work without a reserve once the review backlog is saturated.
+    The bounded urgent reserve is evaluated separately on the full queue.
     """
     labels = labels_of(issue)
     if OVERRIDE_LABEL in labels:
@@ -90,6 +94,38 @@ def issue_bypasses_wip_limit(
         or 'priority:P0' in labels
         or 'ralph-priority:critical' in labels
     )
+
+
+def needs_urgent_reserve(issue: dict[str, Any]) -> bool:
+    """Existing urgent WIP exemptions, excluding unconditional owner/main exceptions."""
+    return issue_bypasses_wip_limit(issue) and not issue_bypasses_wip_limit(
+        issue, review_backlog_saturated=True
+    )
+
+
+def urgent_reserve_available(
+    issues: Iterable[dict[str, Any]], prs: Iterable[dict[str, Any]]
+) -> bool:
+    """One overflow opportunity; keep it occupied until the urgent work closes.
+
+    A live claim, or any open urgent PR including a draft/partial/blocked PR,
+    occupies the reserve. This prevents replacing stalled urgent work with an
+    ever-growing pile of new urgent PRs. Owner-directed incidents and overrides
+    retain their separate existing policy.
+    """
+    urgent = {
+        int(issue['number']): issue for issue in issues
+        if str(issue.get('state') or 'OPEN').upper() == 'OPEN'
+        and needs_urgent_reserve(issue)
+    }
+    if any(not item_is_unowned(labels_of(issue)) for issue in urgent.values()):
+        return False
+    for pr in prs:
+        if str(pr.get('state') or 'OPEN').upper() != 'OPEN':
+            continue
+        if needs_urgent_reserve(pr) or linked_issue_from_pr(pr) in urgent or sliced_issue(pr) in urgent:
+            return False
+    return True
 
 
 def factory_review_backlog_count(prs: Iterable[dict[str, Any]]) -> int:

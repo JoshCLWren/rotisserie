@@ -161,6 +161,7 @@
 .github/scripts/factory_turso_loops.py
 .github/scripts/factory_turso_model_reset.py
 .github/scripts/factory_turso_operations.py
+.github/scripts/factory_urgent_intake.py
 .github/scripts/factory_turso_runtime.py
 .github/scripts/factory_turso_slots.py
 .github/scripts/factory_turso_usage.py

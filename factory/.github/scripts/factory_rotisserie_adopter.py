@@ -336,16 +336,13 @@ def intake_verdicts(
     envelope = json.loads(completed.stdout)
     if envelope.get("status") != "ok":
         raise ValueError("Rotisserie decision was not successful")
-    observations = envelope["evidence"]["decisions"]["observations"]
-    return {
-        int(item["subject"].removeprefix("work:")): (
-            item.get("outcome") == "eligible",
-            tuple(str(reason) for reason in item.get("reasons") or ()),
-        )
-        for item in observations
-        if item.get("dimension") == "eligibility"
-        and str(item.get("subject", "")).startswith("work:")
-    }
+    from factory_urgent_intake import intake_with_urgent_reserve
+
+    return intake_with_urgent_reserve(
+        envelope["evidence"]["decisions"]["observations"], issues, prs,
+        pr_wip_limit=pr_wip_limit, review_backlog_limit=review_backlog_limit,
+        operator_force=operator_force,
+    )
 
 
 def issue_intake(

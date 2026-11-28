@@ -13,7 +13,7 @@
   "factory/.github/scripts/factory_implementation_delivery.py": 523,
   "factory/.github/scripts/factory_jev_shadow.py": 960,
   "factory/.github/scripts/factory_review_policy.py": 1144,
-  "factory/.github/scripts/factory_rotisserie_adopter.py": 627,
+  "factory/.github/scripts/factory_rotisserie_adopter.py": 624,
   "factory/.github/scripts/free-model-factory-worker-primitives.sh": 1273,
   "factory/.github/scripts/free-model-factory-worker.sh": 1118,
   "factory/.github/scripts/generate_factory_status_dashboard.py": 921,
