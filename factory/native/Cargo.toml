@@ -12,3 +12,8 @@ crate-type = ["cdylib"]
 [dependencies]
 pyo3 = { version = "=0.30.1", features = ["extension-module", "abi3-py310"] }
 regex = "=1.13.2"
+
+# Adopters check Rotisserie out inside their own repository (.rotisserie/runtime),
+# and an adopter may have its own Cargo workspace at its root. This empty table
+# keeps the crate a workspace of its own so cargo never joins the adopter's.
+[workspace]
