@@ -81,7 +81,7 @@ jobs:
         run: uv run --locked --python 3.14 pytest -q -n auto
 
       - name: Factory JavaScript tests
-        run: node --test .github/scripts/*.test.cjs scripts/local-factory-acp-review.test.mjs
+        run: uv run --locked --python 3.14 node --test .github/scripts/*.test.cjs scripts/local-factory-acp-review.test.mjs
 
       - name: Factory shell scripts
         run: |
